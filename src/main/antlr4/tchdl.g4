@@ -25,7 +25,7 @@ interface_def
     ;
 
 implement
-    : IMPLEMENT type FOR type '{' (method_def | stage_def)* '}'
+    : IMPLEMENT support_param? type FOR type '{' (method_def | stage_def)* '}'
     ;
 
 module_def
