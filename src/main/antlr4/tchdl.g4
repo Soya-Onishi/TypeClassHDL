@@ -3,7 +3,7 @@ grammar tchdl;
 import exprs;
 
 compilation_unit
-    : top_definition*
+    : top_definition* EOF
     ;
 
 top_definition
