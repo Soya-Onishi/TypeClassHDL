@@ -1,6 +1,6 @@
-package ast
+package tchdl.ast
 
-import typeutil._
+import tchdl.typeutil._
 
 trait AST
 
