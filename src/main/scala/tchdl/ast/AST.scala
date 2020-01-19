@@ -15,6 +15,8 @@ trait HasType {
   //TODO: tpe field and related methods will be implemented
 }
 
+case class CompilationUnit(filename: Option[String], topDefs: Array[AST with Definition]) extends AST
+
 case class ClassDef(name: String, supportParams: List[SupportParamElem], methods: List[MethodDef]) extends Definition
 case class InterfaceDef(name: String, supportParams: List[SupportParamElem], components: List[Component]) extends Definition
 case class Implement(className: TypeTree, structName: TypeTree, supportParams: List[SupportParamElem], methods: List[MethodDef]) extends Definition
