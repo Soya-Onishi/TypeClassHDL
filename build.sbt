@@ -1,10 +1,10 @@
 enablePlugins(Antlr4Plugin)
 
 lazy val antlr4Settings = Seq(
-  antlr4Version := "4.7.2",
-  antlr4GenVisitor := true,
-  javaSource := (sourceManaged in Compile).value,
-  antlr4PackageName := Some("tchdl.antlr"),
+  antlr4Version in Antlr4 := "4.7.2",
+  antlr4GenVisitor in Antlr4 := true,
+  antlr4PackageName in Antlr4 := Some("tchdl.antlr"),
+  javaSource in Antlr4 := (sourceManaged in Compile).value,
 )
 
 lazy val commonSettings = Seq(
