@@ -15,19 +15,24 @@ top_definition
     ;
 
 class_def
-    : CLASS ID support_param? bounds? '{' method_def* '}'
+    : CLASS ID hardware_param? type_param? bounds? '{' method_def* '}'
     ;
 
 interface_def
-    : INTERFACE ID support_param? bounds? '{' (method_def | stage_def)* '}'
+    : INTERFACE ID hardware_param? type_param? bounds? '{' inner* '}'
     ;
 
 implement
-    : IMPLEMENT support_param? type FOR type bounds? '{' (method_def | stage_def)* '}'
+    : IMPLEMENT hardware_param? type_param? type FOR type bounds? '{' inner* '}'
+    ;
+
+inner
+    : method_def
+    | stage_def
     ;
 
 module_def
-    : MODULE ID support_param? bounds? ('(' field_defs ')')? '{' component* '}'
+    : MODULE ID hardware_param? type_param? bounds? ('(' field_defs ')')? '{' component* '}'
     ;
 
 component
@@ -39,7 +44,7 @@ component
     ;
 
 struct_def
-    : STRUCT ID support_param? bounds? '{' field_defs '}'
+    : STRUCT ID hardware_param? type_param? bounds? '{' field_defs '}'
     ;
 
 field_defs
@@ -52,7 +57,7 @@ field_def
     ;
 
 enum_def
-    : ENUM ID support_param? bounds? '{' enum_field_def+ '}'
+    : ENUM ID hardware_param? type_param? bounds? '{' enum_field_def+ '}'
     ;
 
 enum_field_def
@@ -64,7 +69,7 @@ always_def
     ;
 
 method_def
-    : DEF ID support_param? bounds? '(' field_defs ')' ('->' type)? block?
+    : DEF ID hardware_param? type_param? bounds? '(' field_defs ')' '->' type block?
     ;
 
 val_def
@@ -72,11 +77,11 @@ val_def
     ;
 
 stage_def
-    : STAGE ID '(' field_def ')' ('->' type)? stage_body?
+    : STAGE ID '(' field_defs ')' '->' type stage_body?
     ;
 
 stage_body
-    : '{' (expr | state_def) '}'
+    : '{' (block_elem | state_def) '}'
     ;
 
 state_def
@@ -102,20 +107,7 @@ bounds
     ;
 
 bound
-    : ID ':' bound_for_tps
-    | ID ':' bound_for_hps
-    ;
-
-bound_for_tps
-    : type ('+' type)*
-    ;
-
-bound_for_hps
-    : bound_for_hp ('&' bound_for_hp)*
-    ;
-
-bound_for_hp
-    : ID ('<' | '>' | '<=' | '>=' | '==' | '!=') INT
+    : ID ':' type ('+' type)*
     ;
 
 flag: INPUT
@@ -126,21 +118,29 @@ component_def_body
     : ID (':' type)? ('=' expr)?
     ;
 
-expr: expr '.' (apply | ID)
-    | expr ('+' | '-') expr
-    | apply
-    | block
-    | construct
-    | SELF
-    | if_expr
-    | match_expr
-    | stage_man
-    | literal
-    | ID
+expr: expr '.' (apply | ID)  # SelectExpr
+    | expr op=('+' | '-') expr  # AddSubExpr
+    | apply                  # ApplyExpr
+    | block                  # BlockExpr
+    | construct              # ConstructExpr
+    | SELF                   # SelfExpr
+    | if_expr                # IfExpr
+    | match_expr             # MatchExpr
+    | stage_man              # StageManExpr
+    | literal                # LitExpr
+    | ID                     # ID
     ;
 
 apply
-    : ID support_param? '(' args ')'
+    : ID apply_hardparam? apply_typeparam? '(' args ')'
+    ;
+
+apply_hardparam
+    : '<' expr (',' expr)* '>'
+    ;
+
+apply_typeparam
+    : '[' type (',' type)* ']'
     ;
 
 args: expr (',' expr)*
@@ -148,11 +148,16 @@ args: expr (',' expr)*
     ;
 
 block
-    : '{' (val_def | expr*) '}'
+    : '{' block_elem* '}'
+    ;
+
+block_elem
+    : val_def
+    | expr
     ;
 
 construct
-    : ID support_param? '{' construct_pairs '}'
+    : type '{' construct_pairs '}'
     ;
 
 construct_pairs
@@ -172,7 +177,7 @@ match_expr
     : MATCH expr '{' case_def+ '}'
     ;
 
-case_def: CASE literal '=>' expr*
+case_def: CASE literal '=>' block_elem*
     ;
 
 stage_man
@@ -189,18 +194,18 @@ literal
     | STRING
     ;
 
-support_param
-    : '[' (hardware_param | ID) (',' (hardware_param | ID))* ']'
+type_param
+    : '[' ID (',' ID)* ']'
     ;
 
 hardware_param
-    : ID ':' type
+    : '<' field_defs '>'
     ;
 
 unit_lit
     : '(' ')'
     ;
-type: ID ('[' (expr | type) (',' (expr | type))* ']')?
+type: ID ('<' expr (',' expr)* '>')? ('[' type (',' type)* ']')?
     ;
 
 CLASS: 'class';
