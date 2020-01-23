@@ -8,7 +8,7 @@ import tchdl.antlr._
 import scala.jdk.CollectionConverters._
 
 class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AST] {
-  override def visitCompilation_unit(ctx: TchdlParser.Compilation_unitContext): CompilationUnit = {
+  def visitCompilationUnit(ctx: TchdlParser.Compilation_unitContext): CompilationUnit = {
     val defs = ctx
       .top_definition
       .asScala
@@ -40,10 +40,13 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
     val tp = getTypeParam(ctx.type_param())
     val bounds = getBounds(ctx.bounds())
 
-    val interfaces = ctx.inner()
+    val interfaces = ctx.children
       .asScala
-      .map(visitInner(_))
-      .map(_.inner)
+      .collect{
+        case m: TchdlParser.Method_defContext => visitMethod_def(m)
+        case s: TchdlParser.Stage_defContext => visitStage_def(s)
+      }
+      .map{ c: Component => c }
       .toArray
 
     InterfaceDef(name, hp, tp, bounds, interfaces)
@@ -55,32 +58,30 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
     val bounds = getBounds(ctx.bounds())
     val tpe = visitType(ctx.`type`(0))
     val target = visitType(ctx.`type`(1))
-    val inners = ctx
-      .inner()
+    val inners = ctx.children
       .asScala
-      .map(visitInner(_))
-      .map(_.inner)
+      .collect{
+        case m: TchdlParser.Method_defContext => visitMethod_def(m)
+        case s: TchdlParser.Stage_defContext => visitStage_def(s)
+      }
+      .map{ c: Component => c }
       .toArray
 
     Implement(tpe, target, hp, tp, bounds, inners)
   }
 
-
-  override def visitInner(ctx: TchdlParser.InnerContext): WorkingAST.Inner = {
-    val component = (Option(ctx.method_def()), Option(ctx.stage_def())) match {
-      case (Some(method), None) => visitMethod_def(method)
-      case (None, Some(stage))  => visitStage_def(stage)
-    }
-
-    WorkingAST.Inner(component)
-  }
+  def visitFieldDefs(ctx: TchdlParser.Field_defsContext): Array[FieldDef] =
+    Option(ctx.field_def)
+      .map(_.asScala.toArray)
+      .getOrElse(Array.empty[TchdlParser.Field_defContext])
+      .map(visitField_def(_))
 
   override def visitModule_def(ctx: TchdlParser.Module_defContext): ModuleDef = {
     val name = ctx.ID().getText
     val hp = getHardwareParam(ctx.hardware_param())
     val tp = getTypeParam(ctx.type_param())
     val bounds = getBounds(ctx.bounds())
-    val passedModules = visitField_defs(ctx.field_defs())
+    val passedModules = visitFieldDefs(ctx.field_defs())
     val components = ctx.component()
       .asScala
       .map(visitComponent(_))
@@ -97,22 +98,19 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
     val hp = getHardwareParam(ctx.hardware_param())
     val tp = getTypeParam(ctx.type_param())
     val bounds = getBounds(ctx.bounds())
-    val fields = visitField_defs(ctx.field_defs())
+    val fields = visitFieldDefs(ctx.field_defs())
 
     StructDef(name, hp, tp, bounds, fields)
   }
 
-  override def visitField_defs(ctx: TchdlParser.Field_defsContext): WorkingAST.FieldDefs = {
-    val fields = ctx.field_def()
-      .asScala
-      .map(visitField_def(_))
-      .toArray
-
-    WorkingAST.FieldDefs(fields)
-  }
-
   override def visitField_def(ctx: TchdlParser.Field_defContext): FieldDef = {
-    val modifier = Option(ctx.flags()).map(_.modifier).getOrElse(Modifier.NoModifier)
+    val modifier = Modifier(
+      Option(ctx.modifier)
+        .map(_.asScala.toArray)
+        .getOrElse(Array.empty[TchdlParser.ModifierContext])
+        .map(_.getChild(0).getText)
+    )
+
     val name = ctx.ID().getText
     val tpe = visitType(ctx.`type`())
 
@@ -154,16 +152,16 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
     val hp = getHardwareParam(ctx.hardware_param())
     val tp = getTypeParam(ctx.type_param())
     val bounds = getBounds(ctx.bounds())
-    val params = visitField_defs(ctx.field_defs()).fields
+    val params = visitFieldDefs(ctx.field_defs())
     val retTpe = visitType(ctx.`type`())
-    val blk = Option(ctx.block()).map(visitBlock(_))
+    val blk = Option(ctx.block()).map(visitBlock)
 
     MethodDef(name, hp, tp, bounds, params, retTpe, blk)
   }
 
   override def visitVal_def(ctx: TchdlParser.Val_defContext): ValDef = {
     val name = ctx.ID().getText
-    val tpe = Option(ctx.`type`()).map(visitType(_))
+    val tpe = Option(ctx.`type`()).map(visitType)
     val expr = visitExpr(ctx.expr())
 
     ValDef(Modifier.NoModifier, name, tpe, Some(expr))
@@ -171,14 +169,14 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
 
   override def visitStage_def(ctx: TchdlParser.Stage_defContext): StageDef = {
     val name = ctx.ID().getText
-    val params = visitField_defs(ctx.field_defs())
+    val params = visitFieldDefs(ctx.field_defs())
     val retTpe = visitType(ctx.`type`())
-    val body = visitStage_body(ctx.stage_body())
+    val (states, blockElems) = visitStageBody(ctx.stage_body())
 
-    StageDef(name, params, retTpe, )
+    StageDef(name, params, retTpe, states, blockElems)
   }
 
-  override def visitStage_body(ctx: TchdlParser.Stage_bodyContext): WorkingAST.StageBody = {
+  def visitStageBody(ctx: TchdlParser.Stage_bodyContext): (Array[StateDef], Array[BlockElem]) = {
     val state = ctx.state_def()
       .asScala
       .map(visitState_def(_))
@@ -189,7 +187,7 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
       .map(visitBlock_elem(_))
       .toArray
 
-    WorkingAST.StageBody(state, blkElem)
+    (state, blkElem)
   }
 
   override def visitState_def(ctx: TchdlParser.State_defContext): StateDef = {
@@ -206,43 +204,28 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
       case "output" => Modifier.Output
     }
 
-    val body = visitComponent_def_body(ctx.component_def_body())
+    val (name, tpe, expr) = visitComponentDefBody(ctx.component_def_body)
 
-    ValDef(modifier)
+    ValDef(modifier, name, tpe, expr)
   }
 
   override def visitReg_def(ctx: TchdlParser.Reg_defContext): ValDef = {
     val modifier = Modifier.Register
-    val body = visitComponent_def_body(ctx.component_def_body())
+    val (name, tpe, expr) = visitComponentDefBody(ctx.component_def_body)
 
-    ValDef(modifier, )
+    ValDef(modifier, name, tpe, expr)
   }
 
-  override def visitFlags(ctx: TchdlParser.FlagsContext): WorkingAST.Modifiers = {
-    val mod = ctx.flag()
-      .asScala
-      .map(visitFlag(_))
-      .foldLeft[Modifier](Modifier.NoModifier){
-        case (acc, mod) =>acc | mod.modifier
-      }
+  def visitComponentDefBody(ctx: TchdlParser.Component_def_bodyContext): (String, Option[TypeTree], Option[Expression]) = {
+    val name = ctx.ID.getText
+    val tpe = Option(ctx.`type`).map(visitType)
+    val expr = Option(ctx.expr).map(visitExpr)
 
-    WorkingAST.Modifiers(mod)
+    (name, tpe, expr)
   }
 
-  override def visitFlag(ctx: TchdlParser.FlagContext): WorkingAST.Modifiers = {
-    val mod = ctx.getChild(0).getText match {
-      case "input" => Modifier.Input
-      case "internal" => Modifier.Internal
-    }
-
-    WorkingAST.Modifiers(mod)
-  }
-
-  override def visitBounds(ctx: TchdlParser.BoundsContext): WorkingAST.Bounds = {
-    val bounds = ctx.bound.asScala.map(visitBound(_)).toArray
-
-    WorkingAST.Bounds(bounds)
-  }
+  def visitTypeBounds(ctx: TchdlParser.BoundsContext): Array[Bound] =
+    ctx.bound.asScala.map(visitBound).toArray
 
   override def visitBound(ctx: TchdlParser.BoundContext): Bound = {
     val name = ctx.ID().getText
@@ -285,7 +268,12 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
   override def visitAddSubExpr(ctx: TchdlParser.AddSubExprContext): Expression = {
     val left = visitExpr(ctx.expr(0))
     val right = visitExpr(ctx.expr(1))
-    val op
+    val op = ctx.op.getText match {
+      case "+" => "add"
+      case "-" => "sub"
+    }
+
+    Apply(Select(left, op), Array.empty, Array.empty, Array(right))
   }
 
   override def visitApplyExpr(ctx: TchdlParser.ApplyExprContext): Apply =
@@ -509,9 +497,7 @@ class TchdlVisitorLike(val filename: Option[String]) extends TchdlBaseVisitor[AS
       .getOrElse(Array())
   }
 
-  def getBounds(ctx: TchdlParser.BoundsContext): Array[Bound] = {
-    Option(visitBounds(ctx))
-      .map(_.bounds)
-      .getOrElse(Array())
-  }
+  def getBounds(ctx: TchdlParser.BoundsContext): Array[Bound] =
+    Option(visitTypeBounds(ctx)).getOrElse(Array())
+
 }

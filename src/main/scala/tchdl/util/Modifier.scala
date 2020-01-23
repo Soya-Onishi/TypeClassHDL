@@ -10,6 +10,23 @@ trait Modifier {
 }
 
 object Modifier {
+  def apply(name: String): Modifier = name match {
+    case "input" => Input
+    case "internal" => Internal
+    case "output" => Output
+    case "reg" => Register
+    case "public" => Public
+    case "module" => Module
+    case "sibling" => Sibling
+    case "parent" => Parent
+  }
+
+  def apply(names: Iterable[String]): Modifier =
+    names.foldLeft[Modifier](NoModifier){
+      case (acc, name) => acc | apply(name)
+    }
+
+
   private val seed = BigInt(1)
 
   case object NoModifier extends Modifier { val value = 0x0 }
@@ -19,4 +36,6 @@ object Modifier {
   case object Register extends Modifier   { val value = seed << 3 }
   case object Public extends Modifier     { val value = seed << 4 }
   case object Module extends Modifier     { val value = seed << 5 }
+  case object Sibling extends Modifier    { val value = seed << 6 }
+  case object Parent extends Modifier     { val value = seed << 7 }
 }

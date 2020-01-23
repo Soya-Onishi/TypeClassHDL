@@ -7,7 +7,7 @@ trait AST
 trait Component extends AST
 trait Definition extends AST
 trait Statement extends AST
-trait BlockElem
+trait BlockElem extends AST
 trait Expression extends AST with BlockElem with HasType
 trait SupportParamElem extends AST
 
@@ -24,7 +24,7 @@ case class InterfaceDef(name: String, hp: Array[FieldDef], tp: Array[TypeDef], b
 case class Implement(className: TypeTree, target: TypeTree, hp: Array[FieldDef], tp: Array[TypeDef], bounds: Array[Bound], methods: Array[Component]) extends Definition
 
 case class ModuleDef(name: String, hp: Array[FieldDef], tp: Array[TypeDef], bounds: Array[Bound], passedModules: Array[FieldDef], components: Array[Component]) extends Definition
-case class StructDef(name: String, hp: Array[FieldDef], tp: Array[TypeDef], bounds: Array[FieldDef], fields: Array[FieldDef]) extends Definition
+case class StructDef(name: String, hp: Array[FieldDef], tp: Array[TypeDef], bounds: Array[Bound], fields: Array[FieldDef]) extends Definition
 case class FieldDef(flag: Modifier, name: String, tpeTree: TypeTree) extends Definition with SupportParamElem with HasType
 case class EnumDef(name: String, hp: Array[FieldDef], tp: Array[TypeDef], bounds: Array[Bound], fields: Array[EnumFieldDef]) extends Definition
 case class EnumFieldDef(name: String, tpes: Array[TypeTree]) extends Definition

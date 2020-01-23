@@ -19,16 +19,11 @@ class_def
     ;
 
 interface_def
-    : INTERFACE ID hardware_param? type_param? bounds? '{' inner* '}'
+    : INTERFACE ID hardware_param? type_param? bounds? '{' (method_def | stage_def)* '}'
     ;
 
 implement
-    : IMPLEMENT hardware_param? type_param? type FOR type bounds? '{' inner* '}'
-    ;
-
-inner
-    : method_def
-    | stage_def
+    : IMPLEMENT hardware_param? type_param? type FOR type bounds? '{' (method_def | stage_def)* '}'
     ;
 
 module_def
@@ -48,12 +43,11 @@ struct_def
     ;
 
 field_defs
-    : field_def (',' field_def)*
-    |
+    : (field_def (',' field_def)*)?
     ;
 
 field_def
-    : flags? ID ':' type
+    : modifier* ID ':' type
     ;
 
 enum_def
@@ -61,7 +55,7 @@ enum_def
     ;
 
 enum_field_def
-    : ID '(' type+ ')'
+    : ID ('(' type+ ')')?
     ;
 
 always_def
@@ -81,7 +75,7 @@ stage_def
     ;
 
 stage_body
-    : '{' (block_elem | state_def) '}'
+    : '{' (block_elem | state_def)* '}'
     ;
 
 state_def
@@ -98,10 +92,6 @@ reg_def
     : REG component_def_body
     ;
 
-flags
-    : flag+
-    ;
-
 bounds
     : WHERE bound (',' bound)*
     ;
@@ -110,7 +100,8 @@ bound
     : ID ':' type ('+' type)*
     ;
 
-flag: INPUT
+modifier
+    : INPUT
     | PUBLIC
     ;
 
@@ -143,8 +134,7 @@ apply_typeparam
     : '[' type (',' type)* ']'
     ;
 
-args: expr (',' expr)*
-    |
+args: (expr (',' expr)*)?
     ;
 
 block

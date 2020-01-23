@@ -14,7 +14,6 @@ object Parser {
     val parser = new TchdlParser(tokens)
     val tree = parser.compilation_unit()
 
-    val cu = parser.compilation_unit()
-
+    new TchdlVisitorLike(Some(filename)).visitCompilationUnit(tree)
   }
 }
