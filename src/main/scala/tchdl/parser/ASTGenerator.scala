@@ -45,9 +45,9 @@ class ASTGenerator {
     val (name, hp, tp, bound) = template(ctx.template)
     val params = fieldDefs(ctx.field_defs)
     val tpe = typeTree(ctx.`type`)
-    val block = Option(ctx.block).map(block)
+    val blk = Option(ctx.block).map(block)
 
-    MethodDef(name, hp, tp, bound, params, tpe, block)
+    MethodDef(name, hp, tp, bound, params, tpe, blk)
   }
 
   def template(ctx: TP.TemplateContext): (String, Vector[FieldDef], Vector[TypeDef], Vector[Bound]) = {
