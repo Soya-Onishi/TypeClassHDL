@@ -5,29 +5,17 @@ compilation_unit
     ;
 
 top_definition
-    : class_def
-    | interface_def
-    | implement
+    : module_def
     | method_def
-    | module_def
     | struct_def
-    | enum_def
-    ;
-
-class_def
-    : CLASS ID hardware_param? type_param? bounds? '{' method_def* '}'
-    ;
-
-interface_def
-    : INTERFACE ID hardware_param? type_param? bounds? '{' (method_def | stage_def)* '}'
-    ;
-
-implement
-    : IMPLEMENT hardware_param? type_param? type FOR type bounds? '{' (method_def | stage_def)* '}'
+//    | class_def
+//    | interface_def
+//    | implement
+//    | enum_def
     ;
 
 module_def
-    : MODULE ID hardware_param? type_param? bounds? ('(' field_defs ')')? '{' component* '}'
+    : MODULE template ('(' field_defs ')')? '{' component* '}'
     ;
 
 component
@@ -39,7 +27,15 @@ component
     ;
 
 struct_def
-    : STRUCT ID hardware_param? type_param? bounds? '{' field_defs '}'
+    : STRUCT template '{' field_defs '}'
+    ;
+
+method_def
+    : DEF template '(' field_defs ')' '->' type block?
+    ;
+
+template
+    : ID hardware_param? type_param? bounds?
     ;
 
 field_defs
@@ -50,20 +46,8 @@ field_def
     : modifier* ID ':' type
     ;
 
-enum_def
-    : ENUM ID hardware_param? type_param? bounds? '{' enum_field_def+ '}'
-    ;
-
-enum_field_def
-    : ID ('(' type+ ')')?
-    ;
-
 always_def
     : ALWAYS ID block
-    ;
-
-method_def
-    : DEF ID hardware_param? type_param? bounds? '(' field_defs ')' '->' type block?
     ;
 
 val_def
@@ -109,17 +93,22 @@ component_def_body
     : ID (':' type)? ('=' expr)?
     ;
 
-expr: expr '.' (apply | ID)  # SelectExpr
-    | expr op=('+' | '-') expr  # AddSubExpr
-    | apply                  # ApplyExpr
-    | block                  # BlockExpr
-    | construct              # ConstructExpr
-    | SELF                   # SelfExpr
-    | if_expr                # IfExpr
-    | match_expr             # MatchExpr
-    | stage_man              # StageManExpr
-    | literal                # LitExpr
-    | ID                     # ID
+expr: expr '.' (apply | ID)    # SelectExpr
+    | expr op=('*' | '/') expr # MulDivExpr
+    | expr op=('+' | '-') expr # AddSubExpr
+    | apply                    # ApplyExpr
+    | block                    # BlockExpr
+    | construct                # ConstructExpr
+    | IF expr block (ELSE block)?                  # IfExpr
+//    | MATCH expr '{' case_def+ '}'               # MatchExpr
+    | FINISH                   # Finish
+    | GOTO ID                  # Goto
+    | RELAY ID '(' args ')'    # Relay
+    | GENERATE ID '(' args ')' # Generate
+    | literal                  # LitExpr
+    | '(' expr ')'             # ParenthesesExpr
+    | SELF                     # SelfExpr
+    | ID                       # ID
     ;
 
 apply
@@ -147,41 +136,24 @@ block_elem
     ;
 
 construct
-    : type '{' construct_pairs '}'
-    ;
-
-construct_pairs
-    : construct_pair (',' construct_pair)*
+    : type '{' (construct_pair (',' construct_pair)*)? '}'
     ;
 
 construct_pair
     : ID ':' expr
     ;
 
-if_expr
-    : IF expr block ELSE block
-    | IF expr block
+/*
+case_def
+    : CASE literal '=>' block_elem*
     ;
-
-match_expr
-    : MATCH expr '{' case_def+ '}'
-    ;
-
-case_def: CASE literal '=>' block_elem*
-    ;
-
-stage_man
-    : FINISH
-    | GOTO ID
-    | RELAY ID '(' args ')'
-    | GENERATE ID '(' args ')'
-    ;
+*/
 
 literal
-    : BIT
-    | INT
-    | unit_lit
-    | STRING
+    : BIT      # BitLit
+    | INT      # IntLit
+    | unit_lit # UnitLit
+    | STRING   # StringLit
     ;
 
 type_param
@@ -195,8 +167,31 @@ hardware_param
 unit_lit
     : '(' ')'
     ;
-type: ID ('<' expr (',' expr)* '>')? ('[' type (',' type)* ']')?
+
+type: ID apply_hardparam? apply_typeparam?
     ;
+
+/*
+class_def
+    : CLASS ID hardware_param? type_param? bounds? '{' method_def* '}'
+    ;
+
+interface_def
+    : INTERFACE ID hardware_param? type_param? bounds? '{' (method_def | stage_def)* '}'
+    ;
+
+implement
+    : IMPLEMENT hardware_param? type_param? type FOR type bounds? '{' (method_def | stage_def)* '}'
+    ;
+
+enum_def
+    : ENUM ID hardware_param? type_param? bounds? '{' enum_field_def+ '}'
+    ;
+
+enum_field_def
+    : ID ('(' type+ ')')?
+    ;
+*/
 
 CLASS: 'class';
 INTERFACE: 'interface';
