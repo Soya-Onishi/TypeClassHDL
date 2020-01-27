@@ -20,14 +20,16 @@ case class DeclaredType(
   typeParam: Vector[Symbol],
   declares: Map[String, Symbol],
   tpeType: TpeType,
-  tpeClass: TpeClass,
+  tpeClass: TpeClass
 ) extends Type {
   def returnType: Type = this
 }
 
 case class MethodType(
   args: Vector[RefType],
-  returnType: RefType
+  returnType: RefType,
+  hardwareParam: Vector[Symbol],
+  typeParam: Vector[Symbol],
 ) extends Type {
   lazy val name: String = {
     val argTypeNames = args.map(_.name).mkString(", ")
