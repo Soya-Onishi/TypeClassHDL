@@ -13,47 +13,49 @@ trait Type {
   def returnType: Type
 }
 
-case class DeclaredType(
-  name: String,
-  namespace: Vector[String],
-  hardwareParam: Vector[Symbol],
-  typeParam: Vector[Symbol],
-  declares: Map[String, Symbol],
-  tpeType: TpeType,
-  tpeClass: TpeClass
-) extends Type {
-  def returnType: Type = this
-}
-
-case class MethodType(
-  args: Vector[RefType],
-  returnType: RefType,
-  hardwareParam: Vector[Symbol],
-  typeParam: Vector[Symbol],
-) extends Type {
-  lazy val name: String = {
-    val argTypeNames = args.map(_.name).mkString(", ")
-    s"($argTypeNames) -> ${returnType.name}"
+object Type {
+  case class DeclaredType(
+    name: String,
+    namespace: Vector[String],
+    hardwareParam: Vector[Symbol],
+    typeParam: Vector[Symbol],
+    declares: Map[String, Symbol],
+    tpeType: TpeType,
+    tpeClass: TpeClass
+  ) extends Type {
+    def returnType: Type = this
   }
 
-  val namespace: Vector[String] = Vector()
-  val declares = returnType.declares
-  val tpeType = TpeType.Method
-  val tpeClass = TpeClass.Software
-}
+  case class MethodType(
+    args: Vector[RefType],
+    returnType: RefType,
+    hardwareParam: Vector[Symbol],
+    typeParam: Vector[Symbol],
+  ) extends Type {
+    lazy val name: String = {
+      val argTypeNames = args.map(_.name).mkString(", ")
+      s"($argTypeNames) -> ${returnType.name}"
+    }
 
-case class RefType(
-  origin: DeclaredType,
-  hardwareParam: Vector[Expression],
-  typeParam: Vector[RefType]
-) extends Type {
-  val name: String = origin.name
-  val namespace: Vector[String] = origin.namespace
-  val declares: Map[String, Symbol] = origin.declares
-  val tpeType: TpeType = origin.tpeType
-  def tpeClass: TpeClass = ???
+    val namespace: Vector[String] = Vector()
+    val declares = returnType.declares
+    val tpeType = TpeType.Method
+    val tpeClass = TpeClass.Software
+  }
 
-  def returnType: Type = this
+  case class RefType(
+    origin: DeclaredType,
+    hardwareParam: Vector[Expression],
+    typeParam: Vector[RefType]
+  ) extends Type {
+    val name: String = origin.name
+    val namespace: Vector[String] = origin.namespace
+    val declares: Map[String, Symbol] = origin.declares
+    val tpeType: TpeType = origin.tpeType
+    def tpeClass: TpeClass = ???
+
+    def returnType: Type = this
+  }
 }
 
 sealed trait TpeType
