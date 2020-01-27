@@ -1,6 +1,6 @@
 package tchdl.util
 
-import tchdl.ast.Expression
+import tchdl.ast.{Expression, Definition}
 import scala.collection.immutable
 
 trait Type {
@@ -14,6 +14,16 @@ trait Type {
 }
 
 object Type {
+  case class TypeGenerator(ctx: String, tree: Definition) extends Type {
+    val name = "<?>"
+    val namespace = ???
+    val declares = throw new IllegalAccessException("TypeGenerator prohibits an access of 'declares'")
+    val tpeType = throw new IllegalAccessException("TypeGenerator prohibits an access of 'tpeType'")
+    val tpeClass = throw new IllegalAccessException("TypeGenerator prohibits an access of 'tpeClass'")
+
+    val returnType = throw new IllegalAccessException("TypeGenerator prohibits an access of 'returnType'")
+  }
+
   case class DeclaredType(
     name: String,
     namespace: Vector[String],
