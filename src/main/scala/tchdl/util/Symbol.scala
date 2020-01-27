@@ -1,12 +1,11 @@
 package tchdl.util
 
-class Symbol(
-  val name: String,
-  val namespace: Vector[String],
-  private var _owner: Option[Symbol] = None
-) {
-  def owner: Option[Symbol] = _owner
-  def setOwner(owner: Symbol): Unit = _owner = Some(owner)
+abstract class Symbol(protected var owner: Option[Symbol]) {
+  val name: String
+  val namespace: Vector[String]
+
+  def getOwner: Option[Symbol] = owner
+  def setOnwer(owner: Symbol): Unit = this.owner = Some(owner)
 
   private var _tpe: Option[Type] = None
   def tpe: Type = _tpe.get
@@ -18,7 +17,5 @@ class Symbol(
   def flag: Modifier = _flag
 }
 
-object Symbol {
-  def apply(name: String, namespace: Vector[String]): Symbol = new Symbol(name, namespace, None)
-  def apply(name: String, namespace: Vector[String], owner: Symbol): Symbol = new Symbol(name, namespace, Some(owner))
-}
+case class TypeSymbol(name: String, namespace: Vector[String]) extends Symbol(None)
+case class TermSymbol(name: String, namespace: Vector[String], _owner: Option[Symbol]) extends Symbol(_owner)
