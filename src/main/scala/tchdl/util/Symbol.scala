@@ -1,15 +1,30 @@
 package tchdl.util
 
-abstract class Symbol(protected var owner: Option[Symbol]) {
+abstract class Symbol(protected var owner: Option[Symbol], __tpe: Type) {
   val name: String
   val namespace: Vector[String]
 
   def getOwner: Option[Symbol] = owner
   def setOnwer(owner: Symbol): Unit = this.owner = Some(owner)
 
-  private var _tpe: Option[Type] = None
-  def tpe: Type = _tpe.get
-  def setTpe(tpe: Type): Unit = _tpe = Some(tpe)
+  private var isAlreadyReferenced = false
+  private var _tpe: Type = __tpe
+  def setTpe(tpe: Type): Unit = _tpe = tpe
+  def tpe: Either[Error, Type] = {
+    _tpe match {
+      case _: Type.TypeGenerator if isAlreadyReferenced =>
+        ???
+      case gen: Type.TypeGenerator =>
+        isAlreadyReferenced = true
+        val tpe = gen.generate()
+        _tpe = tpe
+        Right(tpe)
+      case tpe =>
+        Right(tpe)
+    }
+  }
+
+
 
   private var _flag: Modifier = Modifier.NoModifier
   def setFlag(flag: Modifier): Unit = { _flag = flag }
@@ -17,5 +32,8 @@ abstract class Symbol(protected var owner: Option[Symbol]) {
   def flag: Modifier = _flag
 }
 
-case class TypeSymbol(name: String, namespace: Vector[String]) extends Symbol(None)
-case class TermSymbol(name: String, namespace: Vector[String], _owner: Option[Symbol]) extends Symbol(_owner)
+object Symbol {
+  case class TypeSymbol(name: String, namespace: Vector[String]) extends Symbol(None)
+  case class TermSymbol(name: String, namespace: Vector[String], _owner: Option[Symbol]) extends Symbol(_owner)
+}
+
