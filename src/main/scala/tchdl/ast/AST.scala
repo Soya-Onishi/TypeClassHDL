@@ -1,11 +1,12 @@
 package tchdl.ast
 
 import tchdl.util.Modifier
+import tchdl.util.{Type, Symbol}
 
 trait AST
 
 trait Component extends AST
-trait Definition extends AST
+trait Definition extends AST with HasSymbol
 trait Statement extends AST
 trait BlockElem extends AST
 trait Expression extends AST with BlockElem with HasType
@@ -14,7 +15,15 @@ trait SupportParamElem extends AST
 trait WorkingAST extends AST
 
 trait HasType {
-  //TODO: tpe field and related methods will be implemented
+  private var _tpe: Option[Type] = None
+  def tpe: Type = _tpe.get
+  def setTpe(tpe: Type): this.type = { _tpe = Some(tpe); this }
+}
+
+trait HasSymbol {
+  private var _symbol: Option[Symbol] = None
+  def symbol: Symbol = _symbol.get
+  def setSymbol(symbol: Symbol): this.type = { _symbol = Some(symbol); this }
 }
 
 case class CompilationUnit(filename: Option[String], topDefs: Vector[AST with Definition]) extends AST
