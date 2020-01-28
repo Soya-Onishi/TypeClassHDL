@@ -42,5 +42,5 @@ object Modifier {
   case object Module extends Modifier
   case object Sibling extends Modifier
   case object Parent extends Modifier
-  case object Param extends Modifier
+  case object NoExpr extends Modifier
 }

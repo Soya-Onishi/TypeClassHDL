@@ -50,7 +50,7 @@ class ASTGenerator {
     MethodDef(name, hp, tp, bound, params, tpe, blk)
   }
 
-  def template(ctx: TP.TemplateContext): (String, Vector[FieldDef], Vector[TypeDef], Vector[Bound]) = {
+  def template(ctx: TP.TemplateContext): (String, Vector[ValDef], Vector[TypeDef], Vector[Bound]) = {
     val name = ctx.ID.getText
 
     val hp = Option(ctx.hardware_param)
@@ -68,12 +68,12 @@ class ASTGenerator {
     (name, hp, tp, bounds)
   }
 
-  def fieldDefs(ctx: TP.Field_defsContext): Vector[FieldDef] =
+  def fieldDefs(ctx: TP.Field_defsContext): Vector[ValDef] =
     Option(ctx.field_def)
       .map(_.asScala.map(fieldDef).toVector)
       .getOrElse(Vector.empty)
 
-  def fieldDef(ctx: TP.Field_defContext): FieldDef = {
+  def fieldDef(ctx: TP.Field_defContext): ValDef = {
     val modifier = Modifier(ctx.modifier
       .asScala
       .map(_.getChild(0).getText)
@@ -83,7 +83,7 @@ class ASTGenerator {
     val name = ctx.ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    FieldDef(modifier, name, tpe)
+    ValDef(modifier | Modifier.NoExpr, name, Some(tpe), None)
   }
 
   def alwaysDef(ctx: TP.Always_defContext): AlwaysDef = {
