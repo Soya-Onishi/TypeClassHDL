@@ -19,20 +19,19 @@ trait HasType {
 
 case class CompilationUnit(filename: Option[String], topDefs: Vector[AST with Definition]) extends AST
 
-case class ClassDef(name: String, hp: Vector[FieldDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef]) extends Definition
-case class InterfaceDef(name: String, hp: Vector[FieldDef], tp: Vector[TypeDef], bounds: Vector[Bound], components: Vector[Component]) extends Definition
-case class Implement(className: TypeTree, target: TypeTree, hp: Vector[FieldDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[Component]) extends Definition
+case class ClassDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef]) extends Definition
+case class InterfaceDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], components: Vector[Component]) extends Definition
+case class Implement(className: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[Component]) extends Definition
 
-case class ModuleDef(name: String, hp: Vector[FieldDef], tp: Vector[TypeDef], bounds: Vector[Bound], passedModules: Vector[FieldDef], components: Vector[Component]) extends Definition
-case class StructDef(name: String, hp: Vector[FieldDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[FieldDef]) extends Definition
-case class FieldDef(flag: Modifier, name: String, tpeTree: TypeTree) extends Definition with SupportParamElem with HasType
-case class EnumDef(name: String, hp: Vector[FieldDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[EnumFieldDef]) extends Definition
+case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], passedModules: Vector[ValDef], components: Vector[Component]) extends Definition
+case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
+case class EnumDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[EnumFieldDef]) extends Definition
 case class EnumFieldDef(name: String, tpes: Vector[TypeTree]) extends Definition
 
 case class AlwaysDef(name: String, blk: Block) extends Definition with Component
-case class MethodDef(name: String, hp: Vector[FieldDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[FieldDef], retTpe: TypeTree, blk: Option[Block]) extends Definition with Component with HasType
+case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Definition with Component with HasType
 case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Definition with Component with BlockElem
-case class StageDef(name: String, params: Vector[FieldDef], retTpe: TypeTree, states: Option[Vector[StateDef]], blk: Option[Vector[BlockElem]]) extends Definition with Component with HasType
+case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Option[Vector[StateDef]], blk: Option[Vector[BlockElem]]) extends Definition with Component with HasType
 case class StateDef(name: String, blk: Block) extends Definition
 
 case class TypeDef(name: String) extends Definition
@@ -62,11 +61,11 @@ case class Relay(target: String, params: Vector[Expression]) extends Expression
 case class TypeTree(name: String, hp: Vector[Expression], tp: Vector[TypeTree]) extends AST with SupportParamElem with HasType
 
 object WorkingAST {
-  case class HardwareParam(hp: Vector[FieldDef]) extends WorkingAST
+  case class HardwareParam(hp: Vector[ValDef]) extends WorkingAST
   case class TypeParam(tp: Vector[TypeDef]) extends WorkingAST
   case class Bounds(bounds: Vector[Bound]) extends WorkingAST
   case class Inner(inner: Component) extends WorkingAST
-  case class FieldDefs(fields: Vector[FieldDef]) extends WorkingAST
+  case class FieldDefs(fields: Vector[ValDef]) extends WorkingAST
   case class StageBody(state: Vector[StateDef], block: Vector[BlockElem]) extends WorkingAST
   case class Modifiers(modifier: Modifier) extends WorkingAST
   case class ComponentBody(name: String, tpe: Option[TypeTree], expr: Option[Expression]) extends WorkingAST
