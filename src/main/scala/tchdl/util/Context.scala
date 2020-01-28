@@ -23,6 +23,10 @@ case class Context(
   }
 }
 
+object Context {
+  def root(namespace: Vector[String]): Context = Context(None, None, namespace)
+}
+
 trait LookupResult
 object LookupResult {
   case class LookupSuccess(symbols: Seq[Symbol]) extends LookupResult
