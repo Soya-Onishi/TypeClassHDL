@@ -18,11 +18,11 @@ object Type {
   case class TypeGenerator(ctx: Context, tree: Definition) extends Type {
     val name = "<?>"
     val namespace = ctx.namespace
-    val declares = throw new IllegalAccessException("TypeGenerator prohibits an access of 'declares'")
-    val tpeType = throw new IllegalAccessException("TypeGenerator prohibits an access of 'tpeType'")
-    val tpeClass = throw new IllegalAccessException("TypeGenerator prohibits an access of 'tpeClass'")
+    def declares = throw new IllegalAccessException("TypeGenerator prohibits an access of 'declares'")
+    def tpeType = throw new IllegalAccessException("TypeGenerator prohibits an access of 'tpeType'")
+    def tpeClass = throw new IllegalAccessException("TypeGenerator prohibits an access of 'tpeClass'")
 
-    val returnType = throw new IllegalAccessException("TypeGenerator prohibits an access of 'returnType'")
+    def returnType = throw new IllegalAccessException("TypeGenerator prohibits an access of 'returnType'")
 
     def generate(): Type = ???
   }
