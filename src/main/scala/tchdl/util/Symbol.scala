@@ -1,5 +1,7 @@
 package tchdl.util
 
+import tchdl.ast.Definition
+
 abstract class Symbol(protected var owner: Option[Symbol], __tpe: Type) {
   val name: String
   val namespace: Vector[String]
@@ -24,8 +26,6 @@ abstract class Symbol(protected var owner: Option[Symbol], __tpe: Type) {
     }
   }
 
-
-
   private var _flag: Modifier = Modifier.NoModifier
   def setFlag(flag: Modifier): Unit = { _flag = flag }
   def addFlag(flag: Modifier): Unit = { _flag |= flag }
@@ -33,7 +33,23 @@ abstract class Symbol(protected var owner: Option[Symbol], __tpe: Type) {
 }
 
 object Symbol {
-  case class TypeSymbol(name: String, namespace: Vector[String]) extends Symbol(None)
-  case class TermSymbol(name: String, namespace: Vector[String], _owner: Option[Symbol]) extends Symbol(_owner)
+  class TypeSymbol(val name: String, val namespace: Vector[String], __tpe: Type) extends Symbol(None, __tpe)
+
+  object TypeSymbol {
+    def apply(name: String, namespace: Vector[String], tpe: Type): TypeSymbol =
+      new TypeSymbol(name, namespace, tpe)
+  }
+
+  class TermSymbol(
+    val name: String,
+    val namespace: Vector[String],
+    _owner: Option[Symbol],
+    _tpe: Type
+  ) extends Symbol(_owner, _tpe)
+
+  object TermSymbol {
+    def apply(name: String, namespace: Vector[String], owner: Option[Symbol], ctx: Context, tree: Definition): TermSymbol =
+      new TermSymbol(name, namespace, owner, Type.TypeGenerator(ctx, tree))
+  }
 }
 
