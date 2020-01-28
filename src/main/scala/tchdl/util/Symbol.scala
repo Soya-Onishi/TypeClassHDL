@@ -33,23 +33,23 @@ abstract class Symbol(protected var owner: Option[Symbol], __tpe: Type) {
 }
 
 object Symbol {
-  class TypeSymbol(val name: String, val namespace: Vector[String], __tpe: Type) extends Symbol(None, __tpe)
+  class TypeSymbol(val name: String, val namespace: Vector[String], owner: Option[Symbol], tpe: Type) extends Symbol(owner, tpe)
 
   object TypeSymbol {
-    def apply(name: String, namespace: Vector[String], tpe: Type): TypeSymbol =
-      new TypeSymbol(name, namespace, tpe)
+    def apply(name: String, namespace: Vector[String], tpe: Type, owner: Option[Symbol] = None): TypeSymbol =
+      new TypeSymbol(name, namespace, owner, tpe)
   }
 
   class TermSymbol(
     val name: String,
     val namespace: Vector[String],
-    _owner: Option[Symbol],
-    _tpe: Type
-  ) extends Symbol(_owner, _tpe)
+    owner: Option[Symbol],
+    tpe: Type
+  ) extends Symbol(owner, tpe)
 
   object TermSymbol {
-    def apply(name: String, namespace: Vector[String], owner: Option[Symbol], ctx: Context, tree: Definition): TermSymbol =
-      new TermSymbol(name, namespace, owner, Type.TypeGenerator(ctx, tree))
+    def apply(name: String, namespace: Vector[String], tpe: Type, owner: Option[Symbol]): TermSymbol =
+      new TermSymbol(name, namespace, owner, tpe)
   }
 }
 
