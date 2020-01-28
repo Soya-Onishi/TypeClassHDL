@@ -16,7 +16,6 @@ object Modifier {
     case "output" => Output
     case "reg" => Register
     case "public" => Public
-    case "module" => Module
     case "sibling" => Sibling
     case "parent" => Parent
   }
@@ -39,8 +38,13 @@ object Modifier {
   case object Output extends Modifier
   case object Register extends Modifier
   case object Public extends Modifier
-  case object Module extends Modifier
   case object Sibling extends Modifier
   case object Parent extends Modifier
+
+  case object Method extends Modifier
+  case object Always extends Modifier
+  case object Stage extends Modifier
+  case object State extends Modifier
+
   case object NoExpr extends Modifier
 }
