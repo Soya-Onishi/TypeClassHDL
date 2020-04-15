@@ -6,7 +6,6 @@ compilation_unit
 
 top_definition
     : module_def
-    | method_def
     | struct_def
 //    | class_def
 //    | interface_def
@@ -15,7 +14,7 @@ top_definition
     ;
 
 module_def
-    : MODULE template ('(' field_defs ')')? '{' component* '}'
+    : MODULE template ('(' param_defs? ')')? '{' component* '}'
     ;
 
 component
@@ -27,19 +26,27 @@ component
     ;
 
 struct_def
-    : STRUCT template '{' field_defs '}'
+    : STRUCT template '{' field_defs? '}'
     ;
 
 method_def
-    : DEF template '(' field_defs ')' '->' type block?
+    : DEF template '(' param_defs? ')' '->' type block?
+    ;
+
+param_defs
+    : param_def (',' param_def)*
+    ;
+
+param_def
+    : modifier* ID ':' type
     ;
 
 template
-    : ID hardware_param? type_param? bounds?
+    : ID type_param? bounds?
     ;
 
 field_defs
-    : (field_def (',' field_def)*)?
+    : field_def (',' field_def)*
     ;
 
 field_def
@@ -55,7 +62,7 @@ val_def
     ;
 
 stage_def
-    : STAGE ID '(' field_defs ')' '->' type stage_body?
+    : STAGE ID '(' param_defs? ')' '->' type stage_body?
     ;
 
 stage_body
@@ -157,35 +164,32 @@ literal
     ;
 
 type_param
-    : '[' ID (',' ID)* ']'
-    ;
-
-hardware_param
-    : '<' field_defs '>'
+    : '[' param_defs (',' ID)* ']'
+    | '[' ID (',' ID)* ']'
     ;
 
 unit_lit
     : '(' ')'
     ;
 
-type: ID apply_hardparam? apply_typeparam?
+type: ID apply_typeparam?
     ;
 
 /*
 class_def
-    : CLASS ID hardware_param? type_param? bounds? '{' method_def* '}'
+    : CLASS ID type_param? bounds? '{' method_def* '}'
     ;
 
 interface_def
-    : INTERFACE ID hardware_param? type_param? bounds? '{' (method_def | stage_def)* '}'
+    : INTERFACE ID type_param? bounds? '{' (method_def | stage_def)* '}'
     ;
 
 implement
-    : IMPLEMENT hardware_param? type_param? type FOR type bounds? '{' (method_def | stage_def)* '}'
+    : IMPLEMENT type_param? type FOR type bounds? '{' (method_def | stage_def)* '}'
     ;
 
 enum_def
-    : ENUM ID hardware_param? type_param? bounds? '{' enum_field_def+ '}'
+    : ENUM ID type_param? bounds? '{' enum_field_def+ '}'
     ;
 
 enum_field_def
