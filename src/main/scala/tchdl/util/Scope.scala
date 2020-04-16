@@ -1,23 +1,42 @@
 package tchdl.util
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 
-class Scope[T](parent: Option[Scope[T]]) {
-  private val scope = mutable.HashMap[String, T]()
+class Scope(parent: Option[Scope]) {
+  private val tpetab = mutable.HashMap[String, Type]()
+  private val symtab = mutable.HashMap[String, Symbol]()
 
-  def append(name: String, elem: T): Either[Error, Unit] = {
-    if(scope.contains(name)) Left(???)
+  def appendSym(symbol: Symbol): Either[Error, Unit] = {
+    append(symbol.name, symbol, symtab)
+  }
+
+  def lookupSym(name: String): Either[Error, Symbol] = {
+    lookup(name, symtab)
+  }
+
+  def appendType(tpe: Type): Either[Error, Unit] = {
+    append(tpe.name, tpe, tpetab)
+  }
+
+  def lookupType(name: String): Either[Error, Type] = {
+    lookup(name, tpetab)
+  }
+
+  private def append[T](name: String, sym: T, table: mutable.HashMap[String, T]): Either[Error, Unit] = {
+    if(table.contains(name)) Left(???)
     else {
-      scope(name) = elem
+      table(name) = sym
       Right(())
     }
   }
 
-  def lookup(name: String): Either[Error, T] = {
-    scope.get(name) match {
+  @tailrec
+  private def lookup[T](name: String, table: mutable.HashMap[String, T]): Either[Error, T] = {
+    table.get(name) match {
       case Some(elem) => Right(elem)
       case None => parent match {
-        case Some(p) => p.lookup(name)
+        case Some(p) => p.lookup(name, table)
         case None => Left(???)
       }
     }
@@ -25,11 +44,11 @@ class Scope[T](parent: Option[Scope[T]]) {
 }
 
 object Scope {
-  def apply[T](parent: Scope[T]): Scope[T] = {
+  def apply(parent: Scope): Scope = {
     new Scope(Some(parent))
   }
 
-  def root[T](): Scope[T] = {
-    new Scope[T](None)
+  def root(): Scope = {
+    new Scope(None)
   }
 }
