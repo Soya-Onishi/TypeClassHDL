@@ -23,3 +23,13 @@ class Scope[T](parent: Option[Scope[T]]) {
     }
   }
 }
+
+object Scope {
+  def apply[T](parent: Scope[T]): Scope[T] = {
+    new Scope(Some(parent))
+  }
+
+  def root[T](): Scope[T] = {
+    new Scope[T](None)
+  }
+}
