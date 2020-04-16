@@ -14,7 +14,7 @@ top_definition
     ;
 
 module_def
-    : MODULE template ('(' param_defs? ')')? '{' component* '}'
+    : MODULE ID type_param? bounds? ('(' param_defs? ')')? '{' component* '}'
     ;
 
 component
@@ -26,11 +26,11 @@ component
     ;
 
 struct_def
-    : STRUCT template '{' field_defs? '}'
+    : STRUCT ID type_param? bounds? '{' field_defs? '}'
     ;
 
 method_def
-    : DEF template '(' param_defs? ')' '->' type block?
+    : DEF ID type_param? bounds? '(' param_defs? ')' '->' type block?
     ;
 
 param_defs
@@ -39,10 +39,6 @@ param_defs
 
 param_def
     : modifier* ID ':' type
-    ;
-
-template
-    : ID type_param? bounds?
     ;
 
 field_defs
@@ -119,15 +115,11 @@ expr: expr '.' (apply | ID)    # SelectExpr
     ;
 
 apply
-    : ID apply_hardparam? apply_typeparam? '(' args ')'
-    ;
-
-apply_hardparam
-    : '<' expr (',' expr)* '>'
+    : ID apply_typeparam? '(' args ')'
     ;
 
 apply_typeparam
-    : '[' type (',' type)* ']'
+    : '[' expr (',' expr)* ']'
     ;
 
 args: (expr (',' expr)*)?
@@ -164,8 +156,8 @@ literal
     ;
 
 type_param
-    : '[' param_defs (',' ID)* ']'
-    | '[' ID (',' ID)* ']'
+    : '[' param_defs (',' ID)* ']' # WithDependency
+    | '[' ID (',' ID)* ']'         # WithoutDependency
     ;
 
 unit_lit

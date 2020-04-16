@@ -21,9 +21,10 @@ class ASTGenerator {
   }
 
   def moduleDef(ctx: TP.Module_defContext): ModuleDef = {
-    val (name, hp, tp, bound) = template(ctx.template)
-    val otherModules = Option(ctx.field_defs())
-      .map(fieldDefs)
+    val name = ctx.ID.getText
+    val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
+    val otherModules = Option(ctx.param_defs())
+      .map(paramDefs)
       .getOrElse(Vector.empty)
 
     val components = ctx.component
@@ -35,37 +36,39 @@ class ASTGenerator {
   }
 
   def structDef(ctx: TP.Struct_defContext): StructDef = {
-    val (name, hp, tp, bound) = template(ctx.template)
+    val name = ctx.ID.getText
+    val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
     val fields = fieldDefs(ctx.field_defs)
 
     StructDef(name, hp, tp, bound, fields)
   }
 
   def methodDef(ctx: TP.Method_defContext): MethodDef = {
-    val (name, hp, tp, bound) = template(ctx.template)
-    val params = fieldDefs(ctx.field_defs)
+    val name = ctx.ID.getText
+    val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
+    val params = Option(ctx.param_defs())
+      .map(paramDefs)
+      .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
     val blk = Option(ctx.block).map(block)
 
-    MethodDef(name, hp, tp, bound, params, tpe, blk)
+    MethodDef(name, hps, tps, bounds, params, tpe, blk)
   }
 
-  def template(ctx: TP.TemplateContext): (String, Vector[ValDef], Vector[TypeDef], Vector[Bound]) = {
-    val name = ctx.ID.getText
+  def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[Bound]) = {
+    val (hps, tps) = Option(tpCtx)
+      .map(typeParam)
+      .getOrElse(Vector.empty, Vector.empty)
 
-    val hp = Option(ctx.hardware_param)
-      .map(ctx => fieldDefs(ctx.field_defs))
-      .getOrElse(Vector.empty)
+    val bounds = Option(boundsCtx)
+      .map(
+        _.bound
+          .asScala
+          .map(bound)
+          .toVector
+      ).getOrElse(Vector.empty)
 
-    val tp = Option(ctx.type_param)
-      .map(_.ID.asScala.map(_.getText).map(TypeDef.apply).toVector)
-      .getOrElse(Vector.empty)
-
-    val bounds = Option(ctx.bounds)
-      .map(_.bound.asScala.map(bound).toVector)
-      .getOrElse(Vector.empty)
-
-    (name, hp, tp, bounds)
+    (hps, tps, bounds)
   }
 
   def fieldDefs(ctx: TP.Field_defsContext): Vector[ValDef] =
@@ -74,6 +77,25 @@ class ASTGenerator {
       .getOrElse(Vector.empty)
 
   def fieldDef(ctx: TP.Field_defContext): ValDef = {
+    val modifier = Modifier(ctx.modifier
+      .asScala
+      .map(_.getChild(0).getText)
+      .toVector
+    )
+
+    val name = ctx.ID.getText
+    val tpe = typeTree(ctx.`type`())
+
+    ValDef(modifier | Modifier.NoExpr, name, Some(tpe), None)
+  }
+
+  def paramDefs(ctx: TP.Param_defsContext): Vector[ValDef] = {
+    Option(ctx.param_def)
+      .map(_.asScala.map(paramDef).toVector)
+      .getOrElse(Vector.empty)
+  }
+
+  def paramDef(ctx: TP.Param_defContext): ValDef = {
     val modifier = Modifier(ctx.modifier
       .asScala
       .map(_.getChild(0).getText)
@@ -117,7 +139,9 @@ class ASTGenerator {
     }
 
     val name = ctx.ID.getText
-    val params = fieldDefs(ctx.field_defs)
+    val params = Option(ctx.param_defs)
+      .map(paramDefs)
+      .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
     val (states, blks) = Option(ctx.stage_body).map(stageBody) match {
       case Some((states, blks)) => (Some(states), Some(blks))
@@ -184,9 +208,9 @@ class ASTGenerator {
 
   def selectExpr(ctx: TP.SelectExprContext): Expression = Option(ctx.apply) match {
     case Some(applyCtx) =>
-      val Apply(Ident(name), hp, tp, args) = applyCall(applyCtx)
+      val Apply(Ident(name), tp, args) = applyCall(applyCtx)
       val prefix = expr(ctx.expr)
-      Apply(Select(prefix, name), hp, tp, args)
+      Apply(Select(prefix, name), tp, args)
     case None =>
       val prefix = expr(ctx.expr)
       val name = ctx.ID.getText
@@ -201,31 +225,48 @@ class ASTGenerator {
       case "/" => "div"
     }
 
-    Apply(Select(expr(left), name), Vector.empty, Vector.empty, Vector(expr(right)))
+    Apply(Select(expr(left), name), Vector.empty, Vector(expr(right)))
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
     val name = ctx.ID.getText
-    val hps = Option(ctx.apply_hardparam).map(applyHardParam).getOrElse(Vector.empty)
     val tps = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty)
 
-    TypeTree(name, hps, tps)
+    TypeTree(name, tps)
   }
 
   def applyCall(ctx: TP.ApplyContext): Apply = {
     val name = ctx.ID.getText
-    val hp = Option(ctx.apply_hardparam).map(applyHardParam).getOrElse(Vector.empty)
-    val tp = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty)
+    val tps = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty)
     val args = ctx.args.expr.asScala.map(expr).toVector
 
-    Apply(Ident(name), hp, tp, args)
+    Apply(Ident(name), tps, args)
   }
 
-  def applyHardParam(ctx: TP.Apply_hardparamContext): Vector[Expression] =
-    ctx.expr.asScala.map(expr).toVector
+  def typeParam(ctx: TP.Type_paramContext): (Vector[ValDef], Vector[TypeDef]) = {
+    ctx match {
+      case ctx: TP.WithDependencyContext =>
+        val deps = paramDefs(ctx.param_defs)
+        val tps = ctx.ID()
+          .asScala
+          .map(_.getText)
+          .map(TypeDef.apply)
+          .toVector
 
-  def applyTypeParam(ctx: TP.Apply_typeparamContext): Vector[TypeTree] =
-    ctx.`type`.asScala.map(typeTree).toVector
+        (deps, tps)
+      case ctx: TP.WithoutDependencyContext =>
+        val tps = ctx.ID()
+          .asScala
+          .map(_.getText)
+          .map(TypeDef.apply)
+          .toVector
+
+        (Vector.empty, tps)
+    }
+  }
+
+  def applyTypeParam(ctx: TP.Apply_typeparamContext): Vector[Expression] =
+    ctx.expr.asScala.map(expr).toVector
 
   def block(ctx: TP.BlockContext): Block = {
     val elems = ctx.block_elem
