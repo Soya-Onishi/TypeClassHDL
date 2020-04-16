@@ -1,6 +1,7 @@
 package tchdl.typecheck
 
 import tchdl.ast._
+import tchdl.util.TchdlException.ImplimentationErrorException
 import tchdl.util.{Symbol, TchdlException}
 
 class Namer {
@@ -14,93 +15,40 @@ class Namer {
         val namedDefs = topDefs.map(named)
         CompilationUnit(cu.filename, namedDefs)
       case module: ModuleDef =>
-        val namedHp = module.hp.map(named)
-        val namedTp = module.tp.map(named)
-        ??? // val namedPassedModule = ???
-        val namedComponents = module.components.map(named)
-
         val moduleSym: Symbol = ???
 
-        ModuleDef(
-          module.name,
-          namedHp,
-          namedTp,
-          module.bounds,
-          ???,
-          namedComponents
-        ).setSymbol(moduleSym)
-      case s @ StructDef(_, hp, tp, bounds, fields) =>
-        val namedHp = hp.map(named)
-        val namedTp = tp.map(named)
-        val namedFields = fields.map(named)
-
+        module.setSymbol(moduleSym)
+      case struct: StructDef=>
         val structSym: Symbol = ???
 
-        StructDef(
-          s.name,
-          namedHp,
-          namedTp,
-          bounds,
-          namedFields
-        ).setSymbol(structSym)
-      case always @ AlwaysDef(_, blk) =>
-        val namedBlk = named(blk)
-
+        struct.setSymbol(structSym)
+      case always: AlwaysDef =>
         val alwaysSym: Symbol = ???
 
-        AlwaysDef(always.name, namedBlk).setSymbol(alwaysSym)
-      case method @ MethodDef(_, hp, tp, _, params, _, blk) =>
-        val namedHp = hp.map(named)
-        val namedTp = tp.map(named)
-        val namedParams = params.map(named)
-        val namedBlk = named(blk)
-
+        always.setSymbol(alwaysSym)
+      case method: MethodDef =>
         val methodSym: Symbol = ???
 
-        MethodDef(
-          method.name,
-          namedHp,
-          namedTp,
-          method.bounds,
-          namedParams,
-          method.retTpe,
-          namedBlk
-        ).setSymbol(methodSym)
+        method.setSymbol(methodSym)
       case vdef: ValDef =>
-        val namedExpr = vdef.expr.map(named)
-
         val valSym: Symbol = ???
 
-        ValDef(vdef.flag, vdef.name, vdef.tpeTree, namedExpr).setSymbol(valSym)
+        vdef.setSymbol(valSym)
       case stage: StageDef =>
-        val namedParams = stage.params.map(named)
-        val namedStates = stage.states.map(named)
-        val namedBlk = stage.blk.map(named)
-
         val stageSym: Symbol = ???
 
-        StageDef(
-          stage.name,
-          namedParams,
-          stage.retTpe,
-          namedStates,
-          namedBlk
-        ).setSymbol(stageSym)
+        stage.setSymbol(stageSym)
       case state: StateDef =>
-        val namedBlk = named(state.blk)
-
         val stateSym: Symbol = ???
 
-        StateDef(state.name, namedBlk).setSymbol(stateSym)
+        state.setSymbol(stateSym)
       case typeDef: TypeDef =>
         val typeSym: Symbol = ???
 
-        TypeDef(typeDef.name).setSymbol(typeSym)
-      case blk: Block =>
-        val namedElems = blk.elems.map(named)
-
-        Block(namedElems, blk.last)
-      case _ => ast
+        typeDef.setSymbol(typeSym)
+      case _ =>
+        val msg = s"Namer is not implemented for [${ast.getClass.getName}]"
+        throw new ImplimentationErrorException(msg)
     }
 
     namedAST.asInstanceOf[T]
