@@ -1,36 +1,50 @@
 package tchdl.util
 
-import scala.collection.mutable
-
-case class Context(
-  parent: Option[Context],
-  owner: Option[Symbol],
-  namespace: Vector[String],
+class Context(
+ val parent: Option[Context],
+ val name: Option[String],
 ) {
-  val declares = mutable.Map[String, Seq[Symbol]]()
+  val scope: Scope = new Scope
+  val namespace: NameSpace = NameSpace(this)
+  private var errors: Vector[Error] = Vector.empty
 
-  def enter(name: String, symbol: Symbol): Unit = declares.get(name) match {
-    case None => declares(name) = Seq(symbol)
-    case Some(symbols) => declares(name) = symbols :+ symbol
+  def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
+  def lookup(name: String): Either[Error, Symbol] = scope.lookup(name) match {
+    case Some(elem) => Right(elem)
+    case None => parent match {
+      case Some(owner) => owner.lookup(name)
+      case None => Left(???)
+    }
   }
 
-  def lookup(name: String): LookupResult = declares.get(name) match {
-    case Some(seq) => LookupResult.LookupSuccess(seq)
-    case None => parent match {
-      case Some(parent) => parent.lookup(name)
-      case None => LookupResult.LookupFailure(name)
-    }
+  def appendError(err: Error): Unit = parent match {
+    case Some(owner) => owner.appendError(err)
+    case None => errors = err +: errors
   }
 }
 
 object Context {
-  def root(namespace: Vector[String]): Context = Context(None, None, namespace)
+  def apply(owner: Context): Context = new Context(Some(owner), None)
+  def apply(owner: Context, name: String): Context = new Context(Some(owner), Some(name))
+  def root(pkgName: String): Context = new Context(None, Some(pkgName))
 }
 
-trait LookupResult
-object LookupResult {
-  case class LookupSuccess(symbols: Seq[Symbol]) extends LookupResult
-  case class LookupFailure(name: String) extends LookupResult
+class NameSpace(val namespace: Vector[String]) {
+  def append(name: String) = new NameSpace(namespace.appended(name))
+  def toVec: Vector[String] = namespace
 }
 
+object NameSpace {
+  def apply(ctx: Context): NameSpace = {
+    (ctx.parent, ctx.name) match {
+      case (Some(parent), None) => parent.namespace
+      case (Some(parent), Some(name)) => parent.namespace.append(name)
+      case (None, name) =>
+        // name must be Some because when ctx.owner is None,
+        // it is top level context and it should have package name.
+        new NameSpace(Vector(name.get))
+    }
+  }
 
+  def empty = new NameSpace(Vector.empty)
+}
