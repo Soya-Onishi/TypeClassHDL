@@ -1,11 +1,15 @@
 package tchdl.ast
 
 import tchdl.util.Modifier
-import tchdl.util.{Type, Symbol}
+import tchdl.util.{Type, Symbol, Scope}
+
 
 trait AST
 
-trait Component extends AST
+trait Component extends AST {
+  this: Definition =>
+}
+
 trait Definition extends AST with HasSymbol
 trait Statement extends AST
 trait BlockElem extends AST
@@ -15,9 +19,9 @@ trait SupportParamElem extends AST
 trait WorkingAST extends AST
 
 trait HasType {
-  private var _tpe: Option[Type] = None
-  def tpe: Type = _tpe.get
-  def setTpe(tpe: Type): this.type = { _tpe = Some(tpe); this }
+  private var _tpe: Option[Type.RefType] = None
+  def tpe: Type.RefType = _tpe.get
+  def setTpe(tpe: Type.RefType): this.type = { _tpe = Some(tpe); this }
 }
 
 trait HasSymbol {
@@ -26,22 +30,24 @@ trait HasSymbol {
   def setSymbol(symbol: Symbol): this.type = { _symbol = Some(symbol); this }
 }
 
-case class CompilationUnit(filename: Option[String], topDefs: Vector[AST with Definition]) extends AST
+case class CompilationUnit(filename: Option[String], pkgName: String, topDefs: Vector[Definition]) extends AST
 
 case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], passedModules: Vector[ValDef], components: Vector[Component]) extends Definition
 case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
 
 case class AlwaysDef(name: String, blk: Block) extends Definition with Component
-case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Definition with Component with HasType
+case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Definition with Component
 case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Definition with Component with BlockElem
-case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Option[Vector[StateDef]], blk: Option[Vector[BlockElem]]) extends Definition with Component with HasType
+case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Definition with Component
 case class StateDef(name: String, blk: Block) extends Definition
 
 case class TypeDef(name: String) extends Definition
 
 case class Bound(target: String, constraints: Vector[TypeTree]) extends AST
 
-case class Ident(name: String) extends Expression
+case class Ident(name: String) extends Expression with HasSymbol
+case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
+case class ApplyTypeParams(suffix: Expression, tp: Vector[Expression]) extends Expression
 case class Apply(name: Expression, tp: Vector[Expression], args: Vector[Expression]) extends Expression
 case class Select(expr: Expression, name: String) extends Expression
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
