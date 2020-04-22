@@ -1,15 +1,16 @@
 package tchdl.parser
 
 import tchdl.ast._
-import tchdl.util.Modifier
+import tchdl.util.{Modifier, NameSpace}
 import tchdl.antlr.{TchdlParser => TP}
 import scala.jdk.CollectionConverters._
 
 class ASTGenerator {
   def apply(ctx: TP.Compilation_unitContext, filename: String): CompilationUnit = {
+    val pkgName = NameSpace(ctx.pkg_name.ID.asScala.map(_.getText).toVector)
     val defs = ctx.top_definition.asScala.map(topDefinition).toVector
 
-    CompilationUnit(Some(filename), defs)
+    CompilationUnit(Some(filename), pkgName, defs)
   }
 
   def topDefinition(ctx: TP.Top_definitionContext): Definition = {
@@ -143,10 +144,10 @@ class ASTGenerator {
       .map(paramDefs)
       .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
-    val (states, blks) = Option(ctx.stage_body).map(stageBody) match {
-      case Some((states, blks)) => (Some(states), Some(blks))
-      case None => (None, None)
-    }
+    val (states, blks) =
+      Option(ctx.stage_body)
+        .map(stageBody)
+        .getOrElse((Vector.empty, Vector.empty))
 
     StageDef(name, params, tpe, states, blks)
   }
@@ -208,16 +209,21 @@ class ASTGenerator {
 
   def selectExpr(ctx: TP.SelectExprContext): Expression = Option(ctx.apply) match {
     case Some(applyCtx) =>
-      val Apply(Ident(name), tp, args) = applyCall(applyCtx)
       val prefix = expr(ctx.expr)
-      Apply(Select(prefix, name), tp, args)
+
+      applyCall(applyCtx) match {
+        case ApplyParams(Ident(name), args) =>
+          ApplyParams(Select(prefix, name), args)
+        case ApplyParams(ApplyTypeParams(Ident(name), tps), args) =>
+          ApplyParams(ApplyTypeParams(Select(prefix, name), tps), args)
+      }
     case None =>
       val prefix = expr(ctx.expr)
       val name = ctx.ID.getText
       Select(prefix, name)
   }
 
-  def binop(left: TP.ExprContext, right: TP.ExprContext, op: String): Apply = {
+  def binop(left: TP.ExprContext, right: TP.ExprContext, op: String): ApplyParams = {
     val name = op match {
       case "+" => "add"
       case "-" => "sub"
@@ -225,7 +231,7 @@ class ASTGenerator {
       case "/" => "div"
     }
 
-    Apply(Select(expr(left), name), Vector.empty, Vector(expr(right)))
+    ApplyParams(Select(expr(left), name), Vector(expr(right)))
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
@@ -235,12 +241,15 @@ class ASTGenerator {
     TypeTree(name, tps)
   }
 
-  def applyCall(ctx: TP.ApplyContext): Apply = {
+  def applyCall(ctx: TP.ApplyContext): ApplyParams = {
     val name = ctx.ID.getText
-    val tps = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty)
+    val tpsOpt = Option(ctx.apply_typeparam).map(applyTypeParam)
     val args = ctx.args.expr.asScala.map(expr).toVector
 
-    Apply(Ident(name), tps, args)
+    tpsOpt match {
+      case Some(tps) => ApplyParams(ApplyTypeParams(Ident(name), tps), args)
+      case None => ApplyParams(Ident(name), args)
+    }
   }
 
   def typeParam(ctx: TP.Type_paramContext): (Vector[ValDef], Vector[TypeDef]) = {

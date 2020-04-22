@@ -1,7 +1,8 @@
 package tchdl.ast
 
 import tchdl.util.Modifier
-import tchdl.util.{Type, Symbol, Scope}
+import tchdl.util.{Type, Symbol, NameSpace}
+import tchdl.cloneAST
 
 
 trait AST
@@ -19,9 +20,9 @@ trait SupportParamElem extends AST
 trait WorkingAST extends AST
 
 trait HasType {
-  private var _tpe: Option[Type.RefType] = None
-  def tpe: Type.RefType = _tpe.get
-  def setTpe(tpe: Type.RefType): this.type = { _tpe = Some(tpe); this }
+  private var _tpe: Option[Type] = None
+  def tpe: Type = _tpe.get
+  def setTpe(tpe: Type): this.type = { _tpe = Some(tpe); this }
 }
 
 trait HasSymbol {
@@ -30,50 +31,46 @@ trait HasSymbol {
   def setSymbol(symbol: Symbol): this.type = { _symbol = Some(symbol); this }
 }
 
-case class CompilationUnit(filename: Option[String], pkgName: String, topDefs: Vector[Definition]) extends AST
+@cloneAST case class CompilationUnit(filename: Option[String], pkgName: NameSpace, topDefs: Vector[Definition]) extends AST
 
-case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], passedModules: Vector[ValDef], components: Vector[Component]) extends Definition
-case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
+@cloneAST case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], passedModules: Vector[ValDef], components: Vector[Component]) extends Definition
+@cloneAST case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
 
-case class AlwaysDef(name: String, blk: Block) extends Definition with Component
-case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Definition with Component
-case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Definition with Component with BlockElem
-case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Definition with Component
-case class StateDef(name: String, blk: Block) extends Definition
+@cloneAST case class AlwaysDef(name: String, blk: Block) extends Definition with Component
+@cloneAST case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Definition with Component
+@cloneAST case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Definition with Component with BlockElem
+@cloneAST case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Definition with Component
+@cloneAST case class StateDef(name: String, blk: Block) extends Definition
 
-case class TypeDef(name: String) extends Definition
+@cloneAST case class TypeDef(name: String) extends Definition
 
-case class Bound(target: String, constraints: Vector[TypeTree]) extends AST
+@cloneAST case class Bound(target: String, constraints: Vector[TypeTree]) extends AST
 
-case class Ident(name: String) extends Expression with HasSymbol
-case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
-case class ApplyTypeParams(suffix: Expression, tp: Vector[Expression]) extends Expression
-case class Apply(name: Expression, tp: Vector[Expression], args: Vector[Expression]) extends Expression
-case class Select(expr: Expression, name: String) extends Expression
-case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
-case class Construct(name: TypeTree, pairs: Vector[ConstructPair]) extends Expression
-case class ConstructPair(name: String, expr: Expression) extends AST
-case class Self() extends Expression
-case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
-case class BitLiteral(value: BigInt, length: Int) extends Expression
-case class IntLiteral(value: Int) extends Expression
-case class UnitLiteral() extends Expression
-case class StringLiteral(str: String) extends Expression
+@cloneAST case class Ident(name: String) extends Expression with HasSymbol
+@cloneAST case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
+@cloneAST case class ApplyTypeParams(suffix: Expression, tp: Vector[Expression]) extends Expression
+@cloneAST case class Select(expr: Expression, name: String) extends Expression
+@cloneAST case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
+@cloneAST case class Construct(name: TypeTree, pairs: Vector[ConstructPair]) extends Expression
+@cloneAST case class ConstructPair(name: String, expr: Expression) extends AST
+@cloneAST case class Self() extends Expression
+@cloneAST case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
+@cloneAST case class BitLiteral(value: BigInt, length: Int) extends Expression
+@cloneAST case class IntLiteral(value: Int) extends Expression
+@cloneAST case class UnitLiteral() extends Expression
+@cloneAST case class StringLiteral(str: String) extends Expression
 
-case class Finish() extends Expression
-case class Goto(target: String) extends Expression
-case class Generate(target: String, params: Vector[Expression]) extends Expression
-case class Relay(target: String, params: Vector[Expression]) extends Expression
+@cloneAST case class Finish() extends Expression
+@cloneAST case class Goto(target: String) extends Expression
+@cloneAST case class Generate(target: String, params: Vector[Expression]) extends Expression
+@cloneAST case class Relay(target: String, params: Vector[Expression]) extends Expression
 
-case class TypeTree(name: String, tp: Vector[Expression]) extends AST with HasType
-
-object WorkingAST {
-  case class HardwareParam(hp: Vector[ValDef]) extends WorkingAST
-  case class TypeParam(tp: Vector[TypeDef]) extends WorkingAST
-  case class Bounds(bounds: Vector[Bound]) extends WorkingAST
-  case class Inner(inner: Component) extends WorkingAST
-  case class FieldDefs(fields: Vector[ValDef]) extends WorkingAST
-  case class StageBody(state: Vector[StateDef], block: Vector[BlockElem]) extends WorkingAST
-  case class Modifiers(modifier: Modifier) extends WorkingAST
-  case class ComponentBody(name: String, tpe: Option[TypeTree], expr: Option[Expression]) extends WorkingAST
-}
+// TODO: Add hp field for TypeTree
+//       For now, there are only name and tp field.
+//       However, this probably cause problem after Typer
+//       because it may be difficult to detect tp's element (i.e. Expression)
+//       as type parameter or hardware parameter
+//
+//       Before typer, hp: Vector[Expression] has all tree and
+//       tp: Vector[TypeTree] has no tree.
+@cloneAST case class TypeTree(name: String, tp: Vector[Expression]) extends AST with HasType

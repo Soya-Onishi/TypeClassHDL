@@ -1,7 +1,11 @@
 grammar Tchdl;
 
 compilation_unit
-    : top_definition* EOF
+    : pkg_name top_definition* EOF
+    ;
+
+pkg_name
+    : PACKAGE ID ('.' ID)*
     ;
 
 top_definition
@@ -189,6 +193,7 @@ enum_field_def
     ;
 */
 
+PACKAGE: 'package';
 CLASS: 'class';
 INTERFACE: 'interface';
 IMPLEMENT: 'impl';
