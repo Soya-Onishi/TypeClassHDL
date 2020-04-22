@@ -13,6 +13,9 @@ lazy val commonSettings = Seq(
   libraryDependencies ++= Seq(
     "org.scalatest" %% "scalatest" % "3.1.0" % "test",
   ),
+  scalacOptions ++= Seq(
+    "-Ymacro-annotations"
+  )
 )
 
 
@@ -21,4 +24,14 @@ lazy val root = (project in file("."))
     commonSettings,
     antlr4Settings,
     name := "root",
+  ).dependsOn(macros)
+
+
+lazy val macros = (project in file("macros"))
+  .settings(
+    commonSettings,
+    name := "macros",
+    libraryDependencies ++= Seq(
+      scalaOrganization.value % "scala-reflect" % scalaVersion.value % "provided",
+    )
   )
