@@ -1,8 +1,10 @@
 package tchdl.parser
 
+import org.antlr.v4.runtime.tree.TerminalNode
 import tchdl.ast._
 import tchdl.util.{Modifier, NameSpace}
 import tchdl.antlr.{TchdlParser => TP}
+
 import scala.jdk.CollectionConverters._
 
 class ASTGenerator {
@@ -22,18 +24,27 @@ class ASTGenerator {
   }
 
   def moduleDef(ctx: TP.Module_defContext): ModuleDef = {
+    def paramModules[T](params: Option[T])(ids: T => java.util.List[TerminalNode])(types: T => java.util.List[TP.TypeContext]): Vector[ValDef] =
+      params.map{ ctx =>
+        val idents = ids(ctx).asScala.map(_.getText)
+        val tpes = types(ctx).asScala.map(typeTree)
+
+        idents zip tpes
+      }.map { _.map {
+        case (ident, tpe) => ValDef(Modifier.NoModifier, ident, Some(tpe), None)
+      }}.getOrElse(Vector.empty).toVector
+
     val name = ctx.ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
-    val otherModules = Option(ctx.param_defs())
-      .map(paramDefs)
-      .getOrElse(Vector.empty)
+    val parents = paramModules(Option(ctx.parents))(_.ID)(_.`type`)
+    val siblings = paramModules(Option(ctx.siblings))(_.ID)(_.`type`)
 
     val components = ctx.component
       .asScala
       .map(component)
       .toVector
 
-    ModuleDef(name, hp, tp, bound, otherModules, components)
+    ModuleDef(name, hp, tp, bound, parents, siblings, components)
   }
 
   def structDef(ctx: TP.Struct_defContext): StructDef = {
@@ -166,6 +177,12 @@ class ASTGenerator {
     ValDef(modifier, name, tpe, expr)
   }
 
+  def submoduleDef(ctx: TP.Submodule_defContext): ValDef = {
+    val (name, tpe, expr) = componentBody(ctx.component_def_body)
+
+    ValDef(Modifier.NoModifier, name, tpe, expr)
+  }
+
   def regDef(ctx: TP.Reg_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
 
@@ -236,9 +253,9 @@ class ASTGenerator {
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
     val name = ctx.ID.getText
-    val tps = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty)
+    val hps = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty)
 
-    TypeTree(name, tps)
+    TypeTree(name, hps, Vector.empty)
   }
 
   def applyCall(ctx: TP.ApplyContext): ApplyParams = {
@@ -336,6 +353,7 @@ class ASTGenerator {
 
   def component(ctx: TP.ComponentContext): Component = ctx.getChild(0) match {
     case ctx: TP.Port_defContext   => portDef(ctx)
+    case ctx: TP.Submodule_defContext => submoduleDef(ctx)
     case ctx: TP.Reg_defContext    => regDef(ctx)
     case ctx: TP.Method_defContext => methodDef(ctx)
     case ctx: TP.Stage_defContext  => stageDef(ctx)

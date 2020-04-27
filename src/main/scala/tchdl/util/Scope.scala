@@ -6,7 +6,8 @@ class Scope {
   private val table = mutable.HashMap[String, Symbol]()
 
   def append(symbol: Symbol): Either[Error, Unit] = {
-    if (table.contains(symbol.name)) Left(???)
+    if (table.contains(symbol.name))
+      Left(Error.DefinitionNameConflict(symbol.name))
     else {
       table(symbol.name) = symbol
       Right(())

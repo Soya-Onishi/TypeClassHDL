@@ -2,7 +2,6 @@ package tchdl
 
 import tchdl.ast._
 import tchdl.util.{Modifier, Context, Symbol}
-import tchdl.typecheck.SymbolMaker
 import org.scalatest.funsuite.AnyFunSuite
 
 class SymbolMakerTest extends AnyFunSuite {

@@ -5,19 +5,14 @@ import tchdl.util.{Type, Symbol, NameSpace}
 import tchdl.cloneAST
 
 
-trait AST
+sealed trait AST
 
-trait Component extends AST {
-  this: Definition =>
-}
-
-trait Definition extends AST with HasSymbol
-trait Statement extends AST
-trait BlockElem extends AST
-trait Expression extends AST with BlockElem with HasType
-trait SupportParamElem extends AST
-
-trait WorkingAST extends AST
+sealed trait Component extends AST with Definition
+sealed trait Definition extends AST with HasSymbol
+sealed trait Statement extends AST
+sealed trait BlockElem extends AST
+sealed trait Expression extends AST with BlockElem with HasType
+sealed trait SupportParamElem extends AST
 
 trait HasType {
   private var _tpe: Option[Type] = None
@@ -33,13 +28,13 @@ trait HasSymbol {
 
 @cloneAST case class CompilationUnit(filename: Option[String], pkgName: NameSpace, topDefs: Vector[Definition]) extends AST
 
-@cloneAST case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], passedModules: Vector[ValDef], components: Vector[Component]) extends Definition
+@cloneAST case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], parents: Vector[ValDef], siblings: Vector[ValDef], components: Vector[Component]) extends Definition
 @cloneAST case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
 
-@cloneAST case class AlwaysDef(name: String, blk: Block) extends Definition with Component
-@cloneAST case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Definition with Component
-@cloneAST case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Definition with Component with BlockElem
-@cloneAST case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Definition with Component
+@cloneAST case class AlwaysDef(name: String, blk: Block) extends Component
+@cloneAST case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
+@cloneAST case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Component with BlockElem
+@cloneAST case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component
 @cloneAST case class StateDef(name: String, blk: Block) extends Definition
 
 @cloneAST case class TypeDef(name: String) extends Definition
@@ -49,6 +44,7 @@ trait HasSymbol {
 @cloneAST case class Ident(name: String) extends Expression with HasSymbol
 @cloneAST case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
 @cloneAST case class ApplyTypeParams(suffix: Expression, tp: Vector[Expression]) extends Expression
+@cloneAST case class Apply(suffix: Expression, hp: Vector[Expression], tp: Vector[TypeTree], args: Vector[Expression]) extends Expression
 @cloneAST case class Select(expr: Expression, name: String) extends Expression
 @cloneAST case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
 @cloneAST case class Construct(name: TypeTree, pairs: Vector[ConstructPair]) extends Expression
@@ -73,4 +69,4 @@ trait HasSymbol {
 //
 //       Before typer, hp: Vector[Expression] has all tree and
 //       tp: Vector[TypeTree] has no tree.
-@cloneAST case class TypeTree(name: String, tp: Vector[Expression]) extends AST with HasType
+@cloneAST case class TypeTree(name: String, hp: Vector[Expression], tp: Vector[TypeTree]) extends AST with HasType

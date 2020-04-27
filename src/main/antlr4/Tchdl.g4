@@ -18,11 +18,20 @@ top_definition
     ;
 
 module_def
-    : MODULE ID type_param? bounds? ('(' param_defs? ')')? '{' component* '}'
+    : MODULE ID type_param? bounds? ('(' parents? siblings? ')')? '{' component* '}'
+    ;
+
+parents
+    : PARENT ':' ID ':' type (',' ID ':' type)*
+    ;
+
+siblings
+    : SIBLING ':' ID ':' type (',' ID ':' type)*
     ;
 
 component
     : port_def
+    | submodule_def
     | reg_def
     | method_def
     | stage_def
@@ -51,6 +60,10 @@ field_defs
 
 field_def
     : modifier* ID ':' type
+    ;
+
+submodule_def
+    : MOD component_def_body
     ;
 
 always_def
@@ -209,6 +222,7 @@ INPUT: 'input';
 OUTPUT: 'output';
 INTERNAL: 'internal';
 REG: 'reg';
+MOD: 'mod';
 SIBLING: 'sibling';
 PARENT: 'parent';
 PUBLIC: 'public';
