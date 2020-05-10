@@ -17,6 +17,8 @@ class Scope {
   def lookup(name: String): Option[Symbol] = {
     table.get(name)
   }
+
+  def toMap: Map[String, Symbol] = table.toMap
 }
 
 object Scope {

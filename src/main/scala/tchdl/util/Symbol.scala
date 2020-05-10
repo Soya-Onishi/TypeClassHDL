@@ -1,17 +1,17 @@
 package tchdl.util
 
-import tchdl.util.TchdlException.ImplimentationErrorException
+import tchdl.typecheck.{ImplementContainer, ImplementClassContainer, ImplementInterfaceContainer}
+import tchdl.util.TchdlException.ImplementationErrorException
 
-abstract class Symbol(__tpe: Type, __flag: Modifier) {
-  val name: String
+sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   val path: NameSpace
   val visibility: Visibility
 
+  def name: String = path.name.get
+
   private var isAlreadyReferenced = false
-  private var _tpe: Type = __tpe
-
+  protected var _tpe: Type = __tpe
   def setTpe(tpe: Type): Unit = _tpe = tpe
-
   def tpe: Type = {
     val isReferenced = isAlreadyReferenced
     isAlreadyReferenced = true
@@ -29,21 +29,17 @@ abstract class Symbol(__tpe: Type, __flag: Modifier) {
   }
 
   private var _flag: Modifier = __flag
-
   def setFlag(flag: Modifier): this.type = {
     _flag = flag;
     this
   }
-
   def addFlag(flag: Modifier): this.type = {
     _flag |= flag;
     this
   }
-
   def hasFlag(flag: Modifier): Boolean = {
     _flag.hasFlag(flag)
   }
-
   def flag: Modifier = _flag
 
   override def equals(obj: Any): Boolean = obj match {
@@ -51,65 +47,114 @@ abstract class Symbol(__tpe: Type, __flag: Modifier) {
     case _ => false
   }
 
-  override def hashCode(): Int = this.getClass.hashCode + this.path.hashCode + this.name.hashCode
+  override def hashCode(): Int = this.getClass.hashCode + this.path.hashCode
 
   def asTypeSymbol: Symbol.TypeSymbol = this.asInstanceOf[Symbol.TypeSymbol]
-
   def asTermSymbol: Symbol.TermSymbol = this.asInstanceOf[Symbol.TermSymbol]
+  def asInterfaceSymbol: Symbol.InterfaceSymbol = this.asInstanceOf[Symbol.InterfaceSymbol]
+  def asTypeParamSymbol: Symbol.TypeParamSymbol = this.asInstanceOf[Symbol.TypeParamSymbol]
+  def asImplementSymbol: Symbol.ImplementSymbol = this.asInstanceOf[Symbol.ImplementSymbol]
+
+  def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]
+  def isFieldTypeSymbol: Boolean = this.isInstanceOf[Symbol.FieldTypeSymbol]
+  def isMethodSymbol: Boolean = this.isInstanceOf[Symbol.MethodSymbol]
+  def isInterfaceSymbol: Boolean = this.isInstanceOf[Symbol.InterfaceSymbol]
 }
 
 trait HasOwner extends Symbol {
   val owner: Symbol
 }
 
-object Symbol {
+trait HasImpls {
+  import scala.collection.mutable
 
+  type ImplType <: ImplementContainer
+
+  private val _impls = mutable.Map[Int, ImplType]()
+
+  def appendImpl(implTree: ImplType#TreeType, impl: ImplType): Unit = _impls(implTree.id) = impl
+  def lookupImpl(tpe: Type.RefType): Vector[ImplType] = _impls.values.filter(_.isSubject(tpe)).toVector
+  def removeImpl(id: Int): Unit = _impls.remove(id)
+  def impls: Vector[ImplType] = _impls.values.toVector
+}
+
+object Symbol {
   abstract class TypeSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
 
+  abstract class EntityTypeSymbol(tpe: Type, flags: Modifier) extends TypeSymbol(tpe, flags) with HasImpls
+
   class StructSymbol(
-    val name: String,
     val path: NameSpace,
     val visibility: Visibility,
     flags: Modifier,
     tpe: Type
-  ) extends TypeSymbol(tpe, flags)
+  ) extends EntityTypeSymbol(tpe, flags) {
+    override type ImplType = ImplementClassContainer
+  }
 
   object StructSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): StructSymbol =
-      new StructSymbol(name, path, visibility, flags, tpe)
+      new StructSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
   class ModuleSymbol(
-    val name: String,
     val path: NameSpace,
     val visibility: Visibility,
     flags: Modifier,
     tpe: Type
-  ) extends TypeSymbol(tpe, flags)
+  ) extends EntityTypeSymbol(tpe, flags) {
+    override type ImplType = ImplementClassContainer
+  }
 
   object ModuleSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): ModuleSymbol =
-      new ModuleSymbol(name, path, visibility, flags, tpe)
+      new ModuleSymbol(path.appendName(name), visibility, flags, tpe)
+  }
+
+  class InterfaceSymbol(
+    val path: NameSpace,
+    val visibility: Visibility,
+    flags: Modifier,
+    tpe: Type,
+  ) extends EntityTypeSymbol(tpe, flags) {
+    override type ImplType = ImplementInterfaceContainer
+  }
+
+  object InterfaceSymbol {
+    def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): InterfaceSymbol =
+      new InterfaceSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
   class TypeParamSymbol(
-    val name: String,
     val path: NameSpace,
     val owner: Symbol,
     tpe: Type
   ) extends TypeSymbol(tpe, Modifier.NoModifier) with HasOwner {
     override val visibility: Visibility = Visibility.Private
+
+    private var _bounds: Option[Vector[Type.RefType]] = None
+    def setBounds(bounds: Vector[Type.RefType]): Unit =
+      if(_bounds.isDefined) throw new ImplementationErrorException("bounds already assigned")
+      else _bounds = Some(bounds)
+    def getBounds: Vector[Type.RefType] = _bounds.getOrElse(Vector.empty)
   }
 
   object TypeParamSymbol {
     def apply(name: String, path: NameSpace, owner: Symbol, tpe: Type): TypeParamSymbol =
-      new TypeParamSymbol(name, path, owner, tpe)
+      new TypeParamSymbol(path.appendName(name), owner, tpe)
+  }
+
+  class FieldTypeSymbol(
+    val path: NameSpace,
+    tpe: Type,
+    flags: Modifier
+  ) extends TypeSymbol(tpe, flags) {
+    override val visibility: Visibility = Visibility.Public
   }
 
   abstract class TermSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
 
   class VariableSymbol(
-    val name: String,
     val path: NameSpace,
     val visibility: Visibility,
     val owner: Symbol,
@@ -119,11 +164,10 @@ object Symbol {
 
   object VariableSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, owner: Symbol, flags: Modifier, tpe: Type): VariableSymbol =
-      new VariableSymbol(name, path, visibility, owner, flags, tpe)
+      new VariableSymbol(path.appendName(name), visibility, owner, flags, tpe)
   }
 
   class MethodSymbol(
-    val name: String,
     val path: NameSpace,
     val visibility: Visibility,
     val owner: Symbol,
@@ -133,11 +177,10 @@ object Symbol {
 
   object MethodSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, owner: Symbol, flags: Modifier, tpe: Type): MethodSymbol =
-      new MethodSymbol(name, path, visibility, owner, flags, tpe)
+      new MethodSymbol(path.appendName(name), visibility, owner, flags, tpe)
   }
 
   class AlwaysSymbol(
-    val name: String,
     val path: NameSpace,
     val owner: Symbol
   ) extends TermSymbol(Type.NoType, Modifier.NoModifier) with HasOwner {
@@ -146,11 +189,10 @@ object Symbol {
 
   object AlwaysSymbol {
     def apply(name: String, path: NameSpace, owner: Symbol): AlwaysSymbol =
-      new AlwaysSymbol(name, path, owner)
+      new AlwaysSymbol(path.appendName(name), owner)
   }
 
   class StageSymbol(
-    val name: String,
     val path: NameSpace,
     val owner: Symbol,
     tpe: Type
@@ -160,11 +202,10 @@ object Symbol {
 
   object StageSymbol {
     def apply(name: String, path: NameSpace, owner: Symbol, tpe: Type): StageSymbol =
-      new StageSymbol(name, path, owner, tpe)
+      new StageSymbol(path.appendName(name), owner, tpe)
   }
 
   class StateSymbol(
-    val name: String,
     val path: NameSpace,
     val owner: Symbol
   ) extends Symbol(Type.NoType, Modifier.NoModifier) with HasOwner {
@@ -173,7 +214,27 @@ object Symbol {
 
   object StateSymbol {
     def apply(name: String, path: NameSpace, owner: Symbol): StateSymbol =
-      new StateSymbol(name, path, owner)
+      new StateSymbol(path.appendName(name), owner)
+  }
+
+  class ImplementSymbol(
+    val treeID: Int,
+    val path: NameSpace
+  ) extends Symbol(null, Modifier.NoModifier) {
+    override val visibility: Visibility = Visibility.Public
+
+    override def setTpe(tpe: Type): Unit =
+      throw new ImplementationErrorException("ImplementSymbol does not allow refer to setTpe")
+    override def tpe: Type =
+      throw new ImplementationErrorException("ImplementSymbol does not allow refer to tpe")
+
+    override def hashCode(): Int = treeID.hashCode() + path.hashCode()
+  }
+
+  object ImplementSymbol {
+    def apply(id: Int, path: NameSpace): ImplementSymbol = {
+      new ImplementSymbol(id, path.appendName(ImplementId.id().toString))
+    }
   }
 
   object ErrorSymbol extends Symbol(Type.ErrorType, Modifier.NoModifier) {
@@ -188,8 +249,7 @@ object Symbol {
   // because appendBuiltin and lookupBuiltin see whether Map's value is null or not, and
   // if it is null, methods address that case.
   private val builtin: mutable.Map[String, Symbol.TypeSymbol] = mutable.Map[String, Symbol.TypeSymbol](
-    "Int32" -> null,
-    "UInt32" -> null,
+    "Int" -> null,
     "String" -> null,
     "Unit" -> null,
     "Bit" -> null
@@ -197,17 +257,17 @@ object Symbol {
 
   def appendBuiltin(symbol: Symbol.TypeSymbol): Unit = {
     builtin.get(symbol.name) match {
-      case None => throw new ImplimentationErrorException(s"${symbol.name} is not a builtin type")
+      case None => throw new ImplementationErrorException(s"${symbol.name} is not a builtin type")
       case Some(null) => builtin(symbol.name) = symbol
-      case Some(_) => throw new ImplimentationErrorException(s"${symbol.name} is already assigned")
+      case Some(_) => throw new ImplementationErrorException(s"${symbol.name} is already assigned")
     }
   }
 
   def lookupBuiltin(name: String): Symbol.TypeSymbol = {
     builtin.get(name) match {
-      case Some(null) => throw new ImplimentationErrorException(s"$name is not assigned yet")
+      case Some(null) => throw new ImplementationErrorException(s"$name is not assigned yet")
       case Some(symbol) => symbol
-      case None => throw new ImplimentationErrorException(s"$name is not builtin type")
+      case None => throw new ImplementationErrorException(s"$name is not builtin type")
     }
   }
 }

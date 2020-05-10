@@ -5,20 +5,32 @@ compilation_unit
     ;
 
 pkg_name
-    : PACKAGE ID ('.' ID)*
+    : PACKAGE type_elem ('::' type_elem)*
     ;
 
 top_definition
     : module_def
     | struct_def
-//    | class_def
-//    | interface_def
-//    | implement
+    | implement_class
+    | interface_def
+    | implement_interface
 //    | enum_def
     ;
 
 module_def
     : MODULE ID type_param? bounds? ('(' parents? siblings? ')')? '{' component* '}'
+    ;
+
+interface_def
+    : INTERFACE ID type_param? bounds? '{' (signature_def)* '}'
+    ;
+
+implement_class
+    : IMPLEMENT type_param? type bounds? '{' (method_def | stage_def)* '}'
+    ;
+
+implement_interface
+    : IMPLEMENT type_param? type FOR type bounds? '{' (method_def)* '}'
     ;
 
 parents
@@ -40,6 +52,10 @@ component
 
 struct_def
     : STRUCT ID type_param? bounds? '{' field_defs? '}'
+    ;
+
+signature_def
+    : DEF ID type_param? bounds? '(' param_defs? ')' '->' type
     ;
 
 method_def
@@ -136,7 +152,16 @@ apply
     ;
 
 apply_typeparam
-    : '[' expr (',' expr)* ']'
+    : '[' hardware_params (',' type_params)? ']' # WithHardwareParams
+    | '[' type_params ']' # WithoutHardwareParams
+    ;
+
+hardware_params
+    : expr (',' expr)*
+    ;
+
+type_params
+    : SELFTYPE | (ID apply_typeparam) (',' type)*
     ;
 
 args: (expr (',' expr)*)?
@@ -181,21 +206,15 @@ unit_lit
     : '(' ')'
     ;
 
-type: ID apply_typeparam?
+type: type_elem ('::' ID)*
+    ;
+
+type_elem
+    : ID apply_typeparam? # NormalType
+    | SELFTYPE            # SelfType
     ;
 
 /*
-class_def
-    : CLASS ID type_param? bounds? '{' method_def* '}'
-    ;
-
-interface_def
-    : INTERFACE ID type_param? bounds? '{' (method_def | stage_def)* '}'
-    ;
-
-implement
-    : IMPLEMENT type_param? type FOR type bounds? '{' (method_def | stage_def)* '}'
-    ;
 
 enum_def
     : ENUM ID type_param? bounds? '{' enum_field_def+ '}'
@@ -239,6 +258,8 @@ FINISH: 'finish';
 GOTO: 'goto';
 GENERATE: 'generate';
 RELAY: 'relay';
+
+SELFTYPE: 'Self';
 
 BIT: BITLIT;
 INT: HEXLIT | DIGITLIT;

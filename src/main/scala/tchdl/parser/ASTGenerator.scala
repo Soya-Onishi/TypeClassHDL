@@ -2,14 +2,23 @@ package tchdl.parser
 
 import org.antlr.v4.runtime.tree.TerminalNode
 import tchdl.ast._
-import tchdl.util.{Modifier, NameSpace}
+import tchdl.util.Modifier
 import tchdl.antlr.{TchdlParser => TP}
 
 import scala.jdk.CollectionConverters._
 
 class ASTGenerator {
   def apply(ctx: TP.Compilation_unitContext, filename: String): CompilationUnit = {
-    val pkgName = NameSpace(ctx.pkg_name.ID.asScala.map(_.getText).toVector)
+    val pkgName = ctx.pkg_name.type_elem.asScala.map(typeElement).map{
+      case TypeTree(name, Vector(), Vector()) => name
+      // TODO: parse error to reject invalid package name like below
+      //    Self::p0::p1
+      //    ^^^^
+      //    p0::Type[A, B]::p1
+      //            ^^^^^^
+      case _ => ???
+    }.toVector
+
     val defs = ctx.top_definition.asScala.map(topDefinition).toVector
 
     CompilationUnit(Some(filename), pkgName, defs)
@@ -20,6 +29,8 @@ class ASTGenerator {
       case ctx: TP.Module_defContext => moduleDef(ctx)
       case ctx: TP.Method_defContext => methodDef(ctx)
       case ctx: TP.Struct_defContext => structDef(ctx)
+      case ctx: TP.Interface_defContext => interfaceDef(ctx)
+      case ctx: TP.Implement_interfaceContext => implementInterface(ctx)
     }
   }
 
@@ -55,6 +66,35 @@ class ASTGenerator {
     StructDef(name, hp, tp, bound, fields)
   }
 
+  def implementClass(ctx: TP.Implement_classContext): ImplementClass = {
+    val target = typeTree(ctx.`type`())
+    val (hps, tps) = Option(ctx.type_param).map(typeParam).getOrElse((Vector.empty, Vector.empty))
+    val bounds = Option(ctx.bounds).map(_.bound.asScala.map(bound).toVector).getOrElse(Vector.empty)
+    val methods = ctx.method_def.asScala.map(methodDef).toVector
+    val stages = ctx.stage_def.asScala.map(stageDef).toVector
+
+    ImplementClass(target, hps, tps, bounds, methods, stages)
+  }
+
+  def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
+    val name = ctx.ID.getText
+    val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
+    val methods = ctx.signature_def
+      .asScala
+      .map(signatureDef)
+      .toVector
+
+    InterfaceDef(name, hp, tp, bound, methods)
+  }
+
+  def implementInterface(ctx: TP.Implement_interfaceContext): ImplementInterface = {
+    val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
+    val Seq(targetTrait, tpe) = ctx.`type`().asScala.map(typeTree).toSeq
+    val methods = ctx.method_def.asScala.map(methodDef).toVector
+
+    ImplementInterface(targetTrait, tpe, hp, tp, bound, methods)
+  }
+
   def methodDef(ctx: TP.Method_defContext): MethodDef = {
     val name = ctx.ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
@@ -65,6 +105,17 @@ class ASTGenerator {
     val blk = Option(ctx.block).map(block)
 
     MethodDef(name, hps, tps, bounds, params, tpe, blk)
+  }
+
+  def signatureDef(ctx: TP.Signature_defContext): MethodDef = {
+    val name = ctx.ID.getText
+    val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
+    val params = Option(ctx.param_defs())
+      .map(paramDefs)
+      .getOrElse(Vector.empty)
+    val tpe = typeTree(ctx.`type`)
+
+    MethodDef(name, hps, tps, bounds, params, tpe, None)
   }
 
   def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[Bound]) = {
@@ -179,17 +230,15 @@ class ASTGenerator {
 
   def submoduleDef(ctx: TP.Submodule_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
-
     ValDef(Modifier.NoModifier, name, tpe, expr)
   }
 
   def regDef(ctx: TP.Reg_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
-
     ValDef(Modifier.Register, name, tpe, expr)
   }
 
-  def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeTree], Option[Expression]) = {
+  def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeAST], Option[Expression]) = {
     val name = ctx.ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
     val initExpr = Option(ctx.expr).map(expr)
@@ -231,8 +280,8 @@ class ASTGenerator {
       applyCall(applyCtx) match {
         case ApplyParams(Ident(name), args) =>
           ApplyParams(Select(prefix, name), args)
-        case ApplyParams(ApplyTypeParams(Ident(name), tps), args) =>
-          ApplyParams(ApplyTypeParams(Select(prefix, name), tps), args)
+        case ApplyParams(ApplyTypeParams(Ident(name), tps, hps), args) =>
+          ApplyParams(ApplyTypeParams(Select(prefix, name), tps, hps), args)
       }
     case None =>
       val prefix = expr(ctx.expr)
@@ -251,11 +300,25 @@ class ASTGenerator {
     ApplyParams(Select(expr(left), name), Vector(expr(right)))
   }
 
-  def typeTree(ctx: TP.TypeContext): TypeTree = {
-    val name = ctx.ID.getText
-    val hps = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty)
+  def typeTree(ctx: TP.TypeContext): TypeAST = {
+    val head = typeElement(ctx.type_elem)
+    ctx.ID.asScala.map(_.getText).toVector match {
+      case Vector() => head
+      case tails =>
+        tails.tail.foldLeft(SelectType(head, tails.head)) {
+          case (typeTree, name) => SelectType(typeTree, name)
+        }
+    }
+  }
 
-    TypeTree(name, hps, Vector.empty)
+  def typeElement(ctx: TP.Type_elemContext): TypeAST = ctx match {
+    case ctx: TP.NormalTypeContext =>
+      val name = ctx.ID.getText
+      val (hps, tps) = Option (ctx.apply_typeparam).map (applyTypeParam).getOrElse ((Vector.empty, Vector.empty) )
+
+      TypeTree (name, hps, tps)
+    case _: TP.SelfTypeContext =>
+      SelfType ()
   }
 
   def applyCall(ctx: TP.ApplyContext): ApplyParams = {
@@ -264,7 +327,7 @@ class ASTGenerator {
     val args = ctx.args.expr.asScala.map(expr).toVector
 
     tpsOpt match {
-      case Some(tps) => ApplyParams(ApplyTypeParams(Ident(name), tps), args)
+      case Some((hps, tps)) => ApplyParams(ApplyTypeParams(Ident(name), hps, tps), args)
       case None => ApplyParams(Ident(name), args)
     }
   }
@@ -291,8 +354,36 @@ class ASTGenerator {
     }
   }
 
-  def applyTypeParam(ctx: TP.Apply_typeparamContext): Vector[Expression] =
+  def applyTypeParam(ctx: TP.Apply_typeparamContext): (Vector[Expression], Vector[TypeAST]) = ctx match {
+    case ctx: TP.WithHardwareParamsContext =>
+      val exprs = hardwareParams(ctx.hardware_params)
+      val tpes = Option(ctx.type_params).map(typeParams).getOrElse(Vector.empty)
+
+      (exprs, tpes)
+    case ctx: TP.WithoutHardwareParamsContext =>
+      val tpes = typeParams(ctx.type_params)
+
+      (Vector.empty, tpes)
+  }
+
+  def hardwareParams(ctx: TP.Hardware_paramsContext): Vector[Expression] =
     ctx.expr.asScala.map(expr).toVector
+
+  def typeParams(ctx: TP.Type_paramsContext): Vector[TypeAST] = {
+    val first = (Option(ctx.SELFTYPE), Option(ctx.ID)) match {
+      case (Some(_), None) => SelfType()
+      case (None, Some(id)) =>
+        val (hps, tps) = applyTypeParam(ctx.apply_typeparam)
+        TypeTree(id.getText, hps, tps)
+      case _ => ???
+    }
+
+    val remains = Option(ctx.`type`).map(_.asScala.map(typeTree).toVector).getOrElse(Vector.empty)
+
+    first +: remains
+  }
+
+
 
   def block(ctx: TP.BlockContext): Block = {
     val elems = ctx.block_elem
