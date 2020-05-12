@@ -666,7 +666,7 @@ object Typer {
               val refTpe = typedSuffix.tpe.asRefType
 
               refTpe.origin.tpe match {
-                case _: Type.ParameterType => Map.empty[Symbol.TypeSymbol, Type.RefType]
+                case _: Type.ParameterType => Map.empty[Symbol.TypeParamSymbol, Type.RefType]
                 case tpe: Type.EntityType =>
                   tpe.typeParam
                     .zip(refTpe.typeParam)

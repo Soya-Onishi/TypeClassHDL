@@ -151,7 +151,7 @@ object Type {
     val name: String,
     val namespace: NameSpace,
     val hardwareParam: Vector[Symbol.TermSymbol],
-    val typeParam: Vector[Symbol.TypeSymbol],
+    val typeParam: Vector[Symbol.TypeParamSymbol],
     val declares: Scope
   ) extends DeclaredType {
     import scala.collection.mutable
@@ -232,7 +232,7 @@ object Type {
     val namespace: NameSpace = NameSpace.empty
     val declares: Scope = returnType.declares
 
-    def replaceWithTypeParamMap(map: Map[Symbol.TypeSymbol, Type.RefType]): Type.MethodType = {
+    def replaceWithTypeParamMap(map: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.MethodType = {
       val replacedArgs = params.map(_.replaceWithTypeParamMap(map))
       val replacedRetTpe = returnType.replaceWithTypeParamMap(map)
 
@@ -341,16 +341,16 @@ object Type {
       }
     }
 
-    def replaceWithTypeParamMap(map: Map[Symbol.TypeSymbol, Type.RefType]): Type.RefType =
-      map.get(origin) match {
-        case Some(tpe) => tpe
-        case None =>
-          RefType(
-            this.origin,
-            this.hardwareParam,
-            typeParam.map(_.replaceWithTypeParamMap(map))
-          )
+    def replaceWithTypeParamMap(map: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.RefType =
+      origin match {
+        case symbol: Symbol.TypeParamSymbol => map.getOrElse(symbol, this)
+        case _ => RefType(
+          this.origin,
+          this.hardwareParam,
+          typeParam.map(_.replaceWithTypeParamMap(map))
+        )
       }
+
 
     override def =:=(other: Type): Boolean = other match {
       case other: RefType =>
@@ -379,6 +379,44 @@ object Type {
 
         this =:= other && isSameHP
     }
+
+    /**
+     * This method does not expect that
+     *   (1)type parameter lengths are mismatch
+     *   (2)type parameter's type violate type bounds
+     * This method expects above violation are treated as [[Type.ErrorType]] already.
+     */
+    def <|= (other: Type.RefType): Boolean = {
+      (this.origin, other.origin) match {
+        case (sym0: Symbol.EntityTypeSymbol, sym1: Symbol.EntityTypeSymbol) =>
+          def isSameTP: Boolean = this.typeParam
+            .zip(other.typeParam)
+            .forall{ case (t, o) => t <|= o }
+
+          sym0 == sym1 && isSameTP
+        case (_: Symbol.EntityTypeSymbol, sym1: Symbol.TypeParamSymbol) =>
+          val impls = sym1.getBounds
+            .map(_.origin.asInterfaceSymbol)
+            .map(_.impls)
+
+          sym1.getBounds.zip(impls)
+            .map{
+              case (bound, impls) =>
+                impls.filter(impl => (bound <|= impl.targetInterface) && (this <|= impl.targetType))
+            }
+            .forall(_.nonEmpty)
+        case (_: Symbol.TypeParamSymbol, _: Symbol.EntityTypeSymbol) => false
+        case (sym0: Symbol.TypeParamSymbol, sym1: Symbol.TypeParamSymbol) =>
+          sym1.getBounds.forall {
+            rightBound => sym0.getBounds.exists {
+              leftBound => leftBound <|= rightBound
+            }
+          }
+
+      }
+    }
+
+    def >|=(other: Type.RefType): Boolean = other <|= this
   }
 
   object RefType {
@@ -387,6 +425,11 @@ object Type {
 
     def apply(origin: Symbol.TypeSymbol): RefType =
       new RefType(origin, Vector.empty, Vector.empty)
+
+    def unapply(arg: Type.RefType): Option[(Symbol.TypeSymbol, Vector[Expression], Vector[RefType])] = {
+      Some((arg.origin, arg.hardwareParam, arg.typeParam))
+    }
+
   }
 
   object NoType extends Type {

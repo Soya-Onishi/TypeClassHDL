@@ -80,17 +80,18 @@ trait HasImpls {
 
 object Symbol {
   abstract class TypeSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
-
   abstract class EntityTypeSymbol(tpe: Type, flags: Modifier) extends TypeSymbol(tpe, flags) with HasImpls
+  abstract class ClassTypeSymbol(tpe: Type, flags: Modifier) extends EntityTypeSymbol(tpe, flags) {
+    override type ImplType = ImplementClassContainer
+  }
+
 
   class StructSymbol(
     val path: NameSpace,
     val visibility: Visibility,
     flags: Modifier,
     tpe: Type
-  ) extends EntityTypeSymbol(tpe, flags) {
-    override type ImplType = ImplementClassContainer
-  }
+  ) extends ClassTypeSymbol(tpe, flags)
 
   object StructSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): StructSymbol =
@@ -102,9 +103,7 @@ object Symbol {
     val visibility: Visibility,
     flags: Modifier,
     tpe: Type
-  ) extends EntityTypeSymbol(tpe, flags) {
-    override type ImplType = ImplementClassContainer
-  }
+  ) extends ClassTypeSymbol(tpe, flags)
 
   object ModuleSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): ModuleSymbol =
@@ -137,6 +136,22 @@ object Symbol {
       if(_bounds.isDefined) throw new ImplementationErrorException("bounds already assigned")
       else _bounds = Some(bounds)
     def getBounds: Vector[Type.RefType] = _bounds.getOrElse(Vector.empty)
+
+    def isPartiallyMeetBounds(tpe: Type.RefType): Boolean = {
+      val boundsImpls = this.getBounds.forall {
+        bound =>
+          val impls = bound.origin
+            .asInterfaceSymbol
+            .impls
+            .exists {
+              impl => impl.targetInterface
+            }
+
+      }
+
+
+
+    }
   }
 
   object TypeParamSymbol {

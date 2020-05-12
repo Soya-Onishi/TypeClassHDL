@@ -35,7 +35,8 @@ object Error {
   case object GotoOutsideState extends Error
   case object RelayOutsideStage extends Error
   case class DefinitionNameConflict(name: String) extends Error
-  case class ImplementConflict() extends Error
+  case class ImplementInterfaceConflict(interface: Type.RefType, target: Type.RefType) extends Error
+  case class ImplementClassConflict(target: Type.RefType) extends Error
   case class AmbiguousSymbols(symbols: Vector[Symbol]) extends Error
 
   case class MultipleErrors(errs: Seq[Error]) extends Error
