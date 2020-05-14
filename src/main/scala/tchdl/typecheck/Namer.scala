@@ -6,21 +6,21 @@ import tchdl.util.{Context, Modifier, Symbol, Type, Visibility, PackageRoot, Pac
 
 object Namer {
   def exec(cu: CompilationUnit): Unit = {
-    val root = Context.root(cu.pkgName)
+    val root = Context.root(cu.filename.get, cu.pkgName)
 
     cu.topDefs.map(topLevelNamed(_, root))
 
-    val packageNode = cu.pkgName.foldLeft[PackageNode](PackageRoot) {
-      case (node, name) => node.getNode(name) match {
+    val packageSymbol = cu.pkgName.foldLeft[Symbol.PackageSymbol](Symbol.RootPackageSymbol) {
+      case (parent, name) => parent.lookupChild(name) match {
         case Some(pkg) => pkg
         case None =>
-          val pkg = PackageNode(name)
-          node.appendNode(pkg)
+          val pkg = Symbol.PackageSymbol(parent, name)
+          parent.appendChild(pkg)
           pkg
       }
     }
 
-    packageNode.appendContext(cu.filename.get, root)
+    packageSymbol.appendCtx(cu.filename.get, root)
   }
 
   def nodeLevelNamed[T](ast: T, ctx: Context.NodeContext): T = {

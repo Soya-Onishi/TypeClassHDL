@@ -85,7 +85,6 @@ object Symbol {
     override type ImplType = ImplementClassContainer
   }
 
-
   class StructSymbol(
     val path: NameSpace,
     val visibility: Visibility,
@@ -136,22 +135,6 @@ object Symbol {
       if(_bounds.isDefined) throw new ImplementationErrorException("bounds already assigned")
       else _bounds = Some(bounds)
     def getBounds: Vector[Type.RefType] = _bounds.getOrElse(Vector.empty)
-
-    def isPartiallyMeetBounds(tpe: Type.RefType): Boolean = {
-      val boundsImpls = this.getBounds.forall {
-        bound =>
-          val impls = bound.origin
-            .asInterfaceSymbol
-            .impls
-            .exists {
-              impl => impl.targetInterface
-            }
-
-      }
-
-
-
-    }
   }
 
   object TypeParamSymbol {
@@ -249,6 +232,73 @@ object Symbol {
   object ImplementSymbol {
     def apply(id: Int, path: NameSpace): ImplementSymbol = {
       new ImplementSymbol(id, path.appendName(ImplementId.id().toString))
+    }
+  }
+
+  class PackageSymbol(
+    val path: NameSpace,
+  ) extends Symbol(null, Modifier.NoModifier) {
+    import scala.collection.mutable
+
+    override def name: String = path.pkgName.last
+    override val visibility: Visibility = Visibility.Public
+
+    private val scope = Scope.empty
+    def lookup(name: String): Either[Error, Symbol] =
+      scope.lookup(name) match {
+        case Some(symbol) => Right(symbol)
+        case None => Left(Error.SymbolNotFound(name))
+      }
+
+    def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
+
+    private val _children = mutable.Map[String, PackageSymbol]()
+    def lookupChild(name: String): Option[Symbol.PackageSymbol] = _children.get(name)
+    def appendChild(symbol: PackageSymbol): Unit = {
+      _children.get(symbol.name) match {
+        case None => _children(symbol.name) = symbol
+        case Some(_) => throw new ImplementationErrorException("same package symbol is appended twice")
+      }
+    }
+
+    private val _context = mutable.Map[String, Context.RootContext]()
+    def context: Map[String, Context.RootContext] = _context.toMap
+    def lookupCtx(filename: String): Option[Context.RootContext] = _context.get(filename)
+    def appendCtx(filename: String, ctx: Context.RootContext): Unit =
+      _context.get(filename) match {
+        case None => _context(filename) = ctx
+        case Some(_) =>
+          val msg = "context is appended with key(filename) which is already assigned here"
+          throw new ImplementationErrorException(msg)
+      }
+  }
+
+  object PackageSymbol {
+    def apply(parent: PackageSymbol, name: String): PackageSymbol = {
+      val pkg = parent.path.pkgName :+ name
+      new PackageSymbol(NameSpace(pkg, Vector.empty, None))
+    }
+
+    def apply(name: String): PackageSymbol =
+      new PackageSymbol(NameSpace(Vector(name), Vector.empty, None))
+  }
+
+  object RootPackageSymbol extends PackageSymbol(NameSpace.empty) {
+    override def lookupCtx(name: String): Option[Context.RootContext] = {
+      val msg = "try to lookup context in RootPackageSymbol"
+      throw new ImplementationErrorException(msg)
+    }
+
+    override def appendCtx(filename: String, ctx: Context.RootContext): Unit = {
+      val msg = "try to append context in RootPackageSymbol"
+      throw new ImplementationErrorException(msg)
+    }
+
+    def search(pkgName: Vector[String]): Option[Symbol.PackageSymbol] = {
+      pkgName.foldLeft[Option[Symbol.PackageSymbol]](Some(this)){
+        case (Some(symbol), name) => symbol.lookupChild(name)
+        case (None, _) => None
+      }
     }
   }
 

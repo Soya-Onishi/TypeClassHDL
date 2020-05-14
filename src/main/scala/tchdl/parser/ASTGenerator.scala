@@ -238,7 +238,7 @@ class ASTGenerator {
     ValDef(Modifier.Register, name, tpe, expr)
   }
 
-  def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeAST], Option[Expression]) = {
+  def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeTree], Option[Expression]) = {
     val name = ctx.ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
     val initExpr = Option(ctx.expr).map(expr)
@@ -300,18 +300,18 @@ class ASTGenerator {
     ApplyParams(Select(expr(left), name), Vector(expr(right)))
   }
 
-  def typeTree(ctx: TP.TypeContext): TypeAST = {
+  def typeTree(ctx: TP.TypeContext): TypeTree = {
     val head = typeElement(ctx.type_elem)
     ctx.ID.asScala.map(_.getText).toVector match {
       case Vector() => head
       case tails =>
-        tails.tail.foldLeft(SelectType(head, tails.head)) {
-          case (typeTree, name) => SelectType(typeTree, name)
+        tails.tail.foldLeft(StaticSelect(head, tails.head)) {
+          case (typeTree, name) => StaticSelect(typeTree, name)
         }
     }
   }
 
-  def typeElement(ctx: TP.Type_elemContext): TypeAST = ctx match {
+  def typeElement(ctx: TP.Type_elemContext): TypeTree = ctx match {
     case ctx: TP.NormalTypeContext =>
       val name = ctx.ID.getText
       val (hps, tps) = Option (ctx.apply_typeparam).map (applyTypeParam).getOrElse ((Vector.empty, Vector.empty) )
@@ -354,7 +354,7 @@ class ASTGenerator {
     }
   }
 
-  def applyTypeParam(ctx: TP.Apply_typeparamContext): (Vector[Expression], Vector[TypeAST]) = ctx match {
+  def applyTypeParam(ctx: TP.Apply_typeparamContext): (Vector[Expression], Vector[TypeTree]) = ctx match {
     case ctx: TP.WithHardwareParamsContext =>
       val exprs = hardwareParams(ctx.hardware_params)
       val tpes = Option(ctx.type_params).map(typeParams).getOrElse(Vector.empty)
@@ -369,7 +369,7 @@ class ASTGenerator {
   def hardwareParams(ctx: TP.Hardware_paramsContext): Vector[Expression] =
     ctx.expr.asScala.map(expr).toVector
 
-  def typeParams(ctx: TP.Type_paramsContext): Vector[TypeAST] = {
+  def typeParams(ctx: TP.Type_paramsContext): Vector[TypeTree] = {
     val first = (Option(ctx.SELFTYPE), Option(ctx.ID)) match {
       case (Some(_), None) => SelfType()
       case (None, Some(id)) =>

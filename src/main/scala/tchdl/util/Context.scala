@@ -1,10 +1,13 @@
 package tchdl.util
 
+import tchdl.util.Symbol.RootPackageSymbol
+import tchdl.util.TchdlException.ImplementationErrorException
+
 abstract class Context {
   val scope: Scope = new Scope
   def path: NameSpace
 
-  def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
+  def append(symbol: Symbol): Either[Error, Unit]
   def lookup(name: String): Either[Error, Symbol]
 
   def reAppend(syms: Symbol*): Either[Error, Unit] = {
@@ -40,23 +43,44 @@ object Context {
   def blk(owner: NodeContext): NodeContext =
     new NodeContext(owner, owner.owner, owner.self, Some(owner.getBlkID.toString))
 
-  def root(pkgName: Vector[String]): RootContext = new RootContext(pkgName)
+  def root(filename: String, pkgName: Vector[String]): RootContext = new RootContext(filename, pkgName)
 
   class RootContext(pkgName: Vector[String]) extends Context {
-    import scala.collection.mutable
-
     override val path: NameSpace = NameSpace(pkgName, Vector.empty, None)
 
     override def lookup(name: String): Either[Error, Symbol] = scope.lookup(name) match {
       case Some(elem) => Right(elem)
-      case None => Left(Error.SymbolNotFound(name))
+      case None => importedSymbols.lookup(name) match {
+        case Some(elem) => Right(elem)
+        case None =>
+          RootPackageSymbol.search(pkgName)
+            .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
+            .lookup(name)
+      }
     }
 
-    private[this] val importedInterfaces = mutable.Map[String, Symbol.InterfaceSymbol]()
-    def appendInterface(symbol: Symbol.InterfaceSymbol): Unit = {
-      importedInterfaces(symbol.name) = symbol
+    override def append(symbol: Symbol): Either[Error, Unit] = {
+      val intoScope = this.scope.append(symbol)
+      val intoPackage = RootPackageSymbol.search(pkgName)
+        .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
+        .append(symbol)
+
+      (intoScope, intoPackage) match {
+        case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(Seq(err0, err1)))
+        case (Left(err), _) => Left(err)
+        case (_, Left(err)) => Left(err)
+        case (Right(_), Right(_)) => Right(())
+      }
     }
-    override def interfaceTable: Map[String, Symbol.InterfaceSymbol] = importedInterfaces.toMap
+
+    private val importedSymbols = Scope.empty
+    def appendImportSymbol(symbol: Symbol): Either[Error, Unit] =
+      importedSymbols.append(symbol)
+
+    override def interfaceTable: Map[String, Symbol.InterfaceSymbol] =
+      this.scope.toMap.collect{
+        case (name, interface: Symbol.InterfaceSymbol) => name -> interface
+      }
   }
 
   class NodeContext(
@@ -72,6 +96,7 @@ object Context {
       }
     }
 
+    def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
     def lookup(name: String): Either[Error, Symbol] = scope.lookup(name) match {
       case Some(elem) => Right(elem)
       case None => parent.lookup(name)
@@ -79,8 +104,6 @@ object Context {
 
     override def interfaceTable: Map[String, Symbol.InterfaceSymbol] = parent.interfaceTable
   }
-
-
 }
 
 case class NameSpace(pkgName: Vector[String], path: Vector[String], name: Option[String]) {

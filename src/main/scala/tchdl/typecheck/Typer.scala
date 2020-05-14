@@ -364,7 +364,7 @@ object Typer {
   }
 
   def typedExprApplyParams(apply: ApplyParams)(implicit ctx: Context.NodeContext): Apply = {
-    type ResultPair = (Type.MethodType, Vector[Expression], Vector[TypeAST])
+    type ResultPair = (Type.MethodType, Vector[Expression], Vector[TypeTree])
 
     val typedArgs = apply.args.map(typedExpr)
 
@@ -400,7 +400,7 @@ object Typer {
         else Left(Error.ParameterLengthMismatch(expect, actual))
       }
 
-      def verifyTPsAndHPs: Either[Error, (Vector[Expression], Vector[TypeAST])] ={
+      def verifyTPsAndHPs: Either[Error, (Vector[Expression], Vector[TypeTree])] ={
         val (hps, tpsFirstHalf) = applyTPs.hps.splitAt(method.hardwareParam.length)
 
         val typedHps = hps.map(typedExpr)
@@ -447,7 +447,7 @@ object Typer {
       //
       //   The process need to detect Interface[T] when
       //   bounds require Interface[u32] if u32 meets T's bounds
-      def verifyTpBounds(tps: Vector[TypeAST]): Either[Error, Unit] = {
+      def verifyTpBounds(tps: Vector[TypeTree]): Either[Error, Unit] = {
         def tpChecker(boundTps: Vector[Type.RefType], interfaceTps: Vector[Type.RefType]): Boolean =
           boundTps.zip(interfaceTps).forall {
             case (boundTp, interfaceTp) => (boundTp.origin, interfaceTp.origin) match {
@@ -549,7 +549,7 @@ object Typer {
     def lookupSelectSymbol(select: Select)(
       requireTP: Type.MethodType => Either[Error, ResultPair],
       errorApplyGen: Expression => Apply,
-      succeedApplyGen: (Expression, Vector[Expression], Vector[TypeAST], Type.RefType) => Apply
+      succeedApplyGen: (Expression, Vector[Expression], Vector[TypeTree], Type.RefType) => Apply
     ): Apply = {
       def downcastToRefType(tpe: Type): Either[Error, Type.RefType] =
         tpe match {
@@ -590,7 +590,7 @@ object Typer {
     def lookupExprSymbol(expr: Expression)(
       requireTP: Type.MethodType => Either[Error, ResultPair],
       errorApply: Expression => Apply,
-      succeedApplyGen: (Expression, Vector[Expression], Vector[TypeAST], Type.RefType) => Apply
+      succeedApplyGen: (Expression, Vector[Expression], Vector[TypeTree], Type.RefType) => Apply
     ): Apply = {
       val typedExp = typedExpr(expr)
 
@@ -611,13 +611,13 @@ object Typer {
     def errorApplyWithTPsOrHPs(hps: Vector[Expression])(expr: Expression): Apply =
       Apply(expr, hps, Vector.empty, typedArgs).setTpe(Type.ErrorType).setID(apply.id)
 
-    def succeedApplyWithTPsOrHPs(expr: Expression, hps: Vector[Expression], tps: Vector[TypeAST], tpe: Type.RefType): Apply =
+    def succeedApplyWithTPsOrHPs(expr: Expression, hps: Vector[Expression], tps: Vector[TypeTree], tpe: Type.RefType): Apply =
       Apply(expr, hps, tps, typedArgs).setTpe(tpe).setID(apply.id)
 
     def errorApplyWithoutTPsOrHPs(expr: Expression): Apply =
       Apply(expr, Vector.empty, Vector.empty, typedArgs).setTpe(Type.ErrorType).setID(apply.id)
 
-    def succeedApplyWithoutTPsOrHPs(expr: Expression, _hps: Vector[Expression], _tps: Vector[TypeAST], tpe: Type.RefType): Apply =
+    def succeedApplyWithoutTPsOrHPs(expr: Expression, _hps: Vector[Expression], _tps: Vector[TypeTree], tpe: Type.RefType): Apply =
       Apply(expr, Vector.empty, Vector.empty, typedArgs).setTpe(tpe).setID(apply.id)
 
     apply.suffix match {
@@ -812,11 +812,11 @@ object Typer {
     tt.setID(apply.id)
   }
 
-  def typedTypeAST(typeAST: TypeAST)(implicit ctx: Context.NodeContext): TypeAST = {
+  def typedTypeAST(typeAST: TypeTree)(implicit ctx: Context.NodeContext): TypeTree = {
     val tpeAST = typeAST match {
       case typeTree: TypeTree => typedTypeTree(typeTree)
       case self: SelfType => typedSelfType(self)
-      case select: SelectType => typedSelectType(select)
+      case select: StaticSelect => typedSelectType(select)
     }
 
     tpeAST.setID(typeAST.id)
@@ -859,9 +859,9 @@ object Typer {
         self.setTpe(tpe)
     }
 
-  def typedSelectType(select: SelectType)(implicit ctx: Context.NodeContext): SelectType = {
+  def typedSelectType(select: StaticSelect)(implicit ctx: Context.NodeContext): StaticSelect = {
     val typedSuffix = select.suffix match {
-      case suffix: SelectType => typedSelectType(suffix)
+      case suffix: StaticSelect => typedSelectType(suffix)
       case suffix: TypeTree => typedTypeTree(suffix)
       case suffix: SelfType => typedSelfType(suffix)
     }
@@ -876,7 +876,7 @@ object Typer {
       }
     }
 
-    SelectType(typedSuffix, select.name).setTpe(selectTpe).setID(select.id)
+    StaticSelect(typedSuffix, select.name).setTpe(selectTpe).setID(select.id)
   }
 
   def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext): BitLiteral = {
@@ -998,7 +998,7 @@ object Typer {
   def verifyTypeParams(
     symbol: Symbol.TypeSymbol,
     hps: Vector[Expression],
-    tps: Vector[TypeAST],
+    tps: Vector[TypeTree],
     tpe: Type.EntityType
   )(
     implicit ctx: Context.NodeContext

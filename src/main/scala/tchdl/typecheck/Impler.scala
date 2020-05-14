@@ -2,60 +2,97 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Context, Error, HasImpls, Reporter, Scope, Symbol, Type}
+import tchdl.util.{Context, Error, HasImpls, PackageNode, Reporter, Scope, Symbol, Type}
 
-import scala.reflect.runtime.universe.{TypeTree => _, _}
+import scala.reflect.ClassTag
 
+// TODO:
+//   Add logic to verify whether all type parameters are used at signature
+//   e.g. impl[A, B] Interface[A] for Type[B] is valid.
+//        However, impl[A, B] Interface[A] for Type is invalid(B is not used).
 object Impler {
   def exec(cu: CompilationUnit) = ???
 
-  def makeRefType(typeTree: TypeAST)(implicit ctx: Context): Either[Error, Type.RefType] = {
-    def downcastToTypeSymbol(symbol: Symbol): Either[Error, Symbol.TypeSymbol] =
+  def buildRefType[SymbolType <: Symbol.TypeSymbol : ClassTag](tpe: TypeTree)(implicit ctx: Context.NodeContext): Either[Error, Type.RefType] = {
+    def verifySymbol[Require <: Symbol : ClassTag](symbol: Symbol): Either[Error, Require] =
       symbol match {
-        case sym: Symbol.TypeSymbol => Right(sym)
-        case sym: Symbol.TermSymbol => Left(Error.SymbolIsTerm(sym.name))
+        case symbol: Require => Right(symbol)
+        case symbol => Left(Error.RequireSymbol[Require](symbol))
       }
 
-    val result = for {
-      tt <- verifyTypeTree(typeTree)
-      symbol <- ctx.lookup(tt.name)
-      symbol <- downcastToTypeSymbol(symbol)
-    } yield (tt, symbol)
-
-    result match {
-      case Left(err) => Left(err)
-      case Right((tt, symbol)) =>
-        val hps = tt.hp
-        val tps = tt.tp.map(makeRefType)
-
-        val (errs, typeParams) = tps.partitionMap(a => a)
-
-        if (errs.nonEmpty) Left(Error.MultipleErrors(errs))
-        else Right(Type.RefType(symbol, hps, typeParams))
+    def verifyHardwareParam(hp: Vector[Expression]): Either[Error.MultipleErrors, Vector[Expression]] = {
+      // TODO
+      //   Add AST for operations using binary operator like + and -.
     }
+
+    def buildTypeParam(tp: Vector[TypeTree]): Either[Error.MultipleErrors, Vector[Type.RefType]] =
+      tp.map(buildRefType).foldLeft[Either[Error.MultipleErrors, Vector[Type.RefType]]](Right(Vector.empty)) {
+        case (Right(tpes), Right(tpe)) => Right(tpes :+ tpe)
+        case (Right(_), Left(err)) => Left(Error.MultipleErrors(Vector(err)))
+        case (Left(errs), Right(_)) => Left(errs)
+        case (Left(errs), Left(err)) => Left(Error.MultipleErrors(errs.errs :+ err))
+      }
+
+    def verifyTypeTree(tpeTree: TypeTree): Either[Error, Symbol] = {
+      val TypeTree(expr, hp, tp) = tpeTree
+
+      def verifyArgumentEmpty[T](arguments: Vector[T]): Either[Error, Unit] =
+        if(arguments.isEmpty) Right(())
+        else Left(Error.AttachTPToPackageSymbol)
+
+      for {
+        symbol <- verifyTypeAST(expr)
+        symbolPackage <- verifySymbol[Symbol.PackageSymbol](symbol)
+        _ <- verifyArgumentEmpty(hp)
+        _ <- verifyArgumentEmpty(tp)
+      } yield symbolPackage
+    }
+
+    def verifyTypeAST(tpeAST: TypeAST): Either[Error, Symbol] = tpeAST match {
+      case StaticSelect(suffix, name) =>
+        val symbol = for {
+          symbol <- verifyTypeTree(suffix)
+          packageSymbol <- verifySymbol[Symbol.PackageSymbol](symbol)
+          retSymbol <- packageSymbol.lookup(name)
+        } yield retSymbol
+
+        symbol match {
+          case Left(err) =>
+            tpeAST.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
+            Left(err)
+          case Right(symbol) =>
+            tpeAST.setSymbol(symbol).setTpe(Type.NoType)
+            Right(symbol)
+        }
+      case SelfType() =>
+        tpeAST.setSymbol(Symbol.ErrorSymbol)
+        Left(Error.RejectSelfType)
+      case Ident(name) =>
+        ctx.lookup(name)
+    }
+
+    val TypeTree(expr, hp, tp) = tpe
+    for {
+      symbol <- verifyTypeAST(expr)
+      typeSymbol <- verifySymbol[SymbolType](symbol)
+      hardwareParams <- verifyHardwareParam(hp)
+      typeParams <- buildTypeParam(tp)
+    } yield Type.RefType(typeSymbol, hardwareParams, typeParams)
   }
 
   def implementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext): Unit = {
-    def downcastToInterface(symbol: Symbol): Either[Error, Symbol.InterfaceSymbol] =
-      symbol match {
-        case sym: Symbol.InterfaceSymbol => Right(sym)
-        case sym => Left(Error.RequireInterfaceSymbol(sym.name))
-      }
+    val signatureCtx = Context(ctx, impl.symbol)
+    impl.hp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
+    impl.tp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
+    impl.bounds.foreach(setBound(_)(signatureCtx))
 
-    val implCtx = Context(ctx, impl.symbol)
-    impl.hp.foreach(Namer.nodeLevelNamed(_, implCtx))
-    impl.tp.foreach(Namer.nodeLevelNamed(_, implCtx))
+    val interface = buildRefType[Symbol.InterfaceSymbol](impl.interface)(signatureCtx)
+    val target = buildRefType[Symbol.ClassTypeSymbol](impl.target)(signatureCtx)
 
-    val result = for {
-      interface <- makeRefType(impl.interface)(implCtx)
-      target <- makeRefType(impl.target)(implCtx)
-      _ <- downcastToInterface(interface.origin)
-      _ <- downcastToStructOrModule(target.origin)
-    } yield (interface, target)
-
-    result match {
-      case Left(err) => Reporter.appendError(err)
-      case Right((interface, target)) =>
+    (interface, target) match {
+      case (Left(err), _) => Reporter.appendError(err)
+      case (_, Left(err)) => Reporter.appendError(err)
+      case (Right(interface), Right(target)) =>
         val implCtx = Context(ctx, impl.symbol, target)
         impl.methods.foreach(Namer.nodeLevelNamed(_, implCtx))
 
@@ -67,31 +104,44 @@ object Impler {
   }
 
   def implementClass(impl: ImplementClass)(implicit ctx: Context.RootContext): Unit = {
-    val tpe = for {
-      target <- makeRefType(impl.target)
-      _ <- downcastToStructOrModule(target.origin)
-    } yield target
+    val signatureCtx = Context(ctx, impl.symbol)
+    impl.hp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
+    impl.tp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
+    impl.bounds.foreach(setBound(_)(signatureCtx))
+
+    val tpe = buildRefType[Symbol.ClassTypeSymbol](impl.target)(signatureCtx)
 
     tpe match {
       case Left(err) => Reporter.appendError(err)
       case Right(tpe) =>
-        val implCtx = Context(ctx, impl.symbol, tpe)
+        val implCtx = Context(signatureCtx, impl.symbol, tpe)
         impl.methods.foreach(Namer.nodeLevelNamed(_, implCtx))
         impl.stages.foreach(Namer.nodeLevelNamed(_, implCtx))
 
         val container = ImplementClassContainer(impl, ctx, tpe, implCtx.scope)
 
         tpe.origin match {
-          case struct: Symbol.StructSymbol =>
-            struct.appendImpl(impl, container)
-            SymbolBuffer.append(struct)
-          case module: Symbol.ModuleSymbol =>
-            module.appendImpl(impl, container)
-            SymbolBuffer.append(module)
+          case clazz: Symbol.ClassTypeSymbol =>
+            clazz.appendImpl(impl, container)
+            SymbolBuffer.append(clazz)
           case symbol =>
             val msg = s"expect struct symbol or module symbol, actual[${symbol.getClass}]"
             throw new ImplementationErrorException(msg)
         }
+    }
+  }
+
+  def setBound(bound: Bound)(implicit ctx: Context.NodeContext): Unit = {
+    ctx.lookup(bound.target) match {
+      case Left(err) => Reporter.appendError(err)
+      case Right(symbol: Symbol.TypeParamSymbol) if symbol.owner == ctx.owner =>
+        val (errs, constraints) = bound.constraints.map(buildRefType).partitionMap(e => e)
+        errs.foreach(Reporter.appendError)
+        symbol.setBounds(constraints)
+      case Right(symbol: Symbol.TypeParamSymbol) =>
+        Reporter.appendError(Error.SetBoundForDifferentOwner(symbol.owner, ctx.owner))
+      case Right(_) =>
+        Reporter.appendError(Error.RequireTypeParamSymbol(bound.target))
     }
   }
 
@@ -109,7 +159,7 @@ object Impler {
       case sym => Left(Error.RequireStructOrModuleSymbol(sym.name))
     }
 
-  def verifyTypeTree(tpe: TypeAST): Either[Error, TypeTree] =
+  def verifyTypeTree(tpe: TypeTree): Either[Error, TypeTree] =
     tpe match {
       case t: TypeTree => Right(t)
       case _: SelfType => Left(Error.RejectSelfType)

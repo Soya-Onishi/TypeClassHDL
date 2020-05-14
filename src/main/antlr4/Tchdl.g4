@@ -1,13 +1,16 @@
 grammar Tchdl;
 
 compilation_unit
-    : pkg_name top_definition* EOF
+    : pkg_name import_clause* top_definition* EOF
     ;
 
 pkg_name
-    : PACKAGE type_elem ('::' type_elem)*
+    : PACKAGE ID ('::' ID)*
     ;
 
+import_clause
+    : IMPORT ID ('::' ID)*
+    ;
 top_definition
     : module_def
     | struct_def
@@ -226,6 +229,7 @@ enum_field_def
 */
 
 PACKAGE: 'package';
+IMPORT: 'import';
 CLASS: 'class';
 INTERFACE: 'interface';
 IMPLEMENT: 'impl';

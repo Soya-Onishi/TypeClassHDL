@@ -1,8 +1,7 @@
 package tchdl.ast
 
 import tchdl.util.Modifier
-import tchdl.util.{Type, Symbol, NameSpace}
-import tchdl.ASTree
+import tchdl.util.{Type, Symbol}
 
 
 sealed trait AST {
@@ -25,8 +24,7 @@ sealed trait Definition extends AST with HasSymbol
 sealed trait Statement extends AST
 sealed trait BlockElem extends AST
 sealed trait Expression extends AST with BlockElem with HasType
-sealed trait TypeAST extends AST with HasType
-
+sealed trait TypeAST extends AST with HasType with HasSymbol
 
 trait HasType {
   private var _tpe: Option[Type] = None
@@ -44,26 +42,27 @@ case class CompilationUnit(filename: Option[String], pkgName: Vector[String], to
 
 case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], parents: Vector[ValDef], siblings: Vector[ValDef], components: Vector[Component]) extends Definition
 case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
-case class ImplementClass(target: TypeAST, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef], stages: Vector[StageDef]) extends Definition
+case class ImplementClass(target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef], stages: Vector[StageDef]) extends Definition
 case class InterfaceDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef]) extends Definition
-case class ImplementInterface(interface: TypeAST, target: TypeAST, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef]) extends Definition
+case class ImplementInterface(interface: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef]) extends Definition
 case class AlwaysDef(name: String, blk: Block) extends Component
-case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeAST, blk: Option[Block]) extends Component
-case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeAST], expr: Option[Expression]) extends Component with BlockElem
-case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeAST, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component
+case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
+case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Component with BlockElem
+case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component
 case class StateDef(name: String, blk: Block) extends Definition
 
 case class TypeDef(name: String) extends Definition
 
-case class Bound(target: String, constraints: Vector[TypeAST]) extends AST
+case class Bound(target: String, constraints: Vector[TypeTree]) extends AST
 
-case class Ident(name: String) extends Expression with HasSymbol
+case class Ident(name: String) extends Expression with TypeAST with HasSymbol
 case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
-case class ApplyTypeParams(suffix: Expression, hps: Vector[Expression], tps: Vector[TypeAST]) extends Expression
-case class Apply(suffix: Expression, hp: Vector[Expression], tp: Vector[TypeAST], args: Vector[Expression]) extends Expression
+case class ApplyTypeParams(suffix: Expression, hps: Vector[Expression], tps: Vector[TypeTree]) extends Expression
+case class Apply(suffix: Expression, hp: Vector[Expression], tp: Vector[TypeTree], args: Vector[Expression]) extends Expression
 case class Select(expr: Expression, name: String) extends Expression with HasSymbol
+case class StaticSelect(suffix: TypeTree, name: String) extends Expression with TypeAST
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
-case class Construct(name: TypeAST, pairs: Vector[ConstructPair]) extends Expression
+case class Construct(name: TypeTree, pairs: Vector[ConstructPair]) extends Expression
 case class ConstructPair(name: String, expr: Expression) extends AST
 case class Self() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
@@ -82,6 +81,5 @@ case class Relay(target: String, params: Vector[Expression]) extends Expression
 // However, hp's length + tp's length is correct if there is no compile error.
 // In Typer, hp and tp are adjust their length
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
-case class TypeTree(name: String, hp: Vector[Expression], tp: Vector[TypeAST]) extends TypeAST
+case class TypeTree(expr: TypeAST, hp: Vector[Expression], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
 case class SelfType() extends TypeAST
-case class SelectType(suffix: TypeAST, name: String) extends TypeAST
