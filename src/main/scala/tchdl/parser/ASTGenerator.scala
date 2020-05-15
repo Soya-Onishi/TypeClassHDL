@@ -9,19 +9,11 @@ import scala.jdk.CollectionConverters._
 
 class ASTGenerator {
   def apply(ctx: TP.Compilation_unitContext, filename: String): CompilationUnit = {
-    val pkgName = ctx.pkg_name.type_elem.asScala.map(typeElement).map{
-      case TypeTree(name, Vector(), Vector()) => name
-      // TODO: parse error to reject invalid package name like below
-      //    Self::p0::p1
-      //    ^^^^
-      //    p0::Type[A, B]::p1
-      //            ^^^^^^
-      case _ => ???
-    }.toVector
-
+    val pkgName = ctx.pkg_name.ID.asScala.map(_.getText).toVector
+    val imports = ctx.import_clause.asScala.map(_.ID.asScala.map(_.getText).toVector).toVector
     val defs = ctx.top_definition.asScala.map(topDefinition).toVector
 
-    CompilationUnit(Some(filename), pkgName, defs)
+    CompilationUnit(Some(filename), pkgName, imports, defs)
   }
 
   def topDefinition(ctx: TP.Top_definitionContext): Definition = {
@@ -301,13 +293,17 @@ class ASTGenerator {
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
-    val head = typeElement(ctx.type_elem)
-    ctx.ID.asScala.map(_.getText).toVector match {
-      case Vector() => head
-      case tails =>
-        tails.tail.foldLeft(StaticSelect(head, tails.head)) {
-          case (typeTree, name) => StaticSelect(typeTree, name)
-        }
+    val types = ctx.type_elem.asScala.map(typeElement).toVector
+
+    types match {
+      case Vector(tpe) => tpe
+      case tpes => tpes.tail.foldLeft(tpes.head) {
+        case (suffix, tpe) =>
+          // TODO:
+          //   issue an error when tpe is SelfType
+          val TypeTree(Ident(name), hp, tp) = tpe
+          TypeTree(StaticSelect(suffix, name), hp, tp)
+      }
     }
   }
 
@@ -316,9 +312,9 @@ class ASTGenerator {
       val name = ctx.ID.getText
       val (hps, tps) = Option (ctx.apply_typeparam).map (applyTypeParam).getOrElse ((Vector.empty, Vector.empty) )
 
-      TypeTree (name, hps, tps)
+      TypeTree (Ident(name), hps, tps)
     case _: TP.SelfTypeContext =>
-      SelfType ()
+      TypeTree(SelfType(), Vector.empty, Vector.empty)
   }
 
   def applyCall(ctx: TP.ApplyContext): ApplyParams = {
@@ -369,19 +365,8 @@ class ASTGenerator {
   def hardwareParams(ctx: TP.Hardware_paramsContext): Vector[Expression] =
     ctx.expr.asScala.map(expr).toVector
 
-  def typeParams(ctx: TP.Type_paramsContext): Vector[TypeTree] = {
-    val first = (Option(ctx.SELFTYPE), Option(ctx.ID)) match {
-      case (Some(_), None) => SelfType()
-      case (None, Some(id)) =>
-        val (hps, tps) = applyTypeParam(ctx.apply_typeparam)
-        TypeTree(id.getText, hps, tps)
-      case _ => ???
-    }
-
-    val remains = Option(ctx.`type`).map(_.asScala.map(typeTree).toVector).getOrElse(Vector.empty)
-
-    first +: remains
-  }
+  def typeParams(ctx: TP.Type_paramsContext): Vector[TypeTree] =
+    ctx.`type`.asScala.map(typeTree).toVector
 
 
 

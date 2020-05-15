@@ -164,7 +164,7 @@ hardware_params
     ;
 
 type_params
-    : SELFTYPE | (ID apply_typeparam) (',' type)*
+    : type (',' type)*
     ;
 
 args: (expr (',' expr)*)?
@@ -209,7 +209,7 @@ unit_lit
     : '(' ')'
     ;
 
-type: type_elem ('::' ID)*
+type: type_elem ('::' type_elem)*
     ;
 
 type_elem

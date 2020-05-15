@@ -2,7 +2,7 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Context, Modifier, Symbol, Type, Visibility, PackageRoot, PackageNode}
+import tchdl.util.{Context, LookupResult, Modifier, Symbol, Type, Visibility}
 
 object Namer {
   def exec(cu: CompilationUnit): Unit = {
@@ -11,11 +11,11 @@ object Namer {
     cu.topDefs.map(topLevelNamed(_, root))
 
     val packageSymbol = cu.pkgName.foldLeft[Symbol.PackageSymbol](Symbol.RootPackageSymbol) {
-      case (parent, name) => parent.lookupChild(name) match {
-        case Some(pkg) => pkg
-        case None =>
+      case (parent, name) => parent.lookup[Symbol.PackageSymbol](name) match {
+        case LookupResult.LookupSuccess(pkg) => pkg
+        case LookupResult.LookupFailure(_) =>
           val pkg = Symbol.PackageSymbol(parent, name)
-          parent.appendChild(pkg)
+          parent.append(pkg)
           pkg
       }
     }
@@ -111,9 +111,6 @@ object Namer {
 
   def topLevelNamed[T](ast: T, ctx: Context.RootContext): T = {
     val namedAST = ast match {
-      case cu: CompilationUnit =>
-        val namedDefs = cu.topDefs.map(topLevelNamed(_, ctx))
-        CompilationUnit(cu.filename, cu.pkgName, namedDefs)
       case module: ModuleDef =>
         val tpe = Type.TypeGenerator(module, ctx)
         val symbol: Symbol = Symbol.ModuleSymbol(module.name, ctx.path, Visibility.Public, Modifier.NoModifier, tpe)

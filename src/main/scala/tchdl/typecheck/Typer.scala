@@ -2,7 +2,10 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Context, Error, LookupResult, Reporter, Symbol, Type}
+import tchdl.util.{Context, Error, LookupResult, Reporter, Symbol, Type, Modifier}
+
+import scala.reflect.ClassTag
+import scala.reflect.runtime.universe.TypeTag
 
 object Typer {
   def exec(cu: CompilationUnit): CompilationUnit = {
@@ -39,7 +42,7 @@ object Typer {
 
     val typedHp = module.hp.map(typedValDef(_)(interfaceCtx))
     val typedTp = module.tp.map(typedTypeDef(_)(interfaceCtx))
-    module.bounds.foreach(typedBound(_)(interfaceCtx))
+
     val typedParents = module.parents.map(typedValDef(_)(interfaceCtx))
     val typedSiblings = module.siblings.map(typedValDef(_)(interfaceCtx))
 
@@ -74,7 +77,6 @@ object Typer {
 
     val typedHp = struct.hp.map(typedValDef(_)(signatureCtx))
     val typedTp = struct.tp.map(typedTypeDef(_)(signatureCtx))
-    struct.bounds.foreach(typedBound(_)(signatureCtx))
 
     val fieldCtx = Context(signatureCtx)
     fieldCtx.reAppend(struct.fields.map(_.symbol): _*)
@@ -104,9 +106,8 @@ object Typer {
 
     val typedHp = impl.hp.map(typedValDef(_)(signatureCtx))
     val typedTp = impl.tp.map(typedTypeDef(_)(signatureCtx))
-    impl.bounds.foreach(typedBound(_)(signatureCtx))
 
-    val typedTarget = typedTypeAST(impl.target)(signatureCtx)
+    val typedTarget = typedTypeTree(impl.target)(signatureCtx, acceptPkg = false)
     typedTarget.tpe match {
       case Type.ErrorType => impl
       case targetTpe: Type.RefType =>
@@ -144,10 +145,9 @@ object Typer {
 
     val typedHp = impl.hp.map(Typer.typedValDef(_)(signatureCtx))
     val typedTp = impl.tp.map(Typer.typedTypeDef(_)(signatureCtx))
-    impl.bounds.foreach(Typer.typedBound(_)(signatureCtx))
 
-    val typedInterface = typedTypeAST(impl.interface)(signatureCtx)
-    val typedTarget = typedTypeAST(impl.target)(signatureCtx)
+    val typedInterface = typedTypeTree(impl.interface)(signatureCtx, acceptPkg = false)
+    val typedTarget = typedTypeTree(impl.target)(signatureCtx, acceptPkg = false)
 
     typedTarget.tpe match {
       case Type.ErrorType => impl
@@ -201,9 +201,8 @@ object Typer {
 
     val typedHp = method.hp.map(typedValDef(_)(signatureCtx))
     val typedTp = method.tp.map(typedTypeDef(_)(signatureCtx))
-    method.bounds.foreach(typedBound(_)(signatureCtx))
     val typedParams = method.params.map(typedValDef(_)(signatureCtx))
-    val typedRetTpe = typedTypeAST(method.retTpe)(signatureCtx)
+    val typedRetTpe = typedTypeTree(method.retTpe)(signatureCtx, acceptPkg = false)
     val typedBlk = method.blk.map(typedBlock(_)(signatureCtx))
 
     typedBlk.foreach(TypedCache.setTree)
@@ -227,7 +226,7 @@ object Typer {
   def typedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext): ValDef = {
     vdef.symbol.tpe
 
-    val typedTpeTree = vdef.tpeTree.map(typedTypeAST)
+    val typedTpeTree = vdef.tpeTree.map(typedTypeTree(_)(ctx, acceptPkg = false))
     val typedExp = vdef.expr.map(typedExpr)
 
     val typedValDef = vdef.copy(
@@ -251,7 +250,7 @@ object Typer {
     ctx.reAppend(stage.params.map(_.symbol): _*)
 
     val typedParams = stage.params.map(typedValDef(_)(signatureCtx))
-    val typedRetTpe = typedTypeAST(stage.retTpe)(signatureCtx)
+    val typedRetTpe = typedTypeTree(stage.retTpe)(signatureCtx, acceptPkg = false)
 
     val blkCtx = Context.blk(signatureCtx)
     stage.blk.map(Namer.nodeLevelNamed(_, blkCtx))
@@ -303,28 +302,6 @@ object Typer {
     typedTpeDef
   }
 
-  def typedBound(bound: Bound)(implicit ctx: Context.NodeContext): Unit = {
-    ctx.lookup(bound.target) match {
-      case Left(err) => Reporter.appendError(err)
-      case Right(symbol: Symbol.TypeParamSymbol) =>
-        ctx.owner match {
-          case owner if symbol.owner != owner =>
-            val err = Error.SetBoundForDifferentOwner(owner, symbol.owner)
-            Reporter.appendError(err)
-          case _ =>
-            val typedTT = bound.constraints.map(typedTypeAST)
-            val filteredTpe = typedTT
-              .filterNot(_.tpe.isErrorType)
-              .map(_.tpe.asRefType)
-
-            symbol.setBounds(filteredTpe)
-        }
-      case Right(symbol) =>
-        val err = Error.RequireTypeParamSymbol(symbol.name)
-        Reporter.appendError(err)
-    }
-  }
-
   def typedExpr(expr: Expression)(implicit ctx: Context.NodeContext): Expression =
     expr match {
       case ident: Ident => typedExprIdent(ident)
@@ -348,17 +325,15 @@ object Typer {
       case goto: Goto => typedGoto(goto)
       case finish: Finish => typedFinish(finish)
       case relay: Relay => typedRelay(relay)
+      case select: StaticSelect => throw new ImplementationErrorException("")
     }
 
   def typedExprIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
-    ctx.lookup(ident.name) match {
-      case Left(err) =>
+    ctx.lookup[Symbol.TermSymbol](ident.name) match {
+      case LookupResult.LookupFailure(err) =>
         Reporter.appendError(err)
         ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
-      case Right(symbol: Symbol.TypeSymbol) =>
-        Reporter.appendError(Error.SymbolIsType(symbol.name))
-        ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
-      case Right(symbol: Symbol.TermSymbol) =>
+      case LookupResult.LookupSuccess(symbol) =>
         ident.setTpe(symbol.tpe.asRefType).setSymbol(symbol)
     }
   }
@@ -405,26 +380,26 @@ object Typer {
 
         val typedHps = hps.map(typedExpr)
         val typedTpsFirstHalf = tpsFirstHalf.map(typedType)
-        val typedTpsLatterHalf = applyTPs.tps.map(typedTypeAST)
+        val typedTpsLatterHalf = applyTPs.tps.map(typedTypeTree(_)(ctx, acceptPkg = false))
         val typedTps = typedTpsFirstHalf ++ typedTpsLatterHalf
 
-        val hpErrs = typedHps.filter(_.tpe.isErrorType)
-        val tpErrs = typedTps.filter(_.tpe.isErrorType)
-        val errs = hpErrs ++ tpErrs
+        val hasErrInHardArg = typedHps.exists(_.tpe.isErrorType)
+        val hardArgErrs = typedHps.zip(method.hardwareParam)
+          .filterNot{ case (harg, hparam) => harg.tpe.isErrorType || hparam.tpe.isErrorType }
+          .filterNot { case (harg, hparam) => harg.tpe =:= hparam.tpe }
+          .map { case (harg, hparam) => Error.TypeMissmatch(hparam.tpe, harg.tpe) }
 
-        if(errs.nonEmpty) Left(Error.DummyError)
+        val hasErrInTypeArg = typedTps.exists(_.tpe.isErrorType)
+        val typeArgErrs = typedTps.zip(method.typeParam)
+          .filterNot{ case (targ, _) => targ.tpe.isErrorType }
+          .filterNot{ case (targ, tparam) => targ.tpe.asRefType <|= Type.RefType(tparam) }
+          .map { case (targ, tparam) => Error.NotMeetBound(targ.tpe, tparam.getBounds) }
+
+        (hardArgErrs ++ typeArgErrs).foreach(Reporter.appendError)
+
+        val isInvalid = hasErrInHardArg || hardArgErrs.nonEmpty || hasErrInTypeArg || typeArgErrs.nonEmpty
+        if(isInvalid) Left(Error.DummyError)
         else Right((typedHps, typedTps))
-      }
-
-      def verifyHpTypes(hps: Vector[Expression]): Either[Error, Unit] = {
-        val errs = method.hardwareParam.map(_.tpe)
-          .zip(hps.map(_.tpe))
-          .filter{ case (a, e) => a =!= e }
-          .filter{ case (a, e) => !a.isErrorType && !e.isErrorType }
-          .map { case (a, e) => Error.TypeMissmatch(a, e) }
-
-        if(errs.isEmpty) Right(())
-        else Left(Error.MultipleErrors(errs))
       }
 
       // TODO:
@@ -447,6 +422,7 @@ object Typer {
       //
       //   The process need to detect Interface[T] when
       //   bounds require Interface[u32] if u32 meets T's bounds
+      /*
       def verifyTpBounds(tps: Vector[TypeTree]): Either[Error, Unit] = {
         def tpChecker(boundTps: Vector[Type.RefType], interfaceTps: Vector[Type.RefType]): Boolean =
           boundTps.zip(interfaceTps).forall {
@@ -502,7 +478,7 @@ object Typer {
           else Left(Error.NotMeetBound(tpe, notMetBounds))
         }
 
-        val map = (method.typeParam zip tps.map(_.tpe.asRefType)).toMap
+        val map = (method.typeParam.map(_.asTypeParamSymbol) zip tps.map(_.tpe.asRefType)).toMap
         val bounds = method.typeParam
           .map(_.asTypeParamSymbol)
           .map(_.getBounds)
@@ -511,20 +487,20 @@ object Typer {
         val errors = tps.map(_.tpe).zip(bounds).map{
           case (tpe: Type.RefType, bound) => verifyTpBound(tpe, bound)
           case (Type.ErrorType, _) => ???
+          case (tpe, _) => throw new ImplementationError
         }.collect { case Left(err) => err }
 
         if(errors.isEmpty) Right(())
         else Left(Error.MultipleErrors(errors))
       }
+      */
 
       for {
         _ <- rejectMethodNoTPorHP
         _ <- verifyTPsAndHPsLength
         pairs <- verifyTPsAndHPs
         (hps, tps) = pairs
-        _ <- verifyHpTypes(hps)
-        _ <- verifyTpBounds(tps)
-        map = method.typeParam.zip(tps.map(_.tpe.asRefType)).toMap
+        map = (method.typeParam.map(_.asTypeParamSymbol) zip tps.map(_.tpe.asRefType)).toMap
         methodTpe = method.replaceWithTypeParamMap(map)
       } yield (methodTpe, hps, tps)
     }
@@ -749,72 +725,92 @@ object Typer {
     }
   }
 
-  def typedType(expr: Expression)(implicit ctx: Context.NodeContext): TypeTree =
+  def typedType(expr: Expression)(implicit ctx: Context.NodeContext): TypeTree = {
+    def typedTypeIdentFromExpr(ident: Ident): TypeTree = {
+      ctx.lookup[Symbol.TypeSymbol](ident.name) match {
+        case LookupResult.LookupFailure(err) =>
+          Reporter.appendError(err)
+          TypeTree(ident, Vector.empty, Vector.empty)
+            .setTpe(Type.ErrorType)
+            .setSymbol(Symbol.ErrorSymbol)
+            .setID(ident.id)
+        case LookupResult.LookupSuccess(symbol: Symbol.EntityTypeSymbol) =>
+          verifyTypeParams(symbol, Vector.empty, Vector.empty, symbol.tpe.asEntityType)
+        case LookupResult.LookupSuccess(symbol: Symbol.TypeParamSymbol) =>
+          TypeTree(ident, Vector.empty, Vector.empty)
+            .setTpe(Type.RefType(symbol, Vector.empty, Vector.empty))
+            .setSymbol(symbol)
+            .setID(ident.id)
+      }
+    }
+
+    /**
+     * This method is called at only first time.
+     *
+     * I.E.
+     *    if the code is `A::B::C`, this method is called only for (1).
+     *    And also, (2) is typed at [[typedSelectType]]
+     *    StaticSelect(                                           |
+     *      TypeTree(                                             |
+     *        StaticSelect(TypeTree(Ident(A), _, _), B) |---(2)   |
+     *        _, _,                                               |---(1)
+     *      )                                                     |
+     *      C                                                     |
+     *    )                                                       |
+     *
+     * That's why this method return TypeTree
+     * instead of StaticSelect which [[typedSelectType]] returns.
+     *
+     * This method also is called only from [[typedType]].
+     * For now, a type tree of Expression form is only for type parameter's expression part,
+     * and if parser detect `type with type parameter` or `self type`,
+     * parser transitions to type part.
+     * So, this method expect type without type parameter, and
+     * if a looked up type require type parameters,
+     * it is treated as invalid and returned as erroneous type tree.
+     */
+    def typedTypeStaticSelectFromExpr(select: StaticSelect): TypeTree = {
+      val typedTT = typedTypeTree(select.suffix)(ctx, acceptPkg = true)
+
+      def errorTypeTree =
+        TypeTree(StaticSelect(typedTT, select.name), Vector.empty, Vector.empty)
+          .setTpe(Type.ErrorType)
+          .setSymbol(Symbol.ErrorSymbol)
+          .setID(select.id)
+
+      def postProcessForLookup(result: LookupResult[Symbol.TypeSymbol]): TypeTree = result match {
+        case LookupResult.LookupFailure(err) =>
+          Reporter.appendError(err)
+          errorTypeTree
+        case LookupResult.LookupSuccess(symbol) =>
+          verifyTypeParams(symbol, Vector.empty, Vector.empty, symbol.tpe.asEntityType)
+      }
+
+      typedTT.symbol match {
+        case ps: Symbol.PackageSymbol => postProcessForLookup(ps.lookup[Symbol.TypeSymbol](select.name))
+        case _: Symbol.TypeSymbol => postProcessForLookup(typedTT.tpe.asRefType.lookupType(select.name))
+        case Symbol.ErrorSymbol => errorTypeTree
+        case symbol =>
+          val msg = s"${symbol.getClass} should not appear here"
+          throw new ImplementationErrorException(msg)
+      }
+    }
+
     expr match {
-      case ident: Ident => typedTypeIdent(ident)
-      case apply: ApplyTypeParams => typedTypeApplyTypeParams(apply)
+      case ident: Ident => typedTypeIdentFromExpr(ident)
+      case select: StaticSelect => typedTypeStaticSelectFromExpr(select)
       case expr =>
         Reporter.appendError(Error.InvalidFormatForType(expr))
-        TypeTree("", Vector.empty, Vector.empty).setTpe(Type.ErrorType)
+        TypeTree(Ident(""), Vector.empty, Vector.empty)
+          .setTpe(Type.ErrorType)
+          .setSymbol(Symbol.ErrorSymbol)
+          .setID(expr.id)
     }
-
-  def typedTypeIdent(ident: Ident)(implicit ctx: Context.NodeContext): TypeTree = {
-    val tt = ctx.lookup(ident.name) match {
-      case Left(err) =>
-        Reporter.appendError(err)
-        TypeTree(ident.name, Vector.empty, Vector.empty).setTpe(Type.ErrorType)
-      case Right(symbol: Symbol.TermSymbol) =>
-        Reporter.appendError(Error.SymbolIsTerm(symbol.name))
-        TypeTree(symbol.name, Vector.empty, Vector.empty).setTpe(Type.ErrorType)
-      case Right(symbol: Symbol.TypeSymbol) =>
-        /*
-         * If a type requires type parameter, this process cause error
-         * because this process expect only monomorphic type
-         * like Int and String, and not List[_] and Option[_].
-         */
-        val retTpe = symbol.tpe match {
-          case tpe: Type.EntityType if tpe.hardwareParam.nonEmpty || tpe.typeParam.nonEmpty =>
-            Reporter.appendError(Error.RequireTypeParameter)
-            Type.ErrorType
-          case _ =>
-            Type.RefType(symbol, Vector.empty, Vector.empty)
-        }
-
-        TypeTree(symbol.name, Vector.empty, Vector.empty).setTpe(retTpe)
-    }
-
-    tt.setID(ident.id)
   }
 
-  def typedTypeApplyTypeParams(apply: ApplyTypeParams)(implicit ctx: Context.NodeContext): TypeTree = {
-    val ApplyTypeParams(Ident(name), hps, tps) = apply
-
-    val tt = ctx.lookup(name) match {
-      case Left(err) =>
-        Reporter.appendError(err)
-        TypeTree(name, Vector.empty, Vector.empty).setTpe(Type.ErrorType)
-      case Right(symbol: Symbol.TermSymbol) =>
-        Reporter.appendError(Error.SymbolIsTerm(symbol.name))
-        TypeTree(name, Vector.empty, Vector.empty).setTpe(Type.ErrorType)
-      case Right(symbol: Symbol.TypeSymbol) =>
-        symbol.tpe match {
-          /**
-           * For now, there is no plan to support higher-kind type.
-           * So, this pattern match rejects [[Type.ParameterType]]
-           */
-          case _: Type.ParameterType =>
-            Reporter.appendError(Error.RejectHigherKind)
-            TypeTree(symbol.name, apply.hps, apply.tps).setTpe(Type.ErrorType)
-          case tpe: Type.EntityType => verifyTypeParams(symbol, hps, tps, tpe)
-        }
-    }
-
-    tt.setID(apply.id)
-  }
-
-  def typedTypeAST(typeAST: TypeTree)(implicit ctx: Context.NodeContext): TypeTree = {
+  def typedTypeAST(typeAST: TypeAST)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): TypeAST = {
     val tpeAST = typeAST match {
-      case typeTree: TypeTree => typedTypeTree(typeTree)
+      case ident: Ident => typedTypeIdent(ident)
       case self: SelfType => typedSelfType(self)
       case select: StaticSelect => typedSelectType(select)
     }
@@ -822,61 +818,126 @@ object Typer {
     tpeAST.setID(typeAST.id)
   }
 
-  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext): TypeTree =
-    ctx.lookup(typeTree.name) match {
+  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): TypeTree = {
+    def errorTpe(suffix: TypeAST) = TypeTree(suffix, typeTree.hp, typeTree.tp)
+      .setTpe(Type.ErrorType)
+      .setSymbol(Symbol.ErrorSymbol)
+      .setID(typeTree.id)
+
+    def buildTypeTree(suffix: TypeAST): Either[Error, TypeTree] = {
+      suffix.symbol match {
+        case Symbol.ErrorSymbol =>
+          Right(typeTree.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
+        /**
+         * There is no need to verify whether acceptPkg is true or false
+         * because that check is already done in [[typedSelectType]] or [[typedTypeIdent]].
+         */
+        case packageSymbol: Symbol.PackageSymbol =>
+          if(typeTree.hp.nonEmpty || typeTree.tp.nonEmpty) Left(Error.RejectTypeParam[Symbol.PackageSymbol]())
+          else Right(
+            TypeTree(suffix, Vector.empty, Vector.empty)
+              .setSymbol(packageSymbol)
+              .setTpe(Type.NoType)
+              .setID(typeTree.id)
+          )
+        case typeSymbol: Symbol.TypeParamSymbol =>
+          if(typeTree.hp.nonEmpty || typeTree.tp.nonEmpty) Left(Error.RejectTypeParam[Symbol.TypeParamSymbol]())
+          else Right(
+            TypeTree(suffix, Vector.empty, Vector.empty)
+              .setSymbol(typeSymbol)
+              .setTpe(typeSymbol.tpe)
+              .setID(typeTree.id)
+          )
+        case typeSymbol: Symbol.EntityTypeSymbol =>
+          Right(verifyTypeParams(typeSymbol, typeTree.hp, typeTree.tp, typeSymbol.tpe.asEntityType))
+        case symbol =>
+          val msg = s"${symbol.getClass} should not appear here"
+          throw new ImplementationErrorException(msg)
+      }
+    }
+
+    val suffix = typedTypeAST(typeTree.expr)
+    val tt = suffix match {
+      case ident: Ident => buildTypeTree(ident)
+      case select: StaticSelect => buildTypeTree(select)
+      case self: SelfType => self.tpe match {
+        case _: Type.RefType =>
+          if(typeTree.hp.nonEmpty || typeTree.tp.nonEmpty) Left(Error.RejectTPFromSelf)
+          else Right(
+            TypeTree(self, Vector.empty, Vector.empty)
+              .setTpe(self.tpe)
+              .setSymbol(self.symbol)
+              .setID(typeTree.id)
+          )
+        case Type.ErrorType => Right(errorTpe(self))
+      }
+    }
+
+    tt match {
+      case Right(tt) => tt
       case Left(err) =>
         Reporter.appendError(err)
-        typeTree.setTpe(Type.ErrorType)
-      case Right(symbol: Symbol.TermSymbol) =>
-        Reporter.appendError(Error.SymbolIsTerm(symbol.name))
-        typeTree.setTpe(Type.ErrorType)
-      case Right(symbol: Symbol.TypeSymbol) =>
-        symbol.tpe match {
-          case tpe: Type.EntityType => verifyTypeParams(symbol, typeTree.hp, typeTree.tp, tpe)
-          case tpe: Type.ParameterType =>
-            /**
-             * For now, there is no plan to support higher-kind type.
-             * So, ParameterType with tyep parameters like T[A] is rejected
-             */
-            val treeTpe =
-              if(typeTree.hp.isEmpty && typeTree.tp.isEmpty) tpe
-              else {
-                Reporter.appendError(Error.RejectHigherKind)
-                Type.ErrorType
-              }
+        TypeTree(suffix, typeTree.hp, typeTree.tp)
+          .setTpe(Type.ErrorType)
+          .setSymbol(Symbol.ErrorSymbol)
+          .setID(typeTree.id)
+    }
+  }
 
-            typeTree.setTpe(treeTpe)
-        }
+  def typedTypeIdent(ident: Ident)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): Ident = {
+    val symbol = ctx.lookup[Symbol](ident.name) match {
+      case LookupResult.LookupSuccess(symbol: Symbol.TypeSymbol) => symbol
+      case LookupResult.LookupSuccess(symbol: Symbol.PackageSymbol) if acceptPkg => symbol
+      case LookupResult.LookupSuccess(symbol) =>
+        Reporter.appendError(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
+        Symbol.ErrorSymbol
+      case LookupResult.LookupFailure(err) =>
+        Reporter.appendError(err)
+        Symbol.ErrorSymbol
 
     }
+
+    ident.setSymbol(symbol).setTpe(Type.NoType)
+  }
+
 
   def typedSelfType(self: SelfType)(implicit ctx: Context.NodeContext): SelfType =
     ctx.self match {
       case None =>
         Reporter.appendError(Error.UsingSelfOutsideClass)
-        self.setTpe(Type.ErrorType)
+        self.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
       case Some(tpe) =>
-        self.setTpe(tpe)
+        self.setTpe(tpe).setSymbol(tpe.origin)
     }
 
-  def typedSelectType(select: StaticSelect)(implicit ctx: Context.NodeContext): StaticSelect = {
-    val typedSuffix = select.suffix match {
-      case suffix: StaticSelect => typedSelectType(suffix)
-      case suffix: TypeTree => typedTypeTree(suffix)
-      case suffix: SelfType => typedSelfType(suffix)
+  def typedSelectType(select: StaticSelect)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): StaticSelect = {
+    val typedSuffix = typedTypeTree(select.suffix)(ctx, acceptPkg = true)
+
+    val symbol = typedSuffix.symbol match {
+      case Symbol.ErrorSymbol => Symbol.ErrorSymbol
+      case packageSymbol: Symbol.PackageSymbol if acceptPkg =>
+        packageSymbol.lookup(select.name) match {
+          case LookupResult.LookupSuccess(symbol) => symbol
+          case LookupResult.LookupFailure(err) =>
+            Reporter.appendError(err)
+            Symbol.ErrorSymbol
+        }
+      case _: Symbol.TypeParamSymbol =>
+        typedSuffix.tpe.asRefType.lookupType(select.name) match {
+          case LookupResult.LookupSuccess(symbol) => symbol
+          case LookupResult.LookupFailure(err) =>
+            Reporter.appendError(err)
+            Symbol.ErrorSymbol
+        }
+      case symbol =>
+        Reporter.appendError(Error.RequireSymbol[Symbol.TypeParamSymbol](symbol))
+        Symbol.ErrorSymbol
     }
 
-    val selectTpe = typedSuffix.tpe match {
-      case Type.ErrorType => Type.ErrorType
-      case tpe: Type.RefType => tpe.lookupType(select.name) match {
-        case Right(t) => t
-        case Left(err) =>
-          Reporter.appendError(err)
-          Type.ErrorType
-      }
-    }
-
-    StaticSelect(typedSuffix, select.name).setTpe(selectTpe).setID(select.id)
+    StaticSelect(typedSuffix, select.name)
+      .setTpe(Type.NoType)
+      .setSymbol(symbol)
+      .setID(select.id)
   }
 
   def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext): BitLiteral = {
@@ -911,12 +972,63 @@ object Typer {
     str.setTpe(strTpe).setID(str.id)
   }
 
+  def typedHardwareParamExpr(expr: Expression)(implicit ctx: Context.NodeContext): Expression = expr match {
+    case ident: Ident => typedHardwareParamIdent(ident)
+    case binop: BinOp => typedHardwareParamBinOp(binop)
+    case literal: IntLiteral => typedHardwareParamIntLit(literal)
+    case literal: StringLiteral => typedHardwareParamStrLit(literal)
+    case expr => throw new ImplementationErrorException(s"${expr.getClass} should not appear here")
+  }
+
+  def typedHardwareParamIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
+    def verifyType(symbol: Symbol): Either[Error, Unit] =
+      if(symbol.tpe =:= Type.numTpe || symbol.tpe =:= Type.strTpe) Right(())
+      else Left(Error.RequireSpecificType(
+        Vector(Type.numTpe, Type.strTpe), symbol.tpe
+      ))
+
+    val symbol = for {
+      symbol <- ctx.lookup[Symbol.TermSymbol](ident.name).toEither
+           _ <- verifyType(symbol)
+    } yield symbol
+
+    symbol match {
+      case Left(err) =>
+        Reporter.appendError(err)
+        ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+      case Right(symbol) =>
+        ident.setTpe(symbol.tpe).setSymbol(symbol)
+    }
+  }
+
+  def typedHardwareParamBinOp(binop: BinOp)(implicit ctx: Context.NodeContext): BinOp = {
+    val typedLeft  = typedHardwareParamExpr(binop.left)
+    val typedRight = typedHardwareParamExpr(binop.right)
+
+    val isValid = (typedLeft.tpe =:= Type.numTpe) && (typedRight.tpe =:= Type.numTpe)
+    val hasStrTpe = (typedLeft.tpe =:= Type.strTpe) || (typedRight.tpe =:= Type.strTpe)
+    val tpe =
+      if(isValid) Type.numTpe
+      else if(hasStrTpe) { Reporter.appendError(Error.SymbolNotFound("+")); Type.ErrorType }
+      else Type.ErrorType
+
+    BinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
+  }
+
+  def typedHardwareParamIntLit(int: IntLiteral): IntLiteral = {
+    int.setTpe(Type.numTpe)
+  }
+
+  def typedHardwareParamStrLit(str: StringLiteral): StringLiteral = {
+    str.setTpe(Type.strTpe)
+  }
+
+
   def typedFinish(finish: Finish)(implicit ctx: Context.NodeContext): Finish = {
     ctx.owner match {
       case _: Symbol.StateSymbol =>
       case _: Symbol.StageSymbol =>
-      case _ =>
-        Reporter.appendError(Error.FinishOutsideStage)
+      case _ => Reporter.appendError(Error.FinishOutsideStage)
     }
 
     finish.setTpe(Type.unitTpe).setID(finish.id)
@@ -925,33 +1037,27 @@ object Typer {
   def typedGoto(goto: Goto)(implicit ctx: Context.NodeContext): Goto = {
     ctx.owner match {
       case _: Symbol.StateSymbol =>
-        ctx.lookup(goto.target) match {
-          case Left(err) => Reporter.appendError(err)
-          case Right(_: Symbol.StateSymbol) =>
-          case Right(symbol) =>
-            Reporter.appendError(Error.RequireStateSymbol(symbol.name))
+        ctx.lookup[Symbol.StateSymbol](goto.target) match {
+          case LookupResult.LookupFailure(err) => Reporter.appendError(err)
+          case _ =>
         }
-      case _ =>
-        Reporter.appendError(Error.GotoOutsideState)
+      case _ => Reporter.appendError(Error.GotoOutsideState)
     }
 
     goto.setTpe(Type.unitTpe).setID(goto.id)
   }
 
   def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext): Generate = {
-    val tpe = ctx.lookup(generate.target) match {
-      case Left(err) =>
+    val tpe = ctx.lookup[Symbol.StageSymbol](generate.target) match {
+      case LookupResult.LookupFailure(err) =>
         Reporter.appendError(err)
         Type.ErrorType
-      case Right(symbol: Symbol.StageSymbol) =>
+      case LookupResult.LookupSuccess(symbol) =>
         val tpe = symbol.tpe.asMethodType
         val typedArgs = generate.params.map(typedExpr)
 
         verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(Reporter.appendError)
         tpe.returnType
-      case Right(symbol) =>
-        Reporter.appendError(Error.RequireStageSymbol(symbol.name))
-        Type.ErrorType
     }
 
     generate.setTpe(tpe)
@@ -964,20 +1070,17 @@ object Typer {
       case _ => Reporter.appendError(Error.RelayOutsideStage)
     }
 
-    val tpe = ctx.lookup(relay.target) match {
-      case Left(err) =>
+    val tpe = ctx.lookup[Symbol.StageSymbol](relay.target) match {
+      case LookupResult.LookupFailure(err) =>
         Reporter.appendError(err)
         Type.ErrorType
-      case Right(symbol: Symbol.StageSymbol) =>
+      case LookupResult.LookupSuccess(symbol) =>
         val tpe = symbol.tpe.asMethodType
         val typedArgs = relay.params.map(typedExpr)
 
         verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(Reporter.appendError)
 
         tpe.returnType
-      case Right(symbol) =>
-        Reporter.appendError(Error.RequireStageSymbol(symbol.name))
-        Type.ErrorType
     }
 
     relay.setTpe(tpe)
@@ -1001,7 +1104,7 @@ object Typer {
     tps: Vector[TypeTree],
     tpe: Type.EntityType
   )(
-    implicit ctx: Context.NodeContext
+    implicit ctx: Context.NodeContext,
   ): TypeTree = {
     val actualLength = hps.length + tps.length
     val expectLength = tpe.hardwareParam.length + tpe.typeParam.length
@@ -1009,23 +1112,23 @@ object Typer {
     if (expectLength != actualLength) {
       Reporter.appendError(Error.ParameterLengthMismatch(expectLength, actualLength))
 
-      return TypeTree(symbol.name, hps, tps).setTpe(Type.ErrorType)
+      return TypeTree(Ident(symbol.name), hps, tps).setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
     }
 
     val (splitHps, tpsFrontHalf) = hps.splitAt(tpe.hardwareParam.length)
 
-    val typedHps = splitHps.map(typedExpr)
+    val typedHps = splitHps.map(typedHardwareParamExpr)
     val typedTpsFrontHalf = tpsFrontHalf.map(typedType)
-    val typedTpsLatterHalf = tps.map(typedTypeAST)
+    val typedTpsLatterHalf = tps.map(typedTypeTree(_)(ctx, acceptPkg = false))
     val typedTps = typedTpsFrontHalf ++ typedTpsLatterHalf
 
-    val treeTpe =
+    val (treeTpe, treeSymbol) =
       if (typedHps.exists(_.tpe.isErrorType) || typedTps.exists(_.tpe.isErrorType))
-        Type.ErrorType
+        (Type.ErrorType, Symbol.ErrorSymbol)
       else
-        Type.RefType(symbol, typedHps, typedTps.map(_.tpe.asRefType))
+        (Type.RefType(symbol, typedHps, typedTps.map(_.tpe.asRefType)), symbol)
 
-    TypeTree(symbol.name, typedHps, typedTps).setTpe(treeTpe)
+    TypeTree(Ident(symbol.name), typedHps, typedTps).setTpe(treeTpe).setSymbol(treeSymbol)
   }
 }
 

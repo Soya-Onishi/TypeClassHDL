@@ -38,7 +38,7 @@ trait HasSymbol {
   def setSymbol(symbol: Symbol): this.type = { _symbol = Some(symbol); this }
 }
 
-case class CompilationUnit(filename: Option[String], pkgName: Vector[String], topDefs: Vector[Definition]) extends AST
+case class CompilationUnit(filename: Option[String], pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition]) extends AST
 
 case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], parents: Vector[ValDef], siblings: Vector[ValDef], components: Vector[Component]) extends Definition
 case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
@@ -59,6 +59,7 @@ case class Ident(name: String) extends Expression with TypeAST with HasSymbol
 case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
 case class ApplyTypeParams(suffix: Expression, hps: Vector[Expression], tps: Vector[TypeTree]) extends Expression
 case class Apply(suffix: Expression, hp: Vector[Expression], tp: Vector[TypeTree], args: Vector[Expression]) extends Expression
+case class BinOp(op: Operation, left: Expression, right: Expression) extends Expression
 case class Select(expr: Expression, name: String) extends Expression with HasSymbol
 case class StaticSelect(suffix: TypeTree, name: String) extends Expression with TypeAST
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
@@ -83,3 +84,11 @@ case class Relay(target: String, params: Vector[Expression]) extends Expression
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
 case class TypeTree(expr: TypeAST, hp: Vector[Expression], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
 case class SelfType() extends TypeAST
+
+trait Operation
+object Operation {
+  case object Add extends Operation
+  case object Sub extends Operation
+  case object Mul extends Operation
+  case object Div extends Operation
+}

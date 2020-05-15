@@ -1,7 +1,7 @@
 package tchdl.util
 
 import tchdl.ast._
-import tchdl.typecheck.{Namer, Typer}
+import tchdl.typecheck.{ImplementInterfaceContainer, Namer, Typer}
 import tchdl.util.TchdlException.ImplementationErrorException
 
 trait Type {
@@ -28,7 +28,7 @@ trait Type {
    * and does not verify [[Type.RefType.hardwareParam]] because of what explained above.
    */
   def =:=(other: Type): Boolean
-  def =!=(other: Type): Boolean = !(this =:= other)
+  final def =!=(other: Type): Boolean = !(this =:= other)
 }
 
 object Type {
@@ -63,7 +63,7 @@ object Type {
         case module: ModuleDef =>
           val paramCtx = Context(ctx, module.symbol)
           val namedHp = module.hp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTermSymbol)
-          val namedTp = module.tp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTypeSymbol)
+          val namedTp = module.tp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTypeParamSymbol)
 
           val componentCtx = Context(paramCtx)
           module.components.map(Namer.nodeLevelNamed(_, componentCtx))
@@ -72,7 +72,7 @@ object Type {
         case struct: StructDef =>
           val paramCtx = Context(ctx, struct.symbol)
           val namedHp = struct.hp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTermSymbol)
-          val namedTp = struct.tp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTypeSymbol)
+          val namedTp = struct.tp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTypeParamSymbol)
 
           val fieldCtx = Context(paramCtx)
           struct.fields.map(Namer.nodeLevelNamed(_, fieldCtx))
@@ -81,7 +81,7 @@ object Type {
         case interface: InterfaceDef =>
           val signatureCtx = Context(ctx, interface.symbol)
           val namedHp = interface.hp.map(Namer.nodeLevelNamed(_, signatureCtx)).map(_.symbol.asTermSymbol)
-          val namedTp = interface.tp.map(Namer.nodeLevelNamed(_, signatureCtx)).map(_.symbol.asTypeSymbol)
+          val namedTp = interface.tp.map(Namer.nodeLevelNamed(_, signatureCtx)).map(_.symbol.asTypeParamSymbol)
 
           val interfaceCtx = Context(signatureCtx)
           interface.methods.map(Namer.nodeLevelNamed(_, interfaceCtx))
@@ -90,12 +90,12 @@ object Type {
         case method: MethodDef =>
           val paramCtx = Context(ctx, method.symbol)
           val namedHp = method.hp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTermSymbol)
-          val namedTp = method.tp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTypeSymbol)
+          val namedTp = method.tp.map(Namer.nodeLevelNamed(_, paramCtx)).map(_.symbol.asTypeParamSymbol)
           val paramTpes = method.params
             .map(Namer.nodeLevelNamed(_, paramCtx))
             .map(Typer.typedValDef(_)(paramCtx))
             .map(_.symbol.tpe.asRefType)
-          val retTpes = Typer.typedTypeAST(method.retTpe)(paramCtx).tpe.asRefType
+          val retTpes = Typer.typedTypeTree(method.retTpe)(paramCtx, acceptPkg = false).tpe.asRefType
 
           MethodType(paramTpes, retTpes, namedHp, namedTp)
         case vdef: ValDef =>
@@ -110,7 +110,7 @@ object Type {
               val typedExp = Typer.typedExpr(expr)(nodeCtx)
               typedExp.tpe
             case (Some(tpe), _) =>
-              val typedTpe = Typer.typedTypeAST(tpe)(nodeCtx)
+              val typedTpe = Typer.typedTypeTree(tpe)(nodeCtx, acceptPkg = false)
               typedTpe.tpe
           }
         case stage: StageDef =>
@@ -119,7 +119,7 @@ object Type {
             .map(Namer.nodeLevelNamed(_, paramCtx))
             .map(Typer.typedValDef(_)(paramCtx))
 
-          val typedTpe = Typer.typedTypeAST(stage.retTpe)(paramCtx)
+          val typedTpe = Typer.typedTypeTree(stage.retTpe)(paramCtx, acceptPkg = false)
 
           MethodType(
             typedParams.map(_.symbol.tpe.asRefType),
@@ -154,21 +154,6 @@ object Type {
     val typeParam: Vector[Symbol.TypeParamSymbol],
     val declares: Scope
   ) extends DeclaredType {
-    import scala.collection.mutable
-
-    class TraitDefPair(val trat: Type.RefType, val tpe: Type.RefType) {
-      override def hashCode(): Int = trat.hashCode() + tpe.hashCode()
-    }
-
-    private val impls: mutable.Map[Type.RefType, Scope] = mutable.Map[Type.RefType, Scope]()
-    def lookupImpl(refTpe: RefType): Option[Scope] = impls.get(refTpe)
-    def appendImpl(refTpe: RefType, scope: Scope): Either[Error, Unit] =
-      if(impls.contains(refTpe)) Left(Error.ImplementConflict())
-      else {
-        impls(refTpe) = scope
-        Right(())
-      }
-
     override def =:=(other: Type): Boolean = other match {
       case other: EntityType =>
         this.name == this.name && this.namespace == other.namespace
@@ -181,7 +166,7 @@ object Type {
       name: String,
       namespace: NameSpace,
       hardwareParam: Vector[Symbol.TermSymbol],
-      typeParam: Vector[Symbol.TypeSymbol],
+      typeParam: Vector[Symbol.TypeParamSymbol],
       declares: Scope
     ): EntityType =
       new EntityType(name, namespace, hardwareParam, typeParam, declares)
@@ -222,7 +207,7 @@ object Type {
     val params: Vector[RefType],
     val returnType: RefType,
     val hardwareParam: Vector[Symbol.TermSymbol],
-    val typeParam: Vector[Symbol.TypeSymbol],
+    val typeParam: Vector[Symbol.TypeParamSymbol],
   ) extends Type {
     lazy val name: String = {
       val argTypeNames = params.map(_.name).mkString(", ")
@@ -256,7 +241,7 @@ object Type {
       args: Vector[RefType],
       retTpe: RefType,
       hp: Vector[Symbol.TermSymbol],
-      tp: Vector[Symbol.TypeSymbol]
+      tp: Vector[Symbol.TypeParamSymbol]
     ): MethodType =
       new MethodType(args, retTpe, hp, tp)
   }
@@ -271,33 +256,40 @@ object Type {
 
     override def declares: Scope = origin.tpe.declares
 
-    def lookupField(name: String): LookupResult = {
-      declares.lookup(name) match {
-        case Some(symbol) => LookupResult.LookupSuccess(symbol)
-        case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+    def lookupField(name: String): LookupResult[Symbol.TermSymbol] = {
+      def lookupToClass: LookupResult[Symbol.TermSymbol] =
+        origin.tpe.declares.lookup(name) match {
+          // TODO: verify whether this logic needs to replace type parameter into actual type or not
+          case Some(symbol: Symbol.TermSymbol) => LookupResult.LookupSuccess(symbol)
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TermSymbol](symbol))
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+        }
+
+      this.origin match {
+        case _: Symbol.ClassTypeSymbol => lookupToClass
+        case symbol => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.ClassTypeSymbol](symbol))
       }
     }
 
-    def lookupMethod(name: String)(implicit ctx: Context): LookupResult = {
-      val implMethod = origin match {
-        case origin: Symbol.TypeSymbol with HasImpls => origin.lookupImpl(this) match {
+    def lookupMethod(name: String)(implicit ctx: Context): LookupResult[Symbol.MethodSymbol] = {
+      val specificTpeImplMethod = this.origin match {
+        case origin: Symbol.EntityTypeSymbol => origin.lookupImpl(this) match {
           case Vector() => None
-          case Vector(impl) => impl.lookup(name)
+          case Vector(impl) => impl.lookup[Symbol.MethodSymbol](name)
           case _ =>
-            val msg = "Multiple implementations are detected. However, this case must not be happened due to verifying implementation conflict"
+            val msg = "Multiple implementations are detected. However, this case must not be happened because implementation conflict is already detected before phase"
             throw new ImplementationErrorException(msg)
         }
-        case symbol => symbol.tpe.declares.lookup(name)
+        case _: Symbol.TypeParamSymbol => None
       }
 
-      implMethod match {
-        case Some(symbol) => LookupResult.LookupSuccess(symbol)
+      specificTpeImplMethod match {
+        case Some(result) => LookupResult.LookupSuccess(result)
         case None =>
           // For the case of reference to type parameter
           val symbols = ctx.interfaceTable.values
             .flatMap(_.lookupImpl(this))
-            .flatMap(_.lookup(name))
-            .filter(_.isMethodSymbol)
+            .flatMap(_.lookup[Symbol.MethodSymbol](name))
             .toVector
 
           symbols match {
@@ -309,35 +301,12 @@ object Type {
     }
 
     // TODO: lookup type that is defined at implementation
-    def lookupType(name: String)(implicit ctx: Context): Either[Error, Type] = {
-      val tpe = this.origin match {
-        case origin: Symbol.EntityTypeSymbol =>origin.lookupImpl(this) match {
-          case Vector() => None
-          case Vector(impl) => impl.lookup(name)
-          case _ =>
-            val msg = "Multiple implementations are detected. However, this case must not be happened due to verifying implementation conflict"
-            throw new ImplementationErrorException(msg)
-        }
-        case _ => None
-      }
+    def lookupType(name: String): LookupResult[Symbol.TypeSymbol] = {
+      def lookupToTypeParam(tp: Symbol.TypeParamSymbol): LookupResult[Symbol.TypeSymbol] = ???
 
-      tpe match {
-        case Some(tpe) => tpe.tpe match {
-          case Type.ErrorType => Left(Error.DummyError)
-          case tpe: Type.RefType => Right(tpe)
-        }
-        case None =>
-          val types = ctx.interfaceTable.values
-            .flatMap(_.lookupImpl(this))
-            .flatMap(_.lookup(name))
-            .collect{ case symbol: Symbol.FieldTypeSymbol => symbol }
-            .toVector
-
-          types match {
-            case Vector(tpe) => Right(tpe.tpe.asRefType)
-            case Vector() => Left(Error.SymbolNotFound(name))
-            case types => Left(Error.AmbiguousSymbols(types))
-          }
+      this.origin match {
+        case origin: Symbol.TypeParamSymbol => lookupToTypeParam(origin)
+        case origin: Symbol.EntityTypeSymbol => LookupResult.LookupFailure(Error.RejectEntityTypeFromLookup(origin))
       }
     }
 
@@ -395,15 +364,15 @@ object Type {
 
           sym0 == sym1 && isSameTP
         case (_: Symbol.EntityTypeSymbol, sym1: Symbol.TypeParamSymbol) =>
+          def isApplicative(impl: ImplementInterfaceContainer, bound: Type.RefType): Boolean =
+            (bound <|= impl.targetInterface) && (this <|= impl.targetType)
+
           val impls = sym1.getBounds
             .map(_.origin.asInterfaceSymbol)
             .map(_.impls)
 
-          sym1.getBounds.zip(impls)
-            .map{
-              case (bound, impls) =>
-                impls.filter(impl => (bound <|= impl.targetInterface) && (this <|= impl.targetType))
-            }
+          sym1.getBounds.zip(impls).view
+            .map{ case (bound, impls) => impls.filter(isApplicative(_, bound)) }
             .forall(_.nonEmpty)
         case (_: Symbol.TypeParamSymbol, _: Symbol.EntityTypeSymbol) => false
         case (sym0: Symbol.TypeParamSymbol, sym1: Symbol.TypeParamSymbol) =>
@@ -412,7 +381,6 @@ object Type {
               leftBound => leftBound <|= rightBound
             }
           }
-
       }
     }
 
@@ -463,4 +431,15 @@ object Type {
     val symbol = Symbol.lookupBuiltin("Bit")
     Type.RefType(symbol, Vector(width), Vector.empty)
   }
+
+  def numTpe: Type.RefType = {
+    val symbol = Symbol.lookupBuiltin("Num")
+    Type.RefType(symbol, Vector.empty, Vector.empty)
+  }
+
+  def strTpe: Type.RefType = {
+    val symbol = Symbol.lookupBuiltin("Str")
+    Type.RefType(symbol, Vector.empty, Vector.empty)
+  }
+
 }

@@ -2,6 +2,8 @@ package tchdl.util
 
 import tchdl.typecheck.{ImplementContainer, ImplementClassContainer, ImplementInterfaceContainer}
 import tchdl.util.TchdlException.ImplementationErrorException
+import scala.reflect.ClassTag
+import scala.reflect.runtime.universe.TypeTag
 
 sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   val path: NameSpace
@@ -55,6 +57,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asTypeParamSymbol: Symbol.TypeParamSymbol = this.asInstanceOf[Symbol.TypeParamSymbol]
   def asImplementSymbol: Symbol.ImplementSymbol = this.asInstanceOf[Symbol.ImplementSymbol]
 
+  def isTypeSymbol: Boolean = this.isInstanceOf[Symbol.TypeSymbol]
   def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]
   def isFieldTypeSymbol: Boolean = this.isInstanceOf[Symbol.FieldTypeSymbol]
   def isMethodSymbol: Boolean = this.isInstanceOf[Symbol.MethodSymbol]
@@ -73,7 +76,7 @@ trait HasImpls {
   private val _impls = mutable.Map[Int, ImplType]()
 
   def appendImpl(implTree: ImplType#TreeType, impl: ImplType): Unit = _impls(implTree.id) = impl
-  def lookupImpl(tpe: Type.RefType): Vector[ImplType] = _impls.values.filter(_.isSubject(tpe)).toVector
+  def lookupImpl(targetType: Type.RefType): Vector[ImplType] = _impls.values.filter(targetType <|= _.targetType).toVector
   def removeImpl(id: Int): Unit = _impls.remove(id)
   def impls: Vector[ImplType] = _impls.values.toVector
 }
@@ -244,22 +247,12 @@ object Symbol {
     override val visibility: Visibility = Visibility.Public
 
     private val scope = Scope.empty
-    def lookup(name: String): Either[Error, Symbol] =
-      scope.lookup(name) match {
-        case Some(symbol) => Right(symbol)
-        case None => Left(Error.SymbolNotFound(name))
-      }
-
-    def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
-
-    private val _children = mutable.Map[String, PackageSymbol]()
-    def lookupChild(name: String): Option[Symbol.PackageSymbol] = _children.get(name)
-    def appendChild(symbol: PackageSymbol): Unit = {
-      _children.get(symbol.name) match {
-        case None => _children(symbol.name) = symbol
-        case Some(_) => throw new ImplementationErrorException("same package symbol is appended twice")
-      }
+    def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
+      case Some(symbol: T) => LookupResult.LookupSuccess(symbol)
+      case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[T](symbol))
+      case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
     }
+    def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
 
     private val _context = mutable.Map[String, Context.RootContext]()
     def context: Map[String, Context.RootContext] = _context.toMap
@@ -294,10 +287,14 @@ object Symbol {
       throw new ImplementationErrorException(msg)
     }
 
-    def search(pkgName: Vector[String]): Option[Symbol.PackageSymbol] = {
-      pkgName.foldLeft[Option[Symbol.PackageSymbol]](Some(this)){
-        case (Some(symbol), name) => symbol.lookupChild(name)
-        case (None, _) => None
+    def search(pkgName: Vector[String]): Either[String, Symbol.PackageSymbol] = {
+      pkgName.foldLeft[Either[String, Symbol.PackageSymbol]](Right(this)){
+        case (Left(name), _) => Left(name)
+        case (Right(symbol), name) =>
+          symbol.lookup[Symbol.PackageSymbol](name)
+            .toEither
+            .map(Right.apply)
+            .getOrElse(Left(name))
       }
     }
   }

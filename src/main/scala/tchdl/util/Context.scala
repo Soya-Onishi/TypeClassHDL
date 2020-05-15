@@ -3,12 +3,16 @@ package tchdl.util
 import tchdl.util.Symbol.RootPackageSymbol
 import tchdl.util.TchdlException.ImplementationErrorException
 
+import scala.reflect.ClassTag
+import scala.reflect.runtime.universe.TypeTag
+
+
 abstract class Context {
   val scope: Scope = new Scope
   def path: NameSpace
 
   def append(symbol: Symbol): Either[Error, Unit]
-  def lookup(name: String): Either[Error, Symbol]
+  def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T]
 
   def reAppend(syms: Symbol*): Either[Error, Unit] = {
     syms.map(append).find(_.isLeft) match {
@@ -43,15 +47,17 @@ object Context {
   def blk(owner: NodeContext): NodeContext =
     new NodeContext(owner, owner.owner, owner.self, Some(owner.getBlkID.toString))
 
-  def root(filename: String, pkgName: Vector[String]): RootContext = new RootContext(filename, pkgName)
+  def root(filename: String, pkgName: Vector[String]): RootContext = new RootContext(pkgName)
 
   class RootContext(pkgName: Vector[String]) extends Context {
     override val path: NameSpace = NameSpace(pkgName, Vector.empty, None)
 
-    override def lookup(name: String): Either[Error, Symbol] = scope.lookup(name) match {
-      case Some(elem) => Right(elem)
+    override def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
+      case Some(elem: T) => LookupResult.LookupSuccess(elem)
+      case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
       case None => importedSymbols.lookup(name) match {
-        case Some(elem) => Right(elem)
+        case Some(elem: T) => LookupResult.LookupSuccess(elem)
+        case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
         case None =>
           RootPackageSymbol.search(pkgName)
             .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
@@ -97,8 +103,9 @@ object Context {
     }
 
     def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
-    def lookup(name: String): Either[Error, Symbol] = scope.lookup(name) match {
-      case Some(elem) => Right(elem)
+    def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
+      case Some(elem: T) => LookupResult.LookupSuccess(elem)
+      case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
       case None => parent.lookup(name)
     }
 

@@ -2,6 +2,7 @@ package tchdl.util
 
 import tchdl.ast._
 import scala.reflect.ClassTag
+import scala.reflect.runtime.universe.TypeTag
 
 sealed trait Report
 sealed trait Error extends Report
@@ -28,9 +29,15 @@ object Error {
   case class RequireStageSymbol(name: String) extends Error
   case class RequireInterfaceSymbol(name: String) extends Error
   case class RequirePackageSymbol(name: String) extends Error
-  case class RequireSymbol[Require <: Symbol : ClassTag](actual: Symbol) extends Error
+  case class RequireSpecificType(requires: Vector[Type], actual: Type) extends Error
+  case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol) extends Error
+  case class RequireFlag(require: Modifier, actual: Symbol) extends Error
   case object RejectSelfType extends Error
   case object RejectHigherKind extends Error
+  case object RejectTPFromSelf extends Error
+  case object RejectPackage extends Error
+  case class RejectEntityTypeFromLookup(symbol: Symbol.TypeSymbol) extends Error
+  case class RejectTypeParam[From <: Symbol : TypeTag]() extends Error
   case class NoNeedTypeParameter(method: Type.MethodType) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type]) extends Error
   case object UsingSelfOutsideClass extends Error
@@ -43,6 +50,7 @@ object Error {
   case class ImplementClassConflict(target: Type.RefType) extends Error
   case class AmbiguousSymbols(symbols: Vector[Symbol]) extends Error
   case object AttachTPToPackageSymbol extends Error
+  case class InvalidTypeForHP(tpe: Type.RefType) extends Error
 
   case class MultipleErrors(errs: Seq[Error]) extends Error
   case object DummyError extends Error
