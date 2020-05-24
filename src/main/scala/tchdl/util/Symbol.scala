@@ -1,5 +1,6 @@
 package tchdl.util
 
+import tchdl.ast._
 import tchdl.typecheck.{ImplementContainer, ImplementClassContainer, ImplementInterfaceContainer}
 import tchdl.util.TchdlException.ImplementationErrorException
 import scala.reflect.ClassTag
@@ -56,6 +57,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asInterfaceSymbol: Symbol.InterfaceSymbol = this.asInstanceOf[Symbol.InterfaceSymbol]
   def asTypeParamSymbol: Symbol.TypeParamSymbol = this.asInstanceOf[Symbol.TypeParamSymbol]
   def asImplementSymbol: Symbol.ImplementSymbol = this.asInstanceOf[Symbol.ImplementSymbol]
+  def asHardwareParamSymbol: Symbol.HardwareParamSymbol = this.asInstanceOf[Symbol.HardwareParamSymbol]
 
   def isTypeSymbol: Boolean = this.isInstanceOf[Symbol.TypeSymbol]
   def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]
@@ -153,7 +155,7 @@ object Symbol {
     override val visibility: Visibility = Visibility.Public
   }
 
-  abstract class TermSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
+  abstract class TermSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags) with HasOwner
 
   class VariableSymbol(
     val path: NameSpace,
@@ -161,11 +163,55 @@ object Symbol {
     val owner: Symbol,
     flags: Modifier,
     tpe: Type
-  ) extends TermSymbol(tpe, flags) with HasOwner
+  ) extends TermSymbol(tpe, flags)
 
   object VariableSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, owner: Symbol, flags: Modifier, tpe: Type): VariableSymbol =
       new VariableSymbol(path.appendName(name), visibility, owner, flags, tpe)
+  }
+
+  class HardwareParamSymbol(
+    val path: NameSpace,
+    val owner: Symbol,
+    tpe: Type
+  ) extends TermSymbol(tpe, Modifier.NoModifier) {
+    val visibility: Visibility = Visibility.Private
+
+    private var _range  = Option.empty[HPRange]
+    def setRange(range: HPRange): Either[Error, Unit] = _range match {
+      case None => _range = Some(range); Right(())
+      case Some(_) => Left(???) // TODO : Add error to represent range is already assigned
+    }
+
+    def getRange: HPRange = _range match {
+      case Some(range) => range
+      case None => throw new ImplementationErrorException("refer to the range before assigned")
+    }
+
+    private var _bounds = Vector.empty[Constraint]
+
+    /**
+     *  This method expect Constraint's target expression is already sorted.
+     */
+    def appendBound(constraint: Constraint): Either[Error, Unit] = {
+      _bounds.find(_.target.isSame(constraint.target)) match {
+        case None =>
+          _bounds = _bounds :+ constraint
+          Right(())
+        case Some(_) => Left(???) // TODO: Add error
+      }
+    }
+
+    def getBounds(expr: Expression with HardwareParam): Vector[Constraint] = {
+      val sortedExpr = expr.sort
+
+      _bounds.filter(bound => sortedExpr.contains(bound.target))
+    }
+  }
+
+  object HardwareParamSymbol {
+    def apply(name: String, path: NameSpace, owner: Symbol, tpe: Type): HardwareParamSymbol =
+      new HardwareParamSymbol(path.appendName(name), owner, tpe)
   }
 
   class MethodSymbol(
@@ -174,7 +220,7 @@ object Symbol {
     val owner: Symbol,
     flags: Modifier,
     tpe: Type
-  ) extends TermSymbol(tpe, flags) with HasOwner
+  ) extends TermSymbol(tpe, flags)
 
   object MethodSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, owner: Symbol, flags: Modifier, tpe: Type): MethodSymbol =
@@ -184,7 +230,7 @@ object Symbol {
   class AlwaysSymbol(
     val path: NameSpace,
     val owner: Symbol
-  ) extends TermSymbol(Type.NoType, Modifier.NoModifier) with HasOwner {
+  ) extends TermSymbol(Type.NoType, Modifier.NoModifier) {
     override val visibility: Visibility = Visibility.Private
   }
 
@@ -197,7 +243,7 @@ object Symbol {
     val path: NameSpace,
     val owner: Symbol,
     tpe: Type
-  ) extends TermSymbol(tpe, Modifier.NoModifier) with HasOwner {
+  ) extends TermSymbol(tpe, Modifier.NoModifier) {
     override val visibility: Visibility = Visibility.Private
   }
 
@@ -209,7 +255,7 @@ object Symbol {
   class StateSymbol(
     val path: NameSpace,
     val owner: Symbol
-  ) extends Symbol(Type.NoType, Modifier.NoModifier) with HasOwner {
+  ) extends Symbol(Type.NoType, Modifier.NoModifier){
     override val visibility: Visibility = Visibility.Private
   }
 

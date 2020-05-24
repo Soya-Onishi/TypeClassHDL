@@ -306,6 +306,7 @@ object Typer {
     expr match {
       case ident: Ident => typedExprIdent(ident)
       case select: Select => typedExprSelect(select)
+      case binop: BinOp => typedBinOp(binop)
       case ifExpr: IfExpr => typedIfExpr(ifExpr)
       case self: Self => typedSelf(self)
       case blk: Block => typedBlock(blk)
@@ -325,7 +326,7 @@ object Typer {
       case goto: Goto => typedGoto(goto)
       case finish: Finish => typedFinish(finish)
       case relay: Relay => typedRelay(relay)
-      case select: StaticSelect => throw new ImplementationErrorException("")
+      case select: StaticSelect => throw new ImplementationErrorException("StaticSelect must not appear here")
     }
 
   def typedExprIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
@@ -402,14 +403,15 @@ object Typer {
         else Right((typedHps, typedTps))
       }
 
-      // TODO:
+      /*
+      // TO_DO:
       //   Replace type parameters interfaces have like below
       //     where A: Interface[B] => where A: Interface[Int]
       //
-      // TODO:
+      // TO_DO:
       //   Implement interface implementation conflict detector
       //
-      // TODO:
+      // TO_DO:
       //   Implement the process to deal with the case that
       //   implemented interface has type parameter and use type parameter
       //   and bound's interface use entity type like below.
@@ -422,6 +424,7 @@ object Typer {
       //
       //   The process need to detect Interface[T] when
       //   bounds require Interface[u32] if u32 meets T's bounds
+      */
       /*
       def verifyTpBounds(tps: Vector[TypeTree]): Either[Error, Unit] = {
         def tpChecker(boundTps: Vector[Type.RefType], interfaceTps: Vector[Type.RefType]): Boolean =
@@ -501,7 +504,7 @@ object Typer {
         pairs <- verifyTPsAndHPs
         (hps, tps) = pairs
         map = (method.typeParam.map(_.asTypeParamSymbol) zip tps.map(_.tpe.asRefType)).toMap
-        methodTpe = method.replaceWithTypeParamMap(map)
+        methodTpe = method.replaceWithMap(map)
       } yield (methodTpe, hps, tps)
     }
 
@@ -653,9 +656,9 @@ object Typer {
 
             val selectTpe = symbol.tpe match {
               case tpe: Type.RefType =>
-                tpe.replaceWithTypeParamMap(map)
+                tpe.replaceWithMap(map)
               case tpe: Type.MethodType =>
-                tpe.replaceWithTypeParamMap(map)
+                tpe.replaceWithMap(map)
               case Type.ErrorType =>
                 Type.ErrorType
             }
@@ -672,6 +675,52 @@ object Typer {
           .setID(select.id)
     }
   }
+
+  def typedBinOp(binop: BinOp)(implicit ctx: Context.NodeContext): Apply = {
+    def resolveOperator(leftTpe: Type.RefType, rightTpe: Type.RefType): (Type, Symbol) = {
+      val pkg = Vector("std", "ops")
+      val opsPkg = Symbol.RootPackageSymbol.search(pkg).toOption.get
+      val interface = opsPkg.lookup[Symbol.InterfaceSymbol](binop.op.toInterface).toOption.get
+      val impls = interface.lookupImpl(leftTpe)
+      val methods = for {
+        impl <- impls
+        method <- impl.lookup[Symbol.MethodSymbol](binop.op.toMethod)
+        methodTpe = method.tpe.asMethodType
+        if !methodTpe.params.exists(_.isErrorType)
+        if rightTpe <|= methodTpe.params.head.asRefType
+      } yield method
+
+      methods match {
+        case Vector() => Reporter.appendError(Error.SymbolNotFound(binop.op.toOperator)); (Type.ErrorType, Symbol.ErrorSymbol)
+        case methods => Reporter.appendError(Error.AmbiguousSymbols(methods)); (Type.ErrorType, Symbol.ErrorSymbol)
+        case Vector(method) => (method.tpe, method)
+      }
+    }
+
+    val typedLeft = typedExpr(binop.left)
+    val typedRight = typedExpr(binop.right)
+
+    val (methodTpe, methodSymbol) = (typedLeft.tpe, typedRight.tpe) match {
+      case (Type.ErrorType, _) => Type.ErrorType
+      case (_, Type.ErrorType) => Type.ErrorType
+      case (leftTpe: Type.RefType, rightTpe: Type.RefType) => resolveOperator(leftTpe, rightTpe)
+    }
+
+    val retTpe = methodTpe match {
+      case tpe: Type.MethodType => tpe.returnType
+      case Type.ErrorType => Type.ErrorType
+    }
+
+    Apply(
+      Select(typedLeft, binop.op.toMethod).setTpe(methodTpe).setSymbol(methodSymbol),
+      Vector.empty,
+      Vector.empty,
+      Vector(typedRight)
+    )
+      .setTpe(retTpe)
+      .setID(binop.id)
+  }
+
 
   def typedBlock(blk: Block)(implicit ctx: Context.NodeContext): Block = {
     val blkCtx = Context.blk(ctx)
@@ -912,31 +961,39 @@ object Typer {
 
   def typedSelectType(select: StaticSelect)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): StaticSelect = {
     val typedSuffix = typedTypeTree(select.suffix)(ctx, acceptPkg = true)
+    def errorPair = (Symbol.ErrorSymbol, Type.ErrorType)
 
-    val symbol = typedSuffix.symbol match {
-      case Symbol.ErrorSymbol => Symbol.ErrorSymbol
-      case packageSymbol: Symbol.PackageSymbol if acceptPkg =>
+    val (symbol, tpe) = typedSuffix.symbol match {
+      case Symbol.ErrorSymbol => errorPair
+      case packageSymbol: Symbol.PackageSymbol =>
         packageSymbol.lookup(select.name) match {
-          case LookupResult.LookupSuccess(symbol) => symbol
+          case LookupResult.LookupSuccess(symbol) => (symbol, Type.NoType)
           case LookupResult.LookupFailure(err) =>
             Reporter.appendError(err)
-            Symbol.ErrorSymbol
+            errorPair
         }
       case _: Symbol.TypeParamSymbol =>
         typedSuffix.tpe.asRefType.lookupType(select.name) match {
-          case LookupResult.LookupSuccess(symbol) => symbol
+          case LookupResult.LookupSuccess(symbol) => (symbol, Type.RefType(symbol, Vector.empty, Vector.empty))
           case LookupResult.LookupFailure(err) =>
             Reporter.appendError(err)
-            Symbol.ErrorSymbol
+            errorPair
         }
-      case symbol =>
-        Reporter.appendError(Error.RequireSymbol[Symbol.TypeParamSymbol](symbol))
-        Symbol.ErrorSymbol
+      case _ => throw new ImplementationErrorException("unexpected to reach here")
+    }
+
+    val (assignedSymbol, assignedType) = symbol match {
+      case sym: Symbol.TypeSymbol => (sym, tpe)
+      case sym: Symbol.PackageSymbol if acceptPkg => (sym, tpe)
+      case sym: Symbol.PackageSymbol =>
+        Reporter.appendError(Error.RequireSymbol[Symbol.TypeSymbol](sym))
+        (Symbol.ErrorSymbol, Type.ErrorType)
+      case sym => (sym, tpe)
     }
 
     StaticSelect(typedSuffix, select.name)
-      .setTpe(Type.NoType)
-      .setSymbol(symbol)
+      .setTpe(tpe)
+      .setSymbol(assignedSymbol)
       .setID(select.id)
   }
 
@@ -1091,7 +1148,8 @@ object Typer {
       return Vector(Error.ParameterLengthMismatch(expect.length, actual.length))
 
     (expect zip actual)
-      .filter { case (e, a) => e =!= a }
+      .collect { case (e: Type.RefType, a: Type.RefType) => (e, a) }
+      .filter { case (e, a) => a <|= e }
       .map { case (e, a) => Error.TypeMissmatch(e, a) }
   }
 

@@ -2,7 +2,7 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Context, Error, HasImpls, LookupResult, Reporter, Scope, Symbol, Type}
+import tchdl.util.{Constraint, Context, Error, HPRange, HasImpls, LookupResult, RangeEdge, Reporter, Scope, Symbol, Type}
 
 import scala.annotation.tailrec
 import scala.reflect.ClassTag
@@ -36,19 +36,100 @@ object ImplVerifier {
   }
 
   def setBound(bound: Bound)(implicit ctx: Context.NodeContext): Unit = {
-    ctx.lookup[Symbol.TypeParamSymbol](bound.target) match {
-      case LookupResult.LookupFailure(err) => Reporter.appendError(err)
-      case LookupResult.LookupSuccess(symbol) if symbol.owner != ctx.owner =>
-        Reporter.appendError(Error.SetBoundForDifferentOwner(symbol.owner, ctx.owner))
-      case LookupResult.LookupSuccess(symbol) =>
-        val (errs, constraints) =
-          bound.constraints
-            .map(buildRefType[Symbol.InterfaceSymbol](_, ctx))
-            .partitionMap(e => e)
+    def setBoundForTP(bound: TypeParamBound): Unit =
+      ctx.lookup[Symbol.TypeParamSymbol](bound.target) match {
+        case LookupResult.LookupFailure(err) => Reporter.appendError(err)
+        case LookupResult.LookupSuccess(symbol) if symbol.owner != ctx.owner =>
+          Reporter.appendError(Error.SetBoundForDifferentOwner(symbol.owner, ctx.owner))
+        case LookupResult.LookupSuccess(symbol) =>
+          val (errs, constraints) =
+            bound.constraints
+              .map(buildRefType[Symbol.InterfaceSymbol](_, ctx))
+              .partitionMap(e => e)
 
-        errs.foreach(Reporter.appendError)
-        symbol.setBounds(constraints)
+          errs.foreach(Reporter.appendError)
+          symbol.setBounds(constraints)
+      }
 
+    def setBoundForHP(bound: HardwareParamBound): Unit = {
+      def getSubjects(expr: Expression with HardwareParam): Either[Error, Set[Symbol.HardwareParamSymbol]] = expr match {
+        case HPBinOp(_, left, right) => (getSubjects(left), getSubjects(right)) match {
+          case (Right(left), Right(right)) => Right(left ++ right)
+          case (Left(left), Left(right)) => Left(Error.MultipleErrors(Seq(left, right)))
+          case (Left(err), _) => Left(err)
+          case (_, Left(err)) => Left(err)
+        }
+        case Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
+          case LookupResult.LookupFailure(err) => Left(err)
+          case LookupResult.LookupSuccess(sym) if sym.owner != ctx.owner => Left(???)
+          case LookupResult.LookupSuccess(sym) => Right(Set(sym))
+        }
+      }
+
+      def verifyConstraints(): Either[Error, HPRange] = {
+        def verifyConstraints(expr: ConstraintExpr): Either[Error, HPRange] = expr match {
+          case ConstraintExpr.Equal(Ident(_)) => Left(???) // TODO: Add error representing identity is not allowed
+          case ConstraintExpr.Equal(int: IntLiteral) => Right(HPRange(RangeEdge.ThanEq(int), RangeEdge.ThanEq(int)))
+          case ConstraintExpr.LessEq(expr) => Right(HPRange(RangeEdge.Inf, RangeEdge.ThanEq(expr)))
+          case ConstraintExpr.LessThan(expr) => Right(HPRange(RangeEdge.Inf, RangeEdge.Than(expr)))
+          case ConstraintExpr.GreaterEq(expr) => Right(HPRange(RangeEdge.ThanEq(expr), RangeEdge.Inf))
+          case ConstraintExpr.GreaterThan(expr) => Right(HPRange(RangeEdge.Than(expr), RangeEdge.Inf))
+        }
+
+        val constraints = bound.constraints.map(verifyConstraints)
+
+        val range = constraints
+          .foldLeft[Either[Vector[Error], HPRange]](Right(HPRange(RangeEdge.Inf, RangeEdge.Inf))) {
+            case (Right(_), Left(err)) => Left(Vector(err))
+            case (Left(errs), Right(_)) => Left(errs)
+            case (Left(errs), Left(err)) => Left(errs :+ err)
+            case (Right(ranges), Right(range)) => ranges.unify(range).left.map(err => Vector(err))
+          }
+
+        range.left.map(errs => Error.MultipleErrors(errs))
+      }
+
+      def setRange(expr: Expression with HardwareParam)(setter: (Symbol.HardwareParamSymbol, HPRange) => Either[Error, Unit]): Unit = {
+        val subjects = getSubjects(expr)
+        val range = verifyConstraints()
+
+        (subjects, range) match {
+          case (Right(subjects), Right(range)) =>
+            val result = subjects.iterator
+              .map(setter(_, range))
+              .foldLeft[Either[Vector[Error], Unit]](Right(())) {
+                case (Right(()), Right(())) => Right(())
+                case (Right(()), Left(err)) => Left(Vector(err))
+                case (Left(errs), Right(())) => Left(errs)
+                case (Left(errs), Left(err)) => Left(errs :+ err)
+              }
+
+            result.left.foreach{
+              errs => Reporter.appendError(Error.MultipleErrors(errs))
+            }
+          case (Left(subjectErr), Left(constraintErr)) =>
+            Reporter.appendError(subjectErr)
+            Reporter.appendError(constraintErr)
+          case (Left(err), _) => Reporter.appendError(err)
+          case (_, Left(err)) => Reporter.appendError(err)
+        }
+      }
+
+      bound.target match {
+        case _: StringLiteral => Reporter.appendError(???) // TODO: Add error that represents literal is not allowed here
+        case _: IntLiteral => Reporter.appendError(???) // TODO: Add error that represents literal is not allowed here
+        case id: Ident => setRange(id){ case (sym, range) => sym.setRange(range) }
+        case expr: HPBinOp =>
+          val sortedExpr = expr.sort
+          setRange(expr) {
+            case (sym, range) => sym.appendBound(Constraint(sortedExpr, range))
+          }
+      }
+    }
+
+    bound match {
+      case bound: TypeParamBound => setBoundForTP(bound)
+      case bound: HardwareParamBound => setBoundForHP(bound)
     }
   }
 
@@ -213,7 +294,7 @@ object SymbolBuffer {
       val tab = map.collect { case (key, Some(value)) => key -> value }.toMap
       val vec = tpes(impl0)
         .zip(tpes(impl1))
-        .map{ case (tpe0, tpe1) => (tpe0.replaceWithTypeParamMap(tab), tpe1.replaceWithTypeParamMap(tab)) }
+        .map{ case (tpe0, tpe1) => (tpe0.replaceWithMap(tab), tpe1.replaceWithMap(tab)) }
         .flatMap{ case (tpe0, tpe1) => inner(tpe0, tpe1) }
 
       vec.groupBy(_._1)
@@ -235,8 +316,8 @@ object SymbolBuffer {
         val replaceMap = typeParamMap.collect { case (key, Some(value)) => key -> value }.toMap
 
         val result = verifySameForm(
-          impl0.targetType.replaceWithTypeParamMap(replaceMap),
-          impl1.targetType.replaceWithTypeParamMap(replaceMap)
+          impl0.targetType.replaceWithMap(replaceMap),
+          impl1.targetType.replaceWithMap(replaceMap)
         )
 
         result match {
@@ -270,14 +351,14 @@ object SymbolBuffer {
 
         val interface =
           verifySameForm(
-            impl0.targetInterface.replaceWithTypeParamMap(replaceMap),
-            impl1.targetInterface.replaceWithTypeParamMap(replaceMap)
+            impl0.targetInterface.replaceWithMap(replaceMap),
+            impl1.targetInterface.replaceWithMap(replaceMap)
           )
 
         val target =
           verifySameForm(
-            impl0.targetType.replaceWithTypeParamMap(replaceMap),
-            impl1.targetType.replaceWithTypeParamMap(replaceMap)
+            impl0.targetType.replaceWithMap(replaceMap),
+            impl1.targetType.replaceWithMap(replaceMap)
           )
 
         (interface, target) match {

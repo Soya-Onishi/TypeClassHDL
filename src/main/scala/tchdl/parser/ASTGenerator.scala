@@ -4,6 +4,7 @@ import org.antlr.v4.runtime.tree.TerminalNode
 import tchdl.ast._
 import tchdl.util.Modifier
 import tchdl.antlr.{TchdlParser => TP}
+import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.jdk.CollectionConverters._
 
@@ -274,6 +275,9 @@ class ASTGenerator {
           ApplyParams(Select(prefix, name), args)
         case ApplyParams(ApplyTypeParams(Ident(name), tps, hps), args) =>
           ApplyParams(ApplyTypeParams(Select(prefix, name), tps, hps), args)
+        case ApplyParams(expr, _) =>
+          val msg = s"${expr.getClass} must not appear here"
+          throw new ImplementationErrorException(msg)
       }
     case None =>
       val prefix = expr(ctx.expr)
@@ -281,15 +285,15 @@ class ASTGenerator {
       Select(prefix, name)
   }
 
-  def binop(left: TP.ExprContext, right: TP.ExprContext, op: String): ApplyParams = {
-    val name = op match {
-      case "+" => "add"
-      case "-" => "sub"
-      case "*" => "mul"
-      case "/" => "div"
+  def binop(left: TP.ExprContext, right: TP.ExprContext, op: String): BinOp = {
+    val operation = op match {
+      case "+" => Operation.Add
+      case "-" => Operation.Sub
+      case "*" => Operation.Mul
+      case "/" => Operation.Div
     }
 
-    ApplyParams(Select(expr(left), name), Vector(expr(right)))
+    BinOp(operation, expr(left), expr(right))
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {

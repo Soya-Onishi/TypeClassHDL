@@ -204,8 +204,8 @@ object Type {
   }
 
   class MethodType(
-    val params: Vector[RefType],
-    val returnType: RefType,
+    val params: Vector[Type],
+    val returnType: Type,
     val hardwareParam: Vector[Symbol.TermSymbol],
     val typeParam: Vector[Symbol.TypeParamSymbol],
   ) extends Type {
@@ -217,9 +217,13 @@ object Type {
     val namespace: NameSpace = NameSpace.empty
     val declares: Scope = returnType.declares
 
-    def replaceWithTypeParamMap(map: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.MethodType = {
-      val replacedArgs = params.map(_.replaceWithTypeParamMap(map))
-      val replacedRetTpe = returnType.replaceWithTypeParamMap(map)
+    def replaceWithMap(hpMap: Map[Symbol.TermSymbol, Expression], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.MethodType = {
+      def replace: PartialFunction[Type, Type.RefType] = {
+        case tpe: Type.RefType => tpe.replaceWithMap(hpMap, tpMap)
+      }
+
+      val replacedArgs = params.collect(replace)
+      val replacedRetTpe = Some(returnType).collect(replace).get
 
       MethodType(replacedArgs, replacedRetTpe, this.hardwareParam, this.typeParam)
     }
@@ -234,6 +238,34 @@ object Type {
         isSameParam && isSameRet && isSameHP && isSameTP
     }
 
+
+    def isValidForCall(hargs: Vector[Expression], targs: Vector[Type], args: Vector[Type]): Boolean = {
+      def isValidLength =
+        hargs.length == hardwareParam.length &&
+        targs.length == typeParam.length &&
+        args.length == params.length
+
+      // TODO: verify bounds between hardware parameters and hardware arguments
+      def isMeetsHardwareParamBound: Boolean = ???
+
+      def isMeetsTypeParamBound: Boolean =
+        targs.zip(typeParam.map(_.tpe))
+          .collect { case (arg: Type.RefType, param: Type.RefType) => (arg, param) }
+          .forall { case (arg, param) => arg <|= param }
+
+      if(!isValidLength || !isMeetsHardwareParamBound || !isMeetsTypeParamBound) false
+      else {
+        val tpMap = typeParam.zip(targs).collect{ case (param, arg: Type.RefType) => (param, arg) }.toMap
+        val hpMap = hardwareParam.zip(hargs).toMap
+
+        val methodTpe = this.replaceWithMap(hpMap, tpMap)
+        methodTpe.params
+          .zip(args)
+          .view
+          .collect { case (p: Type.RefType, a: Type.RefType) => (p, a) }
+          .forall { case (p, a) => a <|= p }
+      }
+    }
   }
 
   object MethodType {
@@ -310,15 +342,22 @@ object Type {
       }
     }
 
-    def replaceWithTypeParamMap(map: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.RefType =
+    def replaceWithMap(hpMap: Map[Symbol.TermSymbol, Expression], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.RefType = {
+      def replaceHP(expr: Expression): Expression = expr match {
+        case ident: Ident => hpMap.getOrElse(ident.symbol.asTermSymbol, ident)
+        case binop: BinOp => BinOp(binop.op, replaceHP(binop.left), replaceHP(binop.right))
+        case others => others
+      }
+
       origin match {
-        case symbol: Symbol.TypeParamSymbol => map.getOrElse(symbol, this)
+        case symbol: Symbol.TypeParamSymbol => tpMap.getOrElse(symbol, this)
         case _ => RefType(
           this.origin,
-          this.hardwareParam,
-          typeParam.map(_.replaceWithTypeParamMap(map))
+          this.hardwareParam.map(replaceHP),
+          typeParam.map(_.replaceWithMap(hpMap, tpMap))
         )
       }
+    }
 
 
     override def =:=(other: Type): Boolean = other match {
