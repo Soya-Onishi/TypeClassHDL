@@ -357,7 +357,7 @@ object Typer {
       else Left(Error.MultipleErrors(errors))
     }
 
-    def requireTPsOrHPsMethod(applyTPs: ApplyTypeParams)(method: Type.MethodType): Either[Error, ResultPair] = {
+    def requireTPsOrHPsMethod(applyTPs: ApplyTypeParams)(symbol: Symbol.CandidateSymbol, method: Type.MethodType): Either[Error, ResultPair] = {
       def rejectMethodNoTPorHP: Either[Error, Unit] = {
         val hasTP = method.typeParam.nonEmpty
         val hasHP = method.hardwareParam.nonEmpty
@@ -377,6 +377,20 @@ object Typer {
       }
 
       def verifyTPsAndHPs: Either[Error, (Vector[Expression], Vector[TypeTree])] ={
+        def replaceHPExpr(expr: HPExpr, table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = expr match {
+          case binop @ HPBinOp(op, left, right) =>
+            val replacedLeft = replaceHPExpr(left, table)
+            val replacedRight = replaceHPExpr(right, table)
+
+            HPBinOp(op, replacedLeft, replacedRight).setTpe(binop.tpe).setID(binop.id)
+          case ident: Ident =>
+            table.get(ident.symbol.asHardwareParamSymbol) match {
+              case Some(expr) => expr
+              case None => throw new ImplementationErrorException(s"try found ${ident.name}, but not found")
+            }
+          case expr => expr
+        }
+
         val (hps, tpsFirstHalf) = applyTPs.hps.splitAt(method.hardwareParam.length)
 
         val typedHps = hps.map(typedExpr)
@@ -385,10 +399,13 @@ object Typer {
         val typedTps = typedTpsFirstHalf ++ typedTpsLatterHalf
 
         val hasErrInHardArg = typedHps.exists(_.tpe.isErrorType)
-        val hardArgErrs = typedHps.zip(method.hardwareParam)
-          .filterNot{ case (harg, hparam) => harg.tpe.isErrorType || hparam.tpe.isErrorType }
-          .filterNot { case (harg, hparam) => harg.tpe =:= hparam.tpe }
-          .map { case (harg, hparam) => Error.TypeMissmatch(hparam.tpe, harg.tpe) }
+        val hardArgTable = method.hardwareParam.zip(typedHps).toMap
+        symbol.getHPBounds
+
+          // .map{ case (harg, hparam) => (harg.tpe, hparam.tpe) }
+          // .collect{ case (harg: Type.RefType, hparam: Type.RefType) => (harg, hparam) }
+          // .filterNot { case (harg, hparam) => harg <|= hparam }
+          // .map { case (harg, hparam) => Error.TypeMissmatch(hparam, harg) }
 
         val hasErrInTypeArg = typedTps.exists(_.tpe.isErrorType)
         val typeArgErrs = typedTps.zip(method.typeParam)
@@ -508,7 +525,7 @@ object Typer {
       } yield (methodTpe, hps, tps)
     }
 
-    def rejectTPsOrHPsMethod(method: Type.MethodType): Either[Error, ResultPair] = {
+    def rejectTPsOrHPsMethod(_symbol: Symbol.CandidateSymbol, method: Type.MethodType): Either[Error, ResultPair] = {
       val hasHP = method.hardwareParam.nonEmpty
       val hasTP = method.typeParam.nonEmpty
 
@@ -516,10 +533,10 @@ object Typer {
       else Right((method, Vector.empty, Vector.empty))
     }
 
-    def succeed(symbol: Symbol)(requireTPs: Type.MethodType => Either[Error, ResultPair]): Either[Error, ResultPair] = {
+    def succeed(symbol: Symbol.CandidateSymbol)(requireTPs: (Symbol.CandidateSymbol, Type.MethodType) => Either[Error, ResultPair]): Either[Error, ResultPair] = {
       for {
         methodTpe0 <- filterType(symbol.tpe)
-        pairs <- requireTPs(methodTpe0)
+        pairs <- requireTPs(symbol, methodTpe0)
         (methodTpe1, hps, tps) = pairs
         _ <- verifyArguments(methodTpe1, typedArgs)
       } yield (methodTpe1, hps, tps)
@@ -1029,12 +1046,11 @@ object Typer {
     str.setTpe(strTpe).setID(str.id)
   }
 
-  def typedHardwareParamExpr(expr: Expression)(implicit ctx: Context.NodeContext): Expression = expr match {
+  def typedHardwareParamExpr(expr: HPExpr)(implicit ctx: Context.NodeContext): HPExpr = expr match {
     case ident: Ident => typedHardwareParamIdent(ident)
-    case binop: BinOp => typedHardwareParamBinOp(binop)
+    case binop: HPBinOp => typedHardwareParamBinOp(binop)
     case literal: IntLiteral => typedHardwareParamIntLit(literal)
     case literal: StringLiteral => typedHardwareParamStrLit(literal)
-    case expr => throw new ImplementationErrorException(s"${expr.getClass} should not appear here")
   }
 
   def typedHardwareParamIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
@@ -1058,7 +1074,7 @@ object Typer {
     }
   }
 
-  def typedHardwareParamBinOp(binop: BinOp)(implicit ctx: Context.NodeContext): BinOp = {
+  def typedHardwareParamBinOp(binop: HPBinOp)(implicit ctx: Context.NodeContext): HPBinOp = {
     val typedLeft  = typedHardwareParamExpr(binop.left)
     val typedRight = typedHardwareParamExpr(binop.right)
 
@@ -1069,7 +1085,7 @@ object Typer {
       else if(hasStrTpe) { Reporter.appendError(Error.SymbolNotFound("+")); Type.ErrorType }
       else Type.ErrorType
 
-    BinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
+    HPBinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
   }
 
   def typedHardwareParamIntLit(int: IntLiteral): IntLiteral = {
@@ -1158,7 +1174,7 @@ object Typer {
 
   def verifyTypeParams(
     symbol: Symbol.TypeSymbol,
-    hps: Vector[Expression],
+    hps: Vector[HPExpr],
     tps: Vector[TypeTree],
     tpe: Type.EntityType
   )(

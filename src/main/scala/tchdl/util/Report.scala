@@ -52,7 +52,11 @@ object Error {
   case object AttachTPToPackageSymbol extends Error
   case class InvalidTypeForHP(tpe: Type.RefType) extends Error
 
-  case class MultipleErrors(errs: Seq[Error]) extends Error
+  case class MultipleErrors(errs: Error*) extends Error {
+    def apply(errs: Vector[Error]): MultipleErrors = {
+      new MultipleErrors(errs: _*)
+    }
+  }
   case object DummyError extends Error
 }
 

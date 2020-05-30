@@ -1,12 +1,12 @@
 package tchdl.util
 
-trait LookupResult[+T <: Symbol] {
-  def map[B <: Symbol](f: T => B): LookupResult[B] = this match {
+trait LookupResult[+T] {
+  def map[B](f: T => B): LookupResult[B] = this match {
     case LookupResult.LookupSuccess(symbol) => LookupResult.LookupSuccess(f(symbol))
     case failure: LookupResult.LookupFailure[_] => failure.asInstanceOf[LookupResult[B]]
   }
 
-  def flatMap[B <: Symbol](f: T => LookupResult[B]): LookupResult[B] = this match {
+  def flatMap[B](f: T => LookupResult[B]): LookupResult[B] = this match {
     case LookupResult.LookupSuccess(symbol) => f(symbol)
     case failure: LookupResult.LookupFailure[_] => failure.asInstanceOf[LookupResult[B]]
   }
@@ -28,6 +28,6 @@ trait LookupResult[+T <: Symbol] {
 }
 
 object LookupResult {
-  case class LookupSuccess[T <: Symbol](symbol: T) extends LookupResult[T]
-  case class LookupFailure[T <: Symbol](err: Error) extends LookupResult[T]
+  case class LookupSuccess[T](symbol: T) extends LookupResult[T]
+  case class LookupFailure[T](err: Error) extends LookupResult[T]
 }

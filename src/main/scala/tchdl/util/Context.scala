@@ -1,5 +1,6 @@
 package tchdl.util
 
+import tchdl.ast._
 import tchdl.util.Symbol.RootPackageSymbol
 import tchdl.util.TchdlException.ImplementationErrorException
 
@@ -19,6 +20,11 @@ abstract class Context {
       case Some(left) => left
       case None => Right(())
     }
+  }
+
+  def allHPBounds: Vector[HPBound] = this match {
+    case _: Context.RootContext => Vector.empty
+    case ctx: Context.NodeContext => ctx.owner.getHPBounds ++ ctx.parent.allHPBounds
   }
 
   def interfaceTable: Map[String, Symbol.InterfaceSymbol]

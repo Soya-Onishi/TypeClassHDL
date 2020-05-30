@@ -1,5 +1,7 @@
 package tchdl.typecheck
 
+import java.lang.invoke.ConstantCallSite
+
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
 import tchdl.util.{Constraint, Context, Error, HPRange, HasImpls, LookupResult, RangeEdge, Reporter, Scope, Symbol, Type}
@@ -35,101 +37,130 @@ object ImplVerifier {
     }
   }
 
-  def setBound(bound: Bound)(implicit ctx: Context.NodeContext): Unit = {
-    def setBoundForTP(bound: TypeParamBound): Unit =
+  trait WhereClause
+  object WhereClause {
+    case class TP(tp: Symbol.TypeParamSymbol, interfaces: Vector[Type.RefType]) extends WhereClause
+    case class HP(hp: HPExpr, constraints: Vector[ConstraintExpr]) extends WhereClause
+  }
+
+  def setBound(bound: Bound)(implicit ctx: Context.NodeContext): Either[Error, WhereClause] = {
+    def setBoundForTP(bound: TPBound): Either[Error, WhereClause.TP] =
       ctx.lookup[Symbol.TypeParamSymbol](bound.target) match {
-        case LookupResult.LookupFailure(err) => Reporter.appendError(err)
+        case LookupResult.LookupFailure(err) =>
+          Left(err)
         case LookupResult.LookupSuccess(symbol) if symbol.owner != ctx.owner =>
-          Reporter.appendError(Error.SetBoundForDifferentOwner(symbol.owner, ctx.owner))
+          Left(Error.SetBoundForDifferentOwner(symbol.owner, ctx.owner))
         case LookupResult.LookupSuccess(symbol) =>
           val (errs, constraints) =
             bound.constraints
               .map(buildRefType[Symbol.InterfaceSymbol](_, ctx))
               .partitionMap(e => e)
 
-          errs.foreach(Reporter.appendError)
-          symbol.setBounds(constraints)
+          val tpClause = WhereClause.TP(symbol, constraints)
+          if(errs.isEmpty) Right(tpClause)
+          else Left(Error.MultipleErrors(errs))
       }
 
-    def setBoundForHP(bound: HardwareParamBound): Unit = {
-      def getSubjects(expr: Expression with HardwareParam): Either[Error, Set[Symbol.HardwareParamSymbol]] = expr match {
-        case HPBinOp(_, left, right) => (getSubjects(left), getSubjects(right)) match {
-          case (Right(left), Right(right)) => Right(left ++ right)
-          case (Left(left), Left(right)) => Left(Error.MultipleErrors(Seq(left, right)))
-          case (Left(err), _) => Left(err)
-          case (_, Left(err)) => Left(err)
-        }
-        case Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
-          case LookupResult.LookupFailure(err) => Left(err)
-          case LookupResult.LookupSuccess(sym) if sym.owner != ctx.owner => Left(???)
-          case LookupResult.LookupSuccess(sym) => Right(Set(sym))
-        }
-      }
-
-      def verifyConstraints(): Either[Error, HPRange] = {
-        def verifyConstraints(expr: ConstraintExpr): Either[Error, HPRange] = expr match {
-          case ConstraintExpr.Equal(Ident(_)) => Left(???) // TODO: Add error representing identity is not allowed
-          case ConstraintExpr.Equal(int: IntLiteral) => Right(HPRange(RangeEdge.ThanEq(int), RangeEdge.ThanEq(int)))
-          case ConstraintExpr.LessEq(expr) => Right(HPRange(RangeEdge.Inf, RangeEdge.ThanEq(expr)))
-          case ConstraintExpr.LessThan(expr) => Right(HPRange(RangeEdge.Inf, RangeEdge.Than(expr)))
-          case ConstraintExpr.GreaterEq(expr) => Right(HPRange(RangeEdge.ThanEq(expr), RangeEdge.Inf))
-          case ConstraintExpr.GreaterThan(expr) => Right(HPRange(RangeEdge.Than(expr), RangeEdge.Inf))
-        }
-
-        val constraints = bound.constraints.map(verifyConstraints)
-
-        val range = constraints
-          .foldLeft[Either[Vector[Error], HPRange]](Right(HPRange(RangeEdge.Inf, RangeEdge.Inf))) {
-            case (Right(_), Left(err)) => Left(Vector(err))
-            case (Left(errs), Right(_)) => Left(errs)
-            case (Left(errs), Left(err)) => Left(errs :+ err)
-            case (Right(ranges), Right(range)) => ranges.unify(range).left.map(err => Vector(err))
-          }
-
-        range.left.map(errs => Error.MultipleErrors(errs))
-      }
-
-      def setRange(expr: Expression with HardwareParam)(setter: (Symbol.HardwareParamSymbol, HPRange) => Either[Error, Unit]): Unit = {
-        val subjects = getSubjects(expr)
-        val range = verifyConstraints()
-
-        (subjects, range) match {
-          case (Right(subjects), Right(range)) =>
-            val result = subjects.iterator
-              .map(setter(_, range))
-              .foldLeft[Either[Vector[Error], Unit]](Right(())) {
-                case (Right(()), Right(())) => Right(())
-                case (Right(()), Left(err)) => Left(Vector(err))
-                case (Left(errs), Right(())) => Left(errs)
-                case (Left(errs), Left(err)) => Left(errs :+ err)
+    def setBoundForHP(bound: HPBound): Either[Error, WhereClause.HP] = {
+      def verifyTarget(target: HPExpr): Either[Error, HPExpr] = {
+        def verifyHPBinOp(binop: HPBinOp): Either[Error, HPExpr] = {
+          def verifyChild(child: Either[Error, HPExpr]): Either[Error, HPExpr] =
+            child match {
+              case Left(err) => Left(err)
+              case Right(left) => left.tpe match {
+                case Type.ErrorType => Right(left)
+                case tpe: Type.RefType if tpe =:= Type.numTpe => Right(left)
+                case tpe => Left(???)
               }
-
-            result.left.foreach{
-              errs => Reporter.appendError(Error.MultipleErrors(errs))
             }
-          case (Left(subjectErr), Left(constraintErr)) =>
-            Reporter.appendError(subjectErr)
-            Reporter.appendError(constraintErr)
-          case (Left(err), _) => Reporter.appendError(err)
-          case (_, Left(err)) => Reporter.appendError(err)
+
+          val HPBinOp(operator, left, right) = binop
+          val leftResult = verifyChild(loop(left, isRoot = false))
+          val rightResult = verifyChild(loop(right, isRoot = false))
+
+          (leftResult, rightResult) match {
+            case (Left(left), Left(right)) => Left(Error.MultipleErrors(Vector(left, right)))
+            case (Left(err), _) => Left(err)
+            case (_, Left(err)) => Left(err)
+            case (Right(left), Right(right)) =>
+              Right(HPBinOp(operator, left, right).setTpe(Type.numTpe).setID(binop.id))
+          }
+        }
+
+        def verifyIdentity(ident: Ident): Either[Error, Ident] = {
+          val Ident(name) = ident
+
+          ctx.lookup[Symbol.HardwareParamSymbol](name) match {
+            case LookupResult.LookupFailure(err) => Left(err)
+            case LookupResult.LookupSuccess(symbol) if symbol.owner != ctx.owner => Left(???)
+            case LookupResult.LookupSuccess(symbol) =>
+              def succeed(tpe: Type): Either[Error, Ident] =
+                Right(Ident(name).setTpe(tpe).setSymbol(symbol).setID(ident.id))
+
+              symbol.tpe match {
+                case Type.ErrorType => succeed(Type.ErrorType)
+                case tpe: Type.RefType if tpe =:= Type.numTpe => succeed(tpe)
+                case tpe => Left(???)
+              }
+          }
+        }
+
+        def verifyIntLiteral(lit: IntLiteral, isRoot: Boolean): Either[Error, IntLiteral] =
+          if(isRoot) Left(???)
+          else Right(lit)
+
+        def loop(expr: HPExpr, isRoot: Boolean): Either[Error, HPExpr] =
+          expr match {
+            case int: IntLiteral => verifyIntLiteral(int, isRoot)
+            case _: StringLiteral => Left(???)
+            case binop: HPBinOp => verifyHPBinOp(binop)
+            case ident: Ident => verifyIdentity(ident)
+          }
+
+        loop(target, isRoot = true)
+      }
+
+      def verifyConstraint(constraint: ConstraintExpr): Either[Error, ConstraintExpr] = {
+        def buildConstraint(expr: HPExpr): Right[Error, ConstraintExpr] = {
+          val c = constraint match {
+            case _: ConstraintExpr.EQ => ConstraintExpr.EQ(expr)
+            case _: ConstraintExpr.NE => ConstraintExpr.NE(expr)
+            case _: ConstraintExpr.LT => ConstraintExpr.LT(expr)
+            case _: ConstraintExpr.LE => ConstraintExpr.LE(expr)
+            case _: ConstraintExpr.GT => ConstraintExpr.GT(expr)
+            case _: ConstraintExpr.GE => ConstraintExpr.GE(expr)
+          }
+
+          Right(c)
+        }
+
+        constraint.expr match {
+          case int: IntLiteral => buildConstraint(int)
+          case ident @ Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
+            case LookupResult.LookupFailure(err) => Left(err)
+            case LookupResult.LookupSuccess(symbol) =>
+              val verified = Ident(name).setTpe(Type.numTpe).setSymbol(symbol).setID(ident.id)
+              buildConstraint(verified)
+          }
         }
       }
 
-      bound.target match {
-        case _: StringLiteral => Reporter.appendError(???) // TODO: Add error that represents literal is not allowed here
-        case _: IntLiteral => Reporter.appendError(???) // TODO: Add error that represents literal is not allowed here
-        case id: Ident => setRange(id){ case (sym, range) => sym.setRange(range) }
-        case expr: HPBinOp =>
-          val sortedExpr = expr.sort
-          setRange(expr) {
-            case (sym, range) => sym.appendBound(Constraint(sortedExpr, range))
-          }
+      val sortedTarget = bound.target.sort
+
+      val verifiedTarget = verifyTarget(sortedTarget)
+      val (errs, verifiedConstraints) = bound.constraints
+        .map(verifyConstraint)
+        .partitionMap(identity)
+
+      (verifiedTarget, errs) match {
+        case (Right(target), Vector()) => Right(WhereClause.HP(target, verifiedConstraints))
+        case (Left(err), errs) => Left(Error.MultipleErrors(err +: errs))
       }
     }
 
     bound match {
-      case bound: TypeParamBound => setBoundForTP(bound)
-      case bound: HardwareParamBound => setBoundForHP(bound)
+      case bound: TPBound => setBoundForTP(bound)
+      case bound: HPBound => setBoundForHP(bound)
     }
   }
 
@@ -149,7 +180,18 @@ object ImplVerifier {
     val signatureCtx = Context(ctx, impl.symbol)
     impl.hp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
     impl.tp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
-    impl.bounds.foreach(setBound(_)(signatureCtx))
+
+    val (errs, bounds) = impl.bounds
+      .map(setBound(_)(signatureCtx))
+      .partitionMap(identity)
+    val (tps, hps) = bounds.foldLeft((Vector.empty[WhereClause.TP], Vector.empty[WhereClause.HP])) {
+      case ((tps, hps), tp: WhereClause.TP) => (tps :+ tp, hps)
+      case ((tps, hps), hp: WhereClause.HP) => (tps, hps :+ hp)
+    }
+
+    tps.foreach(tp => tp.tp.setBounds(tp.interfaces))
+    signatureCtx.owner.setHPBounds(hps.map(hp => HPBound(hp.hp, hp.constraints)))
+    Reporter.appendError(Error.MultipleErrors(errs))
 
     val interface = buildRefType[Symbol.InterfaceSymbol](impl.interface, signatureCtx)
     val target = buildRefType[Symbol.ClassTypeSymbol](impl.target, signatureCtx)
@@ -389,6 +431,7 @@ abstract class ImplementContainer {
   val symbol: Symbol.ImplementSymbol
   val id: Int
   val typeParam: Vector[Symbol.TypeParamSymbol]
+  val hardwareParam: Vector[Symbol.HardwareParamSymbol]
 
   def isValid: Boolean
   final def lookup[T <: Symbol : ClassTag : TypeTag](name: String): Option[T] =
@@ -444,6 +487,7 @@ object ImplementInterfaceContainer {
       override val symbol: Symbol.ImplementSymbol = implTree.symbol.asImplementSymbol
       override val id: Int = implTree.id
       override val typeParam: Vector[Symbol.TypeParamSymbol] = implTree.tp.map(_.symbol.asTypeParamSymbol)
+      override val hardwareParam: Vector[Symbol.HardwareParamSymbol] = implTree.hp.map(_.symbol.asHardwareParamSymbol)
     }
 }
 
@@ -487,6 +531,7 @@ object ImplementClassContainer {
       override val symbol: Symbol.ImplementSymbol = implTree.symbol.asImplementSymbol
       override val id: Int = implTree.id
       override val typeParam: Vector[Symbol.TypeParamSymbol] = implTree.tp.map(_.symbol.asTypeParamSymbol)
+      override val hardwareParam: Vector[Symbol.HardwareParamSymbol] = implTree.hp.map(_.symbol.asHardwareParamSymbol)
     }
 }
 

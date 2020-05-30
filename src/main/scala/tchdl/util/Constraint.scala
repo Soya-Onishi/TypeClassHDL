@@ -2,7 +2,7 @@ package tchdl.util
 
 import tchdl.ast._
 
-case class Constraint(target: Expression with HardwareParam, range: HPRange)
+case class Constraint(target: Expression with HPExpr, range: HPRange)
 
 case class HPRange(
   min: RangeEdge,
@@ -60,6 +60,6 @@ trait RangeEdge {
 }
 object RangeEdge {
   case object Inf extends RangeEdge
-  case class ThanEq(expr: Expression with HPConstraint) extends RangeEdge
-  case class Than(expr: Expression with HPConstraint) extends RangeEdge
+  case class ThanEq(expr: Expression with ConstraintTarget) extends RangeEdge
+  case class Than(expr: Expression with ConstraintTarget) extends RangeEdge
 }

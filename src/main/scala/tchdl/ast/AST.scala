@@ -1,7 +1,9 @@
 package tchdl.ast
 
-import tchdl.util.{Constraint, Modifier, RangeEdge, Symbol, Type}
+import tchdl.util.TchdlException.ImplementationErrorException
+import tchdl.util.{Constraint, Modifier, RangeEdge, Symbol, Type, Error}
 
+import scala.math.Ordering
 
 sealed trait AST {
   private var _id: Int = TreeID.id
@@ -24,98 +26,123 @@ sealed trait Statement extends AST
 sealed trait BlockElem extends AST
 sealed trait Expression extends AST with BlockElem with HasType
 sealed trait TypeAST extends AST with HasType with HasSymbol
-sealed trait HardwareParam extends Expression {
-  def isSame(that: Expression with HardwareParam): Boolean = {
-    val sortedThis = this.simplify.sort
-    val sortedThat = that.simplify.sort
+sealed trait HPExpr extends Expression {
+  // This method organizes an expression when an expression is sortable format.
+  // TODO:
+  //  For now, this method just returns `this`.
+  //  Implement actual process.
+  def sort: HPExpr = this
 
-    sortedThis == sortedThat
-  }
-
-  def contains(expr: Expression with HardwareParam): Boolean = ???
-
-  def sort: Expression with HardwareParam = ???
-
-  def simplify: Expression with HardwareParam = {
-    def allSymbols(expr: Expression with HardwareParam): Set[Symbol.HardwareParamSymbol] = expr match {
-      case HPBinOp(_, left, right) => allSymbols(left) ++ allSymbols(right)
-      case ident: Ident => Set(ident.symbol.asHardwareParamSymbol)
-      case _: StringLiteral => Set()
-      case _: IntLiteral => Set()
+  def isSameExpr(that: HPExpr): Boolean =
+    (this.sort, that.sort) match {
+      case (l: Ident, r: Ident) => l.symbol == r.symbol
+      case (l: HPBinOp, r: HPBinOp) =>
+        l.op == r.op &&
+          l.left.isSameExpr(r.left) &&
+          l.right.isSameExpr(r.right)
+      case (l: IntLiteral, r: IntLiteral) => l.value == r.value
+      case (_: StringLiteral, _) => throw new ImplementationErrorException("string does not appear here")
+      case (_, _: StringLiteral) => throw new ImplementationErrorException("string does not appear here")
+      case _ => false
     }
+}
 
-    def replace(tree: Expression with HardwareParam, constraint: Constraint): Expression with HardwareParam = {
-      type Tree = Expression with HardwareParam
-
-      val RangeEdge.ThanEq(lit: IntLiteral) = constraint.range.min
-
-      def loop(tree: Tree, target: Tree, rootOp: Operation): Option[Tree] = {
-        def verifyLeftAndRight(tree: HPBinOp): Option[Tree] =
-          loop(tree.left, target, rootOp) match {
-            case Some(left) => Some(HPBinOp(tree.op, left, tree.right))
-            case None => loop(tree.right, target, rootOp) match {
-              case Some(right) => Some(HPBinOp(tree.op, tree.left, right))
-              case None => None
-            }
-          }
-
-        (tree, target) match {
-          case (bTree: HPBinOp, bTarget: HPBinOp) if bTree.op != bTarget.op =>
-            verifyLeftAndRight(bTree)
-          case (bTree: HPBinOp, bTarget: HPBinOp) if bTree.op == bTarget.op && bTree.op != rootOp =>
-            if(bTree == bTarget) Some(lit)
-            else verifyLeftAndRight(bTree)
-          case (bTree: HPBinOp, bTarget: HPBinOp) /* if bTree.op == bTarget.op && bTree.op == rootOp */ =>
-            if(bTree.right == bTarget.right) loop(bTree.left, bTarget.left, rootOp)
-            else verifyLeftAndRight(bTree)
-          case (bTree: HPBinOp, bTarget: Ident) if bTree.op == rootOp =>
-            if(bTree.right == bTarget) Some(HPBinOp(bTree.op, bTree.left, lit))
-            else loop(bTree.left, bTarget, rootOp)
-          case (bTree: Ident, bTarget: Ident) =>
-            if(bTree == bTarget) Some(lit)
-            else None
-          case _ => ??? // TODO: verify other patterns
+object HPExpr {
+  def verifyHPBound(
+    calledBounds: Vector[HPBound],
+    callerBounds: Vector[HPBound],
+    table: Map[Symbol.HardwareParamSymbol, HPExpr]
+  ): Either[Error, Unit] = {
+    def replaceExpr(expr: HPExpr, table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
+      def loop(expr: HPExpr): HPExpr = {
+        expr match {
+          case binop @ HPBinOp(op, left, right) =>
+            HPBinOp(op, loop(left), loop(right))
+              .setTpe(binop.tpe)
+              .setID(binop.id)
+          case ident: Ident =>
+            table.getOrElse(
+              ident.symbol.asHardwareParamSymbol,
+              throw new ImplementationErrorException(s"try to lookup ${ident.name} but not found")
+            )
+          case lit => lit
         }
       }
 
-      val replaced = constraint.target match {
-        case target @ HPBinOp(op, _, _) => loop(tree, target, op)
-        case ident: Ident if tree == ident => Some(lit)
-        case _ => None
+      loop(expr).sort
+    }
+
+    def compoundBounds(bounds: Vector[HPBound]): Vector[HPBound] = {
+      def removeFirst[T](vec: Vector[T])(f: T => Boolean): (Vector[T], Option[T]) = {
+        vec.foldLeft((Vector.empty[T], Option.empty[T])) {
+          case ((returnedVec, Some(first)), elem) => (returnedVec :+ elem, Some(first))
+          case ((returnedVec, None), elem) if f(elem) => (returnedVec, Some(elem))
+          case ((returnedVec, None), elem) => (returnedVec :+ elem, None)
+        }
       }
 
-      replaced match {
-        case Some(tree) => replace(tree.sort, constraint)
-        case None => tree
+      bounds.foldLeft(Vector.empty[HPBound]) {
+        case (bounds, compoundedBound) =>
+          val (remainBounds, foundBound) = removeFirst(bounds) {
+            case HPBound(expr, _) => expr.isSameExpr(compoundedBound.target)
+          }
+
+          foundBound match {
+            case None => remainBounds :+ compoundedBound
+            case Some(bound) =>
+              def isRejected(c: ConstraintExpr): Boolean = bound.constraints.exists(_.isRestrictedThanEq(c))
+
+              val constraints = compoundedBound.constraints.filterNot(isRejected)
+              val restrictedBound = constraints.foldLeft(bound) {
+                case (bound, constraint) =>
+                  val (remain, _) = removeFirst(bound.constraints)(constraint.isRestrictedThanEq)
+                  val newConstraints = remain :+ constraint
+
+                  HPBound(bound.target, newConstraints)
+              }
+
+              remainBounds :+ restrictedBound
+          }
       }
     }
 
-    def countLeaf(tree: Expression with HardwareParam): Int =
-      tree match {
-        case _: Ident => 1
-        case _: IntLiteral => 1
-        case HPBinOp(_, left, right) => countLeaf(left) + countLeaf(right)
+    def findBound(target: HPExpr, bounds: Vector[HPBound]): Option[HPBound] =
+      bounds.find {
+        bound => bound.target.isSameExpr(target)
       }
 
-    val symbols = allSymbols(this)
-    val constraints = symbols.toVector
-      .flatMap(_.getBounds(this))
-      .filter(_.range.isConstant)
-      .foldLeft[Vector[Constraint]](Vector.empty) {
-        case (constraints, constraint) if !constraints.map(_.target).contains(constraint.target) =>
-          constraints :+ constraint
-        case (constraints, _) =>
-          constraints
-      }
-      .sortWith((left, right) => countLeaf(left.target) < countLeaf(right.target))
-      .reverse
+    def verifyBound(pairs: Vector[(HPBound, Option[HPBound])]): Either[Error, Unit] = {
+      val results = pairs.map {
+        case (calledBound, None) => Left(???) // Error represents caller argument bound does not meet called bound
+        case (calledBound, Some(callerBound)) =>
+          val isMeetAllBounds = calledBound.constraints.forall {
+            calledConstraint => callerBound
+              .constraints
+              .exists(_.isRestrictedThanEq(calledConstraint))
+          }
 
-    constraints.foldLeft(this){
-      case (tree, constraint) => replace(tree.sort, constraint)
+          if(isMeetAllBounds) Right(())
+          else Left(???)
+      }
+
+      val (errs, _) = results.partitionMap(identity)
+
+      if(errs.isEmpty) Right(())
+      else Left(Error.MultipleErrors(errs))
     }
+
+    val replacedCalledBounds = compoundBounds(calledBounds.map {
+      case HPBound(target, constraints) =>
+        val replacedTarget = replaceExpr(target, table)
+        val replacedConstraints = constraints.map(_.map(replaceExpr(_, table)))
+
+        HPBound(replacedTarget, replacedConstraints)
+    })
+
+    val pairs = replacedCalledBounds.map { bound => (bound, findBound(bound.target, callerBounds)) }
+    verifyBound(pairs)
   }
 }
-sealed trait HPConstraint
 
 trait HasType {
   private var _tpe: Option[Type] = None
@@ -145,19 +172,84 @@ case class StateDef(name: String, blk: Block) extends Definition
 case class TypeDef(name: String) extends Definition
 
 trait Bound extends AST
-case class TypeParamBound(target: String, constraints: Vector[TypeTree]) extends Bound
-case class HardwareParamBound(target: Expression with HardwareParam, constraints: Vector[ConstraintExpr]) extends Bound
+case class TPBound(target: String, constraints: Vector[TypeTree]) extends Bound
+case class HPBound(target: HPExpr, constraints: Vector[ConstraintExpr]) extends Bound
 
-trait ConstraintExpr
+trait ConstraintExpr {
+  val expr: HPExpr
+
+  def isRestrictedThanEq(that: ConstraintExpr): Boolean = {
+    import ConstraintExpr._
+
+    (this, that) match {
+      case (LT(IntLiteral(left)), LT(IntLiteral(right))) => left <= right
+      case (LT(IntLiteral(left)), LE(IntLiteral(right))) => left < right
+      case (LE(IntLiteral(left)), LT(IntLiteral(right))) => left <= right
+      case (LE(IntLiteral(left)), LE(IntLiteral(right))) => left <= right
+      case (GT(IntLiteral(left)), GT(IntLiteral(right))) => left >= right
+      case (GT(IntLiteral(left)), GE(IntLiteral(right))) => left > right
+      case (GE(IntLiteral(left)), GT(IntLiteral(right))) => left >= right
+      case (GE(IntLiteral(left)), GE(IntLiteral(right))) => left >= right
+      case (LT(left), LE(right)) => left.isSameExpr(right)
+      case (LE(left), LE(right)) => left.isSameExpr(right)
+      case (GT(left), GE(right)) => left.isSameExpr(right)
+      case (GE(left), GE(right)) => left.isSameExpr(right)
+      case _ => false
+    }
+  }
+
+  def compound(that: ConstraintExpr): Vector[ConstraintExpr] = {
+    import ConstraintExpr._
+
+    def leftIsRestricted(left: ConstraintExpr, right: ConstraintExpr): Boolean =
+      (left, right) match {
+        case (LT(IntLiteral(left)), LT(IntLiteral(right))) => left < right
+        case (LT(IntLiteral(left)), LE(IntLiteral(right))) => left < right
+        case (LE(IntLiteral(left)), LT(IntLiteral(right))) => left <= right
+        case (LE(IntLiteral(left)), LE(IntLiteral(right))) => left < right
+        case (GT(IntLiteral(left)), GT(IntLiteral(right))) => left > right
+        case (GT(IntLiteral(left)), GE(IntLiteral(right))) => left > right
+        case (GE(IntLiteral(left)), GT(IntLiteral(right))) => left >= right
+        case (GE(IntLiteral(left)), GE(IntLiteral(right))) => left > right
+        case (LT(left), LE(right)) => left.isSameExpr(right)
+        case (GT(left), GE(right)) => left.isSameExpr(right)
+        case _ => false
+      }
+
+    if(leftIsRestricted(this, that)) Vector(this)
+    else if(leftIsRestricted(that, this)) Vector(that)
+    else Vector(this, that)
+  }
+
+  def map(f: HPExpr => HPExpr): ConstraintExpr
+}
 object ConstraintExpr {
-  case class Equal(expr: Expression with HPConstraint) extends ConstraintExpr
-  case class LessEq(expr: Expression with HPConstraint) extends ConstraintExpr
-  case class LessThan(expr: Expression with HPConstraint) extends ConstraintExpr
-  case class GreaterEq(expr: Expression with HPConstraint) extends  ConstraintExpr
-  case class GreaterThan(expr: Expression with HPConstraint) extends ConstraintExpr
+  case class EQ(expr: HPExpr) extends ConstraintExpr {
+    def map(f: HPExpr => HPExpr): ConstraintExpr = { EQ(f(expr)) }
+  }
+
+  case class NE(expr: HPExpr) extends ConstraintExpr {
+    def map(f: HPExpr => HPExpr): ConstraintExpr = { NE(f(expr)) }
+  }
+
+  case class LE(expr: HPExpr) extends ConstraintExpr {
+    def map(f: HPExpr => HPExpr): ConstraintExpr = { LE(f(expr)) }
+  }
+
+  case class LT(expr: HPExpr) extends ConstraintExpr {
+    def map(f: HPExpr => HPExpr): ConstraintExpr = { LT(f(expr)) }
+  }
+
+  case class GE(expr: HPExpr) extends ConstraintExpr {
+    def map(f: HPExpr => HPExpr): ConstraintExpr = { GE(f(expr)) }
+  }
+
+  case class GT(expr: HPExpr) extends ConstraintExpr {
+    def map(f: HPExpr => HPExpr): ConstraintExpr = { GT(f(expr)) }
+  }
 }
 
-case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPConstraint with HardwareParam
+case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr
 case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
 case class ApplyTypeParams(suffix: Expression, hps: Vector[Expression], tps: Vector[TypeTree]) extends Expression
 case class Apply(suffix: Expression, hp: Vector[Expression], tp: Vector[TypeTree], args: Vector[Expression]) extends Expression
@@ -176,10 +268,10 @@ case class StdBinOp(op: Operation, left: Expression, right: Expression) extends 
 
 case class HPBinOp(
   op: Operation,
-  left: Expression with HardwareParam,
-  right: Expression with HardwareParam
-) extends BinOp with HardwareParam {
-  type Expr = Expression with HardwareParam
+  left: Expression with HPExpr,
+  right: Expression with HPExpr
+) extends BinOp with HPExpr {
+  type Expr = Expression with HPExpr
 }
 
 case class Select(expr: Expression, name: String) extends Expression with HasSymbol
@@ -190,9 +282,9 @@ case class ConstructPair(name: String, expr: Expression) extends AST
 case class Self() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
 case class BitLiteral(value: BigInt, length: Int) extends Expression
-case class IntLiteral(value: Int) extends Expression with HPConstraint with HardwareParam
+case class IntLiteral(value: Int) extends Expression with HPExpr
 case class UnitLiteral() extends Expression
-case class StringLiteral(str: String) extends Expression with HardwareParam
+case class StringLiteral(str: String) extends Expression with HPExpr
 
 case class Finish() extends Expression
 case class Goto(target: String) extends Expression
@@ -204,7 +296,7 @@ case class Relay(target: String, params: Vector[Expression]) extends Expression
 // However, hp's length + tp's length is correct if there is no compile error.
 // In Typer, hp and tp are adjust their length
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
-case class TypeTree(expr: TypeAST, hp: Vector[Expression], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
+case class TypeTree(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
 case class SelfType() extends TypeAST
 
 trait Operation {

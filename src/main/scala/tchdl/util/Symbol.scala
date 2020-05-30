@@ -7,8 +7,8 @@ import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 
 sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
-  val path: NameSpace
-  val visibility: Visibility
+  def path: NameSpace
+  def visibility: Visibility
 
   def name: String = path.name.get
 
@@ -44,6 +44,37 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
     _flag.hasFlag(flag)
   }
   def flag: Modifier = _flag
+
+  private var _hpBounds: Option[Vector[HPBound]] = None
+  def setHPBounds(bounds: Vector[HPBound]): Unit = {
+    if(_hpBounds.isDefined)
+      throw new ImplementationErrorException("hardware parameter constraints is already assigned")
+    else {
+      val sorted = bounds.map{
+        case HPBound(target, constraints) =>
+          HPBound(
+            target.sort,
+            constraints.map(_.map(_.sort))
+          )
+      }
+
+      _hpBounds = Some(sorted)
+    }
+  }
+
+  def getHPBounds: Vector[HPBound] = _hpBounds.getOrElse(Vector.empty)
+
+  def lookupConstraint(expr: HPExpr): Option[Vector[ConstraintExpr]] = {
+    val sorted = expr.sort
+
+    _hpBounds match {
+      case None => None
+      case Some(pairs) =>
+        pairs.find { case HPBound(hpExpr, _) => hpExpr == sorted }
+          .map { case HPBound(_, constraint) => constraint }
+    }
+  }
+
 
   override def equals(obj: Any): Boolean = obj match {
     case sym: Symbol => this.getClass == sym.getClass && this.path == sym.path
@@ -176,37 +207,6 @@ object Symbol {
     tpe: Type
   ) extends TermSymbol(tpe, Modifier.NoModifier) {
     val visibility: Visibility = Visibility.Private
-
-    private var _range  = Option.empty[HPRange]
-    def setRange(range: HPRange): Either[Error, Unit] = _range match {
-      case None => _range = Some(range); Right(())
-      case Some(_) => Left(???) // TODO : Add error to represent range is already assigned
-    }
-
-    def getRange: HPRange = _range match {
-      case Some(range) => range
-      case None => throw new ImplementationErrorException("refer to the range before assigned")
-    }
-
-    private var _bounds = Vector.empty[Constraint]
-
-    /**
-     *  This method expect Constraint's target expression is already sorted.
-     */
-    def appendBound(constraint: Constraint): Either[Error, Unit] = {
-      _bounds.find(_.target.isSame(constraint.target)) match {
-        case None =>
-          _bounds = _bounds :+ constraint
-          Right(())
-        case Some(_) => Left(???) // TODO: Add error
-      }
-    }
-
-    def getBounds(expr: Expression with HardwareParam): Vector[Constraint] = {
-      val sortedExpr = expr.sort
-
-      _bounds.filter(bound => sortedExpr.contains(bound.target))
-    }
   }
 
   object HardwareParamSymbol {
@@ -225,6 +225,21 @@ object Symbol {
   object MethodSymbol {
     def apply(name: String, path: NameSpace, visibility: Visibility, owner: Symbol, flags: Modifier, tpe: Type): MethodSymbol =
       new MethodSymbol(path.appendName(name), visibility, owner, flags, tpe)
+  }
+
+  class CandidateSymbol(
+    val candidate: Vector[(Vector[Condition], Symbol.MethodSymbol)],
+    tpe: Type.MethodType
+  ) extends TermSymbol(tpe, Modifier.NoModifier) {
+    private def errMsg(target: String): String = s"CandidateSymbol does not allow to access to $target"
+    override def path: NameSpace = throw new ImplementationErrorException(errMsg("path"))
+    override def visibility: Visibility = throw new ImplementationErrorException(errMsg("visibility"))
+  }
+
+  object CandidateSymbol {
+    def apply(candidates: Vector[Symbol.MethodSymbol], tpe: Type.MethodType): CandidateSymbol = {
+      new CandidateSymbol(candidate, tpe)
+    }
   }
 
   class AlwaysSymbol(
