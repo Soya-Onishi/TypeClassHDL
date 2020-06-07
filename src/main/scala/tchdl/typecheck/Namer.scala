@@ -1,7 +1,6 @@
 package tchdl.typecheck
 
 import tchdl.ast._
-import tchdl.util.TchdlException.ImplementationErrorException
 import tchdl.util.{Context, LookupResult, Modifier, Symbol, Type, Visibility}
 
 object Namer {
@@ -23,120 +22,175 @@ object Namer {
     packageSymbol.appendCtx(cu.filename.get, root)
   }
 
+  def namedAlways(always: AlwaysDef, ctx: Context.NodeContext): AlwaysDef = {
+    val symbol = Symbol.AlwaysSymbol(always.name, ctx.path)
+
+    ctx.append(symbol)
+    always.setSymbol(symbol)
+  }
+
+  def namedMethod(method: MethodDef, ctx: Context.NodeContext): MethodDef = {
+    val methodTpe = Type.MethodTypeGenerator(method, ctx)
+    val methodSymbol = Symbol.MethodSymbol(
+      method.name,
+      ctx.path,
+      Visibility.Public,
+      Modifier.NoModifier,
+      methodTpe
+    )
+
+    val signatureCtx = Context(ctx, methodSymbol)
+    val namedHPs = method.hp.map(namedValDef(_, signatureCtx))
+    val namedTPs = method.tp.map(namedTypeDef(_, signatureCtx))
+    methodSymbol.setHPs(namedHPs.map(_.symbol.asHardwareParamSymbol))
+    methodSymbol.setTPs(namedTPs.map(_.symbol.asTypeParamSymbol))
+
+    ctx.append(methodSymbol)
+    method.setSymbol(methodSymbol)
+  }
+
+  def namedValDef(vdef: ValDef, ctx: Context.NodeContext): ValDef = {
+    val symbol = Symbol.VariableSymbol(
+      vdef.name,
+      ctx.path,
+      Visibility.Private,
+      Modifier.NoModifier,
+      Type.VariableTypeGenerator(vdef, ctx)
+    )
+
+    ctx.append(symbol)
+    vdef.setSymbol(symbol)
+  }
+
+  def namedStageDef(stage: StageDef, ctx: Context.NodeContext): StageDef = {
+    val symbol = Symbol.StageSymbol(
+      stage.name,
+      ctx.path,
+      Type.StageTypeGenerator(stage, ctx)
+    )
+
+    ctx.append(symbol)
+    stage.setSymbol(symbol)
+  }
+
+  def namedStateDef(state: StateDef, ctx: Context.NodeContext): StateDef = {
+    val symbol = Symbol.StateSymbol(state.name, ctx.path)
+
+    ctx.append(symbol)
+    state.setSymbol(symbol)
+  }
+
+  def namedTypeDef(typeDef: TypeDef, ctx: Context.NodeContext): TypeDef = {
+    val tpe = Type.TypeParamType(typeDef.name, ctx.path)
+    val symbol: Symbol = Symbol.TypeParamSymbol(typeDef.name, ctx.path, tpe)
+
+    ctx.append(symbol)
+    typeDef.setSymbol(symbol)
+  }
+
+  def namedModule(module: ModuleDef, ctx: Context.RootContext): ModuleDef = {
+    val moduleTpe = Type.ModuleTypeGenerator(module, ctx)
+    val moduleSymbol = Symbol.ModuleSymbol(
+      module.name,
+      ctx.path,
+      Visibility.Public,
+      Modifier.NoModifier,
+      moduleTpe
+    )
+
+    val signatureCtx = Context(ctx, moduleSymbol)
+    val hps = module.hp.map(namedValDef(_, signatureCtx))
+    val tps = module.tp.map(namedTypeDef(_, signatureCtx))
+    moduleSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
+    moduleSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
+
+    ctx.append(moduleSymbol)
+    module.setSymbol(moduleSymbol)
+  }
+
+  def namedStruct(struct: StructDef, ctx: Context.RootContext): StructDef = {
+    val structTpe = Type.StructTypeGenerator(struct, ctx)
+    val structSymbol = Symbol.StructSymbol(
+      struct.name,
+      ctx.path,
+      Visibility.Public,
+      Modifier.NoModifier,
+      structTpe
+    )
+
+    val signatureCtx = Context(ctx, structSymbol)
+    val hps = struct.hp.map(namedValDef(_, signatureCtx))
+    val tps = struct.tp.map(namedTypeDef(_, signatureCtx))
+    structSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
+    structSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
+
+    ctx.append(structSymbol)
+    struct.setSymbol(structSymbol)
+  }
+
+  def namedInterface(interface: InterfaceDef, ctx: Context.RootContext): InterfaceDef = {
+    val interfaceTpe = Type.InterfaceTypeGenerator(interface, ctx)
+    val interfaceSymbol = Symbol.InterfaceSymbol(
+      interface.name,
+      ctx.path,
+      Visibility.Public,
+      Modifier.NoModifier,
+      interfaceTpe
+    )
+
+    val signatureCtx = Context(ctx, interfaceSymbol)
+    val hps = interface.hp.view.map(namedValDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
+    val tps = interface.tp.view.map(namedTypeDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    interfaceSymbol.setHPs(hps)
+    interfaceSymbol.setTPs(tps)
+
+    ctx.append(interfaceSymbol)
+    interface.setSymbol(interfaceSymbol)
+  }
+
+  def namedImplInterface(impl: ImplementInterface, ctx: Context.RootContext): ImplementInterface = {
+    val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
+    val signatureCtx = Context(ctx, implSymbol)
+    val hps = impl.hp.view.map(namedValDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
+    val tps = impl.tp.view.map(namedTypeDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    implSymbol.setHPs(hps)
+    implSymbol.setTPs(tps)
+
+    impl.setSymbol(implSymbol)
+  }
+
+  def namedImplClass(impl: ImplementClass, ctx: Context.RootContext): ImplementClass = {
+    val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
+    val signatureCtx = Context(ctx, implSymbol)
+    val hps = impl.hp.view.map(namedValDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
+    val tps = impl.tp.view.map(namedTypeDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    implSymbol.setHPs(hps)
+    implSymbol.setTPs(tps)
+
+    impl.setSymbol(implSymbol)
+  }
+
   def nodeLevelNamed[T](ast: T, ctx: Context.NodeContext): T = {
     val namedTree = ast match {
-      case always: AlwaysDef =>
-        val owner = ctx.owner match {
-          case owner: Symbol.ModuleSymbol => owner
-          case _ =>
-            throw new ImplementationErrorException("Module Symbol should be owner, but there is different type owner")
-        }
-
-        val symbol: Symbol = Symbol.AlwaysSymbol(always.name, ctx.path, owner)
-        ctx.append(symbol)
-
-        always.setSymbol(symbol)
-      case method: MethodDef =>
-        val tpe = Type.TypeGenerator(method, ctx)
-
-        val symbol: Symbol = Symbol.MethodSymbol(
-          method.name,
-          ctx.path,
-          Visibility.Public,
-          ctx.owner,
-          Modifier.NoModifier,
-          tpe
-        )
-
-        ctx.append(symbol)
-
-        method.setSymbol(symbol)
-      case vdef: ValDef =>
-        val tpe = Type.TypeGenerator(vdef, ctx)
-
-        val symbol: Symbol = Symbol.VariableSymbol(
-          vdef.name,
-          ctx.path,
-          Visibility.Public,
-          ctx.owner,
-          Modifier.NoModifier,
-          tpe
-        )
-
-        ctx.append(symbol)
-
-        vdef.setSymbol(symbol)
-      case stage: StageDef =>
-        val tpe = Type.TypeGenerator(stage, ctx)
-
-        val owner = ctx.owner match {
-          case owner: Symbol.ModuleSymbol => owner
-          case _ =>
-            throw new ImplementationErrorException("Module Symbol should be owner, but there is different type owner")
-        }
-
-        val symbol: Symbol = Symbol.StageSymbol(
-          stage.name,
-          ctx.path,
-          owner,
-          tpe
-        )
-
-        ctx.append(symbol)
-
-        stage.setSymbol(symbol)
-      case state: StateDef =>
-        val owner = ctx.owner match {
-          case owner: Symbol.StageSymbol => owner
-          case _ =>
-            throw new ImplementationErrorException("Module Symbol should be owner, but there is no owner")
-        }
-
-        val symbol: Symbol = Symbol.StateSymbol(state.name, ctx.path, owner)
-        ctx.append(symbol)
-
-        state.setSymbol(symbol)
-      case typeDef: TypeDef =>
-        val tpe = Type.TypeGenerator(typeDef, ctx)
-        val symbol: Symbol = Symbol.TypeParamSymbol(typeDef.name, ctx.path, ctx.owner, tpe)
-        ctx.append(symbol)
-
-        typeDef.setSymbol(symbol)
+      case always: AlwaysDef => namedAlways(always, ctx)
+      case method: MethodDef => namedMethod(method, ctx)
+      case vdef: ValDef => namedValDef(vdef, ctx)
+      case stage: StageDef => namedStageDef(stage, ctx)
+      case state: StateDef => namedStateDef(state, ctx)
+      case typeDef: TypeDef => namedTypeDef(typeDef, ctx)
       case ast => ast
     }
 
     namedTree.asInstanceOf[T]
   }
 
-
   def topLevelNamed[T](ast: T, ctx: Context.RootContext): T = {
     val namedAST = ast match {
-      case module: ModuleDef =>
-        val tpe = Type.TypeGenerator(module, ctx)
-        val symbol: Symbol = Symbol.ModuleSymbol(module.name, ctx.path, Visibility.Public, Modifier.NoModifier, tpe)
-        ctx.append(symbol)
-
-        module.setSymbol(symbol)
-      case struct: StructDef=>
-        val tpe = Type.TypeGenerator(struct, ctx)
-        val symbol: Symbol = Symbol.StructSymbol(struct.name, ctx.path, Visibility.Public, Modifier.NoModifier, tpe)
-        ctx.append(symbol)
-
-        struct.setSymbol(symbol)
-      case interface: InterfaceDef =>
-        val tpe = Type.TypeGenerator(interface, ctx)
-        val symbol = Symbol.InterfaceSymbol(interface.name, ctx.path, Visibility.Public, Modifier.NoModifier, tpe)
-        ctx.append(symbol)
-
-        interface.setSymbol(symbol)
-      case impl: ImplementInterface =>
-        val symbol = Symbol.ImplementSymbol(impl.id, ctx.path)
-
-        impl.setSymbol(symbol)
-      case impl: ImplementClass =>
-        val symbol = Symbol.ImplementSymbol(impl.id, ctx.path)
-
-        impl.setSymbol(symbol)
+      case module: ModuleDef => namedModule(module, ctx)
+      case struct: StructDef=> namedStruct(struct, ctx)
+      case interface: InterfaceDef => namedInterface(interface, ctx)
+      case impl: ImplementInterface => namedImplInterface(impl, ctx)
+      case impl: ImplementClass => namedImplClass(impl, ctx)
       case ast => ast
     }
 

@@ -22,7 +22,7 @@ abstract class Context {
     }
   }
 
-  def allHPBounds: Vector[HPBound] = this match {
+  def allHPBounds: Vector[HPBoundTree] = this match {
     case _: Context.RootContext => Vector.empty
     case ctx: Context.NodeContext => ctx.owner.getHPBounds ++ ctx.parent.allHPBounds
   }
@@ -35,6 +35,9 @@ abstract class Context {
     blkID += 1
     id
   }
+
+  def hpBounds: Vector[HPBound]
+  def tpBounds: Vector[TPBound]
 }
 
 object Context {
@@ -78,7 +81,7 @@ object Context {
         .append(symbol)
 
       (intoScope, intoPackage) match {
-        case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(Seq(err0, err1)))
+        case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
         case (Left(err), _) => Left(err)
         case (_, Left(err)) => Left(err)
         case (Right(_), Right(_)) => Right(())
@@ -93,6 +96,9 @@ object Context {
       this.scope.toMap.collect{
         case (name, interface: Symbol.InterfaceSymbol) => name -> interface
       }
+
+    override def hpBounds: Vector[HPBound] = Vector.empty
+    override def tpBounds: Vector[TPBound] = Vector.empty
   }
 
   class NodeContext(
@@ -113,6 +119,40 @@ object Context {
       case Some(elem: T) => LookupResult.LookupSuccess(elem)
       case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
       case None => parent.lookup(name)
+    }
+    def lookupUntilSameOwner[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
+      case Some(elem: T) => LookupResult.LookupSuccess(elem)
+      case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
+      case None => parent match {
+        case p: Context.NodeContext if p.owner == this.owner => p.lookupUntilSameOwner[T](name)
+        case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+      }
+    }
+
+    def hpBounds: Vector[HPBound] = {
+      def hpBound(symbol: Symbol): Vector[HPBound] = symbol match {
+        case owner: Symbol with HasParams => owner.hpBound
+        case _ => Vector.empty
+      }
+
+      parent match {
+        case _: Context.RootContext => hpBound(owner)
+        case ctx: Context.NodeContext if ctx.owner == this.owner => parent.hpBounds
+        case _: Context.NodeContext => hpBound(owner) ++ parent.hpBounds
+      }
+    }
+
+    def tpBounds: Vector[TPBound] = {
+      def tpBound(symbol: Symbol): Vector[TPBound] = symbol match {
+        case owner: Symbol with HasParams => owner.tpBound
+        case _ => Vector.empty
+      }
+
+      parent match {
+        case _: Context.RootContext => tpBound(owner)
+        case ctx: Context.NodeContext if ctx.owner == this.owner => parent.tpBounds
+        case _: Context.NodeContext => tpBound(owner) ++ parent.tpBounds
+      }
     }
 
     override def interfaceTable: Map[String, Symbol.InterfaceSymbol] = parent.interfaceTable

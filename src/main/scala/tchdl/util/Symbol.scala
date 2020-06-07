@@ -45,14 +45,14 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   }
   def flag: Modifier = _flag
 
-  private var _hpBounds: Option[Vector[HPBound]] = None
-  def setHPBounds(bounds: Vector[HPBound]): Unit = {
+  private var _hpBounds: Option[Vector[HPBoundTree]] = None
+  def setHPBounds(bounds: Vector[HPBoundTree]): Unit = {
     if(_hpBounds.isDefined)
       throw new ImplementationErrorException("hardware parameter constraints is already assigned")
     else {
       val sorted = bounds.map{
-        case HPBound(target, constraints) =>
-          HPBound(
+        case HPBoundTree(target, constraints) =>
+          HPBoundTree(
             target.sort,
             constraints.map(_.map(_.sort))
           )
@@ -62,16 +62,16 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
     }
   }
 
-  def getHPBounds: Vector[HPBound] = _hpBounds.getOrElse(Vector.empty)
+  def getHPBounds: Vector[HPBoundTree] = _hpBounds.getOrElse(Vector.empty)
 
-  def lookupConstraint(expr: HPExpr): Option[Vector[ConstraintExpr]] = {
+  def lookupConstraint(expr: HPExpr): Option[Vector[RangeExpr]] = {
     val sorted = expr.sort
 
     _hpBounds match {
       case None => None
       case Some(pairs) =>
-        pairs.find { case HPBound(hpExpr, _) => hpExpr == sorted }
-          .map { case HPBound(_, constraint) => constraint }
+        pairs.find { case HPBoundTree(hpExpr, _) => hpExpr == sorted }
+          .map { case HPBoundTree(_, constraint) => constraint }
     }
   }
 
@@ -85,20 +85,18 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
 
   def asTypeSymbol: Symbol.TypeSymbol = this.asInstanceOf[Symbol.TypeSymbol]
   def asTermSymbol: Symbol.TermSymbol = this.asInstanceOf[Symbol.TermSymbol]
+  def asClassTypeSymbol: Symbol.ClassTypeSymbol = this.asInstanceOf[Symbol.ClassTypeSymbol]
   def asInterfaceSymbol: Symbol.InterfaceSymbol = this.asInstanceOf[Symbol.InterfaceSymbol]
   def asTypeParamSymbol: Symbol.TypeParamSymbol = this.asInstanceOf[Symbol.TypeParamSymbol]
   def asImplementSymbol: Symbol.ImplementSymbol = this.asInstanceOf[Symbol.ImplementSymbol]
   def asHardwareParamSymbol: Symbol.HardwareParamSymbol = this.asInstanceOf[Symbol.HardwareParamSymbol]
+  def asMethodSymbol: Symbol.MethodSymbol = this.asInstanceOf[Symbol.MethodSymbol]
 
   def isTypeSymbol: Boolean = this.isInstanceOf[Symbol.TypeSymbol]
   def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]
   def isFieldTypeSymbol: Boolean = this.isInstanceOf[Symbol.FieldTypeSymbol]
   def isMethodSymbol: Boolean = this.isInstanceOf[Symbol.MethodSymbol]
   def isInterfaceSymbol: Boolean = this.isInstanceOf[Symbol.InterfaceSymbol]
-}
-
-trait HasOwner extends Symbol {
-  val owner: Symbol
 }
 
 trait HasImpls {
@@ -109,13 +107,29 @@ trait HasImpls {
   private val _impls = mutable.Map[Int, ImplType]()
 
   def appendImpl(implTree: ImplType#TreeType, impl: ImplType): Unit = _impls(implTree.id) = impl
-  def lookupImpl(targetType: Type.RefType): Vector[ImplType] = _impls.values.filter(targetType <|= _.targetType).toVector
   def removeImpl(id: Int): Unit = _impls.remove(id)
   def impls: Vector[ImplType] = _impls.values.toVector
 }
 
+trait HasParams {
+  private var hardwareParam: Vector[Symbol.HardwareParamSymbol] = Vector.empty
+  private var typeParam: Vector[Symbol.TypeParamSymbol] = Vector.empty
+  def setHPs(hps: Vector[Symbol.HardwareParamSymbol]): Unit = hardwareParam = hps
+  def setTPs(tps: Vector[Symbol.TypeParamSymbol]): Unit = typeParam = tps
+  def hps: Vector[Symbol.HardwareParamSymbol] = hardwareParam
+  def tps: Vector[Symbol.TypeParamSymbol] = typeParam
+
+  private var bound: Option[Vector[Bound]] = None
+  def tpBound: Vector[TPBound] = bound.getOrElse(Vector.empty).collect{ case b: TPBound => b }
+  def hpBound: Vector[HPBound] = bound.getOrElse(Vector.empty).collect{ case b: HPBound => b }
+  def setBound(set: Vector[Bound]): Unit = bound match {
+    case None => bound = Some(set)
+    case Some(_) => throw new ImplementationErrorException("bounds are already set")
+  }
+}
+
 object Symbol {
-  abstract class TypeSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
+  abstract class TypeSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags) with HasParams
   abstract class EntityTypeSymbol(tpe: Type, flags: Modifier) extends TypeSymbol(tpe, flags) with HasImpls
   abstract class ClassTypeSymbol(tpe: Type, flags: Modifier) extends EntityTypeSymbol(tpe, flags) {
     override type ImplType = ImplementClassContainer
@@ -129,7 +143,13 @@ object Symbol {
   ) extends ClassTypeSymbol(tpe, flags)
 
   object StructSymbol {
-    def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): StructSymbol =
+    def apply(
+      name: String,
+      path: NameSpace,
+      visibility: Visibility,
+      flags: Modifier,
+      tpe: Type
+    ): StructSymbol =
       new StructSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
@@ -141,7 +161,13 @@ object Symbol {
   ) extends ClassTypeSymbol(tpe, flags)
 
   object ModuleSymbol {
-    def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): ModuleSymbol =
+    def apply(
+      name: String,
+      path: NameSpace,
+      visibility: Visibility,
+      flags: Modifier,
+      tpe: Type
+    ): ModuleSymbol =
       new ModuleSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
@@ -155,15 +181,17 @@ object Symbol {
   }
 
   object InterfaceSymbol {
-    def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): InterfaceSymbol =
+    def apply(
+      name: String,
+      path: NameSpace,
+      visibility: Visibility,
+      flags: Modifier,
+      tpe: Type
+    ): InterfaceSymbol =
       new InterfaceSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
-  class TypeParamSymbol(
-    val path: NameSpace,
-    val owner: Symbol,
-    tpe: Type
-  ) extends TypeSymbol(tpe, Modifier.NoModifier) with HasOwner {
+  class TypeParamSymbol(val path: NameSpace, tpe: Type) extends TypeSymbol(tpe, Modifier.NoModifier) {
     override val visibility: Visibility = Visibility.Private
 
     private var _bounds: Option[Vector[Type.RefType]] = None
@@ -174,8 +202,8 @@ object Symbol {
   }
 
   object TypeParamSymbol {
-    def apply(name: String, path: NameSpace, owner: Symbol, tpe: Type): TypeParamSymbol =
-      new TypeParamSymbol(path.appendName(name), owner, tpe)
+    def apply(name: String, path: NameSpace, tpe: Type): TypeParamSymbol =
+      new TypeParamSymbol(path.appendName(name), tpe)
   }
 
   class FieldTypeSymbol(
@@ -186,103 +214,78 @@ object Symbol {
     override val visibility: Visibility = Visibility.Public
   }
 
-  abstract class TermSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags) with HasOwner
+  abstract class TermSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
 
   class VariableSymbol(
     val path: NameSpace,
     val visibility: Visibility,
-    val owner: Symbol,
     flags: Modifier,
     tpe: Type
   ) extends TermSymbol(tpe, flags)
 
   object VariableSymbol {
-    def apply(name: String, path: NameSpace, visibility: Visibility, owner: Symbol, flags: Modifier, tpe: Type): VariableSymbol =
-      new VariableSymbol(path.appendName(name), visibility, owner, flags, tpe)
+    def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): VariableSymbol =
+      new VariableSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
-  class HardwareParamSymbol(
-    val path: NameSpace,
-    val owner: Symbol,
-    tpe: Type
-  ) extends TermSymbol(tpe, Modifier.NoModifier) {
+  class HardwareParamSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier) {
     val visibility: Visibility = Visibility.Private
   }
 
   object HardwareParamSymbol {
-    def apply(name: String, path: NameSpace, owner: Symbol, tpe: Type): HardwareParamSymbol =
-      new HardwareParamSymbol(path.appendName(name), owner, tpe)
+    def apply(name: String, path: NameSpace, tpe: Type): HardwareParamSymbol =
+      new HardwareParamSymbol(path.appendName(name), tpe)
   }
 
   class MethodSymbol(
     val path: NameSpace,
     val visibility: Visibility,
-    val owner: Symbol,
     flags: Modifier,
     tpe: Type
-  ) extends TermSymbol(tpe, flags)
+  ) extends TermSymbol(tpe, flags) with HasParams
 
   object MethodSymbol {
-    def apply(name: String, path: NameSpace, visibility: Visibility, owner: Symbol, flags: Modifier, tpe: Type): MethodSymbol =
-      new MethodSymbol(path.appendName(name), visibility, owner, flags, tpe)
+    def apply(
+      name: String,
+      path: NameSpace,
+      visibility: Visibility,
+      flags: Modifier,
+      tpe: Type
+    ): MethodSymbol =
+      new MethodSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
-  class CandidateSymbol(
-    val candidate: Vector[(Vector[Condition], Symbol.MethodSymbol)],
-    tpe: Type.MethodType
-  ) extends TermSymbol(tpe, Modifier.NoModifier) {
-    private def errMsg(target: String): String = s"CandidateSymbol does not allow to access to $target"
-    override def path: NameSpace = throw new ImplementationErrorException(errMsg("path"))
-    override def visibility: Visibility = throw new ImplementationErrorException(errMsg("visibility"))
-  }
-
-  object CandidateSymbol {
-    def apply(candidates: Vector[Symbol.MethodSymbol], tpe: Type.MethodType): CandidateSymbol = {
-      new CandidateSymbol(candidate, tpe)
-    }
-  }
-
-  class AlwaysSymbol(
-    val path: NameSpace,
-    val owner: Symbol
-  ) extends TermSymbol(Type.NoType, Modifier.NoModifier) {
+  class AlwaysSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier) {
     override val visibility: Visibility = Visibility.Private
   }
 
   object AlwaysSymbol {
-    def apply(name: String, path: NameSpace, owner: Symbol): AlwaysSymbol =
-      new AlwaysSymbol(path.appendName(name), owner)
+    def apply(name: String, path: NameSpace): AlwaysSymbol =
+      new AlwaysSymbol(path.appendName(name))
   }
 
-  class StageSymbol(
-    val path: NameSpace,
-    val owner: Symbol,
-    tpe: Type
-  ) extends TermSymbol(tpe, Modifier.NoModifier) {
+  class StageSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier) {
     override val visibility: Visibility = Visibility.Private
   }
 
   object StageSymbol {
-    def apply(name: String, path: NameSpace, owner: Symbol, tpe: Type): StageSymbol =
-      new StageSymbol(path.appendName(name), owner, tpe)
+    def apply(name: String, path: NameSpace, tpe: Type): StageSymbol =
+      new StageSymbol(path.appendName(name), tpe)
   }
 
-  class StateSymbol(
-    val path: NameSpace,
-    val owner: Symbol
-  ) extends Symbol(Type.NoType, Modifier.NoModifier){
+  class StateSymbol(val path: NameSpace) extends Symbol(Type.NoType, Modifier.NoModifier){
     override val visibility: Visibility = Visibility.Private
   }
 
   object StateSymbol {
-    def apply(name: String, path: NameSpace, owner: Symbol): StateSymbol =
-      new StateSymbol(path.appendName(name), owner)
+    def apply(name: String, path: NameSpace): StateSymbol =
+      new StateSymbol(path.appendName(name))
   }
 
   class ImplementSymbol(
     val treeID: Int,
-    val path: NameSpace
-  ) extends Symbol(null, Modifier.NoModifier) {
+    val path: NameSpace,
+  ) extends Symbol(null, Modifier.NoModifier) with HasParams {
     override val visibility: Visibility = Visibility.Public
 
     override def setTpe(tpe: Type): Unit =
@@ -294,7 +297,10 @@ object Symbol {
   }
 
   object ImplementSymbol {
-    def apply(id: Int, path: NameSpace): ImplementSymbol = {
+    def apply(
+      id: Int,
+      path: NameSpace,
+    ): ImplementSymbol = {
       new ImplementSymbol(id, path.appendName(ImplementId.id().toString))
     }
   }

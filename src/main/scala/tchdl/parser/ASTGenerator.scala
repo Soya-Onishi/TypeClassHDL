@@ -10,8 +10,8 @@ import scala.jdk.CollectionConverters._
 
 class ASTGenerator {
   def apply(ctx: TP.Compilation_unitContext, filename: String): CompilationUnit = {
-    val pkgName = ctx.pkg_name.ID.asScala.map(_.getText).toVector
-    val imports = ctx.import_clause.asScala.map(_.ID.asScala.map(_.getText).toVector).toVector
+    val pkgName = ctx.pkg_name.EXPR_ID.asScala.map(_.getText).toVector
+    val imports = ctx.import_clause.asScala.map(_.EXPR_ID.asScala.map(_.getText).toVector).toVector
     val defs = ctx.top_definition.asScala.map(topDefinition).toVector
 
     CompilationUnit(Some(filename), pkgName, imports, defs)
@@ -38,10 +38,10 @@ class ASTGenerator {
         case (ident, tpe) => ValDef(Modifier.NoModifier, ident, Some(tpe), None)
       }}.getOrElse(Vector.empty).toVector
 
-    val name = ctx.ID.getText
+    val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
-    val parents = paramModules(Option(ctx.parents))(_.ID)(_.`type`)
-    val siblings = paramModules(Option(ctx.siblings))(_.ID)(_.`type`)
+    val parents = paramModules(Option(ctx.parents))(_.EXPR_ID)(_.`type`)
+    val siblings = paramModules(Option(ctx.siblings))(_.EXPR_ID)(_.`type`)
 
     val components = ctx.component
       .asScala
@@ -52,7 +52,7 @@ class ASTGenerator {
   }
 
   def structDef(ctx: TP.Struct_defContext): StructDef = {
-    val name = ctx.ID.getText
+    val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
     val fields = fieldDefs(ctx.field_defs)
 
@@ -70,7 +70,7 @@ class ASTGenerator {
   }
 
   def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
-    val name = ctx.ID.getText
+    val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
     val methods = ctx.signature_def
       .asScala
@@ -89,19 +89,19 @@ class ASTGenerator {
   }
 
   def methodDef(ctx: TP.Method_defContext): MethodDef = {
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
     val params = Option(ctx.param_defs())
       .map(paramDefs)
       .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
-    val blk = Option(ctx.block).map(block)
+    val blk = block(ctx.block)
 
-    MethodDef(name, hps, tps, bounds, params, tpe, blk)
+    MethodDef(name, hps, tps, bounds, params, tpe, Some(blk))
   }
 
   def signatureDef(ctx: TP.Signature_defContext): MethodDef = {
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
     val params = Option(ctx.param_defs())
       .map(paramDefs)
@@ -111,7 +111,7 @@ class ASTGenerator {
     MethodDef(name, hps, tps, bounds, params, tpe, None)
   }
 
-  def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[Bound]) = {
+  def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[BoundTree]) = {
     val (hps, tps) = Option(tpCtx)
       .map(typeParam)
       .getOrElse(Vector.empty, Vector.empty)
@@ -139,7 +139,7 @@ class ASTGenerator {
       .toVector
     )
 
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
     ValDef(modifier | Modifier.NoExpr, name, Some(tpe), None)
@@ -158,21 +158,21 @@ class ASTGenerator {
       .toVector
     )
 
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
     ValDef(modifier | Modifier.NoExpr, name, Some(tpe), None)
   }
 
   def alwaysDef(ctx: TP.Always_defContext): AlwaysDef = {
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val blk = block(ctx.block)
 
     AlwaysDef(name, blk)
   }
 
   def valDef(ctx: TP.Val_defContext): ValDef = {
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
     val initExpr = expr(ctx.expr)
 
@@ -194,7 +194,7 @@ class ASTGenerator {
       (statedefs, blockElems)
     }
 
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val params = Option(ctx.param_defs)
       .map(paramDefs)
       .getOrElse(Vector.empty)
@@ -208,7 +208,7 @@ class ASTGenerator {
   }
 
   def stateDef(ctx: TP.State_defContext): StateDef = {
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val blk = block(ctx.block)
 
     StateDef(name, blk)
@@ -232,7 +232,7 @@ class ASTGenerator {
   }
 
   def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeTree], Option[Expression]) = {
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
     val initExpr = Option(ctx.expr).map(expr)
 
@@ -241,8 +241,8 @@ class ASTGenerator {
 
   def expr(ctx: TP.ExprContext): Expression = ctx match {
     case ctx: TP.SelectExprContext => selectExpr(ctx)
-    case ctx: TP.MulDivExprContext => binop(ctx.expr(0), ctx.expr(1), ctx.op.getText)
-    case ctx: TP.AddSubExprContext => binop(ctx.expr(0), ctx.expr(1), ctx.op.getText)
+    case ctx: TP.MulDivExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
+    case ctx: TP.AddSubExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
     case ctx: TP.ApplyExprContext => applyCall(ctx.apply)
     case ctx: TP.BlockExprContext => block(ctx.block)
     case ctx: TP.ConstructExprContext => construct(ctx.construct)
@@ -253,17 +253,25 @@ class ASTGenerator {
 
       IfExpr(cond, conseq, alt)
     case _: TP.FinishContext => Finish()
-    case ctx: TP.GotoContext => Goto(ctx.ID.getText)
+    case ctx: TP.GotoContext => Goto(ctx.EXPR_ID.getText)
     case ctx: TP.RelayContext =>
       val args = ctx.args.expr.asScala.map(expr).toVector
-      Relay(ctx.ID.getText, args)
+      Relay(ctx.EXPR_ID.getText, args)
     case ctx: TP.GenerateContext =>
       val args = ctx.args.expr.asScala.map(expr).toVector
-      Generate(ctx.ID.getText, args)
+      Generate(ctx.EXPR_ID.getText, args)
     case ctx: TP.LitExprContext => literal(ctx.literal)
     case ctx: TP.ParenthesesExprContext => expr(ctx.expr)
     case _: TP.SelfExprContext => Self()
-    case ctx: TP.IDContext => Ident(ctx.ID.getText)
+    case ctx: TP.ExprIDContext => Ident(ctx.EXPR_ID.getText)
+  }
+
+  def hpExpr(ctx: TP.Hp_exprContext): HPExpr = ctx match {
+    case ctx: TP.MulDivHPExprContext => hpBinOp(ctx.hp_expr(0), ctx.hp_expr(1), ctx.op.getText)
+    case ctx: TP.AddSubHPExprContext => hpBinOp(ctx.hp_expr(0), ctx.hp_expr(1), ctx.op.getText)
+    case ctx: TP.StrLitHPExprContext => StringLiteral(ctx.STRING.getText.tail.init)
+    case ctx: TP.IntLitHPExprContext => IntLiteral(ctx.INT.getText.toInt)
+    case ctx: TP.HPExprIDContext => Ident(ctx.getText)
   }
 
   def selectExpr(ctx: TP.SelectExprContext): Expression = Option(ctx.apply) match {
@@ -281,11 +289,11 @@ class ASTGenerator {
       }
     case None =>
       val prefix = expr(ctx.expr)
-      val name = ctx.ID.getText
+      val name = ctx.EXPR_ID.getText
       Select(prefix, name)
   }
 
-  def binop(left: TP.ExprContext, right: TP.ExprContext, op: String): BinOp = {
+  def stdBinOp(left: TP.ExprContext, right: TP.ExprContext, op: String): StdBinOp = {
     val operation = op match {
       case "+" => Operation.Add
       case "-" => Operation.Sub
@@ -293,36 +301,33 @@ class ASTGenerator {
       case "/" => Operation.Div
     }
 
-    BinOp(operation, expr(left), expr(right))
+    StdBinOp(operation, expr(left), expr(right))
+  }
+
+  def hpBinOp(left: TP.Hp_exprContext, right: TP.Hp_exprContext, op: String): HPBinOp = {
+    val operation = op match {
+      case "+" => Operation.Add
+      case "-" => Operation.Sub
+      case "*" => Operation.Mul
+      case "/" => Operation.Div
+    }
+
+    HPBinOp(operation, hpExpr(left), hpExpr(right))
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
-    val types = ctx.type_elem.asScala.map(typeElement).toVector
-
-    types match {
-      case Vector(tpe) => tpe
-      case tpes => tpes.tail.foldLeft(tpes.head) {
-        case (suffix, tpe) =>
-          // TODO:
-          //   issue an error when tpe is SelfType
-          val TypeTree(Ident(name), hp, tp) = tpe
-          TypeTree(StaticSelect(suffix, name), hp, tp)
-      }
+    ctx match {
+      case ctx: TP.NormalTypeContext =>
+        val id = Ident(ctx.TYPE_ID.getText)
+        Option(ctx.apply_typeparam).map(applyTypeParam) match {
+          case Some((hps, tps)) => TypeTree(id, hps, tps)
+          case None => TypeTree(id, Vector.empty, Vector.empty)
+        }
     }
   }
 
-  def typeElement(ctx: TP.Type_elemContext): TypeTree = ctx match {
-    case ctx: TP.NormalTypeContext =>
-      val name = ctx.ID.getText
-      val (hps, tps) = Option (ctx.apply_typeparam).map (applyTypeParam).getOrElse ((Vector.empty, Vector.empty) )
-
-      TypeTree (Ident(name), hps, tps)
-    case _: TP.SelfTypeContext =>
-      TypeTree(SelfType(), Vector.empty, Vector.empty)
-  }
-
   def applyCall(ctx: TP.ApplyContext): ApplyParams = {
-    val name = ctx.ID.getText
+    val name = ctx.EXPR_ID.getText
     val tpsOpt = Option(ctx.apply_typeparam).map(applyTypeParam)
     val args = ctx.args.expr.asScala.map(expr).toVector
 
@@ -336,7 +341,7 @@ class ASTGenerator {
     ctx match {
       case ctx: TP.WithDependencyContext =>
         val deps = paramDefs(ctx.param_defs)
-        val tps = ctx.ID()
+        val tps = ctx.TYPE_ID()
           .asScala
           .map(_.getText)
           .map(TypeDef.apply)
@@ -344,7 +349,7 @@ class ASTGenerator {
 
         (deps, tps)
       case ctx: TP.WithoutDependencyContext =>
-        val tps = ctx.ID()
+        val tps = ctx.TYPE_ID()
           .asScala
           .map(_.getText)
           .map(TypeDef.apply)
@@ -354,7 +359,7 @@ class ASTGenerator {
     }
   }
 
-  def applyTypeParam(ctx: TP.Apply_typeparamContext): (Vector[Expression], Vector[TypeTree]) = ctx match {
+  def applyTypeParam(ctx: TP.Apply_typeparamContext): (Vector[HPExpr], Vector[TypeTree]) = ctx match {
     case ctx: TP.WithHardwareParamsContext =>
       val exprs = hardwareParams(ctx.hardware_params)
       val tpes = Option(ctx.type_params).map(typeParams).getOrElse(Vector.empty)
@@ -366,8 +371,8 @@ class ASTGenerator {
       (Vector.empty, tpes)
   }
 
-  def hardwareParams(ctx: TP.Hardware_paramsContext): Vector[Expression] =
-    ctx.expr.asScala.map(expr).toVector
+  def hardwareParams(ctx: TP.Hardware_paramsContext): Vector[HPExpr] =
+    ctx.hp_expr.asScala.map(hpExpr).toVector
 
   def typeParams(ctx: TP.Type_paramsContext): Vector[TypeTree] =
     ctx.`type`.asScala.map(typeTree).toVector
@@ -396,7 +401,7 @@ class ASTGenerator {
 
   def construct(ctx: TP.ConstructContext): Construct = {
     def constructPair(ctx: TP.Construct_pairContext): ConstructPair =
-      ConstructPair(ctx.ID.getText, expr(ctx.expr))
+      ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))
 
     val tpe = typeTree(ctx.`type`)
     val pairs = Option(ctx.construct_pair)
@@ -406,14 +411,26 @@ class ASTGenerator {
     Construct(tpe, pairs)
   }
 
-  def bound(ctx: TP.BoundContext): Bound = {
-    val target = ctx.ID.getText
-    val constraints = ctx.`type`
-      .asScala
-      .map(typeTree)
-      .toVector
+  def bound(ctx: TP.BoundContext): BoundTree = {
+    def hpBoundExpr(ctx: TP.Hp_bound_exprContext): RangeExpr = ctx match {
+      case ctx: TP.MaxBoundContext => RangeExpr.Max(hpExpr(ctx.hp_expr))
+      case ctx: TP.MinBoundContext => RangeExpr.Min(hpExpr(ctx.hp_expr))
+      case ctx: TP.EqBoundContext => RangeExpr.EQ(hpExpr(ctx.hp_expr))
+      case ctx: TP.NeBoundContext => RangeExpr.NE(hpExpr(ctx.hp_expr))
+    }
 
-    Bound(target, constraints)
+    ctx match {
+      case ctx: TP.TPBoundContext =>
+        val target = TypeTree(Ident(ctx.TYPE_ID.getText), Vector.empty, Vector.empty)
+        val bounds = ctx.`type`.asScala.map(typeTree)
+
+        TPBoundTree(target, bounds.toVector)
+      case ctx: TP.HPBoundContext =>
+        val target = hpExpr(ctx.hp_expr)
+        val bounds = ctx.hp_bound_expr.asScala.map(hpBoundExpr).toVector
+
+        HPBoundTree(target, bounds)
+    }
   }
 
   def literal(ctx: TP.LiteralContext): Expression = ctx match {

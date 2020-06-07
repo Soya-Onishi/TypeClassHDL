@@ -1,6 +1,8 @@
 package tchdl.util
 
 import tchdl.ast._
+import tchdl.typecheck.{ImplementClassContainer, ImplementInterfaceContainer}
+
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 
@@ -12,6 +14,7 @@ sealed trait Info extends Report
 object Error {
   case class TypeMissmatch(expect: Type, actual: Type) extends Error
   case class SymbolNotFound(name: String) extends Error
+  case class OperationNotFound(op: Operation) extends Error
   case class PackageNotFound(name: String) extends Error
   case class SymbolIsType(name: String) extends Error
   case class SymbolIsTerm(name: String) extends Error
@@ -40,32 +43,42 @@ object Error {
   case class RejectTypeParam[From <: Symbol : TypeTag]() extends Error
   case class NoNeedTypeParameter(method: Type.MethodType) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type]) extends Error
+  case class NotMeetHPBound(require: HPBound, caller: Option[HPBound]) extends Error
+  case class NotMeetPartialTPBound(target: Type.RefType, require: Type.RefType) extends Error
+  case class ValueNotMeetHPBound(value: Int, require: HPBound) extends Error
   case object UsingSelfOutsideClass extends Error
   case class InvalidFormatForType(expr: Expression) extends Error
   case object FinishOutsideStage extends Error
   case object GotoOutsideState extends Error
   case object RelayOutsideStage extends Error
   case class DefinitionNameConflict(name: String) extends Error
-  case class ImplementInterfaceConflict(interface: Type.RefType, target: Type.RefType) extends Error
-  case class ImplementClassConflict(target: Type.RefType) extends Error
+  case class ImplementInterfaceConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer) extends Error
+  case class ImplementClassConflict(impl0: ImplementClassContainer, impl1: ImplementClassContainer) extends Error
   case class AmbiguousSymbols(symbols: Vector[Symbol]) extends Error
+  case class AmbiguousTypeParam(symbol: Symbol.TypeParamSymbol) extends Error
+  case class AmbiguousHardwareParam(symbol: Symbol.HardwareParamSymbol) extends Error
   case object AttachTPToPackageSymbol extends Error
   case class InvalidTypeForHP(tpe: Type.RefType) extends Error
 
-  case class MultipleErrors(errs: Error*) extends Error {
-    def apply(errs: Vector[Error]): MultipleErrors = {
-      new MultipleErrors(errs: _*)
-    }
-  }
+  case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }
 
 object Reporter {
   private var errors = Vector.empty[Error]
 
-  def appendError(err: Error): Unit = err match {
-    case Error.MultipleErrors(errs) => errs.foreach(appendError)
-    case err => errors = err +: errors
+  def appendError(err: Error): Unit = {
+    def flatten(errs: Seq[Error]): Vector[Error] = {
+      errs.toVector.flatMap {
+        case err: Error.MultipleErrors => flatten(err.errs)
+        case err => Vector(err)
+      }
+    }
+
+    err match {
+      case err: Error.MultipleErrors => this.errors = flatten(err.errs) ++ this.errors
+      case err => this.errors = err +: this.errors
+    }
   }
   def errorCounts: Int = errors.length
 }

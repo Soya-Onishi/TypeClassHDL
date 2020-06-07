@@ -1,10 +1,7 @@
 package tchdl.typecheck
 
-import java.lang.invoke.ConstantCallSite
-
 import tchdl.ast._
-import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Constraint, Context, Error, HPRange, HasImpls, LookupResult, RangeEdge, Reporter, Scope, Symbol, Type}
+import tchdl.util.{Context, Error, HasImpls, Reporter, Scope, Symbol, Type, Bound, TPBound, HPBound}
 
 import scala.annotation.tailrec
 import scala.reflect.ClassTag
@@ -18,149 +15,32 @@ object ImplVerifier {
   type TopLevelDefinition = {
     val hp: Vector[ValDef]
     val tp: Vector[TypeDef]
-    val bounds: Vector[Bound]
+    val bounds: Vector[BoundTree]
     def symbol: Symbol
   }
 
   def exec(cu: CompilationUnit) = ???
 
-  def buildRefType[SymbolType <: Symbol.TypeSymbol : TypeTag : ClassTag](tpe: TypeTree, ctx: Context.NodeContext): Either[Error, Type.RefType] = {
-    val typedTpe = Typer.typedTypeTree(tpe)(ctx, acceptPkg = false)
-    TypedCache.setTree(typedTpe)
+  def setBound(bound: BoundTree)(implicit ctx: Context.NodeContext): Either[Error, Bound] = {
+    def setBoundForTP(bound: TPBoundTree): Either[Error, TPBound] = {
+      val (targetErrs, target) = TPBound.buildTarget(bound.target)
+      val (boundsErrs, bounds) = TPBound.buildBounds(bound.bounds)
 
-    typedTpe.tpe match {
-      case tpe: Type.RefType => tpe.origin match {
-        case _: SymbolType => Right(tpe)
-        case origin => Left(Error.RequireSymbol[SymbolType](origin))
-      }
-      case Type.ErrorType => Left(Error.DummyError)
+      val errs = Vector(targetErrs ++ boundsErrs).flatten
+      if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+      else Right(TPBound(TPBoundTree(target, bounds)))
     }
-  }
 
-  trait WhereClause
-  object WhereClause {
-    case class TP(tp: Symbol.TypeParamSymbol, interfaces: Vector[Type.RefType]) extends WhereClause
-    case class HP(hp: HPExpr, constraints: Vector[ConstraintExpr]) extends WhereClause
-  }
-
-  def setBound(bound: Bound)(implicit ctx: Context.NodeContext): Either[Error, WhereClause] = {
-    def setBoundForTP(bound: TPBound): Either[Error, WhereClause.TP] =
-      ctx.lookup[Symbol.TypeParamSymbol](bound.target) match {
-        case LookupResult.LookupFailure(err) =>
-          Left(err)
-        case LookupResult.LookupSuccess(symbol) if symbol.owner != ctx.owner =>
-          Left(Error.SetBoundForDifferentOwner(symbol.owner, ctx.owner))
-        case LookupResult.LookupSuccess(symbol) =>
-          val (errs, constraints) =
-            bound.constraints
-              .map(buildRefType[Symbol.InterfaceSymbol](_, ctx))
-              .partitionMap(e => e)
-
-          val tpClause = WhereClause.TP(symbol, constraints)
-          if(errs.isEmpty) Right(tpClause)
-          else Left(Error.MultipleErrors(errs))
-      }
-
-    def setBoundForHP(bound: HPBound): Either[Error, WhereClause.HP] = {
-      def verifyTarget(target: HPExpr): Either[Error, HPExpr] = {
-        def verifyHPBinOp(binop: HPBinOp): Either[Error, HPExpr] = {
-          def verifyChild(child: Either[Error, HPExpr]): Either[Error, HPExpr] =
-            child match {
-              case Left(err) => Left(err)
-              case Right(left) => left.tpe match {
-                case Type.ErrorType => Right(left)
-                case tpe: Type.RefType if tpe =:= Type.numTpe => Right(left)
-                case tpe => Left(???)
-              }
-            }
-
-          val HPBinOp(operator, left, right) = binop
-          val leftResult = verifyChild(loop(left, isRoot = false))
-          val rightResult = verifyChild(loop(right, isRoot = false))
-
-          (leftResult, rightResult) match {
-            case (Left(left), Left(right)) => Left(Error.MultipleErrors(Vector(left, right)))
-            case (Left(err), _) => Left(err)
-            case (_, Left(err)) => Left(err)
-            case (Right(left), Right(right)) =>
-              Right(HPBinOp(operator, left, right).setTpe(Type.numTpe).setID(binop.id))
-          }
-        }
-
-        def verifyIdentity(ident: Ident): Either[Error, Ident] = {
-          val Ident(name) = ident
-
-          ctx.lookup[Symbol.HardwareParamSymbol](name) match {
-            case LookupResult.LookupFailure(err) => Left(err)
-            case LookupResult.LookupSuccess(symbol) if symbol.owner != ctx.owner => Left(???)
-            case LookupResult.LookupSuccess(symbol) =>
-              def succeed(tpe: Type): Either[Error, Ident] =
-                Right(Ident(name).setTpe(tpe).setSymbol(symbol).setID(ident.id))
-
-              symbol.tpe match {
-                case Type.ErrorType => succeed(Type.ErrorType)
-                case tpe: Type.RefType if tpe =:= Type.numTpe => succeed(tpe)
-                case tpe => Left(???)
-              }
-          }
-        }
-
-        def verifyIntLiteral(lit: IntLiteral, isRoot: Boolean): Either[Error, IntLiteral] =
-          if(isRoot) Left(???)
-          else Right(lit)
-
-        def loop(expr: HPExpr, isRoot: Boolean): Either[Error, HPExpr] =
-          expr match {
-            case int: IntLiteral => verifyIntLiteral(int, isRoot)
-            case _: StringLiteral => Left(???)
-            case binop: HPBinOp => verifyHPBinOp(binop)
-            case ident: Ident => verifyIdentity(ident)
-          }
-
-        loop(target, isRoot = true)
-      }
-
-      def verifyConstraint(constraint: ConstraintExpr): Either[Error, ConstraintExpr] = {
-        def buildConstraint(expr: HPExpr): Right[Error, ConstraintExpr] = {
-          val c = constraint match {
-            case _: ConstraintExpr.EQ => ConstraintExpr.EQ(expr)
-            case _: ConstraintExpr.NE => ConstraintExpr.NE(expr)
-            case _: ConstraintExpr.LT => ConstraintExpr.LT(expr)
-            case _: ConstraintExpr.LE => ConstraintExpr.LE(expr)
-            case _: ConstraintExpr.GT => ConstraintExpr.GT(expr)
-            case _: ConstraintExpr.GE => ConstraintExpr.GE(expr)
-          }
-
-          Right(c)
-        }
-
-        constraint.expr match {
-          case int: IntLiteral => buildConstraint(int)
-          case ident @ Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
-            case LookupResult.LookupFailure(err) => Left(err)
-            case LookupResult.LookupSuccess(symbol) =>
-              val verified = Ident(name).setTpe(Type.numTpe).setSymbol(symbol).setID(ident.id)
-              buildConstraint(verified)
-          }
-        }
-      }
-
-      val sortedTarget = bound.target.sort
-
-      val verifiedTarget = verifyTarget(sortedTarget)
-      val (errs, verifiedConstraints) = bound.constraints
-        .map(verifyConstraint)
-        .partitionMap(identity)
-
-      (verifiedTarget, errs) match {
-        case (Right(target), Vector()) => Right(WhereClause.HP(target, verifiedConstraints))
-        case (Left(err), errs) => Left(Error.MultipleErrors(err +: errs))
+    def setBoundForHP(bound: HPBoundTree): Either[Error, HPBound] = {
+      HPBound.verifyForm(bound) match {
+        case Right(_) => Right(HPBound(bound))
+        case Left(err) => Left(err)
       }
     }
 
     bound match {
-      case bound: TPBound => setBoundForTP(bound)
-      case bound: HPBound => setBoundForHP(bound)
+      case bound: TPBoundTree => setBoundForTP(bound)
+      case bound: HPBoundTree => setBoundForHP(bound)
     }
   }
 
@@ -173,68 +53,77 @@ object ImplVerifier {
       definition.tp.map(_.symbol) : _*
     )
 
-    definition.bounds.foreach(setBound(_)(signatureCtx))
+    val (errs, bounds) = definition.bounds
+      .map(setBound(_)(signatureCtx))
+      .partitionMap(identity)
+
+    errs match {
+      case Vector() =>
+        definition.symbol.asClassTypeSymbol.setBound(bounds)
+      case errs =>
+        errs.foreach(Reporter.appendError)
+    }
   }
 
   def implementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext): Unit = {
     val signatureCtx = Context(ctx, impl.symbol)
-    impl.hp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
-    impl.tp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
+    val implSymbol = impl.symbol.asImplementSymbol
 
+    signatureCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
+
+    val (interfaceErr, interface) = Type.buildType[Symbol.InterfaceSymbol](impl.interface, signatureCtx)
+    val (targetErr, target) = Type.buildType[Symbol.ClassTypeSymbol](impl.target, signatureCtx)
+
+    val signatureErr = Vector(interfaceErr, targetErr).flatten
     val (errs, bounds) = impl.bounds
       .map(setBound(_)(signatureCtx))
       .partitionMap(identity)
-    val (tps, hps) = bounds.foldLeft((Vector.empty[WhereClause.TP], Vector.empty[WhereClause.HP])) {
-      case ((tps, hps), tp: WhereClause.TP) => (tps :+ tp, hps)
-      case ((tps, hps), hp: WhereClause.HP) => (tps, hps :+ hp)
-    }
 
-    tps.foreach(tp => tp.tp.setBounds(tp.interfaces))
-    signatureCtx.owner.setHPBounds(hps.map(hp => HPBound(hp.hp, hp.constraints)))
-    Reporter.appendError(Error.MultipleErrors(errs))
+    (errs ++ signatureErr) match {
+      case Vector() =>
+        val implContext = Context(signatureCtx, target.tpe.asRefType)
+        impl.methods.foreach(Namer.nodeLevelNamed(_, implContext))
 
-    val interface = buildRefType[Symbol.InterfaceSymbol](impl.interface, signatureCtx)
-    val target = buildRefType[Symbol.ClassTypeSymbol](impl.target, signatureCtx)
+        val interfaceTpe = interface.tpe.asRefType
+        val targetTpe = target.tpe.asRefType
+        val container = ImplementInterfaceContainer(impl, ctx, interfaceTpe, targetTpe, implContext.scope)
 
-    (interface, target) match {
-      case (Left(err), _) => Reporter.appendError(err)
-      case (_, Left(err)) => Reporter.appendError(err)
-      case (Right(interface), Right(target)) =>
-        val implCtx = Context(ctx, impl.symbol, target)
-        impl.methods.foreach(Namer.nodeLevelNamed(_, implCtx))
-
-        val container = ImplementInterfaceContainer(impl, ctx, interface, target, implCtx.scope)
-        interface.origin.asInterfaceSymbol.appendImpl(impl, container)
-
-        SymbolBuffer.append(interface.origin.asInterfaceSymbol)
+        val interfaceSymbol = interface.symbol.asInterfaceSymbol
+        impl.symbol.asImplementSymbol.setBound(bounds)
+        interfaceSymbol.appendImpl(impl, container)
+        SymbolBuffer.append(interfaceSymbol)
+      case errs =>
+        errs.foreach(Reporter.appendError)
     }
   }
 
   def implementClass(impl: ImplementClass)(implicit ctx: Context.RootContext): Unit = {
     val signatureCtx = Context(ctx, impl.symbol)
-    impl.hp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
-    impl.tp.foreach(Namer.nodeLevelNamed(_, signatureCtx))
-    impl.bounds.foreach(setBound(_)(signatureCtx))
+    val implSymbol = impl.symbol.asImplementSymbol
+    signatureCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
 
-    val tpe = buildRefType[Symbol.ClassTypeSymbol](impl.target, signatureCtx)
+    val (signatureErr, target) = Type.buildType[Symbol.ClassTypeSymbol](impl.target, signatureCtx)
+    val (boundErrs, bounds) = impl.bounds
+      .map(setBound(_)(signatureCtx))
+      .partitionMap(identity)
 
-    tpe match {
-      case Left(err) => Reporter.appendError(err)
-      case Right(tpe) =>
-        val implCtx = Context(signatureCtx, impl.symbol, tpe)
-        impl.methods.foreach(Namer.nodeLevelNamed(_, implCtx))
-        impl.stages.foreach(Namer.nodeLevelNamed(_, implCtx))
+    val errs = boundErrs ++ signatureErr.toVector
 
-        val container = ImplementClassContainer(impl, ctx, tpe, implCtx.scope)
+    errs match {
+      case Vector() =>
+        val implContext = Context(signatureCtx, target.tpe.asRefType)
+        impl.methods.foreach(Namer.nodeLevelNamed(_, implContext))
+        impl.stages.foreach(Namer.nodeLevelNamed(_, implContext))
 
-        tpe.origin match {
-          case clazz: Symbol.ClassTypeSymbol =>
-            clazz.appendImpl(impl, container)
-            SymbolBuffer.append(clazz)
-          case symbol =>
-            val msg = s"expect struct symbol or module symbol, actual[${symbol.getClass}]"
-            throw new ImplementationErrorException(msg)
-        }
+        val container = ImplementClassContainer(impl, ctx, target.tpe.asRefType, implContext.scope)
+
+        val targetSymbol = target.symbol.asClassTypeSymbol
+        val implSymbol = impl.symbol.asImplementSymbol
+        implSymbol.setBound(bounds)
+        targetSymbol.appendImpl(impl, container)
+        SymbolBuffer.append(targetSymbol)
+      case errs =>
+        errs.foreach(Reporter.appendError)
     }
   }
 
@@ -281,7 +170,17 @@ object SymbolBuffer {
   }
 
   def verifyImplConflict(): Unit = {
-    def verifySameForm(tpe0: Type.RefType, tpe1: Type.RefType): Option[Type.RefType] = {
+    /*
+    def verifySameForm(
+      tpe0: Type.RefType,
+      tpe1: Type.RefType,
+      hpBound0: Vector[HPBound],
+      hpBound1: Vector[HPBound],
+      tpBound0: Vector[TPBound],
+      tpBound1: Vector[TPBound]
+    ): Option[Type.RefType] = {
+      tpe0.isOverlapped(tpe1, hpBound0, hpBound1, tpBound0, tpBound1)
+
       (tpe0.origin, tpe1.origin) match {
         case (_: Symbol.TypeParamSymbol, _: Symbol.TypeParamSymbol) => Some(tpe0)
         case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>
@@ -296,6 +195,7 @@ object SymbolBuffer {
         case (_, _) => None
       }
     }
+     */
 
     /**
      * This function insert RefType that has entity type origin into
@@ -309,12 +209,13 @@ object SymbolBuffer {
      *    impl1: impl[A2, B2] Interface[A2]     for Type[ST[B2]]
      *
      *    map will have one pair (B1 -> ST[B2]) in this case
-     * @param impl0 impl that has types which are replaced from type parameter into entity type
-     * @param impl1 impl that has types which are used to replace impl0's type parameter
-     * @param map   table of (type parameters -> entity type)
-     * @param tpes  this function used to get all types impl has
-     * @tparam T    ImplementContainer
+     * param impl0 impl that has types which are replaced from type parameter into entity type
+     * param impl1 impl that has types which are used to replace impl0's type parameter
+     * param map   table of (type parameters -> entity type)
+     * param tpes  this function used to get all types impl has
+     * tparam T    ImplementContainer
      */
+      /*
     def insertRefType[T <: ImplementContainer](
       impl0: T,
       impl1: T,
@@ -343,29 +244,21 @@ object SymbolBuffer {
         .map{ case (key, pairs) => key -> pairs.head._2 }
         .foreach{ case (key, value) => map(key) = Some(value) }
     }
+     */
 
     @tailrec
     def verifyClassImplConflict(impls: Vector[ImplementClassContainer]): Unit = {
       def verify(impl0: ImplementClassContainer, impl1: ImplementClassContainer): Either[Error, Unit] = {
-        val typeParamMap = mutable.Map(
-          impl0.typeParam.map(_ -> Option.empty[Type.RefType]) ++
-            impl1.typeParam.map(_ -> Option.empty[Type.RefType]): _*
+        val hasConflict = impl0.targetType.isOverlapped(
+          impl1.targetType,
+          impl0.symbol.hpBound,
+          impl1.symbol.hpBound,
+          impl0.symbol.tpBound,
+          impl1.symbol.tpBound
         )
 
-        insertRefType(impl0, impl1, typeParamMap)(impl => Vector(impl.targetType))
-        insertRefType(impl1, impl0, typeParamMap)(impl => Vector(impl.targetType))
-
-        val replaceMap = typeParamMap.collect { case (key, Some(value)) => key -> value }.toMap
-
-        val result = verifySameForm(
-          impl0.targetType.replaceWithMap(replaceMap),
-          impl1.targetType.replaceWithMap(replaceMap)
-        )
-
-        result match {
-          case Some(tpe) => Left(Error.ImplementClassConflict(tpe))
-          case None => Right(())
-        }
+        if(hasConflict) Left(Error.ImplementClassConflict(impl0, impl1))
+        else Right(())
       }
 
       impls.tail
@@ -379,34 +272,26 @@ object SymbolBuffer {
     @tailrec
     def verifyInterfaceImplConflict(impls: Vector[ImplementInterfaceContainer]): Unit = {
       def verify(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer): Either[Error, Unit] = {
-        val typeParamMap = mutable.Map(
-          impl0.typeParam.map(_ -> Option.empty[Type.RefType]) ++
-            impl1.typeParam.map(_ -> Option.empty[Type.RefType]): _*
+        val hasInterfaceConflict = impl0.targetInterface.isOverlapped(
+          impl1.targetInterface,
+          impl0.symbol.hpBound,
+          impl1.symbol.hpBound,
+          impl0.symbol.tpBound,
+          impl1.symbol.tpBound
         )
 
-        insertRefType(impl0, impl1, typeParamMap)(impl => Vector(impl.targetInterface, impl.targetType))
-        insertRefType(impl1, impl0, typeParamMap)(impl => Vector(impl.targetInterface, impl.targetType))
+        val hasTargetConflict = impl0.targetType.isOverlapped(
+          impl1.targetType,
+          impl0.symbol.hpBound,
+          impl1.symbol.hpBound,
+          impl0.symbol.tpBound,
+          impl1.symbol.tpBound
+        )
 
-        val replaceMap = typeParamMap
-          .collect{ case (key, Some(value)) => key -> value}
-          .toMap
-
-        val interface =
-          verifySameForm(
-            impl0.targetInterface.replaceWithMap(replaceMap),
-            impl1.targetInterface.replaceWithMap(replaceMap)
-          )
-
-        val target =
-          verifySameForm(
-            impl0.targetType.replaceWithMap(replaceMap),
-            impl1.targetType.replaceWithMap(replaceMap)
-          )
-
-        (interface, target) match {
-          case (Some(i), Some(t)) => Left(Error.ImplementInterfaceConflict(i, t))
-          case (_, _) => Right(())
-        }
+        if(hasInterfaceConflict && hasTargetConflict)
+          Left(Error.ImplementInterfaceConflict(impl0, impl1))
+        else
+          Right(())
       }
 
       impls.tail

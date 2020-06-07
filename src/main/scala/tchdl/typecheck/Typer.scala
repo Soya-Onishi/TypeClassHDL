@@ -2,10 +2,7 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Context, Error, LookupResult, Reporter, Symbol, Type, Modifier}
-
-import scala.reflect.ClassTag
-import scala.reflect.runtime.universe.TypeTag
+import tchdl.util.{Context, Error, LookupResult, Reporter, Symbol, Type}
 
 object Typer {
   def exec(cu: CompilationUnit): CompilationUnit = {
@@ -107,7 +104,7 @@ object Typer {
     val typedHp = impl.hp.map(typedValDef(_)(signatureCtx))
     val typedTp = impl.tp.map(typedTypeDef(_)(signatureCtx))
 
-    val typedTarget = typedTypeTree(impl.target)(signatureCtx, acceptPkg = false)
+    val typedTarget = typedTypeTree(impl.target)(signatureCtx)
     typedTarget.tpe match {
       case Type.ErrorType => impl
       case targetTpe: Type.RefType =>
@@ -146,8 +143,8 @@ object Typer {
     val typedHp = impl.hp.map(Typer.typedValDef(_)(signatureCtx))
     val typedTp = impl.tp.map(Typer.typedTypeDef(_)(signatureCtx))
 
-    val typedInterface = typedTypeTree(impl.interface)(signatureCtx, acceptPkg = false)
-    val typedTarget = typedTypeTree(impl.target)(signatureCtx, acceptPkg = false)
+    val typedInterface = typedTypeTree(impl.interface)(signatureCtx)
+    val typedTarget = typedTypeTree(impl.target)(signatureCtx)
 
     typedTarget.tpe match {
       case Type.ErrorType => impl
@@ -195,14 +192,14 @@ object Typer {
     val signatureCtx = Context(ctx, method.symbol)
     ctx.reAppend(
       method.hp.map(_.symbol) ++
-        method.tp.map(_.symbol) ++
-        method.params.map(_.symbol): _*
+      method.tp.map(_.symbol) ++
+      method.params.map(_.symbol): _*
     )
 
     val typedHp = method.hp.map(typedValDef(_)(signatureCtx))
     val typedTp = method.tp.map(typedTypeDef(_)(signatureCtx))
     val typedParams = method.params.map(typedValDef(_)(signatureCtx))
-    val typedRetTpe = typedTypeTree(method.retTpe)(signatureCtx, acceptPkg = false)
+    val typedRetTpe = typedTypeTree(method.retTpe)(signatureCtx)
     val typedBlk = method.blk.map(typedBlock(_)(signatureCtx))
 
     typedBlk.foreach(TypedCache.setTree)
@@ -226,7 +223,7 @@ object Typer {
   def typedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext): ValDef = {
     vdef.symbol.tpe
 
-    val typedTpeTree = vdef.tpeTree.map(typedTypeTree(_)(ctx, acceptPkg = false))
+    val typedTpeTree = vdef.tpeTree.map(typedTypeTree(_)(ctx))
     val typedExp = vdef.expr.map(typedExpr)
 
     val typedValDef = vdef.copy(
@@ -250,7 +247,7 @@ object Typer {
     ctx.reAppend(stage.params.map(_.symbol): _*)
 
     val typedParams = stage.params.map(typedValDef(_)(signatureCtx))
-    val typedRetTpe = typedTypeTree(stage.retTpe)(signatureCtx, acceptPkg = false)
+    val typedRetTpe = typedTypeTree(stage.retTpe)(signatureCtx)
 
     val blkCtx = Context.blk(signatureCtx)
     stage.blk.map(Namer.nodeLevelNamed(_, blkCtx))
@@ -315,9 +312,9 @@ object Typer {
       case string: StringLiteral => typedStringLiteral(string)
       case unit: UnitLiteral => typedUnitLiteral(unit)
       case bit: BitLiteral => typedBitLiteral(bit)
-      case _: Apply =>
-        throw new ImplementationErrorException("Apply tree should not be typed")
-      case applyParams: ApplyParams => typedExprApplyParams(applyParams)
+      case apply: Apply => typedExprApply(apply)
+      case applyParams: ApplyParams =>
+        throw new ImplementationErrorException("ApplyParams tree should not be typed")
       case _: ApplyTypeParams =>
         throw new ImplementationErrorException(
           "ApplyTypeParam tree should be handled in typedExprApplyParams"
@@ -339,6 +336,57 @@ object Typer {
     }
   }
 
+  def typedExprApply(apply: Apply)(implicit ctx: Context.NodeContext): Apply = {
+    val typedArgs = apply.args.map(typedExpr)
+    val typedHps = apply.hps.map(typedHardwareParamExpr)
+    val typedTps = apply.tps.map(typedTypeTree)
+
+    val hasError =
+      typedArgs.exists(_.tpe.isErrorType) &&
+      typedHps.exists(_.tpe.isErrorType) &&
+      typedTps.exists(_.tpe.isErrorType)
+
+    def lookupMethod(typedSelect: Select): Apply = {
+      val prefixTpe = typedSelect.tpe.asRefType
+      val method = prefixTpe.lookupMethod3(
+        typedSelect.name,
+        typedHps,
+        typedTps.map(_.tpe.asRefType),
+        typedArgs.map(_.tpe.asRefType),
+        ctx.hpBounds,
+        ctx.tpBounds,
+        ctx
+      )
+
+      val returnTpe = method match {
+        case LookupResult.LookupSuccess((_, tpe)) => tpe.returnType
+        case LookupResult.LookupFailure(err) =>
+          Reporter.appendError(err)
+          Type.ErrorType
+      }
+
+      Apply(typedSelect, typedHps, typedTps, typedArgs).setTpe(returnTpe).setID(apply.id)
+    }
+
+    lazy val errorApply = Apply(apply.prefix, typedHps, typedTps, typedArgs).setTpe(Type.ErrorType).setID(apply.id)
+
+    if(hasError) errorApply
+    else {
+      val (typedPrefix, suffix) = apply.prefix match {
+        case ident: Ident => (typedSelf(Self()), ident.name)
+        case select: Select => (typedExpr(select.expr), select.name)
+      }
+
+      typedPrefix.tpe match {
+        case Type.ErrorType => errorApply
+        case _: Type.RefType =>
+          val select = Select(typedPrefix, suffix)
+          lookupMethod(select)
+      }
+    }
+  }
+
+  /*
   def typedExprApplyParams(apply: ApplyParams)(implicit ctx: Context.NodeContext): Apply = {
     type ResultPair = (Type.MethodType, Vector[Expression], Vector[TypeTree])
 
@@ -356,7 +404,6 @@ object Typer {
       if (errors.isEmpty) Right(())
       else Left(Error.MultipleErrors(errors))
     }
-
     def requireTPsOrHPsMethod(applyTPs: ApplyTypeParams)(symbol: Symbol.CandidateSymbol, method: Type.MethodType): Either[Error, ResultPair] = {
       def rejectMethodNoTPorHP: Either[Error, Unit] = {
         val hasTP = method.typeParam.nonEmpty
@@ -643,6 +690,7 @@ object Typer {
         )
     }
   }
+  */
 
   def typedExprSelect(select: Select)(implicit ctx: Context.NodeContext): Select = {
     val typedSuffix = typedExpr(select.expr)
@@ -658,26 +706,28 @@ object Typer {
               .setSymbol(Symbol.ErrorSymbol)
               .setID(select.id)
           case LookupResult.LookupSuccess(symbol) =>
-            val map = {
-              val refTpe = typedSuffix.tpe.asRefType
-
-              refTpe.origin.tpe match {
-                case _: Type.ParameterType => Map.empty[Symbol.TypeParamSymbol, Type.RefType]
-                case tpe: Type.EntityType =>
-                  tpe.typeParam
-                    .zip(refTpe.typeParam)
+            val tpTable =
+              refTpe.origin match {
+                case _: Symbol.TypeParamSymbol => Map.empty[Symbol.TypeParamSymbol, Type.RefType]
+                case tpe: Symbol.EntityTypeSymbol =>
+                  (tpe.tps zip refTpe.typeParam)
                     .map { case (sym, tpe) => sym -> tpe }
                     .toMap
               }
-            }
+
+            val hpTable =
+              refTpe.origin match {
+                case _: Symbol.TypeParamSymbol => Map.empty[Symbol.HardwareParamSymbol, HPExpr]
+                case tpe: Symbol.EntityTypeSymbol =>
+                  (tpe.hps zip refTpe.hardwareParam)
+                    .map { case (sym, expr) => sym -> expr}
+                    .toMap
+              }
 
             val selectTpe = symbol.tpe match {
-              case tpe: Type.RefType =>
-                tpe.replaceWithMap(map)
-              case tpe: Type.MethodType =>
-                tpe.replaceWithMap(map)
-              case Type.ErrorType =>
-                Type.ErrorType
+              case tpe: Type.RefType => tpe.replaceWithMap(hpTable, tpTable)
+              case tpe: Type.MethodType => tpe.replaceWithMap(hpTable, tpTable)
+              case Type.ErrorType => Type.ErrorType
             }
 
             select.copy(typedSuffix, select.name)
@@ -693,49 +743,24 @@ object Typer {
     }
   }
 
-  def typedBinOp(binop: BinOp)(implicit ctx: Context.NodeContext): Apply = {
-    def resolveOperator(leftTpe: Type.RefType, rightTpe: Type.RefType): (Type, Symbol) = {
-      val pkg = Vector("std", "ops")
-      val opsPkg = Symbol.RootPackageSymbol.search(pkg).toOption.get
-      val interface = opsPkg.lookup[Symbol.InterfaceSymbol](binop.op.toInterface).toOption.get
-      val impls = interface.lookupImpl(leftTpe)
-      val methods = for {
-        impl <- impls
-        method <- impl.lookup[Symbol.MethodSymbol](binop.op.toMethod)
-        methodTpe = method.tpe.asMethodType
-        if !methodTpe.params.exists(_.isErrorType)
-        if rightTpe <|= methodTpe.params.head.asRefType
-      } yield method
-
-      methods match {
-        case Vector() => Reporter.appendError(Error.SymbolNotFound(binop.op.toOperator)); (Type.ErrorType, Symbol.ErrorSymbol)
-        case methods => Reporter.appendError(Error.AmbiguousSymbols(methods)); (Type.ErrorType, Symbol.ErrorSymbol)
-        case Vector(method) => (method.tpe, method)
-      }
-    }
-
+  def typedBinOp(binop: BinOp)(implicit ctx: Context.NodeContext): BinOp = {
     val typedLeft = typedExpr(binop.left)
     val typedRight = typedExpr(binop.right)
 
-    val (methodTpe, methodSymbol) = (typedLeft.tpe, typedRight.tpe) match {
-      case (Type.ErrorType, _) => Type.ErrorType
-      case (_, Type.ErrorType) => Type.ErrorType
-      case (leftTpe: Type.RefType, rightTpe: Type.RefType) => resolveOperator(leftTpe, rightTpe)
+    val result = (typedLeft.tpe, typedRight.tpe) match {
+      case (Type.ErrorType, _) => LookupResult.LookupFailure(Error.DummyError)
+      case (_, Type.ErrorType) => LookupResult.LookupFailure(Error.DummyError)
+      case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
+        leftTpe.lookupOperation(binop.op, rightTpe, ctx.hpBounds, ctx.tpBounds, ctx)
     }
 
-    val retTpe = methodTpe match {
-      case tpe: Type.MethodType => tpe.returnType
-      case Type.ErrorType => Type.ErrorType
+    result match {
+      case LookupResult.LookupFailure(err) =>
+        Reporter.appendError(err)
+        binop.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
+      case LookupResult.LookupSuccess((methodSymbol, methodTpe)) =>
+        binop.setSymbol(methodSymbol).setTpe(methodTpe.returnType)
     }
-
-    Apply(
-      Select(typedLeft, binop.op.toMethod).setTpe(methodTpe).setSymbol(methodSymbol),
-      Vector.empty,
-      Vector.empty,
-      Vector(typedRight)
-    )
-      .setTpe(retTpe)
-      .setID(binop.id)
   }
 
 
@@ -791,6 +816,9 @@ object Typer {
     }
   }
 
+  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext): TypeTree = ???
+
+  /*
   def typedType(expr: Expression)(implicit ctx: Context.NodeContext): TypeTree = {
     def typedTypeIdentFromExpr(ident: Ident): TypeTree = {
       ctx.lookup[Symbol.TypeSymbol](ident.name) match {
@@ -873,7 +901,9 @@ object Typer {
           .setID(expr.id)
     }
   }
+ */
 
+  /*
   def typedTypeAST(typeAST: TypeAST)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): TypeAST = {
     val tpeAST = typeAST match {
       case ident: Ident => typedTypeIdent(ident)
@@ -1013,6 +1043,7 @@ object Typer {
       .setSymbol(assignedSymbol)
       .setID(select.id)
   }
+   */
 
   def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext): BitLiteral = {
     val bitSymbol = Symbol.lookupBuiltin("Bit")
@@ -1165,13 +1196,14 @@ object Typer {
 
     (expect zip actual)
       .collect { case (e: Type.RefType, a: Type.RefType) => (e, a) }
-      .filter { case (e, a) => a <|= e }
+      .filter { case (e, a) => a =:= e }
       .map { case (e, a) => Error.TypeMissmatch(e, a) }
   }
 
   def verifyParamType(expect: Type, actual: Type)(implicit ctx: Context.NodeContext): Vector[Error] =
     verifyParamTypes(Vector(expect), Vector(actual))
 
+  /*
   def verifyTypeParams(
     symbol: Symbol.TypeSymbol,
     hps: Vector[HPExpr],
@@ -1204,6 +1236,7 @@ object Typer {
 
     TypeTree(Ident(symbol.name), typedHps, typedTps).setTpe(treeTpe).setSymbol(treeSymbol)
   }
+   */
 }
 
 object TypedCache {

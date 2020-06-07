@@ -5,11 +5,11 @@ compilation_unit
     ;
 
 pkg_name
-    : PACKAGE ID ('::' ID)*
+    : PACKAGE EXPR_ID ('::' EXPR_ID)*
     ;
 
 import_clause
-    : IMPORT ID ('::' ID)*
+    : IMPORT EXPR_ID ('::' EXPR_ID)*
     ;
 top_definition
     : module_def
@@ -21,11 +21,11 @@ top_definition
     ;
 
 module_def
-    : MODULE ID type_param? bounds? ('(' parents? siblings? ')')? '{' component* '}'
+    : MODULE TYPE_ID type_param? bounds? ('(' parents? siblings? ')')? '{' component* '}'
     ;
 
 interface_def
-    : INTERFACE ID type_param? bounds? '{' (signature_def)* '}'
+    : INTERFACE TYPE_ID type_param? bounds? '{' (signature_def)* '}'
     ;
 
 implement_class
@@ -37,11 +37,11 @@ implement_interface
     ;
 
 parents
-    : PARENT ':' ID ':' type (',' ID ':' type)*
+    : PARENT ':' EXPR_ID ':' type (',' EXPR_ID ':' type)*
     ;
 
 siblings
-    : SIBLING ':' ID ':' type (',' ID ':' type)*
+    : SIBLING ':' EXPR_ID ':' type (',' EXPR_ID ':' type)*
     ;
 
 component
@@ -54,15 +54,15 @@ component
     ;
 
 struct_def
-    : STRUCT ID type_param? bounds? '{' field_defs? '}'
+    : STRUCT TYPE_ID type_param? bounds? '{' field_defs? '}'
     ;
 
 signature_def
-    : DEF ID type_param? bounds? '(' param_defs? ')' '->' type
+    : DEF EXPR_ID type_param? bounds? '(' param_defs? ')' '->' type
     ;
 
 method_def
-    : DEF ID type_param? bounds? '(' param_defs? ')' '->' type block?
+    : DEF EXPR_ID type_param? bounds? '(' param_defs? ')' '->' type block
     ;
 
 param_defs
@@ -70,7 +70,7 @@ param_defs
     ;
 
 param_def
-    : modifier* ID ':' type
+    : modifier* EXPR_ID ':' type
     ;
 
 field_defs
@@ -78,7 +78,7 @@ field_defs
     ;
 
 field_def
-    : modifier* ID ':' type
+    : modifier* EXPR_ID ':' type
     ;
 
 submodule_def
@@ -86,15 +86,15 @@ submodule_def
     ;
 
 always_def
-    : ALWAYS ID block
+    : ALWAYS EXPR_ID block
     ;
 
 val_def
-    : VAL ID (':' type)? '=' expr
+    : VAL EXPR_ID (':' type)? '=' expr
     ;
 
 stage_def
-    : STAGE ID '(' param_defs? ')' '->' type stage_body?
+    : STAGE EXPR_ID '(' param_defs? ')' '->' type stage_body?
     ;
 
 stage_body
@@ -102,7 +102,7 @@ stage_body
     ;
 
 state_def
-    : STATE ID block
+    : STATE EXPR_ID block
     ;
 
 port_def
@@ -120,7 +120,15 @@ bounds
     ;
 
 bound
-    : ID ':' type ('+' type)*
+    : TYPE_ID ':' type ('+' type)* # TPBound
+    | hp_expr ':' hp_bound_expr('&' hp_bound_expr) # HPBound
+    ;
+
+hp_bound_expr
+    : 'max' hp_expr # MaxBound
+    | 'min' hp_expr # MinBound
+    | 'eq' hp_expr  # EqBound
+    | 'ne' hp_expr  # NeBound
     ;
 
 modifier
@@ -129,10 +137,10 @@ modifier
     ;
 
 component_def_body
-    : ID (':' type)? ('=' expr)?
+    : EXPR_ID (':' type)? ('=' expr)?
     ;
 
-expr: expr '.' (apply | ID)    # SelectExpr
+expr: expr '.' (apply | EXPR_ID)    # SelectExpr
     | expr op=('*' | '/') expr # MulDivExpr
     | expr op=('+' | '-') expr # AddSubExpr
     | apply                    # ApplyExpr
@@ -141,17 +149,25 @@ expr: expr '.' (apply | ID)    # SelectExpr
     | IF expr block (ELSE block)?                  # IfExpr
 //    | MATCH expr '{' case_def+ '}'               # MatchExpr
     | FINISH                   # Finish
-    | GOTO ID                  # Goto
-    | RELAY ID '(' args ')'    # Relay
-    | GENERATE ID '(' args ')' # Generate
+    | GOTO EXPR_ID                  # Goto
+    | RELAY EXPR_ID '(' args ')'    # Relay
+    | GENERATE EXPR_ID '(' args ')' # Generate
     | literal                  # LitExpr
     | '(' expr ')'             # ParenthesesExpr
     | SELF                     # SelfExpr
-    | ID                       # ID
+    | EXPR_ID                  # ExprID
+    ;
+
+hp_expr
+    : hp_expr op=('*' | '/') hp_expr # MulDivHPExpr
+    | hp_expr op=('+' | '-') hp_expr # AddSubHPExpr
+    | STRING                         # StrLitHPExpr
+    | INT                            # IntLitHPExpr
+    | EXPR_ID                        # HPExprID
     ;
 
 apply
-    : ID apply_typeparam? '(' args ')'
+    : EXPR_ID apply_typeparam? '(' args ')'
     ;
 
 apply_typeparam
@@ -160,7 +176,7 @@ apply_typeparam
     ;
 
 hardware_params
-    : expr (',' expr)*
+    : hp_expr (',' hp_expr)*
     ;
 
 type_params
@@ -184,7 +200,7 @@ construct
     ;
 
 construct_pair
-    : ID ':' expr
+    : EXPR_ID ':' expr
     ;
 
 /*
@@ -201,20 +217,16 @@ literal
     ;
 
 type_param
-    : '[' param_defs (',' ID)* ']' # WithDependency
-    | '[' ID (',' ID)* ']'         # WithoutDependency
+    : '[' param_defs (',' TYPE_ID)* ']' # WithDependency
+    | '[' TYPE_ID (',' TYPE_ID)* ']'    # WithoutDependency
     ;
 
 unit_lit
     : '(' ')'
     ;
 
-type: type_elem ('::' type_elem)*
-    ;
-
-type_elem
-    : ID apply_typeparam? # NormalType
-    | SELFTYPE            # SelfType
+type: TYPE_ID apply_typeparam? # NormalType
+    | SELFTYPE                 # SelfType
     ;
 
 /*
@@ -268,7 +280,8 @@ SELFTYPE: 'Self';
 BIT: BITLIT;
 INT: HEXLIT | DIGITLIT;
 STRING: '"' .*? '"';
-ID: [a-zA-Z_][a-zA-Z_0-9]*;
+EXPR_ID: [a-z_][a-zA-Z_0-9]*;
+TYPE_ID: [A-Z][a-zA-Z_0-9]*;
 
 fragment BITLIT: '0b' [01]+;
 fragment HEXLIT: '0x' [0-9a-fA-F]+;

@@ -1,9 +1,7 @@
 package tchdl.ast
 
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Constraint, Modifier, RangeEdge, Symbol, Type, Error}
-
-import scala.math.Ordering
+import tchdl.util.{Modifier, Symbol, Type}
 
 sealed trait AST {
   private var _id: Int = TreeID.id
@@ -45,12 +43,132 @@ sealed trait HPExpr extends Expression {
       case (_, _: StringLiteral) => throw new ImplementationErrorException("string does not appear here")
       case _ => false
     }
+
+  def replaceWithMap(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
+    def loop(expr: HPExpr): HPExpr = expr match {
+      case HPBinOp(op, left, right) => HPBinOp(op, loop(left), loop(right))
+      case ident: Ident => hpTable(ident.symbol.asHardwareParamSymbol)
+      case e => e
+    }
+
+    loop(this).sort
+  }
+
+  private def isSimpleExpr: Boolean = {
+    def loop(expr: HPExpr, rootOp: Operation): Boolean = expr match {
+      case HPBinOp(op, left, right) =>
+        op == rootOp        &&
+        loop(left, rootOp)  &&
+        loop(right, rootOp)
+      case _ => true
+    }
+
+    this match {
+      case HPBinOp(op, left, right) => loop(left, op) && loop(right, op)
+      case _ => true
+    }
+  }
+
+  /**
+   * disassemble this expression by table
+   *
+   * This method expects [[isSimpleExpr == true]].
+   * If false, this method does not do anything.
+   *
+   * @param exprs : table
+   * @return return._1 => disassembled expressions
+   *         return._2 => remain expression
+   */
+  def disassemble(exprs: Vector[HPExpr]): (Vector[HPExpr], Option[HPExpr]) = {
+    def countLeaf(expr: HPExpr): Int = expr match {
+      case HPBinOp(_, left, right) => countLeaf(left) + countLeaf(right)
+      case _ => 1
+    }
+
+    def collectLeaf(expr: HPExpr): Vector[Int] = expr match {
+      case HPBinOp(_, left, right) => collectLeaf(left) ++ collectLeaf(right)
+      case leaf => Vector(leaf.hashCode)
+    }
+
+    def lessThan(v0: Vector[Int], v1: Vector[Int]): Boolean = {
+      v0.zip(v1).find{ case (v0, v1) => v0 != v1 } match {
+        case Some((v0, v1)) => v0 < v1
+        case None => false
+      }
+    }
+
+
+    def impl(purged: HPExpr, table: Vector[HPExpr]): (Vector[HPExpr], Option[HPExpr]) = {
+      val (hit, remain) = table.foldLeft((Option.empty[HPExpr], Option.empty[HPExpr])) {
+        case ((Some(tree), remain), _) => (Some(tree), remain)
+        case ((None, None), expr) =>  purged.purge(expr) match {
+          case Left(_) => (None, None)
+          case Right(remain) => (Some(expr), remain)
+        }
+      }
+
+      (hit, remain) match {
+        case (Some(expr), None) => (Vector(expr), None)
+        case (Some(expr), Some(remain)) =>
+          val (purgeds, remainExpr) = impl(remain, table)
+          (expr +: purgeds, remainExpr)
+        case (None, _) => (Vector.empty, Some(purged))
+      }
+    }
+
+
+    val (simples, complexes) = exprs.partition(_.isSimpleExpr)
+    lazy val simplesTable = simples.sortWith {
+      case (e0, e1) =>
+        val e0LeafCount = countLeaf(e0)
+        val e1LeafCount = countLeaf(e1)
+        lazy val e0LeafHashes = collectLeaf(e0)
+        lazy val e1LeafHashes = collectLeaf(e1)
+
+        if(e0LeafCount != e1LeafCount) e0LeafCount < e1LeafCount
+        else lessThan(e0LeafHashes, e1LeafHashes)
+    }.reverse
+
+    if(this.isSimpleExpr) impl(this, complexes ++ simplesTable)
+    else (Vector.empty, Some(this))
+  }
+
+  private def purge(expr: HPExpr): Either[Unit, Option[HPExpr]] = {
+    def purging(e0: HPExpr, e1: HPExpr): Either[Unit, Option[HPExpr]] = (e0, e1) match {
+      case (HPBinOp(op0, _, _), HPBinOp(op1, _, _)) if op0 != op1 => Left(())
+      case (HPBinOp(op, left0, right0: Ident), e1 @ HPBinOp(_, left1, right1: Ident)) =>
+        if(right0.symbol == right1.symbol) purging(left0, left1) match {
+          case Left(()) => Left(())
+          case Right(None) => Right(None)
+          case Right(Some(remain)) => Right(Some(remain))
+        }
+        else purging(left0, e1) match {
+          case Left(()) => Left(())
+          case Right(None) => Right(Some(right0))
+          case Right(Some(left)) => Right(Some(HPBinOp(op, left, right0)))
+        }
+      case (HPBinOp(_, left, right: Ident), ident: Ident) =>
+        if(right.symbol == ident.symbol) Right(Some(left))
+        else purging(left, ident)
+      case (id0: Ident, id1: Ident) =>
+        if(id0.symbol == id1.symbol) Right(None)
+        else Left(())
+    }
+
+    if(!expr.isSimpleExpr || !this.isSimpleExpr)
+      if(this.isSameExpr(expr)) Right(None)
+      else Left(())
+    else
+      purging(this, expr)
+  }
+
 }
 
 object HPExpr {
+  /*
   def verifyHPBound(
-    calledBounds: Vector[HPBound],
-    callerBounds: Vector[HPBound],
+    calledBounds: Vector[HPBoundTree],
+    callerBounds: Vector[HPBoundTree],
     table: Map[Symbol.HardwareParamSymbol, HPExpr]
   ): Either[Error, Unit] = {
     def replaceExpr(expr: HPExpr, table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
@@ -72,7 +190,7 @@ object HPExpr {
       loop(expr).sort
     }
 
-    def compoundBounds(bounds: Vector[HPBound]): Vector[HPBound] = {
+    def compoundBounds(bounds: Vector[HPBoundTree]): Vector[HPBoundTree] = {
       def removeFirst[T](vec: Vector[T])(f: T => Boolean): (Vector[T], Option[T]) = {
         vec.foldLeft((Vector.empty[T], Option.empty[T])) {
           case ((returnedVec, Some(first)), elem) => (returnedVec :+ elem, Some(first))
@@ -81,24 +199,24 @@ object HPExpr {
         }
       }
 
-      bounds.foldLeft(Vector.empty[HPBound]) {
+      bounds.foldLeft(Vector.empty[HPBoundTree]) {
         case (bounds, compoundedBound) =>
           val (remainBounds, foundBound) = removeFirst(bounds) {
-            case HPBound(expr, _) => expr.isSameExpr(compoundedBound.target)
+            case HPBoundTree(expr, _) => expr.isSameExpr(compoundedBound.target)
           }
 
           foundBound match {
             case None => remainBounds :+ compoundedBound
             case Some(bound) =>
-              def isRejected(c: ConstraintExpr): Boolean = bound.constraints.exists(_.isRestrictedThanEq(c))
+              def isRejected(c: RangeExpr): Boolean = bound.bounds.exists(_.isRestrictedThanEq(c))
 
-              val constraints = compoundedBound.constraints.filterNot(isRejected)
+              val constraints = compoundedBound.bounds.filterNot(isRejected)
               val restrictedBound = constraints.foldLeft(bound) {
                 case (bound, constraint) =>
-                  val (remain, _) = removeFirst(bound.constraints)(constraint.isRestrictedThanEq)
+                  val (remain, _) = removeFirst(bound.bounds)(constraint.isRestrictedThanEq)
                   val newConstraints = remain :+ constraint
 
-                  HPBound(bound.target, newConstraints)
+                  HPBoundTree(bound.target, newConstraints)
               }
 
               remainBounds :+ restrictedBound
@@ -106,18 +224,18 @@ object HPExpr {
       }
     }
 
-    def findBound(target: HPExpr, bounds: Vector[HPBound]): Option[HPBound] =
+    def findBound(target: HPExpr, bounds: Vector[HPBoundTree]): Option[HPBoundTree] =
       bounds.find {
         bound => bound.target.isSameExpr(target)
       }
 
-    def verifyBound(pairs: Vector[(HPBound, Option[HPBound])]): Either[Error, Unit] = {
+    def verifyBound(pairs: Vector[(HPBoundTree, Option[HPBoundTree])]): Either[Error, Unit] = {
       val results = pairs.map {
         case (calledBound, None) => Left(???) // Error represents caller argument bound does not meet called bound
         case (calledBound, Some(callerBound)) =>
-          val isMeetAllBounds = calledBound.constraints.forall {
+          val isMeetAllBounds = calledBound.bounds.forall {
             calledConstraint => callerBound
-              .constraints
+              .bounds
               .exists(_.isRestrictedThanEq(calledConstraint))
           }
 
@@ -132,16 +250,17 @@ object HPExpr {
     }
 
     val replacedCalledBounds = compoundBounds(calledBounds.map {
-      case HPBound(target, constraints) =>
+      case HPBoundTree(target, constraints) =>
         val replacedTarget = replaceExpr(target, table)
         val replacedConstraints = constraints.map(_.map(replaceExpr(_, table)))
 
-        HPBound(replacedTarget, replacedConstraints)
+        HPBoundTree(replacedTarget, replacedConstraints)
     })
 
     val pairs = replacedCalledBounds.map { bound => (bound, findBound(bound.target, callerBounds)) }
     verifyBound(pairs)
   }
+  */
 }
 
 trait HasType {
@@ -158,28 +277,196 @@ trait HasSymbol {
 
 case class CompilationUnit(filename: Option[String], pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition]) extends AST
 
-case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], parents: Vector[ValDef], siblings: Vector[ValDef], components: Vector[Component]) extends Definition
-case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], fields: Vector[ValDef]) extends Definition
-case class ImplementClass(target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef], stages: Vector[StageDef]) extends Definition
-case class InterfaceDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef]) extends Definition
-case class ImplementInterface(interface: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], methods: Vector[MethodDef]) extends Definition
+case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], parents: Vector[ValDef], siblings: Vector[ValDef], components: Vector[Component]) extends Definition
+case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], fields: Vector[ValDef]) extends Definition
+case class ImplementClass(target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], stages: Vector[StageDef]) extends Definition
+case class InterfaceDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef]) extends Definition
+case class ImplementInterface(interface: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef]) extends Definition
 case class AlwaysDef(name: String, blk: Block) extends Component
-case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[Bound], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
+case class MethodDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
 case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Component with BlockElem
 case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component
 case class StateDef(name: String, blk: Block) extends Definition
 
 case class TypeDef(name: String) extends Definition
 
-trait Bound extends AST
-case class TPBound(target: String, constraints: Vector[TypeTree]) extends Bound
-case class HPBound(target: HPExpr, constraints: Vector[ConstraintExpr]) extends Bound
+trait ImplicitHPRange
+object ImplicitHPRange {
+  case object NotInit extends ImplicitHPRange
+  case object Invalid extends ImplicitHPRange
+  case class Range(max: Option[Int], min: Option[Int]) extends ImplicitHPRange
+}
 
-trait ConstraintExpr {
+trait BoundTree extends AST
+case class TPBoundTree(target: TypeTree, bounds: Vector[TypeTree]) extends BoundTree
+case class HPBoundTree(target: HPExpr, bounds: Vector[RangeExpr]) extends BoundTree {
+  /*
+  /**
+   * `this` and `that` have bounds that are already sorted.
+   * if `this` or `that` is not sorted, this method may return inappropriate result
+   * @param that
+   * @return whether bound range is overlapped or not
+   */
+  def isOverlapped(that: HPBoundTree): Boolean = {
+    /**
+     * @param bounds target expr bounds
+     * @return None:           this is invalid range for example `m > 10 && m < 0`
+     *         Some(max, min): max and min are Some if it has value
+     */
+    def makeRange(bounds: Vector[RangeExpr]): Option[(Option[Int], Option[Int])] = {
+      val max = bounds.collectFirst {
+        case RangeExpr.LT(IntLiteral(value)) => value - 1
+        case RangeExpr.LE(IntLiteral(value)) => value
+      }
+
+      val min = bounds.collectFirst {
+        case RangeExpr.GT(IntLiteral(value)) => value + 1
+        case RangeExpr.GE(IntLiteral(value)) => value
+      }
+
+      (max, min) match {
+        case (Some(max), Some(min)) if max >= min => Some(Some(max), Some(min))
+        case (Some(_), Some(_))                   => None
+        case (None, None)                         => Some(None, None)
+        case (max, min)                           => Some(max, min)
+      }
+    }
+
+    val thisRange = makeRange(this.bounds)
+    val thatRange = makeRange(that.bounds)
+
+    (thisRange, thatRange) match {
+      case (None, _) => false
+      case (_, None) => false
+      case (Some((thisMax, thisMin)), Some((thatMax, thatMin))) =>
+        // less than equal
+        def le(left: Option[Int], right: Option[Int]): Boolean =
+          (left, right) match {
+            case (None, _) => true
+            case (_, None) => true
+            case (Some(left), Some(right)) => left <= right
+          }
+
+        le(thisMin, thatMax) && le(thatMin, thisMax)
+    }
+  }
+   */
+
+  /*
+  def compound(): HPBoundTree = {
+    def loop(bounds: Vector[RangeExpr]): Vector[RangeExpr] = {
+      bounds match {
+        case Vector() => Vector.empty
+        case bounds =>
+          val (restricted, remains) = bounds.tail.foldLeft((bounds.head, Vector.empty[RangeExpr])) {
+            case ((bound, others), subject) => bound.compound(subject) match {
+              case Some(newBound) => (newBound, others)
+              case None => (bound, others :+ subject)
+            }
+          }
+
+          restricted +: loop(remains)
+      }
+    }
+
+    HPBoundTree(this.target, loop(this.bounds))
+  }
+ */
+}
+
+object HPBoundTree {
+  /**
+   * make implicit hardware parameter bounds in explicit
+   *
+   * E.g.
+   *   where m : gt n          ==> where m : gt n & gt 1
+   *         n : gt 0                    n : gt 0
+   *
+   *   where l : gt m + n      ==> where l : gt m + n & gt 7
+   *         m : gt 3                    m : gt 3
+   *         n : gt 2                    n : gt 2
+   *
+   *   where     l : gt m + n  ==> where     l : gt m + n & gt 11
+   *             m : gt 3                    m : gt 3
+   *             n : gt 2                    n : gt 2
+   *         m + n : gt 10               m + n : gt 10
+   *
+   * Note:
+   *   If there are cyclic references, this method raises ImplementationErrorException.
+   *
+   * param hpBounds
+   * return hardware parameter bounds that are made all implicit bounds in explicit
+   */
+    /*
+  def makeImplicitRestrictionExplicit(hpBounds: Vector[HPBoundTree]): Vector[HPBoundTree] = {
+    def sortByTarget: Vector[HPBoundTree] = {
+      def collectLeafHash(expr: HPExpr): Vector[Int] =
+        expr match {
+          case HPBinOp(_, left, right) => collectLeafHash(left) ++ collectLeafHash(right)
+          case leaf => Vector(leaf.hashCode)
+        }
+
+      val sortedByAsc = hpBounds.sortWith {
+        case (b0, b1) =>
+          val hashes0 = collectLeafHash(b0.target)
+          val hashes1 = collectLeafHash(b1.target)
+
+          if(hashes0.length != hashes1.length) hashes0.length < hashes1.length
+          else {
+            val diff = hashes0.zip(hashes1).find { case (h0, h1) => h0 != h1 }
+            diff match {
+              case Some((h0, h1)) => h0 < h1
+              case None => false
+            }
+          }
+      }
+
+      sortedByAsc.reverse
+    }
+
+    def initCacheTable: Vector[(HPExpr, ImplicitHPRange)] = {
+      hpBounds.flatMap {
+        case HPBoundTree(target: Ident, bounds) =>
+          val existsExprBound = bounds.exists(_.expr match {
+            case _: IntLiteral => false
+            case _ => true
+          })
+
+          if(existsExprBound) None
+          else {
+            val min = bounds.collectFirst {
+              case RangeExpr.GE(IntLiteral(value)) => value
+              case RangeExpr.GT(IntLiteral(value)) => value + 1
+            }
+
+            val max = bounds.collectFirst {
+              case RangeExpr.LE(IntLiteral(value)) => value
+              case RangeExpr.LT(IntLiteral(value)) => value + 1
+            }
+
+            val range = (max, min) match {
+              case (max @ Some(v0), min @ Some(v1)) =>
+                if(v0 >= v1)ImplicitHPRange.Range(max, min)
+                else ImplicitHPRange.Invalid
+              case (max, min) => ImplicitHPRange.Range(max, min)
+            }
+
+            Some(target, range)
+          }
+        case _ => None
+      }
+    }
+
+    val table = initCacheTable
+  }
+   */
+}
+
+trait RangeExpr {
   val expr: HPExpr
-
-  def isRestrictedThanEq(that: ConstraintExpr): Boolean = {
-    import ConstraintExpr._
+  /*
+  def isRestrictedThanEq(that: RangeExpr): Boolean = {
+    import RangeExpr._
 
     (this, that) match {
       case (LT(IntLiteral(left)), LT(IntLiteral(right))) => left <= right
@@ -197,64 +484,37 @@ trait ConstraintExpr {
       case _ => false
     }
   }
+   */
 
-  def compound(that: ConstraintExpr): Vector[ConstraintExpr] = {
-    import ConstraintExpr._
+  /*
+  def compound(that: RangeExpr): Option[RangeExpr] =
+    if(this.isRestrictedThanEq(that)) Some(this)
+    else if(that.isRestrictedThanEq(this)) Some(that)
+    else None
+  */
 
-    def leftIsRestricted(left: ConstraintExpr, right: ConstraintExpr): Boolean =
-      (left, right) match {
-        case (LT(IntLiteral(left)), LT(IntLiteral(right))) => left < right
-        case (LT(IntLiteral(left)), LE(IntLiteral(right))) => left < right
-        case (LE(IntLiteral(left)), LT(IntLiteral(right))) => left <= right
-        case (LE(IntLiteral(left)), LE(IntLiteral(right))) => left < right
-        case (GT(IntLiteral(left)), GT(IntLiteral(right))) => left > right
-        case (GT(IntLiteral(left)), GE(IntLiteral(right))) => left > right
-        case (GE(IntLiteral(left)), GT(IntLiteral(right))) => left >= right
-        case (GE(IntLiteral(left)), GE(IntLiteral(right))) => left > right
-        case (LT(left), LE(right)) => left.isSameExpr(right)
-        case (GT(left), GE(right)) => left.isSameExpr(right)
-        case _ => false
-      }
-
-    if(leftIsRestricted(this, that)) Vector(this)
-    else if(leftIsRestricted(that, this)) Vector(that)
-    else Vector(this, that)
+  def map(f: HPExpr => HPExpr): RangeExpr = {
+    this match {
+      case RangeExpr.EQ(expr) => RangeExpr.EQ(f(expr))
+      case RangeExpr.NE(expr) => RangeExpr.NE(f(expr))
+      case RangeExpr.Min(expr) => RangeExpr.Min(f(expr))
+      case RangeExpr.Max(expr) => RangeExpr.Max(f(expr))
+    }
   }
-
-  def map(f: HPExpr => HPExpr): ConstraintExpr
 }
-object ConstraintExpr {
-  case class EQ(expr: HPExpr) extends ConstraintExpr {
-    def map(f: HPExpr => HPExpr): ConstraintExpr = { EQ(f(expr)) }
-  }
-
-  case class NE(expr: HPExpr) extends ConstraintExpr {
-    def map(f: HPExpr => HPExpr): ConstraintExpr = { NE(f(expr)) }
-  }
-
-  case class LE(expr: HPExpr) extends ConstraintExpr {
-    def map(f: HPExpr => HPExpr): ConstraintExpr = { LE(f(expr)) }
-  }
-
-  case class LT(expr: HPExpr) extends ConstraintExpr {
-    def map(f: HPExpr => HPExpr): ConstraintExpr = { LT(f(expr)) }
-  }
-
-  case class GE(expr: HPExpr) extends ConstraintExpr {
-    def map(f: HPExpr => HPExpr): ConstraintExpr = { GE(f(expr)) }
-  }
-
-  case class GT(expr: HPExpr) extends ConstraintExpr {
-    def map(f: HPExpr => HPExpr): ConstraintExpr = { GT(f(expr)) }
-  }
+object RangeExpr {
+  case class EQ(expr: HPExpr) extends RangeExpr
+  case class NE(expr: HPExpr) extends RangeExpr
+  case class Min(expr: HPExpr) extends RangeExpr
+  case class Max(expr: HPExpr) extends RangeExpr
 }
 
 case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr
 case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
 case class ApplyTypeParams(suffix: Expression, hps: Vector[Expression], tps: Vector[TypeTree]) extends Expression
-case class Apply(suffix: Expression, hp: Vector[Expression], tp: Vector[TypeTree], args: Vector[Expression]) extends Expression
+case class Apply(prefix: Expression, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
 
-abstract class BinOp extends Expression {
+abstract class BinOp extends Expression with HasSymbol {
   type Expr <: Expression
 
   val op: Operation
@@ -296,7 +556,7 @@ case class Relay(target: String, params: Vector[Expression]) extends Expression
 // However, hp's length + tp's length is correct if there is no compile error.
 // In Typer, hp and tp are adjust their length
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
-case class TypeTree(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
+case class TypeTree(expr: Ident, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
 case class SelfType() extends TypeAST
 
 trait Operation {
