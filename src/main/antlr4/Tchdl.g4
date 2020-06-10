@@ -9,7 +9,7 @@ pkg_name
     ;
 
 import_clause
-    : IMPORT EXPR_ID ('::' EXPR_ID)*
+    : IMPORT EXPR_ID ('::' EXPR_ID)* '::' TYPE_ID
     ;
 top_definition
     : module_def

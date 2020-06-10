@@ -16,7 +16,8 @@ lazy val commonSettings = Seq(
   ),
   scalacOptions ++= Seq(
     "-Ymacro-annotations"
-  )
+  ),
+  parallelExecution in ThisBuild := false
 )
 
 

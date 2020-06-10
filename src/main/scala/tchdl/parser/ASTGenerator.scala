@@ -11,7 +11,12 @@ import scala.jdk.CollectionConverters._
 class ASTGenerator {
   def apply(ctx: TP.Compilation_unitContext, filename: String): CompilationUnit = {
     val pkgName = ctx.pkg_name.EXPR_ID.asScala.map(_.getText).toVector
-    val imports = ctx.import_clause.asScala.map(_.EXPR_ID.asScala.map(_.getText).toVector).toVector
+
+    val imports = ctx.import_clause
+      .asScala
+      .map(ctx => ctx.EXPR_ID.asScala.map(_.getText).toVector :+ ctx.TYPE_ID.getText)
+      .toVector
+
     val defs = ctx.top_definition.asScala.map(topDefinition).toVector
 
     CompilationUnit(Some(filename), pkgName, imports, defs)

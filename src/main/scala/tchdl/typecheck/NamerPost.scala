@@ -17,7 +17,7 @@ object NamerPost {
         .left.map(Error.SymbolNotFound.apply)
         .flatMap { packageSymbol =>
           val name = imprt.last
-          packageSymbol.lookup(name).toEither
+          packageSymbol.lookup[Symbol.TypeSymbol](name).toEither
         }
     }
 

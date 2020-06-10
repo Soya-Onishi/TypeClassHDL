@@ -9,6 +9,7 @@ import java.nio.file.Paths
 package object tchdl {
   val rootDir: String = Paths.get(".").toAbsolutePath.normalize.toString
   val builtinPath: String = "src/test/builtin"
+  val filePath: String = "src/test/files"
   val builtinTypes: String = Seq(rootDir, builtinPath, "types.tchdl").mkString("/")
 
   def parseString[T <: ParseTree](parsing: TchdlParser => T)(ast: (ASTGenerator, T) => AST)(code: String): AST =

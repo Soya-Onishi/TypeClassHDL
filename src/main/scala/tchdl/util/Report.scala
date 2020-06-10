@@ -65,7 +65,7 @@ object Error {
 }
 
 object Reporter {
-  private var errors = Vector.empty[Error]
+  private var _errors = Vector.empty[Error]
 
   def appendError(err: Error): Unit = {
     def flatten(errs: Seq[Error]): Vector[Error] = {
@@ -76,11 +76,13 @@ object Reporter {
     }
 
     err match {
-      case err: Error.MultipleErrors => this.errors = flatten(err.errs) ++ this.errors
-      case err => this.errors = err +: this.errors
+      case err: Error.MultipleErrors => this._errors = flatten(err.errs) ++ this._errors
+      case err => this._errors = err +: this._errors
     }
   }
-  def errorCounts: Int = errors.length
+
+  def errors: Vector[Error] = _errors
+  def errorCounts: Int = _errors.length
 }
 
 
