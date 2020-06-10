@@ -162,6 +162,15 @@ sealed trait HPExpr extends Expression {
       purging(this, expr)
   }
 
+  def swap(table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
+    def loop(expr: HPExpr): HPExpr = expr match {
+      case HPBinOp(op, left, right) => HPBinOp(op, loop(left), loop(right))
+      case ident: Ident => table(ident.symbol.asHardwareParamSymbol)
+      case lit => lit
+    }
+
+    loop(this).sort
+  }
 }
 
 object HPExpr {

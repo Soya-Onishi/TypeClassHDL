@@ -45,6 +45,4 @@ object Modifier {
   case object Always extends Modifier
   case object Stage extends Modifier
   case object State extends Modifier
-
-  case object NoExpr extends Modifier
 }

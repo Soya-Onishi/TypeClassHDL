@@ -1,6 +1,7 @@
 package tchdl.util
 
 import tchdl.ast._
+import tchdl.typecheck.ImplementInterfaceContainer
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.annotation.tailrec
@@ -34,111 +35,132 @@ object TPBound {
 
     (err, tpes)
   }
+
+  def swapBounds(
+    swapped: Vector[TPBound],
+    hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
+    tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
+  ): Vector[TPBound] = {
+    def swapHP(expr: HPExpr): HPExpr = expr match {
+      case ident: Ident => hpTable(ident.symbol.asHardwareParamSymbol)
+      case HPBinOp(op, left, right) => HPBinOp(op, swapHP(left), swapHP(right))
+      case lit => lit
+    }
+
+    def swapTP(tpe: Type.RefType): Type.RefType = {
+      lazy val swappedTP = tpe.typeParam.map(swapTP)
+      lazy val swappedHP = tpe.hardwareParam.view.map(swapHP).map(_.sort).to(Vector)
+      tpe.origin match {
+        case _: Symbol.EntityTypeSymbol =>
+          Type.RefType(tpe.origin, swappedHP, swappedTP)
+        case tp: Symbol.TypeParamSymbol =>
+          tpTable.getOrElse(tp, throw new ImplementationErrorException(s"table should have ${tp.name}"))
+      }
+    }
+
+    def swapBound(bound: TPBound): TPBound = {
+      val target = swapTP(bound.target)
+      val bounds = bound.bounds.map(swapTP)
+
+      TPBound(target, bounds)
+    }
+
+    swapped.map(swapBound)
+  }
+
+  def verifyMeetBound(
+    swapped: TPBound,
+    callerHPBound: Vector[HPBound],
+    callerTPBound: Vector[TPBound]
+  ): Either[Error, Unit] =
+    swapped.target.origin match {
+      case _: Symbol.EntityTypeSymbol => verifyEntityTarget(swapped, callerHPBound, callerTPBound)
+      case _: Symbol.TypeParamSymbol => verifyTypeParamTarget(swapped, callerHPBound, callerTPBound)
+    }
+
+  def verifyEntityTarget(
+    tpBound: TPBound,
+    callerHPBound: Vector[HPBound],
+    callerTPBound: Vector[TPBound]
+  ): Either[Error, Unit] = {
+    def verify(impl: ImplementInterfaceContainer, bound: Type.RefType): Boolean = {
+      val initHPTable = impl.hardwareParam.map(_ -> Option.empty[HPExpr]).toMap
+      val initTPTable = impl.typeParam.map(_ -> Option.empty[Type.RefType]).toMap
+      val targets = Vector(impl.targetType, impl.targetInterface)
+      val referer = Vector(tpBound.target, bound)
+
+      val result = for {
+        _ <- Type.RefType.verifySuperSets(referer, targets)
+        hpTable <- Type.RefType.assignHPTable(initHPTable, referer, targets)
+        tpTable <- Type.RefType.assignTPTable(initTPTable, referer, targets)
+        swappedHPBounds = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
+        swappedTPBounds = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
+        _ <- {
+          val (hpErrs, _) = swappedHPBounds
+            .map(HPBound.verifyMeetBound(_, callerHPBound))
+            .partitionMap(identity)
+
+          val (tpErrs, _) = swappedTPBounds
+            .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+            .partitionMap(identity)
+
+          val errs = hpErrs ++ tpErrs
+          if(errs.isEmpty) Right(())
+          else Left(Error.MultipleErrors(errs: _*))
+        }
+      } yield ()
+
+      result.isRight
+    }
+
+    val results = tpBound.bounds.map { bound =>
+      val impls = bound.origin.asInterfaceSymbol.impls
+      val isValid = impls.exists(impl => verify(impl, bound))
+
+      if(isValid) Right(())
+      else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+    }
+
+    val (errs, _) = results.partitionMap(identity)
+
+    if(errs.isEmpty) Right(())
+    else Left(Error.MultipleErrors(errs: _*))
+  }
+
+  def verifyTypeParamTarget(
+    tpBound: TPBound,
+    callerHPBound: Vector[HPBound],
+    callerTPBound: Vector[TPBound]
+  ): Either[Error, Unit] = {
+    val results = tpBound.bounds.map { bound =>
+      val interface = bound.origin.asInterfaceSymbol
+      val hpTable = (interface.hps zip bound.hardwareParam).toMap
+      val tpTable = (interface.tps zip bound.typeParam).toMap
+      val swappedHPBounds = HPBound.swapBounds(interface.hpBound, hpTable)
+      val swappedTPBounds = TPBound.swapBounds(interface.tpBound, hpTable, tpTable)
+
+      val (hpErrs, _) = swappedHPBounds
+        .map(HPBound.verifyMeetBound(_, callerHPBound))
+        .partitionMap(identity)
+
+      val (tpErrs, _) = swappedTPBounds
+        .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+        .partitionMap(identity)
+
+      if(hpErrs.isEmpty && tpErrs.isEmpty) Right(())
+      else Left(Error.MultipleErrors(hpErrs ++ tpErrs: _*))
+    }
+
+    val (errs, _) = results.partitionMap(identity)
+    if(errs.isEmpty) Right(())
+    else Left(Error.MultipleErrors(errs: _*))
+  }
 }
 
 class HPBound(
   val target: HPExpr,
   val bound: HPRange
 ) extends Bound {
-  def verifyBounds(callerHPBounds: Vector[HPBound]): Either[Error, Unit] = {
-    def valueMeetBound(value: Int): Either[Error, Unit] = {
-      def buildError: Left[Error, Unit] = Left(Error.ValueNotMeetHPBound(value, this))
-
-      this.bound match {
-        case HPRange.Eq(HPRange.ExprEqual(_)) => buildError
-        case HPRange.Eq(HPRange.ConstantEqual(that)) =>
-          if (value == that) Right(())
-          else buildError
-        case HPRange.Range(eRange, cRange) =>
-          val v = IInt(value)
-
-          def rangeDefinitely(ranges: Vector[HPExpr])(f: (IInt, IInt) => Boolean): Boolean =
-            ranges.forall { expr =>
-              callerHPBounds.find(_.target.isSameExpr(expr)) match {
-                case None => false
-                case Some(bound) => bound.bound match {
-                  case HPRange.Eq(_: HPRange.ExprEqual) => false
-                  case HPRange.Eq(HPRange.ConstantEqual(that)) => f(IInt(that), v)
-                  case HPRange.Range(_, cRange) => f(cRange.min, v)
-                }
-              }
-            }
-
-          lazy val validMax = rangeDefinitely(eRange.max)(_ >= _)
-          lazy val validMin = rangeDefinitely(eRange.min)(_ >= _)
-          lazy val validNE = eRange.ne.forall {
-            expr =>
-              callerHPBounds.find(_.target.isSameExpr(expr)) match {
-                case None => false
-                case Some(bound) => bound.bound match {
-                  case HPRange.Eq(_: HPRange.ExprEqual) => false
-                  case HPRange.Eq(HPRange.ConstantEqual(that)) => that != value
-                  case HPRange.Range(_, cRange) => cRange.min > v || cRange.max < v
-                }
-              }
-          }
-
-          val isValid =
-            cRange.min <= v &&
-              cRange.max >= v &&
-              !cRange.ne.contains(value) &&
-              validMax &&
-              validMin &&
-              validNE
-
-          if (isValid) Right(())
-          else buildError
-      }
-    }
-
-    def exprMeetBound(expr: HPExpr): Either[Error, Unit] = {
-      def buildError(caller: HPBound): Left[Error, Unit] =
-        Left(Error.NotMeetHPBound(this, Some(caller)))
-
-      callerHPBounds.find(_.target.isSameExpr(expr)) match {
-        case None => Left(Error.NotMeetHPBound(this, None))
-        case Some(callerBound) => callerBound.bound match {
-          case HPRange.Eq(HPRange.ExprEqual(callerExpr)) => this.bound match {
-            case HPRange.Eq(HPRange.ExprEqual(replacedExpr)) =>
-              if (replacedExpr.isSameExpr(callerExpr)) Right(())
-              else buildError(callerBound)
-            case _ => buildError(callerBound)
-          }
-          case HPRange.Eq(HPRange.ConstantEqual(callerValue)) => valueMeetBound(callerValue)
-          case HPRange.Range(callerExprRange, callerConstRange) => this.bound match {
-            case HPRange.Eq(_) => buildError(callerBound)
-            case HPRange.Range(replacedExprRange, replacedConstRange) =>
-              def verifyExprRange(replacedRange: Vector[HPExpr], callerRange: Vector[HPExpr]): Boolean =
-                replacedRange.forall {
-                  rRangeExpr =>
-                    callerRange.exists {
-                      cRangeExpr => rRangeExpr.isSameExpr(cRangeExpr)
-                    }
-                }
-
-              lazy val validMax = verifyExprRange(replacedExprRange.max, callerExprRange.max)
-              lazy val validMin = verifyExprRange(replacedExprRange.min, callerExprRange.min)
-              lazy val validNEs = verifyExprRange(replacedExprRange.ne, callerExprRange.ne)
-
-              lazy val validCMax = callerConstRange.max <= replacedConstRange.max
-              lazy val validCMin = callerConstRange.min >= replacedConstRange.min
-              lazy val validCNEs = replacedConstRange.ne.forall(callerConstRange.ne.contains)
-
-              val isValid = validCMax && validCMin && validCNEs && validMax && validMin && validNEs
-
-              if (isValid) Right(())
-              else buildError(callerBound)
-          }
-        }
-      }
-    }
-
-    this.target match {
-      case IntLiteral(value) => valueMeetBound(value)
-      case expr: HPExpr => exprMeetBound(expr)
-    }
-  }
-
   def composeBound(composed: HPRange): Either[Error, HPRange] = (this.bound, composed) match {
     case (HPRange.Eq(HPRange.ExprEqual(origin)), HPRange.Eq(HPRange.ExprEqual(composed))) =>
       if (origin.isSameExpr(composed)) Right(this.bound)
@@ -177,37 +199,6 @@ class HPBound(
 }
 
 object HPBound {
-  implicit class VectorFindElement[A](vec: Vector[A]) {
-    def collectFirstRemain[B](f: PartialFunction[A, B]): (Option[B], Vector[A]) = {
-      f.unapply(vec.head) match {
-        case elem@Some(_) => (elem, vec.tail)
-        case None => vec.tail match {
-          case Vector() => (None, Vector.empty)
-          case tail =>
-            val (found, remain) = tail.collectFirstRemain(f)
-            (found, vec.head +: remain)
-        }
-      }
-    }
-
-    def collectPartition[B](f: PartialFunction[A, B]): (Vector[B], Vector[A]) = {
-      f.unapply(vec.head) match {
-        case Some(elem) => vec.tail match {
-          case Vector() => (Vector(elem), Vector.empty)
-          case tail =>
-            val (bs, as) = tail.collectPartition(f)
-            (elem +: bs, as)
-        }
-        case None => vec.tail match {
-          case Vector() => (Vector.empty, Vector(vec.head))
-          case tail =>
-            val (bs, as) = tail.collectPartition(f)
-            (bs, vec.head +: as)
-        }
-      }
-    }
-  }
-
   def apply(bound: HPBoundTree): HPBound = {
     val (constMins, remains0) = bound.bounds.collectPartition {
       case RangeExpr.Min(IntLiteral(value)) => IInt(value)
@@ -451,6 +442,133 @@ object HPBound {
 
     if (errs.isEmpty) Right(())
     else Left(Error.MultipleErrors(errs: _*))
+  }
+
+  def swapBounds(
+    swapped: Vector[HPBound],
+    table: Map[Symbol.HardwareParamSymbol, HPExpr]
+  ): Vector[HPBound] = {
+    def swap(expr: HPExpr): HPExpr = expr.swap(table)
+    def sort(expr: HPExpr): HPExpr = expr.sort
+
+    def swapBound(hpBound: HPBound): HPBound = {
+      val target = hpBound.target.swap(table).sort
+      val bound = hpBound.bound match {
+        case HPRange.Eq(HPRange.ExprEqual(expr)) =>
+          (HPRange.Eq compose HPRange.ExprEqual compose sort compose swap)(expr)
+        case eqn @ HPRange.Eq(_: HPRange.ConstantEqual) => eqn
+        case HPRange.Range(eRange, cRange) =>
+          val f = sort _ compose swap
+          val max = eRange.max.map(f)
+          val min = eRange.min.map(f)
+          val ne = eRange.ne.map(f)
+
+          HPRange.Range(HPRange.ExprRange(max, min, ne), cRange)
+      }
+
+      HPBound(target, bound)
+    }
+
+    swapped.map(swapBound)
+  }
+
+  def verifyMeetBound(swapped: HPBound, callerHPBounds: Vector[HPBound]): Either[Error, Unit] = {
+    def valueMeetBound(value: Int): Either[Error, Unit] = {
+      def error: Left[Error, Unit] = Left(Error.ValueNotMeetHPBound(value, swapped))
+
+      swapped.bound match {
+        case HPRange.Eq(HPRange.ExprEqual(_)) => error
+        case HPRange.Eq(HPRange.ConstantEqual(that)) =>
+          if (value == that) Right(())
+          else error
+        case HPRange.Range(eRange, cRange) =>
+          val v = IInt(value)
+
+          def rangeDefinitely(ranges: Vector[HPExpr])(f: (IInt, IInt) => Boolean): Boolean =
+            ranges.forall { expr =>
+              callerHPBounds.find(_.target.isSameExpr(expr)) match {
+                case None => false
+                case Some(bound) => bound.bound match {
+                  case HPRange.Eq(_: HPRange.ExprEqual) => false
+                  case HPRange.Eq(HPRange.ConstantEqual(that)) => f(IInt(that), v)
+                  case HPRange.Range(_, cRange) => f(cRange.min, v)
+                }
+              }
+            }
+
+          lazy val validMax = rangeDefinitely(eRange.max)(_ >= _)
+          lazy val validMin = rangeDefinitely(eRange.min)(_ >= _)
+          lazy val validNE = eRange.ne.forall {
+            expr =>
+              callerHPBounds.find(_.target.isSameExpr(expr)) match {
+                case None => false
+                case Some(bound) => bound.bound match {
+                  case HPRange.Eq(_: HPRange.ExprEqual) => false
+                  case HPRange.Eq(HPRange.ConstantEqual(that)) => that != value
+                  case HPRange.Range(_, cRange) => cRange.min > v || cRange.max < v
+                }
+              }
+          }
+
+          val isValid =
+            cRange.min <= v &&
+              cRange.max >= v &&
+              !cRange.ne.contains(value) &&
+              validMax &&
+              validMin &&
+              validNE
+
+          if (isValid) Right(())
+          else error
+      }
+    }
+
+    def exprMeetBound(expr: HPExpr): Either[Error, Unit] = {
+      def buildError(caller: HPBound): Left[Error, Unit] =
+        Left(Error.NotMeetHPBound(swapped, Some(caller)))
+
+      callerHPBounds.find(_.target.isSameExpr(expr)) match {
+        case None => Left(Error.NotMeetHPBound(swapped, None))
+        case Some(callerBound) => callerBound.bound match {
+          case HPRange.Eq(HPRange.ExprEqual(callerExpr)) => swapped.bound match {
+            case HPRange.Eq(HPRange.ExprEqual(replacedExpr)) =>
+              if (replacedExpr.isSameExpr(callerExpr)) Right(())
+              else buildError(callerBound)
+            case _ => buildError(callerBound)
+          }
+          case HPRange.Eq(HPRange.ConstantEqual(callerValue)) => valueMeetBound(callerValue)
+          case HPRange.Range(callerExprRange, callerConstRange) => swapped.bound match {
+            case HPRange.Eq(_) => buildError(callerBound)
+            case HPRange.Range(replacedExprRange, replacedConstRange) =>
+              def verifyExprRange(replacedRange: Vector[HPExpr], callerRange: Vector[HPExpr]): Boolean =
+                replacedRange.forall {
+                  rRangeExpr =>
+                    callerRange.exists {
+                      cRangeExpr => rRangeExpr.isSameExpr(cRangeExpr)
+                    }
+                }
+
+              lazy val validMax = verifyExprRange(replacedExprRange.max, callerExprRange.max)
+              lazy val validMin = verifyExprRange(replacedExprRange.min, callerExprRange.min)
+              lazy val validNEs = verifyExprRange(replacedExprRange.ne, callerExprRange.ne)
+
+              lazy val validCMax = callerConstRange.max <= replacedConstRange.max
+              lazy val validCMin = callerConstRange.min >= replacedConstRange.min
+              lazy val validCNEs = replacedConstRange.ne.forall(callerConstRange.ne.contains)
+
+              val isValid = validCMax && validCMin && validCNEs && validMax && validMin && validNEs
+
+              if (isValid) Right(())
+              else buildError(callerBound)
+          }
+        }
+      }
+    }
+
+    swapped.target match {
+      case IntLiteral(value) => valueMeetBound(value)
+      case expr: HPExpr => exprMeetBound(expr)
+    }
   }
 }
 

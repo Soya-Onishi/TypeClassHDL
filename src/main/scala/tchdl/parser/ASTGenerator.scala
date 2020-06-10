@@ -142,7 +142,7 @@ class ASTGenerator {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(modifier | Modifier.NoExpr, name, Some(tpe), None)
+    ValDef(modifier, name, Some(tpe), None)
   }
 
   def paramDefs(ctx: TP.Param_defsContext): Vector[ValDef] = {
@@ -161,7 +161,7 @@ class ASTGenerator {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(modifier | Modifier.NoExpr, name, Some(tpe), None)
+    ValDef(modifier, name, Some(tpe), None)
   }
 
   def alwaysDef(ctx: TP.Always_defContext): AlwaysDef = {
@@ -279,11 +279,9 @@ class ASTGenerator {
       val prefix = expr(ctx.expr)
 
       applyCall(applyCtx) match {
-        case ApplyParams(Ident(name), args) =>
-          ApplyParams(Select(prefix, name), args)
-        case ApplyParams(ApplyTypeParams(Ident(name), tps, hps), args) =>
-          ApplyParams(ApplyTypeParams(Select(prefix, name), tps, hps), args)
-        case ApplyParams(expr, _) =>
+        case Apply(Ident(name), hps, tps, args) =>
+          Apply(Select(prefix, name), hps, tps, args)
+        case Apply(expr, _, _, _) =>
           val msg = s"${expr.getClass} must not appear here"
           throw new ImplementationErrorException(msg)
       }
@@ -326,14 +324,14 @@ class ASTGenerator {
     }
   }
 
-  def applyCall(ctx: TP.ApplyContext): ApplyParams = {
+  def applyCall(ctx: TP.ApplyContext): Apply = {
     val name = ctx.EXPR_ID.getText
     val tpsOpt = Option(ctx.apply_typeparam).map(applyTypeParam)
     val args = ctx.args.expr.asScala.map(expr).toVector
 
     tpsOpt match {
-      case Some((hps, tps)) => ApplyParams(ApplyTypeParams(Ident(name), hps, tps), args)
-      case None => ApplyParams(Ident(name), args)
+      case Some((hps, tps)) => Apply(Ident(name), hps, tps, args)
+      case None => Apply(Ident(name), Vector.empty, Vector.empty, args)
     }
   }
 

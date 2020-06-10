@@ -557,7 +557,7 @@ object Type {
         swapped: Vector[HPBound],
         callerHPBound: Vector[HPBound]
       ): Either[Error, Unit] = {
-        val (errs, _) = swapped.map(_.verifyBounds(callerHPBound)).partitionMap(identity)
+        val (errs, _) = swapped.map(HPBound.verifyMeetBound(_, callerHPBound)).partitionMap(identity)
 
         if(errs.isEmpty) Right(())
         else Left(Error.MultipleErrors(errs: _*))
@@ -743,35 +743,47 @@ object Type {
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
     ): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
-      val (initHpTable, initTpTable) = buildTable(impl)
+      val (initHpTable, initTpTable) = RefType.buildTable(impl)
       val lookupResult = impl.lookup[Symbol.MethodSymbol](methodName) match {
         case None => Left(Error.SymbolNotFound(methodName))
         case Some(symbol) => Right(symbol)
       }
 
+      def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
+        val (hpErrs, _) = hpBounds
+          .map(HPBound.verifyMeetBound(_, callerHPBound))
+          .partitionMap(identity)
+
+        val (tpErrs, _) = tpBounds
+          .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+          .partitionMap(identity)
+
+        val errs = hpErrs ++ tpErrs
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+
       for {
         method <- lookupResult
-        _ <- verifySignatureLength(method, args, callerHP, callerTP)
+        _ <- RefType.verifySignatureLength(method, args, callerHP, callerTP)
         methodTpe = method.tpe.asMethodType
         callers = target +: args
         targets = impl.targetType +: methodTpe.params
-        _ <- verifySuperSets(methodName, callers, targets)
-        hpTable <- assignHpTable(initHpTable, callers, targets)
-        tpTable <- assignTpTable(initTpTable, callers, targets)
-        swappedHpBound = swapHPBound(impl.symbol.hpBound, hpTable)
-        swappedTpBound = swapTPBound(impl.symbol.tpBound, tpTable)
+        _ <- RefType.verifySuperSets(callers, targets)
+        hpTable <- RefType.assignHPTable(initHpTable, callers, targets)
+        tpTable <- RefType.assignTPTable(initTpTable, callers, targets)
+        swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
+        swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
         simplifiedHPBound <- HPBound.simplify(swappedHpBound)
-        _ <- verifyHPBounds(simplifiedHPBound, callerHPBound)
-        _ <- verifyTPBounds(methodName, swappedTpBound, impl.symbol.hpBound, callerHPBound, callerTPBound)
-        (methodHpTable, methodTpTable) = buildSymbolTable(method, callerHP, callerTP)
+        _ <- verifyEachBounds(simplifiedHPBound, swappedTpBound)
+        (methodHpTable, methodTpTable) = RefType.buildSymbolTable(method, callerHP, callerTP)
         appendHpTable = hpTable ++ methodHpTable
         appendTpTable = tpTable ++ methodTpTable
-        methodHpBound = swapHPBound(method.hpBound, appendHpTable)
-        methodTpBound = swapTPBound(method.tpBound, appendTpTable)
-        _ <- verifyHPBounds(methodHpBound, callerHPBound)
-        _ <- verifyTPBounds(methodName, methodTpBound, method.hpBound, callerHPBound, callerTPBound)
-        swappedTpe = assignMethodTpe(methodTpe, appendHpTable, appendTpTable)
-        _ <- verifyMethodType(swappedTpe, args)
+        methodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
+        methodTpBound = TPBound.swapBounds(method.tpBound, appendHpTable, appendTpTable)
+        _ <- verifyEachBounds(methodHpBound, methodTpBound)
+        swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable)
+        _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
     }
 
@@ -786,380 +798,40 @@ object Type {
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
     ): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
-      val (initHpTable, initTpTable) = buildSymbolTable(interface, interfaceHPs, interfaceTPs)
+      val (initHpTable, initTpTable) = RefType.buildSymbolTable(interface, interfaceHPs, interfaceTPs)
       val lookupResult = interface.tpe.declares.lookup(methodName) match {
         case Some(symbol: Symbol.MethodSymbol) => Right(symbol)
         case Some(_) => Left(Error.SymbolNotFound(methodName))
         case None => Left(Error.SymbolNotFound(methodName))
       }
 
+      def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
+        val (hpErrs, _) = hpBounds
+          .map(HPBound.verifyMeetBound(_, callerHPBound))
+          .partitionMap(identity)
+
+        val (tpErrs, _) = tpBounds
+          .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+          .partitionMap(identity)
+
+        val errs = hpErrs ++ tpErrs
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+
       for {
         method <- lookupResult
-        (methodHpTable, methodTpTable) = buildSymbolTable(method, callerHP, callerTP)
+        (methodHpTable, methodTpTable) = RefType.buildSymbolTable(method, callerHP, callerTP)
         hpTable = initHpTable ++ methodHpTable
         tpTable = initTpTable ++ methodTpTable
-        swappedHPBounds = swapHPBound(method.hpBound, hpTable)
-        swappedTPBounds = swapTPBound(method.tpBound, tpTable)
+        swappedHPBounds = HPBound.swapBounds(method.hpBound, hpTable)
+        swappedTPBounds = TPBound.swapBounds(method.tpBound, hpTable, tpTable)
         simplifiedHPBounds <- HPBound.simplify(swappedHPBounds)
-        _ <- verifyHPBounds(simplifiedHPBounds, callerHPBound)
-        _ <- verifyTPBounds(methodName, swappedTPBounds, method.hpBound, callerHPBound, callerTPBound)
+        _ <- verifyEachBounds(simplifiedHPBounds, swappedTPBounds)
         methodTpe = method.tpe.asMethodType
-        swappedTpe = assignMethodTpe(methodTpe, hpTable, tpTable)
-        _ <- verifyMethodType(swappedTpe, args)
+        swappedTpe = RefType.assignMethodTpe(methodTpe, hpTable, tpTable)
+        _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
-    }
-
-    def buildTable(impl: ImplementContainer): (Map[Symbol.HardwareParamSymbol, Option[HPExpr]], Map[Symbol.TypeParamSymbol, Option[Type.RefType]]) = {
-      val hpTable = impl.hardwareParam.map(_ -> Option.empty[HPExpr]).toMap
-      val tpTable = impl.typeParam.map(_ -> Option.empty[Type.RefType]).toMap
-
-      (hpTable, tpTable)
-    }
-
-    def buildSymbolTable(symbol: Symbol with HasParams, hps: Vector[HPExpr], tps: Vector[Type.RefType]): (Map[Symbol.HardwareParamSymbol, HPExpr], Map[Symbol.TypeParamSymbol, Type.RefType]) = {
-      val hpTable = (symbol.hps zip hps).toMap
-      val tpTable = (symbol.tps zip tps).toMap
-
-      (hpTable, tpTable)
-    }
-
-    def verifySignatureLength(
-      method: Symbol.MethodSymbol,
-      args: Vector[Type.RefType],
-      callerHP: Vector[HPExpr],
-      callerTP: Vector[Type.RefType]
-    ): Either[Error, Unit] = {
-      val params = method.tpe.asMethodType.params
-      val hps = method.hps
-      val tps = method.tps
-
-      lazy val paramMissMatch = Error.ParameterLengthMismatch(params.length, args.length)
-      lazy val hpsMissMatch = Error.HardParameterLengthMismatch(hps.length, callerHP.length)
-      lazy val tpsMissMatch = Error.TypeParameterLengthMismatch(tps.length, callerTP.length)
-
-      if(params.length != args.length) Left(paramMissMatch)
-      else if (hps.length != callerHP.length) Left(hpsMissMatch)
-      else if (tps.length != callerTP.length) Left(tpsMissMatch)
-      else Right(())
-    }
-
-    def verifySuperSets(
-      method: String,
-      caller: Vector[Type.RefType],
-      target: Vector[Type.RefType]
-    ): Either[Error, Unit] = {
-      def isHpSuperSet(caller: HPExpr, target: HPExpr): Boolean =
-        (caller, target) match {
-          case (_: Ident, _: IntLiteral) => false
-          case (_: HPBinOp, _: IntLiteral) => false
-          case (_: Ident, _: StringLiteral) => false
-          case (_: HPBinOp, _: StringLiteral) => false
-          case _ => true
-        }
-
-      def verify(caller: Type.RefType, target: Type.RefType): Boolean = {
-        (caller.origin, target.origin) match {
-          case (e0: Symbol.EntityTypeSymbol, e1: Symbol.EntityTypeSymbol) =>
-            if(e0 != e1) false
-            else {
-              val validHPs = caller.hardwareParam
-                .zip(target.hardwareParam)
-                .forall{ case (c, t) => isHpSuperSet(c, t) }
-
-              val validTPs = caller.typeParam
-                .zip(target.typeParam)
-                .forall{ case (c, t) => verify(c, t) }
-
-              validHPs && validTPs
-            }
-          case (_: Symbol.EntityTypeSymbol, _: Symbol.TypeParamSymbol) => true
-          case (_: Symbol.TypeParamSymbol, _: Symbol.TypeParamSymbol) => false
-          case (_: Symbol.TypeParamSymbol, _: Symbol.TypeParamSymbol) => false
-        }
-      }
-
-      val isValid = (caller zip target).forall{ case (c, t) => verify(c, t) }
-
-      if(isValid) Right(())
-      else Left(Error.SymbolNotFound(method))
-    }
-
-    def unwrapTable[K, V](table: Map[K, Option[V]]): Either[Error, Map[K, V]] = {
-      val (errs, pairs) = table.map {
-        case (key, Some(value)) => Right(key -> value)
-        case (key, None) => Left(???)
-      }.partitionMap(identity)
-
-      if(errs.isEmpty) Right(pairs.toMap)
-      else Left(Error.MultipleErrors(errs.toSeq: _*))
-    }
-
-
-    def assignHpTable(
-      table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]],
-      caller: Vector[Type.RefType],
-      targets: Vector[Type.RefType]
-    ): Either[Error, Map[Symbol.HardwareParamSymbol, HPExpr]] = {
-      def assign(
-        caller: HPExpr,
-        target: HPExpr,
-        table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]]
-      ): Map[Symbol.HardwareParamSymbol, Option[HPExpr]] =
-        (caller, target) match {
-          case (expr, ident: Ident) =>
-            val hp = ident.symbol.asHardwareParamSymbol
-            table.get(hp) match {
-              case Some(None) => table.updated(hp, Some(expr))
-              case Some(Some(_)) => table
-              case None => throw new ImplementationErrorException(s"${hp.name} should be as key")
-            }
-          case _ => table
-        }
-
-
-      def update(
-        caller: Type.RefType,
-        target: Type.RefType,
-        table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]]
-      ): Map[Symbol.HardwareParamSymbol, Option[HPExpr]] = {
-        (caller.origin, target.origin) match {
-          case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>
-            val tmpTable = (caller.hardwareParam zip target.hardwareParam)
-              .foldLeft(table) {
-                case (acc, (caller, target)) => assign(caller, target, acc)
-              }
-
-            (caller.typeParam zip target.typeParam)
-              .foldLeft(tmpTable) {
-                case (acc, (caller, target)) => update(caller, target, acc)
-              }
-          case _ => table
-        }
-      }
-
-      val assigned = (caller zip targets).foldLeft(table) {
-        case (acc, (caller, target)) => update(caller, target, acc)
-      }
-
-      unwrapTable(assigned)
-    }
-
-    def assignTpTable(
-      table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]],
-      callers: Vector[Type.RefType],
-      targets: Vector[Type.RefType]
-    ): Either[Error, Map[Symbol.TypeParamSymbol, Type.RefType]] = {
-      def update(
-        caller: Type.RefType,
-        target: Type.RefType,
-        table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]]
-      ): Map[Symbol.TypeParamSymbol, Option[Type.RefType]] =
-        (caller.origin, target.origin) match {
-          case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>
-            (caller.typeParam zip target.typeParam)
-              .foldLeft(table) {
-                case (acc, (caller, target)) => update(caller, target, acc)
-              }
-          case (_, tp: Symbol.TypeParamSymbol) =>
-            table.get(tp) match {
-              case None => throw new ImplementationErrorException(s"${tp.name} should be as key")
-              case Some(None) => table.updated(tp, Some(caller))
-              case Some(_) => table
-            }
-          case _ => throw new ImplementationErrorException("this pattern shouldn't be appeared")
-        }
-
-      val assignedTable =
-        (callers zip targets)
-          .foldLeft(table) {
-            case (acc, (caller, target)) => update(caller, target, acc)
-          }
-
-      unwrapTable(assignedTable)
-    }
-
-    def swapHPBound(
-      swapped: Vector[HPBound],
-      table: Map[Symbol.HardwareParamSymbol, HPExpr]
-    ): Vector[HPBound] = {
-      def swap(expr: HPExpr): HPExpr =
-        expr match {
-          case HPBinOp(op, left, right) => HPBinOp(op, swap(left), swap(right))
-          case ident: Ident => table(ident.symbol.asHardwareParamSymbol)
-          case lit => lit
-        }
-
-      def sort(expr: HPExpr): HPExpr = expr.sort
-
-      def swapBound(hpBound: HPBound): HPBound = {
-        val target = swap(hpBound.target).sort
-        val bound = hpBound.bound match {
-          case HPRange.Eq(HPRange.ExprEqual(expr)) =>
-            (HPRange.Eq compose HPRange.ExprEqual compose sort compose swap)(expr)
-          case eqn @ HPRange.Eq(_: HPRange.ConstantEqual) => eqn
-          case HPRange.Range(eRange, cRange) =>
-            val f = sort _ compose swap _
-            val max = eRange.max.map(f)
-            val min = eRange.min.map(f)
-            val ne = eRange.ne.map(f)
-
-            HPRange.Range(HPRange.ExprRange(max, min, ne), cRange)
-        }
-
-        HPBound(target, bound)
-      }
-
-      swapped.map(swapBound)
-    }
-
-    def swapTPBound(
-      swapped: Vector[TPBound],
-      table: Map[Symbol.TypeParamSymbol, Type.RefType]
-    ): Vector[TPBound] = {
-      def swap(tpe: Type.RefType): Type.RefType = {
-        val swappedTP = tpe.typeParam.map(swap)
-        tpe.origin match {
-          case _: Symbol.EntityTypeSymbol =>
-            Type.RefType(tpe.origin, tpe.hardwareParam, swappedTP)
-          case tp: Symbol.TypeParamSymbol =>
-            table.getOrElse(tp, throw new ImplementationErrorException(s"table should have ${tp.name}"))
-        }
-      }
-
-      def swapBound(bound: TPBound): TPBound = {
-        val target = swap(bound.target)
-        val bounds = bound.bounds.map(swap)
-
-        TPBound(target, bounds)
-      }
-
-      swapped.map(swapBound)
-    }
-
-    def verifyHPBounds(
-      swapped: Vector[HPBound],
-      callerHPBound: Vector[HPBound]
-    ): Either[Error, Unit] = {
-      val (errs, _) = swapped.map(_.verifyBounds(callerHPBound)).partitionMap(identity)
-
-      if(errs.isEmpty) Right(())
-      else Left(Error.MultipleErrors(errs: _*))
-    }
-
-    def verifyTPBounds(
-      methodName: String,
-      swapped: Vector[TPBound],
-      targetHPBound: Vector[HPBound],
-      callerHPBound: Vector[HPBound],
-      callerTPBound: Vector[TPBound]
-    ): Either[Error, Unit] = {
-      def verifyEntityTarget(tpBound: TPBound): Either[Error, Unit] = {
-        val results = tpBound.bounds.map { bound =>
-          val impls = bound.origin.asInterfaceSymbol.impls
-          val isValid = impls.exists { impl =>
-            val (initHPTable, initTPTable) = buildTable(impl)
-            val targets = Vector(impl.targetType, impl.targetInterface)
-            val referer = Vector(tpBound.target, bound)
-
-            val result = for {
-              _ <- verifySuperSets(methodName, referer, targets)
-              hpTable <- assignHpTable(initHPTable, referer, targets)
-              tpTable <- assignTpTable(initTPTable, referer, targets)
-              swappedHPBounds = swapHPBound(impl.symbol.hpBound, hpTable)
-              swappedTPBounds = swapTPBound(impl.symbol.tpBound, tpTable)
-              _ <- verifyHPBounds(swappedHPBounds, targetHPBound)
-              _ <- verifyTPBounds(methodName, swappedTPBounds, impl.symbol.hpBound, callerHPBound, callerTPBound)
-            } yield ()
-
-            result.isRight
-          }
-
-          if(isValid) Right(())
-          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
-        }
-
-        val (errs, _) = results.partitionMap(identity)
-
-        if(errs.isEmpty) Right(())
-        else Left(Error.MultipleErrors(errs: _*))
-      }
-
-      def verifyTypeParamTarget(tpBound: TPBound): Either[Error, Unit] = {
-        val results = tpBound.bounds.map { bound =>
-          val interface = bound.origin.asInterfaceSymbol
-          val (hpTable, tpTable) = buildSymbolTable(interface, bound.hardwareParam, bound.typeParam)
-          val swappedHPBounds = swapHPBound(interface.hpBound, hpTable)
-          val swappedTPBounds = swapTPBound(interface.tpBound, tpTable)
-
-          for {
-            _ <- verifyHPBounds(swappedHPBounds, callerHPBound)
-            _ <- verifyTPBounds(methodName, swappedTPBounds, interface.hpBound, callerHPBound, callerTPBound)
-          } yield ()
-        }
-
-        val (errs, _) = results.partitionMap(identity)
-        if(errs.isEmpty) Right(())
-        else Left(Error.MultipleErrors(errs: _*))
-      }
-
-      def verify(tpBound: TPBound): Either[Error, Unit] =
-        tpBound.target.origin match {
-          case _: Symbol.EntityTypeSymbol => verifyEntityTarget(tpBound)
-          case _: Symbol.TypeParamSymbol => verifyTypeParamTarget(tpBound)
-        }
-
-      val (errs, _) = swapped.map(verify).partitionMap(identity)
-
-      if(errs.isEmpty) Right(())
-      else Left(Error.MultipleErrors(errs: _*))
-    }
-
-    def assignMethodTpe(
-      method: Type.MethodType,
-      hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
-      tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
-    ): Type.MethodType = {
-      def swapHP(expr: HPExpr): HPExpr =
-        expr match {
-          case ident: Ident => hpTable.getOrElse(
-            ident.symbol.asHardwareParamSymbol,
-            throw new ImplementationErrorException(s"hpTable should have ${ident.symbol.name}")
-          )
-          case HPBinOp(op, left, right) => HPBinOp(op, swapHP(left), swapHP(right))
-          case lit => lit
-        }
-
-      def swapType(tpe: Type.RefType): Type.RefType =
-        tpe.origin match {
-          case _: Symbol.EntityTypeSymbol =>
-            val swappedHP = tpe.hardwareParam.map(swapHP)
-            val swappedTP = tpe.typeParam.map(swapType)
-
-            Type.RefType(tpe.origin, swappedHP, swappedTP)
-          case t: Symbol.TypeParamSymbol =>
-            tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
-        }
-
-      val params = method.params.map(swapType)
-      val retTpe = swapType(method.returnType)
-
-      Type.MethodType(params, retTpe)
-    }
-
-    def verifyMethodType(
-      method: Type.MethodType,
-      args: Vector[Type.RefType]
-    ): Either[Error, Unit] = {
-      if(method.params.length != args.length) Left(Error.ParameterLengthMismatch(method.params.length, args.length))
-      else {
-        val (errs, _) = method.params.zip(args).map {
-          case (p, a) if p =:= a => Right(())
-          case (p, a) => Left(Error.TypeMissmatch(p, a))
-        }.partitionMap(identity)
-
-        if(errs.isEmpty) Right(())
-        else Left(Error.MultipleErrors(errs: _*))
-      }
     }
 
     def lookupFromImpls(
@@ -1184,9 +856,9 @@ object Type {
             callerHPBound,
             callerTPBound
           ) match {
-          case right @ Right(_) => right
-          case Left(err) => Left(Error.MultipleErrors(err, errs))
-        }
+            case right @ Right(_) => right
+            case Left(err) => Left(Error.MultipleErrors(err, errs))
+          }
       }
     }
 
@@ -1555,6 +1227,7 @@ object Type {
         this =:= other && isSameHP
     }
 
+    /*
     def isOverlapped(
       that: Type.RefType,
       thisHpBounds: Vector[HPBound],
@@ -1611,14 +1284,14 @@ object Type {
             }
       }
 
-      def entityAndTypeParam(entity: Symbol.EntityTypeSymbol, tp: Symbol.TypeParamSymbol): Boolean = {
+      def entityAndTypeParam(entity: Symbol.EntityTypeSymbol, tp: Symbol.TypeParamSymbol, hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Boolean = {
         def verify(bound: Type.RefType, impls: Vector[ImplementInterfaceContainer]): Boolean =
           impls.exists { impl =>
             val isInterfaceOverlapped = bound.isOverlapped(
               impl.targetInterface,
-              thatHpBounds,
+              hpBounds,
               impl.symbol.hpBound,
-              thatTpBounds,
+              tpBounds,
               impl.symbol.tpBound
             )
 
@@ -1633,7 +1306,7 @@ object Type {
             isInterfaceOverlapped && isTargetOverlapped
           }
 
-        val bounds = thatTpBounds
+        val bounds = tpBounds
           .find(_.target.origin == tp)
           .map(_.bounds)
 
@@ -1646,7 +1319,7 @@ object Type {
               .map(_.impls)
               .toVector
 
-            bounds.zip(implss).forall { case (bound, impls) => verify(bound, impls) }
+            bounds.zip(implss).exists { case (bound, impls) => verify(bound, impls) }
         }
       }
 
@@ -1658,6 +1331,7 @@ object Type {
         case (_: Symbol.TypeParamSymbol, _: Symbol.TypeParamSymbol) => true
       }
     }
+     */
 
     /*
     def isSubsetOf(
@@ -2006,6 +1680,234 @@ object Type {
       Some((arg.origin, arg.hardwareParam, arg.typeParam))
     }
 
+    def buildTable(impl: ImplementContainer): (Map[Symbol.HardwareParamSymbol, Option[HPExpr]], Map[Symbol.TypeParamSymbol, Option[Type.RefType]]) = {
+      val hpTable = impl.hardwareParam.map(_ -> Option.empty[HPExpr]).toMap
+      val tpTable = impl.typeParam.map(_ -> Option.empty[Type.RefType]).toMap
+
+      (hpTable, tpTable)
+    }
+
+    def buildSymbolTable(symbol: Symbol with HasParams, hps: Vector[HPExpr], tps: Vector[Type.RefType]): (Map[Symbol.HardwareParamSymbol, HPExpr], Map[Symbol.TypeParamSymbol, Type.RefType]) = {
+      val hpTable = (symbol.hps zip hps).toMap
+      val tpTable = (symbol.tps zip tps).toMap
+
+      (hpTable, tpTable)
+    }
+
+    def verifySignatureLength(
+      method: Symbol.MethodSymbol,
+      args: Vector[Type.RefType],
+      callerHP: Vector[HPExpr],
+      callerTP: Vector[Type.RefType]
+    ): Either[Error, Unit] = {
+      val params = method.tpe.asMethodType.params
+      val hps = method.hps
+      val tps = method.tps
+
+      lazy val paramMissMatch = Error.ParameterLengthMismatch(params.length, args.length)
+      lazy val hpsMissMatch = Error.HardParameterLengthMismatch(hps.length, callerHP.length)
+      lazy val tpsMissMatch = Error.TypeParameterLengthMismatch(tps.length, callerTP.length)
+
+      if(params.length != args.length) Left(paramMissMatch)
+      else if (hps.length != callerHP.length) Left(hpsMissMatch)
+      else if (tps.length != callerTP.length) Left(tpsMissMatch)
+      else Right(())
+    }
+
+    def verifySuperSets(
+      caller: Vector[Type.RefType],
+      target: Vector[Type.RefType]
+    ): Either[Error, Unit] = {
+      def isHpSuperSet(caller: HPExpr, target: HPExpr): Boolean =
+        (caller, target) match {
+          case (_: Ident, _: IntLiteral) => false
+          case (_: HPBinOp, _: IntLiteral) => false
+          case (_: Ident, _: StringLiteral) => false
+          case (_: HPBinOp, _: StringLiteral) => false
+          case _ => true
+        }
+
+      def verify(caller: Type.RefType, target: Type.RefType): Either[Error, Unit] = {
+        (caller.origin, target.origin) match {
+          case (e0: Symbol.EntityTypeSymbol, e1: Symbol.EntityTypeSymbol) =>
+            if(e0 != e1) Left(Error.TypeMissmatch(target, caller))
+            else {
+              val validHPs = caller.hardwareParam
+                .zip(target.hardwareParam)
+                .forall{ case (c, t) => isHpSuperSet(c, t) }
+
+              val validTPs = caller.typeParam
+                .zip(target.typeParam)
+                .map{ case (c, t) => verify(c, t) }
+                .forall(_.isRight)
+
+              if(validHPs && validTPs) Right(())
+              else Left(Error.TypeMissmatch(target, caller))
+            }
+          case (_: Symbol.EntityTypeSymbol, _: Symbol.TypeParamSymbol) => Right(())
+          case (_: Symbol.TypeParamSymbol, _) => Left(Error.TypeMissmatch(target, caller))
+        }
+      }
+
+      val (errs, _) = (caller zip target)
+        .map{ case (c, t) => verify(c, t) }
+        .partitionMap(identity)
+
+      if(errs.isEmpty) Right(())
+      else Left(Error.MultipleErrors(errs: _*))
+    }
+
+    def unwrapTable[K, V](table: Map[K, Option[V]]): Either[Error, Map[K, V]] = {
+      val (errs, pairs) = table.map {
+        case (key, Some(value)) => Right(key -> value)
+        case (key, None) => Left(???)
+      }.partitionMap(identity)
+
+      if(errs.isEmpty) Right(pairs.toMap)
+      else Left(Error.MultipleErrors(errs.toSeq: _*))
+    }
+
+
+    def assignHPTable(
+      table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]],
+      caller: Vector[Type.RefType],
+      targets: Vector[Type.RefType]
+    ): Either[Error, Map[Symbol.HardwareParamSymbol, HPExpr]] = {
+      def assign(
+        caller: HPExpr,
+        target: HPExpr,
+        table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]]
+      ): Map[Symbol.HardwareParamSymbol, Option[HPExpr]] =
+        (caller, target) match {
+          case (expr, ident: Ident) =>
+            val hp = ident.symbol.asHardwareParamSymbol
+            table.get(hp) match {
+              case Some(None) => table.updated(hp, Some(expr))
+              case Some(Some(_)) => table
+              case None => throw new ImplementationErrorException(s"${hp.name} should be as key")
+            }
+          case _ => table
+        }
+
+
+      def update(
+        caller: Type.RefType,
+        target: Type.RefType,
+        table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]]
+      ): Map[Symbol.HardwareParamSymbol, Option[HPExpr]] = {
+        (caller.origin, target.origin) match {
+          case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>
+            val tmpTable = (caller.hardwareParam zip target.hardwareParam)
+              .foldLeft(table) {
+                case (acc, (caller, target)) => assign(caller, target, acc)
+              }
+
+            (caller.typeParam zip target.typeParam)
+              .foldLeft(tmpTable) {
+                case (acc, (caller, target)) => update(caller, target, acc)
+              }
+          case _ => table
+        }
+      }
+
+      val assigned = (caller zip targets).foldLeft(table) {
+        case (acc, (caller, target)) => update(caller, target, acc)
+      }
+
+      unwrapTable(assigned)
+    }
+
+    def assignTPTable(
+      table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]],
+      callers: Vector[Type.RefType],
+      targets: Vector[Type.RefType]
+    ): Either[Error, Map[Symbol.TypeParamSymbol, Type.RefType]] = {
+      def update(
+        caller: Type.RefType,
+        target: Type.RefType,
+        table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]]
+      ): Map[Symbol.TypeParamSymbol, Option[Type.RefType]] =
+        (caller.origin, target.origin) match {
+          case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>
+            (caller.typeParam zip target.typeParam)
+              .foldLeft(table) {
+                case (acc, (caller, target)) => update(caller, target, acc)
+              }
+          case (_, tp: Symbol.TypeParamSymbol) =>
+            table.get(tp) match {
+              case None => throw new ImplementationErrorException(s"${tp.name} should be as key")
+              case Some(None) => table.updated(tp, Some(caller))
+              case Some(_) => table
+            }
+          case _ => throw new ImplementationErrorException("this pattern shouldn't be appeared")
+        }
+
+      val assignedTable =
+        (callers zip targets)
+          .foldLeft(table) {
+            case (acc, (caller, target)) => update(caller, target, acc)
+          }
+
+      unwrapTable(assignedTable)
+    }
+
+    def verifyHPBounds(
+      swapped: Vector[HPBound],
+      callerHPBound: Vector[HPBound]
+    ): Either[Error, Unit] = {
+      val (errs, _) = swapped.map(HPBound.verifyMeetBound(_, callerHPBound)).partitionMap(identity)
+
+      if(errs.isEmpty) Right(())
+      else Left(Error.MultipleErrors(errs: _*))
+    }
+
+    def assignMethodTpe(
+      method: Type.MethodType,
+      hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
+      tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
+    ): Type.MethodType = {
+      def swapHP(expr: HPExpr): HPExpr =
+        expr match {
+          case ident: Ident => hpTable.getOrElse(
+            ident.symbol.asHardwareParamSymbol,
+            throw new ImplementationErrorException(s"hpTable should have ${ident.symbol.name}")
+          )
+          case HPBinOp(op, left, right) => HPBinOp(op, swapHP(left), swapHP(right))
+          case lit => lit
+        }
+
+      def swapType(tpe: Type.RefType): Type.RefType =
+        tpe.origin match {
+          case _: Symbol.EntityTypeSymbol =>
+            val swappedHP = tpe.hardwareParam.map(swapHP)
+            val swappedTP = tpe.typeParam.map(swapType)
+
+            Type.RefType(tpe.origin, swappedHP, swappedTP)
+          case t: Symbol.TypeParamSymbol =>
+            tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
+        }
+
+      val params = method.params.map(swapType)
+      val retTpe = swapType(method.returnType)
+
+      Type.MethodType(params, retTpe)
+    }
+
+    def verifyMethodType(
+      method: Type.MethodType,
+      args: Vector[Type.RefType]
+    ): Either[Error, Unit] = {
+      if(method.params.length != args.length) Left(Error.ParameterLengthMismatch(method.params.length, args.length))
+      else {
+        val (errs, _) = method.params.zip(args).map {
+          case (p, a) if p =:= a => Right(())
+          case (p, a) => Left(Error.TypeMissmatch(p, a))
+        }.partitionMap(identity)
+
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+    }
   }
 
   object NoType extends Type {
@@ -2035,9 +1937,12 @@ object Type {
     Type.RefType(symbol)
   }
 
-  def bitTpe(width: HPExpr): Type.RefType = {
+  def bitTpe(width: IntLiteral): Type.RefType = {
     val symbol = Symbol.lookupBuiltin("Bit")
-    Type.RefType(symbol, Vector(width), Vector.empty)
+    val IntLiteral(value) = width
+
+    if(value > 0) Type.RefType(symbol, Vector(width), Vector.empty)
+    else throw new ImplementationErrorException(s"Bit's width[${value}] must be natural number")
   }
 
   def numTpe: Type.RefType = {

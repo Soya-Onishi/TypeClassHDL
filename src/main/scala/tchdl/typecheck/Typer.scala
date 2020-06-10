@@ -2,11 +2,18 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Context, Error, LookupResult, Reporter, Symbol, Type}
+import tchdl.util.{Context, Error, HPBound, LookupResult, Reporter, Symbol, TPBound, Type}
 
 object Typer {
   def exec(cu: CompilationUnit): CompilationUnit = {
-    ???
+    val ctx = Symbol.RootPackageSymbol.search(cu.pkgName)
+      .getOrElse(throw new ImplementationErrorException(s"${cu.pkgName} should be there"))
+      .lookupCtx(cu.filename.get)
+      .getOrElse(throw new ImplementationErrorException(s"${cu.filename.get}'s context should be there'"))
+
+    val topDefs = cu.topDefs.map(typedTopLevelDefinition(_)(ctx))
+
+    CompilationUnit(cu.filename, cu.pkgName, cu.imports, topDefs)
   }
 
   def typedTopLevelDefinition(ast: Definition)(implicit ctx: Context.RootContext): Definition = ast match {
@@ -338,7 +345,7 @@ object Typer {
 
   def typedExprApply(apply: Apply)(implicit ctx: Context.NodeContext): Apply = {
     val typedArgs = apply.args.map(typedExpr)
-    val typedHps = apply.hps.map(typedHardwareParamExpr)
+    val typedHps = apply.hps.map(typedHPExpr)
     val typedTps = apply.tps.map(typedTypeTree)
 
     val hasError =
@@ -816,7 +823,79 @@ object Typer {
     }
   }
 
-  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext): TypeTree = ???
+  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext): TypeTree = {
+    val TypeTree(Ident(name), hps, tps) = typeTree
+
+    def error(hps: Vector[HPExpr], tps: Vector[TypeTree]) =
+      TypeTree(Ident(name), hps, tps)
+        .setTpe(Type.ErrorType)
+        .setSymbol(Symbol.ErrorSymbol)
+        .setID(typeTree.id)
+
+    def verifyHP(symbol: Symbol.TypeSymbol, typedHPs: Vector[HPExpr]): Either[Error, Unit] = {
+      val validHPLength = symbol.hps.length == typedHPs.length
+      val hasError = typedHPs.exists(_.tpe.isErrorType)
+
+      if(validHPLength) Left(Error.HardParameterLengthMismatch(symbol.hps.length, hps.length))
+      else if(hasError) Left(Error.DummyError)
+      else {
+        val table = (symbol.hps zip typedHPs).toMap
+        val swapped = HPBound.swapBounds(symbol.hpBound, table)
+
+        val (errs, _) = swapped
+          .map(HPBound.verifyMeetBound(_, ctx.hpBounds))
+          .partitionMap(identity)
+
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+    }
+
+    def verifyTP(symbol: Symbol.TypeSymbol, typedHPs: Vector[HPExpr], typedTPs: Vector[TypeTree]): Either[Error, Unit] = {
+      val validTPLength = symbol.tps.length == typedTPs.length
+      lazy val hasError = typedTPs.exists(_.tpe.isErrorType)
+      lazy val tpRefTpe = typedTPs.map(_.tpe.asRefType)
+
+      if(validTPLength) Left(Error.TypeParameterLengthMismatch(symbol.tps.length, typedTPs.length))
+      else if(hasError) Left(Error.DummyError)
+      else {
+        val hpTable = (symbol.hps zip typedHPs).toMap
+        val tpTable = (symbol.tps zip tpRefTpe).toMap
+        val swapped = TPBound.swapBounds(symbol.tpBound, hpTable, tpTable)
+        val (errs, _) = swapped
+          .map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds))
+          .partitionMap(identity)
+
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+    }
+
+    ctx.lookup[Symbol.TypeSymbol](name) match {
+      case LookupResult.LookupFailure(err) =>
+        Reporter.appendError(err)
+        error(hps, tps)
+      case LookupResult.LookupSuccess(symbol) =>
+        val typedHPs = hps.map(typedHPExpr)
+        val typedTPs = tps.map(typedTypeTree)
+
+        val result = for {
+          _ <- verifyHP(symbol, typedHPs)
+          _ <- verifyTP(symbol, typedHPs, typedTPs)
+        } yield ()
+
+        result match {
+          case Left(err) =>
+            Reporter.appendError(err)
+            error(typedHPs, typedTPs)
+          case Right(()) =>
+            TypeTree(Ident(name), typedHPs, typedTPs)
+              .setTpe(Type.RefType(symbol, typedHPs, typedTPs.map(_.tpe.asRefType)))
+              .setSymbol(symbol)
+              .setID(typeTree.id)
+        }
+    }
+  }
 
   /*
   def typedType(expr: Expression)(implicit ctx: Context.NodeContext): TypeTree = {
@@ -1077,14 +1156,14 @@ object Typer {
     str.setTpe(strTpe).setID(str.id)
   }
 
-  def typedHardwareParamExpr(expr: HPExpr)(implicit ctx: Context.NodeContext): HPExpr = expr match {
-    case ident: Ident => typedHardwareParamIdent(ident)
-    case binop: HPBinOp => typedHardwareParamBinOp(binop)
-    case literal: IntLiteral => typedHardwareParamIntLit(literal)
-    case literal: StringLiteral => typedHardwareParamStrLit(literal)
+  def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext): HPExpr = expr match {
+    case ident: Ident => typedHPIdent(ident)
+    case binop: HPBinOp => typedHPBinOp(binop)
+    case literal: IntLiteral => typedHPIntLit(literal)
+    case literal: StringLiteral => typedHPStrLit(literal)
   }
 
-  def typedHardwareParamIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
+  def typedHPIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
     def verifyType(symbol: Symbol): Either[Error, Unit] =
       if(symbol.tpe =:= Type.numTpe || symbol.tpe =:= Type.strTpe) Right(())
       else Left(Error.RequireSpecificType(
@@ -1105,9 +1184,9 @@ object Typer {
     }
   }
 
-  def typedHardwareParamBinOp(binop: HPBinOp)(implicit ctx: Context.NodeContext): HPBinOp = {
-    val typedLeft  = typedHardwareParamExpr(binop.left)
-    val typedRight = typedHardwareParamExpr(binop.right)
+  def typedHPBinOp(binop: HPBinOp)(implicit ctx: Context.NodeContext): HPBinOp = {
+    val typedLeft  = typedHPExpr(binop.left)
+    val typedRight = typedHPExpr(binop.right)
 
     val isValid = (typedLeft.tpe =:= Type.numTpe) && (typedRight.tpe =:= Type.numTpe)
     val hasStrTpe = (typedLeft.tpe =:= Type.strTpe) || (typedRight.tpe =:= Type.strTpe)
@@ -1119,11 +1198,11 @@ object Typer {
     HPBinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
   }
 
-  def typedHardwareParamIntLit(int: IntLiteral): IntLiteral = {
+  def typedHPIntLit(int: IntLiteral): IntLiteral = {
     int.setTpe(Type.numTpe)
   }
 
-  def typedHardwareParamStrLit(str: StringLiteral): StringLiteral = {
+  def typedHPStrLit(str: StringLiteral): StringLiteral = {
     str.setTpe(Type.strTpe)
   }
 

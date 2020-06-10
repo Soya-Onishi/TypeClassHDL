@@ -94,6 +94,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
 
   def isTypeSymbol: Boolean = this.isInstanceOf[Symbol.TypeSymbol]
   def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]
+  def isEntityTypeSymbol: Boolean = this.isInstanceOf[Symbol.EntityTypeSymbol]
   def isFieldTypeSymbol: Boolean = this.isInstanceOf[Symbol.FieldTypeSymbol]
   def isMethodSymbol: Boolean = this.isInstanceOf[Symbol.MethodSymbol]
   def isInterfaceSymbol: Boolean = this.isInstanceOf[Symbol.InterfaceSymbol]
@@ -381,8 +382,12 @@ object Symbol {
     "Int" -> null,
     "String" -> null,
     "Unit" -> null,
-    "Bit" -> null
+    "Bit" -> null,
+    "Num" -> null,
+    "Str" -> null,
   )
+
+  def builtInNames: Vector[String] = builtin.keys.toVector
 
   def appendBuiltin(symbol: Symbol.TypeSymbol): Unit = {
     builtin.get(symbol.name) match {

@@ -109,6 +109,12 @@ object Namer {
   }
 
   def namedStruct(struct: StructDef, ctx: Context.RootContext): StructDef = {
+    def tryAppendBuiltIn(symbol: Symbol.StructSymbol): Unit = {
+      if(ctx.path.pkgName == Vector("std", "types") && Symbol.builtInNames.contains(struct.name)) {
+        Symbol.appendBuiltin(symbol)
+      }
+    }
+
     val structTpe = Type.StructTypeGenerator(struct, ctx)
     val structSymbol = Symbol.StructSymbol(
       struct.name,
@@ -124,6 +130,7 @@ object Namer {
     structSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     structSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
+    tryAppendBuiltIn(structSymbol)
     ctx.append(structSymbol)
     struct.setSymbol(structSymbol)
   }
