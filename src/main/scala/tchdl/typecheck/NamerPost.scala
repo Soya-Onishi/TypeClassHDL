@@ -21,9 +21,9 @@ object NamerPost {
         }
     }
 
-    verifiedImports.foreach {
-      case Right(symbol) => ctx.appendImportSymbol(symbol).left.foreach(Reporter.appendError)
-      case Left(err) => Reporter.appendError(err)
-    }
+    val (errs, symbols) = verifiedImports.partitionMap(identity)
+
+    if(errs.nonEmpty) Reporter.appendError(Error.MultipleErrors(errs: _*))
+    else symbols.foreach(ctx.appendImportSymbol(_).left.foreach(Reporter.appendError))
   }
 }
