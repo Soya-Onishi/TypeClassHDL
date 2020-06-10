@@ -4,8 +4,13 @@ import tchdl.antlr._
 
 import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.tree._
+import java.nio.file.Paths
 
 package object tchdl {
+  val rootDir: String = Paths.get(".").toAbsolutePath.normalize.toString
+  val builtinPath: String = "src/test/builtin"
+  val builtinTypes: String = Seq(rootDir, builtinPath, "types.tchdl").mkString("/")
+
   def parseString[T <: ParseTree](parsing: TchdlParser => T)(ast: (ASTGenerator, T) => AST)(code: String): AST =
     parseInput(parsing)(ast)(CharStreams.fromString(code))
 

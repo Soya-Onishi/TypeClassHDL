@@ -5,13 +5,8 @@ import tchdl.typecheck.Namer
 import tchdl.util._
 
 import org.scalatest.funsuite.AnyFunSuite
-import java.nio.file.Paths
 
 class NamerTest extends AnyFunSuite {
-  val rootDir: String = Paths.get(".").toAbsolutePath.normalize.toString
-  val builtinPath: String = "src/test/builtin"
-
-  val builtinTypes: String = Seq(rootDir, builtinPath, "types.tchdl").mkString("/")
   def parser(filename: String): AST = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
 
   test("named builtin") {
