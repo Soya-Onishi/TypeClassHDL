@@ -66,10 +66,12 @@ object Type {
 
   case class ModuleTypeGenerator(module: ModuleDef, ctx: Context.RootContext) extends TypeGenerator {
     override def generate: Type.EntityType = {
-      val componentCtx = Context(ctx, module.symbol)
-      module.components.map(Namer.nodeLevelNamed(_, componentCtx))
+      val node = Context(ctx, module.symbol)
+      val parents = module.parents.map(Namer.namedValDef(_, node))
+      val siblings = module.siblings.map(Namer.namedValDef(_, node))
 
-      Type.EntityType(module.name, ctx.path, componentCtx.scope)
+
+      Type.EntityType(module.name, ctx.path, Scope.empty)
     }
   }
 

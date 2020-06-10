@@ -286,7 +286,7 @@ trait HasSymbol {
 
 case class CompilationUnit(filename: Option[String], pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition]) extends AST
 
-case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], parents: Vector[ValDef], siblings: Vector[ValDef], components: Vector[Component]) extends Definition
+case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], parents: Vector[ValDef], siblings: Vector[ValDef]) extends Definition
 case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], fields: Vector[ValDef]) extends Definition
 case class ImplementClass(target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], stages: Vector[StageDef]) extends Definition
 case class InterfaceDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef]) extends Definition

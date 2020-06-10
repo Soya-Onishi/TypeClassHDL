@@ -22,11 +22,6 @@ abstract class Context {
     }
   }
 
-  def allHPBounds: Vector[HPBoundTree] = this match {
-    case _: Context.RootContext => Vector.empty
-    case ctx: Context.NodeContext => ctx.owner.getHPBounds ++ ctx.parent.allHPBounds
-  }
-
   def interfaceTable: Map[String, Symbol.InterfaceSymbol]
 
   private var blkID: Int = 0
@@ -109,8 +104,8 @@ object Context {
   ) extends Context {
     override def path: NameSpace = {
       name match {
-        case Some(n) => path.appendName(n)
-        case None => path
+        case Some(n) => parent.path.appendName(n)
+        case None => parent.path
       }
     }
 

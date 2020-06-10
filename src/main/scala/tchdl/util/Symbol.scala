@@ -45,37 +45,6 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   }
   def flag: Modifier = _flag
 
-  private var _hpBounds: Option[Vector[HPBoundTree]] = None
-  def setHPBounds(bounds: Vector[HPBoundTree]): Unit = {
-    if(_hpBounds.isDefined)
-      throw new ImplementationErrorException("hardware parameter constraints is already assigned")
-    else {
-      val sorted = bounds.map{
-        case HPBoundTree(target, constraints) =>
-          HPBoundTree(
-            target.sort,
-            constraints.map(_.map(_.sort))
-          )
-      }
-
-      _hpBounds = Some(sorted)
-    }
-  }
-
-  def getHPBounds: Vector[HPBoundTree] = _hpBounds.getOrElse(Vector.empty)
-
-  def lookupConstraint(expr: HPExpr): Option[Vector[RangeExpr]] = {
-    val sorted = expr.sort
-
-    _hpBounds match {
-      case None => None
-      case Some(pairs) =>
-        pairs.find { case HPBoundTree(hpExpr, _) => hpExpr == sorted }
-          .map { case HPBoundTree(_, constraint) => constraint }
-    }
-  }
-
-
   override def equals(obj: Any): Boolean = obj match {
     case sym: Symbol => this.getClass == sym.getClass && this.path == sym.path
     case _ => false

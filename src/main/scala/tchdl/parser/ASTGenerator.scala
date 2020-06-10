@@ -23,45 +23,41 @@ class ASTGenerator {
       case ctx: TP.Method_defContext => methodDef(ctx)
       case ctx: TP.Struct_defContext => structDef(ctx)
       case ctx: TP.Interface_defContext => interfaceDef(ctx)
+      case ctx: TP.Implement_classContext => implementClass(ctx)
       case ctx: TP.Implement_interfaceContext => implementInterface(ctx)
     }
   }
 
   def moduleDef(ctx: TP.Module_defContext): ModuleDef = {
-    def paramModules[T](params: Option[T])(ids: T => java.util.List[TerminalNode])(types: T => java.util.List[TP.TypeContext]): Vector[ValDef] =
+    def paramModules[T](params: Option[T], mod: Modifier)(ids: T => java.util.List[TerminalNode])(types: T => java.util.List[TP.TypeContext]): Vector[ValDef] =
       params.map{ ctx =>
         val idents = ids(ctx).asScala.map(_.getText)
         val tpes = types(ctx).asScala.map(typeTree)
 
         idents zip tpes
       }.map { _.map {
-        case (ident, tpe) => ValDef(Modifier.NoModifier, ident, Some(tpe), None)
+        case (ident, tpe) => ValDef(mod, ident, Some(tpe), None)
       }}.getOrElse(Vector.empty).toVector
 
     val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
-    val parents = paramModules(Option(ctx.parents))(_.EXPR_ID)(_.`type`)
-    val siblings = paramModules(Option(ctx.siblings))(_.EXPR_ID)(_.`type`)
+    val parents = paramModules(Option(ctx.parents), Modifier.Parent)(_.EXPR_ID)(_.`type`)
+    val siblings = paramModules(Option(ctx.siblings), Modifier.Sibling)(_.EXPR_ID)(_.`type`)
 
-    val components = ctx.component
-      .asScala
-      .map(component)
-      .toVector
-
-    ModuleDef(name, hp, tp, bound, parents, siblings, components)
+    ModuleDef(name, hp, tp, bound, parents, siblings)
   }
 
   def structDef(ctx: TP.Struct_defContext): StructDef = {
     val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
-    val fields = fieldDefs(ctx.field_defs)
+    val fields = Option(ctx.field_defs).map(fieldDefs).getOrElse(Vector.empty)
 
     StructDef(name, hp, tp, bound, fields)
   }
 
   def implementClass(ctx: TP.Implement_classContext): ImplementClass = {
     val target = typeTree(ctx.`type`())
-    val (hps, tps) = Option(ctx.type_param).map(typeParam).getOrElse((Vector.empty, Vector.empty))
+    val (hps, tps) = Option(ctx.type_param).map(polyParam).getOrElse((Vector.empty, Vector.empty))
     val bounds = Option(ctx.bounds).map(_.bound.asScala.map(bound).toVector).getOrElse(Vector.empty)
     val methods = ctx.method_def.asScala.map(methodDef).toVector
     val stages = ctx.stage_def.asScala.map(stageDef).toVector
@@ -113,7 +109,7 @@ class ASTGenerator {
 
   def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[BoundTree]) = {
     val (hps, tps) = Option(tpCtx)
-      .map(typeParam)
+      .map(polyParam)
       .getOrElse(Vector.empty, Vector.empty)
 
     val bounds = Option(boundsCtx)
@@ -128,9 +124,7 @@ class ASTGenerator {
   }
 
   def fieldDefs(ctx: TP.Field_defsContext): Vector[ValDef] =
-    Option(ctx.field_def)
-      .map(_.asScala.map(fieldDef).toVector)
-      .getOrElse(Vector.empty)
+    ctx.field_def.asScala.map(fieldDef).toVector
 
   def fieldDef(ctx: TP.Field_defContext): ValDef = {
     val modifier = Modifier(ctx.modifier
@@ -335,17 +329,17 @@ class ASTGenerator {
     }
   }
 
-  def typeParam(ctx: TP.Type_paramContext): (Vector[ValDef], Vector[TypeDef]) = {
+  def polyParam(ctx: TP.Type_paramContext): (Vector[ValDef], Vector[TypeDef]) = {
     ctx match {
       case ctx: TP.WithDependencyContext =>
-        val deps = paramDefs(ctx.param_defs)
+        val hps = paramDefs(ctx.param_defs)
         val tps = ctx.TYPE_ID()
           .asScala
           .map(_.getText)
           .map(TypeDef.apply)
           .toVector
 
-        (deps, tps)
+        (hps, tps)
       case ctx: TP.WithoutDependencyContext =>
         val tps = ctx.TYPE_ID()
           .asScala

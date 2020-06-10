@@ -5,10 +5,6 @@ import tchdl.util.{Context, LookupResult, Modifier, Symbol, Type, Visibility}
 
 object Namer {
   def exec(cu: CompilationUnit): Unit = {
-    val root = Context.root(cu.filename.get, cu.pkgName)
-
-    cu.topDefs.map(topLevelNamed(_, root))
-
     val packageSymbol = cu.pkgName.foldLeft[Symbol.PackageSymbol](Symbol.RootPackageSymbol) {
       case (parent, name) => parent.lookup[Symbol.PackageSymbol](name) match {
         case LookupResult.LookupSuccess(pkg) => pkg
@@ -19,6 +15,8 @@ object Namer {
       }
     }
 
+    val root = Context.root(cu.filename.get, cu.pkgName)
+    cu.topDefs.map(topLevelNamed(_, root))
     packageSymbol.appendCtx(cu.filename.get, root)
   }
 
@@ -40,8 +38,8 @@ object Namer {
     )
 
     val signatureCtx = Context(ctx, methodSymbol)
-    val namedHPs = method.hp.map(namedValDef(_, signatureCtx))
-    val namedTPs = method.tp.map(namedTypeDef(_, signatureCtx))
+    val namedHPs = method.hp.map(namedHPDef(_, signatureCtx))
+    val namedTPs = method.tp.map(namedTPDef(_, signatureCtx))
     methodSymbol.setHPs(namedHPs.map(_.symbol.asHardwareParamSymbol))
     methodSymbol.setTPs(namedTPs.map(_.symbol.asTypeParamSymbol))
 
@@ -55,6 +53,17 @@ object Namer {
       ctx.path,
       Visibility.Private,
       Modifier.NoModifier,
+      Type.VariableTypeGenerator(vdef, ctx)
+    )
+
+    ctx.append(symbol)
+    vdef.setSymbol(symbol)
+  }
+
+  def namedHPDef(vdef: ValDef, ctx: Context.NodeContext): ValDef = {
+    val symbol = Symbol.HardwareParamSymbol(
+      vdef.name,
+      ctx.path,
       Type.VariableTypeGenerator(vdef, ctx)
     )
 
@@ -80,7 +89,7 @@ object Namer {
     state.setSymbol(symbol)
   }
 
-  def namedTypeDef(typeDef: TypeDef, ctx: Context.NodeContext): TypeDef = {
+  def namedTPDef(typeDef: TypeDef, ctx: Context.NodeContext): TypeDef = {
     val tpe = Type.TypeParamType(typeDef.name, ctx.path)
     val symbol: Symbol = Symbol.TypeParamSymbol(typeDef.name, ctx.path, tpe)
 
@@ -99,8 +108,8 @@ object Namer {
     )
 
     val signatureCtx = Context(ctx, moduleSymbol)
-    val hps = module.hp.map(namedValDef(_, signatureCtx))
-    val tps = module.tp.map(namedTypeDef(_, signatureCtx))
+    val hps = module.hp.map(namedHPDef(_, signatureCtx))
+    val tps = module.tp.map(namedTPDef(_, signatureCtx))
     moduleSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     moduleSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
@@ -125,8 +134,8 @@ object Namer {
     )
 
     val signatureCtx = Context(ctx, structSymbol)
-    val hps = struct.hp.map(namedValDef(_, signatureCtx))
-    val tps = struct.tp.map(namedTypeDef(_, signatureCtx))
+    val hps = struct.hp.map(namedHPDef(_, signatureCtx))
+    val tps = struct.tp.map(namedTPDef(_, signatureCtx))
     structSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     structSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
@@ -146,8 +155,8 @@ object Namer {
     )
 
     val signatureCtx = Context(ctx, interfaceSymbol)
-    val hps = interface.hp.view.map(namedValDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
-    val tps = interface.tp.view.map(namedTypeDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    val hps = interface.hp.view.map(namedHPDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
+    val tps = interface.tp.view.map(namedTPDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
     interfaceSymbol.setHPs(hps)
     interfaceSymbol.setTPs(tps)
 
@@ -158,8 +167,8 @@ object Namer {
   def namedImplInterface(impl: ImplementInterface, ctx: Context.RootContext): ImplementInterface = {
     val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
     val signatureCtx = Context(ctx, implSymbol)
-    val hps = impl.hp.view.map(namedValDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
-    val tps = impl.tp.view.map(namedTypeDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    val hps = impl.hp.view.map(namedHPDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
+    val tps = impl.tp.view.map(namedTPDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
     implSymbol.setHPs(hps)
     implSymbol.setTPs(tps)
 
@@ -169,8 +178,8 @@ object Namer {
   def namedImplClass(impl: ImplementClass, ctx: Context.RootContext): ImplementClass = {
     val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
     val signatureCtx = Context(ctx, implSymbol)
-    val hps = impl.hp.view.map(namedValDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
-    val tps = impl.tp.view.map(namedTypeDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    val hps = impl.hp.view.map(namedHPDef(_, signatureCtx)).map(_.symbol.asHardwareParamSymbol).to(Vector)
+    val tps = impl.tp.view.map(namedTPDef(_, signatureCtx)).map(_.symbol.asTypeParamSymbol).to(Vector)
     implSymbol.setHPs(hps)
     implSymbol.setTPs(tps)
 
@@ -184,7 +193,7 @@ object Namer {
       case vdef: ValDef => namedValDef(vdef, ctx)
       case stage: StageDef => namedStageDef(stage, ctx)
       case state: StateDef => namedStateDef(state, ctx)
-      case typeDef: TypeDef => namedTypeDef(typeDef, ctx)
+      case typeDef: TypeDef => namedTPDef(typeDef, ctx)
       case ast => ast
     }
 

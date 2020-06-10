@@ -50,18 +50,13 @@ object Typer {
     val typedParents = module.parents.map(typedValDef(_)(interfaceCtx))
     val typedSiblings = module.siblings.map(typedValDef(_)(interfaceCtx))
 
-    val componentCtx = Context(interfaceCtx)
-    val typedComponents =
-      module.components.map(typedDefinition(_)(componentCtx))
-
     val typedModule = module.copy(
       module.name,
       typedHp,
       typedTp,
       module.bounds,
       typedParents,
-      typedSiblings,
-      typedComponents.map(_.asInstanceOf[Component])
+      typedSiblings
     )
       .setSymbol(module.symbol)
       .setID(module.id)

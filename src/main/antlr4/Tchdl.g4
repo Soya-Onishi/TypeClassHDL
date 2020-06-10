@@ -21,7 +21,7 @@ top_definition
     ;
 
 module_def
-    : MODULE TYPE_ID type_param? bounds? ('(' parents? siblings? ')')? '{' component* '}'
+    : MODULE TYPE_ID type_param? bounds? ('{' parents? siblings? '}')?
     ;
 
 interface_def
@@ -58,11 +58,11 @@ struct_def
     ;
 
 signature_def
-    : DEF EXPR_ID type_param? bounds? '(' param_defs? ')' '->' type
+    : DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds?
     ;
 
 method_def
-    : DEF EXPR_ID type_param? bounds? '(' param_defs? ')' '->' type block
+    : DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
     ;
 
 param_defs
@@ -121,7 +121,7 @@ bounds
 
 bound
     : TYPE_ID ':' type ('+' type)* # TPBound
-    | hp_expr ':' hp_bound_expr('&' hp_bound_expr) # HPBound
+    | hp_expr ':' hp_bound_expr ('&' hp_bound_expr)* # HPBound
     ;
 
 hp_bound_expr
