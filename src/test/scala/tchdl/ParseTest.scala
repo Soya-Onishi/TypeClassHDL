@@ -1,29 +1,12 @@
 package tchdl
 
-import tchdl.parser.ASTGenerator
 import tchdl.ast._
-import tchdl.antlr._
 import tchdl.util._
 
-import org.antlr.v4.runtime._
-import org.antlr.v4.runtime.tree._
 import org.scalatest.funsuite.AnyFunSuite
+import java.nio.file.Paths
 
 class ParseTest extends AnyFunSuite {
-  def parseString[T <: ParseTree](parsing: TchdlParser => T)(ast: (ASTGenerator, T) => AST)(code: String): AST =
-    parseInput(parsing)(ast)(CharStreams.fromString(code))
-
-  def parseFile[T <: ParseTree](parsing: TchdlParser => T)(ast: (ASTGenerator, T) => AST)(filename: String): AST =
-    parseInput(parsing)(ast)(CharStreams.fromFileName(filename))
-
-  def parseInput[T <: ParseTree](parsing: TchdlParser => T)(ast: (ASTGenerator, T) => AST)(input: CharStream): AST = {
-    val lexer= new TchdlLexer(input)
-    val tokens = new CommonTokenStream(lexer)
-    val parser = new TchdlParser(tokens)
-    val tree = parsing(parser)
-    ast(new ASTGenerator, tree)
-  }
-
   test("binary operation test") {
     def binop(left: Expression, right: Expression, op: String): StdBinOp = {
       val operator = op match {
@@ -90,8 +73,94 @@ class ParseTest extends AnyFunSuite {
           Vector.empty,
           Vector.empty,
           Vector.empty,
-          Vector.empty
         )
     )
+
+    assert(
+      parser("module Mod { parent: p: M1 sibling: s: M2 }") ==
+      ModuleDef (
+        "Mod",
+        Vector.empty,
+        Vector.empty,
+        Vector.empty,
+        Vector(ValDef(Modifier.Parent, "p", Some(TypeTree(Ident("M1"), Vector.empty, Vector.empty)), None)),
+        Vector(ValDef(Modifier.Sibling, "s", Some(TypeTree(Ident("M2"), Vector.empty, Vector.empty)), None)),
+      )
+    )
+
+    assert(
+      parser("module Mod[m: Num, T] where m: min 1 & max 3, T: I0 + I1") ==
+      ModuleDef (
+        "Mod",
+        Vector(ValDef(Modifier.NoModifier, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
+        Vector(TypeDef("T")),
+        Vector(
+          HPBoundTree(
+            Ident("m"),
+            Vector(
+              RangeExpr.Min(IntLiteral(1)),
+              RangeExpr.Max(IntLiteral(3))
+            )
+          ),
+          TPBoundTree(
+            TypeTree(Ident("T"), Vector.empty, Vector.empty),
+            Vector(
+              TypeTree(Ident("I0"), Vector.empty, Vector.empty),
+              TypeTree(Ident("I1"), Vector.empty, Vector.empty)
+            )
+          )
+        ),
+        Vector.empty,
+        Vector.empty,
+      )
+    )
+  }
+
+  test("impl class test") {
+    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)) _
+
+    assert(
+      parser("impl[T] C[T] { def f() -> Unit {} }") ==
+      ImplementClass(
+        TypeTree(Ident("C"), Vector.empty, Vector(TypeTree(Ident("T"), Vector.empty, Vector.empty))),
+        Vector.empty,
+        Vector(TypeDef("T")),
+        Vector.empty,
+        Vector(MethodDef(
+          "f",
+          Vector.empty,
+          Vector.empty,
+          Vector.empty,
+          Vector.empty,
+          TypeTree(Ident("Unit"), Vector.empty, Vector.empty),
+          Some(Block(Vector.empty, UnitLiteral()))
+        )),
+        Vector.empty
+      )
+    )
+  }
+
+  test("impl interface test") {
+    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)) _
+
+    assert(
+      parser("impl[m: Num, T] I[m] for Type[T] { }") ==
+      ImplementInterface(
+        TypeTree(Ident("I"), Vector(Ident("m")), Vector.empty),
+        TypeTree(Ident("Type"), Vector.empty, Vector(TypeTree(Ident("T"), Vector.empty, Vector.empty))),
+        Vector(ValDef(Modifier.NoModifier, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
+        Vector(TypeDef("T")),
+        Vector.empty,
+        Vector.empty
+      )
+    )
+  }
+
+  test("parse builtin types") {
+    val filename = "src/test/builtin/types.tchdl"
+    val root = Paths.get(".").toAbsolutePath.normalize().toString
+    val path = Seq(root, filename).mkString("/")
+
+    parseFile(_.compilation_unit)((gen, tree) => gen(tree, path))(path)
   }
 }

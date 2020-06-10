@@ -1,0 +1,8 @@
+package std::types
+
+struct Int {}
+struct Bit[m: Num] where m: min 1 {}
+struct String {}
+struct Unit {}
+struct Num {}
+struct Str {}
