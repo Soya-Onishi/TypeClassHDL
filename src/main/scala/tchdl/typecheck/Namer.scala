@@ -64,7 +64,7 @@ object Namer {
     val symbol = Symbol.HardwareParamSymbol(
       vdef.name,
       ctx.path,
-      Type.VariableTypeGenerator(vdef, ctx)
+      Type.HPTypeGenerator(vdef, ctx)
     )
 
     ctx.append(symbol)

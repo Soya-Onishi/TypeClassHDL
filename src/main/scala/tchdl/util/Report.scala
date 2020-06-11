@@ -6,7 +6,20 @@ import tchdl.typecheck.{ImplementClassContainer, ImplementInterfaceContainer}
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 
-sealed trait Report
+sealed trait Report {
+  private val stackTrace = {
+    (new Exception).getStackTrace.map(_.toString)
+  }
+
+  def debugString: String = {
+    s"""
+       |error: ${this.toString}
+       |stacktrace:
+       |  ${stackTrace.mkString("\n  ")}
+       |""".stripMargin
+  }
+
+}
 sealed trait Error extends Report
 sealed trait Warning extends Report
 sealed trait Info extends Report
@@ -22,6 +35,7 @@ object Error {
   case class ParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
+  case class RequireNumOrStr(actual: Type.RefType) extends Error
   case object RequireType extends Error
   case object RequireTypeParameter extends Error
   case class RequireStructOrModuleSymbol(name: String) extends Error
@@ -59,6 +73,7 @@ object Error {
   case class AmbiguousHardwareParam(symbol: Symbol.HardwareParamSymbol) extends Error
   case object AttachTPToPackageSymbol extends Error
   case class InvalidTypeForHP(tpe: Type.RefType) extends Error
+  case class TryDivisionByZero(expr: HPExpr) extends Error
 
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error

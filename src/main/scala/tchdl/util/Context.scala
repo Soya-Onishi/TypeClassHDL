@@ -62,10 +62,14 @@ object Context {
       case None => importedSymbols.lookup(name) match {
         case Some(elem: T) => LookupResult.LookupSuccess(elem)
         case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
-        case None =>
-          RootPackageSymbol.search(pkgName)
-            .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
-            .lookup(name)
+        case None => preludeSymbols.lookup(name) match {
+          case Some(elem: T) => LookupResult.LookupSuccess(elem)
+          case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
+          case None =>
+            RootPackageSymbol.search(pkgName)
+              .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
+              .lookup(name)
+        }
       }
     }
 
@@ -82,6 +86,10 @@ object Context {
         case (Right(_), Right(_)) => Right(())
       }
     }
+
+    private val preludeSymbols = Scope.empty
+    def appendPrelude(symbol: Symbol): Either[Error, Unit] =
+      preludeSymbols.append(symbol)
 
     private val importedSymbols = Scope.empty
     def appendImportSymbol(symbol: Symbol): Either[Error, Unit] =

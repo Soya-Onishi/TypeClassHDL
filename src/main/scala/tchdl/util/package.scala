@@ -14,20 +14,15 @@ package object util {
       }
     }
 
-    def collectPartition[B](f: PartialFunction[A, B]): (Vector[B], Vector[A]) = {
-      f.unapply(vec.head) match {
-        case Some(elem) => vec.tail match {
-          case Vector() => (Vector(elem), Vector.empty)
-          case tail =>
-            val (bs, as) = tail.collectPartition(f)
+    def collectPartition[B](f: PartialFunction[A, B]): (Vector[B], Vector[A]) = vec match {
+      case Vector() => (Vector.empty, Vector.empty)
+      case elems => f.unapply(elems.head) match {
+          case Some(elem) =>
+            val (bs, as) = elems.tail.collectPartition(f)
             (elem +: bs, as)
-        }
-        case None => vec.tail match {
-          case Vector() => (Vector.empty, Vector(vec.head))
-          case tail =>
-            val (bs, as) = tail.collectPartition(f)
-            (bs, vec.head +: as)
-        }
+          case None =>
+            val (bs, as) = elems.tail.collectPartition(f)
+            (bs, elems.head +: as)
       }
     }
   }

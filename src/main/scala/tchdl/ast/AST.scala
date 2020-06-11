@@ -1,7 +1,7 @@
 package tchdl.ast
 
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Modifier, Symbol, Type}
+import tchdl.util._
 
 sealed trait AST {
   private var _id: Int = TreeID.id
@@ -25,11 +25,110 @@ sealed trait BlockElem extends AST
 sealed trait Expression extends AST with BlockElem with HasType
 sealed trait TypeAST extends AST with HasType with HasSymbol
 sealed trait HPExpr extends Expression {
+  protected var _sortedExpr: Option[HPExpr] = None
+
   // This method organizes an expression when an expression is sortable format.
-  // TODO:
-  //  For now, this method just returns `this`.
-  //  Implement actual process.
-  def sort: HPExpr = this
+  def sort: HPExpr = {
+    def sortChildren: HPExpr = this match {
+      case HPBinOp(op, left, right) =>
+        val binop = HPBinOp(op, left.sort, right.sort)
+        binop._sortedExpr = Some(binop)
+        binop
+      case others => others
+    }
+
+    def exec(binop: HPBinOp): HPExpr = {
+      def collectLeafs(expr: HPExpr): Vector[HPExpr] = expr match {
+        case HPBinOp(_, left, right) => collectLeafs(left) ++ collectLeafs(right)
+        case leaf => Vector(leaf)
+      }
+
+      def reConstruct(leafs: Vector[HPExpr], op: Operation): HPExpr = leafs.init match {
+        case Vector(leaf) => leaf
+        case remains =>
+          val binop = HPBinOp(op, reConstruct(remains, op), leafs.last)
+          binop._sortedExpr = Some(binop)
+          binop
+      }
+
+      val leafs = collectLeafs(binop)
+      val (head, remains) =
+        if(binop.op.isCommutative) (Vector.empty, leafs)
+        else (Vector(leafs.head), leafs.tail)
+
+      val sortedLeafs = head ++ remains.sortWith {
+        case (idLeft @ Ident(left), idRight @ Ident(right)) if left == right =>
+          idLeft.symbol.hashCode < idRight.symbol.hashCode
+        case (Ident(left), Ident(right)) => left < right
+        case (_: Ident, _) => true
+        case (_, _: Ident) => false
+        case (_: IntLiteral, _: StringLiteral) =>
+          val msg = "There is a string literal in hardware parameter expression"
+          throw new ImplementationErrorException(msg)
+        case (_: StringLiteral, _: IntLiteral) =>
+          val msg = "There is a string literal in hardware parameter expression"
+          throw new ImplementationErrorException(msg)
+        case (IntLiteral(left), IntLiteral(right)) => left < right
+        case (StringLiteral(left), StringLiteral(right)) => left < right
+      }
+
+      reConstruct(sortedLeafs, binop.op)
+    }
+
+    _sortedExpr match {
+      case Some(expr) => expr
+      case None =>
+        val sorted =
+          if(!this.isSimpleExpr) sortChildren
+          else this match {
+            case binOp: HPBinOp => exec(binOp)
+            case leaf => leaf
+          }
+
+        sorted._sortedExpr = Some(sorted)
+        sorted
+    }
+  }
+
+  // This method expects expressions are already sorted
+  def combine: HPExpr = {
+    def collectLeafs(expr: HPExpr): Vector[HPExpr] = expr match {
+      case HPBinOp(_, left, right) => collectLeafs(left) ++ collectLeafs(right)
+      case leaf => Vector(leaf)
+    }
+
+    def reConstruct(leafs: Vector[HPExpr], ops: Operation): HPExpr = leafs match {
+      case Vector(leaf) => leaf
+      case leafs => HPBinOp(ops, reConstruct(leafs.init, ops), leafs.last)
+    }
+
+    def exec(binop: HPBinOp): HPExpr = {
+      val leafs = collectLeafs(binop)
+      val nums = leafs.collect { case IntLiteral(value) => value }
+      val others = leafs.filterNot(_.isInstanceOf[IntLiteral])
+
+      val f: (Int, Int) => Int = binop.op match {
+        case Operation.Add => _ + _
+        case Operation.Sub => _ - _
+        case Operation.Mul => _ * _
+        case Operation.Div => _ / _
+      }
+
+      if(nums.isEmpty) binop
+      else {
+        val combined = IntLiteral(nums.reduce(f))
+        reConstruct(others :+ combined, binop.op)
+      }
+    }
+
+    if(!this.isSimpleExpr) {
+      val HPBinOp(op, left, right) = this
+      HPBinOp(op, left.combine, right.combine)
+    } else this match {
+      case binop: HPBinOp => exec(binop)
+      case leaf => leaf
+    }
+  }
 
   def isSameExpr(that: HPExpr): Boolean =
     (this.sort, that.sort) match {
@@ -572,25 +671,30 @@ trait Operation {
   def toInterface: String
   def toMethod: String = this.toInterface.toLowerCase
   def toOperator: String
+  def isCommutative: Boolean
 }
 object Operation {
   case object Add extends Operation {
     override def toInterface: String = "Add"
     override def toOperator: String = "+"
+    override def isCommutative: Boolean = true
   }
 
   case object Sub extends Operation {
     override def toInterface: String = "Sub"
     override def toOperator: String = "-"
+    override def isCommutative: Boolean = false
   }
 
   case object Mul extends Operation {
     override def toInterface: String = "Mul"
     override def toOperator: String = "*"
+    override def isCommutative: Boolean = true
   }
 
   case object Div extends Operation {
     override def toInterface: String = "Div"
     override def toOperator: String = "/"
+    override def isCommutative: Boolean = false
   }
 }

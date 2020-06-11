@@ -828,10 +828,10 @@ object Typer {
         .setID(typeTree.id)
 
     def verifyHP(symbol: Symbol.TypeSymbol, typedHPs: Vector[HPExpr]): Either[Error, Unit] = {
-      val validHPLength = symbol.hps.length == typedHPs.length
+      val invalidHPLength = symbol.hps.length != typedHPs.length
       val hasError = typedHPs.exists(_.tpe.isErrorType)
 
-      if(validHPLength) Left(Error.HardParameterLengthMismatch(symbol.hps.length, hps.length))
+      if(invalidHPLength) Left(Error.HardParameterLengthMismatch(symbol.hps.length, hps.length))
       else if(hasError) Left(Error.DummyError)
       else {
         val table = (symbol.hps zip typedHPs).toMap

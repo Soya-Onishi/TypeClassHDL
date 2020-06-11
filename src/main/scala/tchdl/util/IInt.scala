@@ -61,8 +61,8 @@ trait IInt extends Ordered[IInt] {
 
   override def equals(obj: Any): Boolean = obj match {
     case that: IInt => (this, that) match {
-      case (IInt.PInf, IInt.PInf) => true
-      case (IInt.NInf, IInt.NInf) => true
+      case (_: IInt.PInf.type, _: IInt.PInf.type) => true
+      case (_: IInt.NInf.type, _: IInt.NInf.type) => true
       case (IInt.Integer(v0), IInt.Integer(v1)) => v0 == v1
       case _ => false
     }

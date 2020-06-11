@@ -357,6 +357,13 @@ object Symbol {
   )
 
   def builtInNames: Vector[String] = builtin.keys.toVector
+  def builtInSymbols: Vector[Symbol.TypeSymbol] = {
+    val symbols = builtin.values.toVector
+
+    if(symbols.contains(null)) throw new ImplementationErrorException("BuiltIn types are not registered completely")
+    else symbols
+  }
+
 
   def appendBuiltin(symbol: Symbol.TypeSymbol): Unit = {
     builtin.get(symbol.name) match {

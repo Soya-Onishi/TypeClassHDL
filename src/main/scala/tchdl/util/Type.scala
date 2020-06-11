@@ -112,7 +112,6 @@ object Type {
 
   case class VariableTypeGenerator(vdef: ValDef, ctx: Context.NodeContext) extends TypeGenerator {
     override def generate: Type = {
-      val nodeCtx = ctx.asInstanceOf[Context.NodeContext]
       val ValDef(_, _, tpeTree, expr) = vdef
 
       (tpeTree, expr) match {
@@ -120,11 +119,35 @@ object Type {
           Reporter.appendError(Error.RequireType)
           Type.ErrorType
         case (None, Some(expr)) =>
-          val typedExp = Typer.typedExpr(expr)(nodeCtx)
+          val typedExp = Typer.typedExpr(expr)(ctx)
           typedExp.tpe
         case (Some(tpe), _) =>
-          val typedTpe = Typer.typedTypeTree(tpe)(nodeCtx)
+          val typedTpe = Typer.typedTypeTree(tpe)(ctx)
           typedTpe.tpe
+      }
+    }
+  }
+
+  case class HPTypeGenerator(vdef: ValDef, ctx: Context.NodeContext) extends TypeGenerator {
+    override def generate: Type = {
+      val ValDef(_, _, Some(typeTree), _) = vdef
+      val (err, ttree) = Type.buildType[Symbol.ClassTypeSymbol](typeTree, ctx)
+      err match {
+        case Some(err) =>
+          Reporter.appendError(err)
+          Type.ErrorType
+        case None =>
+          val tpe = ttree.tpe.asRefType
+          val pkgName = tpe.origin.path.pkgName
+          val name = tpe.origin.name
+
+          pkgName :+ name match {
+            case Vector("std", "types", "Num") => tpe
+            case Vector("std", "types", "Str") => tpe
+            case _ =>
+              Reporter.appendError(Error.RequireNumOrStr(tpe))
+              Type.ErrorType
+          }
       }
     }
   }
@@ -270,6 +293,7 @@ object Type {
       callerTPBound: Vector[TPBound],
       ctx: Context.NodeContext
     ): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
+      /*
       def lookupFromEntity[T <: ImplementContainer](
         impl: T,
         target: Type.RefType,
@@ -687,17 +711,26 @@ object Type {
           }
         }
       }
+      */
 
       val result = this.origin match {
         case entity: Symbol.EntityTypeSymbol =>
-          lookupFromImpls(entity.impls) match {
+          lookupFromImpls(
+            entity.impls,
+            methodName,
+            args,
+            callerHP,
+            callerTP,
+            callerHPBound,
+            callerTPBound
+          ) match {
             case success @ Right(_) => success
             case Left(_) if ctx.interfaceTable.isEmpty => Left(Error.SymbolNotFound(methodName))
             case Left(_) =>
               val (errs, methods) = ctx.interfaceTable
                 .values.view
                 .map(_.impls)
-                .map(lookupFromImpls)
+                .map(lookupFromImpls(_, methodName, args, callerHP, callerTP, callerHPBound, callerTPBound))
                 .to(Vector)
                 .partitionMap(identity)
 
@@ -717,7 +750,13 @@ object Type {
                   val result = lookupFromTypeParam(
                     interface.origin.asInterfaceSymbol,
                     interface.hardwareParam,
-                    interface.typeParam
+                    interface.typeParam,
+                    methodName,
+                    args,
+                    callerHP,
+                    callerTP,
+                    callerHPBound,
+                    callerTPBound
                   )
 
                   result match {
