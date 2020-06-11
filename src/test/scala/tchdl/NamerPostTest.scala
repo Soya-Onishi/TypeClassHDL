@@ -11,11 +11,12 @@ class NamerPostTest extends AnyFunSuite {
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, file))(file).asInstanceOf[CompilationUnit]
 
   test("verify imports") {
+    val builtin = Vector(rootDir, builtinPath, "types.tchdl").mkString("/")
     val imports = Vector("import0", "import1")
-    val files = imports.map(imp => Vector(rootDir, filePath, imp + ".tchdl").mkString("/"))
+    val files = imports.map(imp => Vector(rootDir, filePath, imp + ".tchdl").mkString("/")) :+ builtin
     val trees = files.map(parse)
     trees.foreach(Namer.exec)
-    trees.foreach(NamerPost.verifyImport)
+    trees.foreach(NamerPost.exec)
 
     assert(Reporter.errorCounts == 0, Reporter.errors.map(_.toString).mkString("\n"))
 
@@ -32,6 +33,32 @@ class NamerPostTest extends AnyFunSuite {
           case LookupResult.LookupSuccess(_) =>
         }
       }
+    }
+  }
+
+  test("verify all builtin types imported in collect") {
+    val builtin = Vector(rootDir, builtinPath, "types.tchdl").mkString("/")
+    val filename = Vector(rootDir, filePath, "prelude.tchdl").mkString("/")
+    val trees = Vector(filename, builtin).map(parse)
+    trees.foreach(Namer.exec)
+    trees.foreach(NamerPost.exec)
+
+    val Right(pkg) = Symbol.RootPackageSymbol.search(Vector("prelude"))
+    val ctx = pkg.lookupCtx(filename).get
+
+    val builtinNames = Vector(
+      "Int",
+      "Bit",
+      "Unit",
+      "String",
+      "Num",
+      "Str"
+    )
+
+    val results = builtinNames.map(ctx.lookup[Symbol.TypeSymbol](_))
+    results.foreach {
+      case LookupResult.LookupSuccess(_) =>
+      case LookupResult.LookupFailure(err) => fail(err.toString)
     }
   }
 }

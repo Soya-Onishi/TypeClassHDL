@@ -14,7 +14,7 @@ class ImplVerifierTest extends AnyFunSuite {
     trees.foreach(Namer.exec)
     if(Reporter.errorCounts > 0) fail(Reporter.errors.mkString("\n"))
 
-    trees.foreach(NamerPost.verifyImport)
+    trees.foreach(NamerPost.exec)
     if(Reporter.errorCounts > 0) fail(Reporter.errors.mkString("\n"))
 
     trees.foreach(ImplVerifier.exec)
@@ -24,7 +24,8 @@ class ImplVerifierTest extends AnyFunSuite {
 
   test("verify most simple conflict") {
     val impl0 = Vector(rootDir, filePath, "impl0.tchdl").mkString("/")
-    val trees = untilImplVerify(impl0)
+    val filenames = impl0 +: builtInFiles
+    val trees = untilImplVerify(filenames: _*)
 
     if(Reporter.errorCounts > 0) fail(Reporter.errors.mkString("\n"))
     val cu = trees.head
@@ -39,5 +40,13 @@ class ImplVerifierTest extends AnyFunSuite {
     val implForST1 = impls.find(_.targetType.origin.name == "ST1")
     assert(implForST0.isDefined)
     assert(implForST1.isDefined)
+  }
+
+  test("verify conflict hardware parameter") {
+    val filename = Vector(rootDir, filePath, "impl1.tchdl").mkString("/")
+    val filenames = filename +: builtInFiles
+    val trees = untilImplVerify(filenames: _*)
+
+    if(Reporter.errorCounts > 0) fail(Reporter.errors.map(_.debugString).mkString("\n\n"))
   }
 }

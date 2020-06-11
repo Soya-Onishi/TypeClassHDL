@@ -1,0 +1,9 @@
+package test
+
+struct ST[m: Num] {}
+interface I {}
+
+impl[m: Num] I for ST[m]  where m: min 1 {}
+impl I for ST[0] {}
+
+
