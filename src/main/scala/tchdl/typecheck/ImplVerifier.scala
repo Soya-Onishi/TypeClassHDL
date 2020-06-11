@@ -69,7 +69,7 @@ object ImplVerifier {
 
     errs match {
       case Vector() =>
-        definition.symbol.asClassTypeSymbol.setBound(bounds)
+        definition.symbol.asTypeSymbol.setBound(bounds)
       case errs =>
         errs.foreach(Reporter.appendError)
     }

@@ -1,0 +1,16 @@
+package test
+
+struct ST0 {}
+struct ST1 {}
+
+interface I0 {
+  def f() -> Unit
+}
+
+impl I0 for ST0 {
+  def f() -> Unit {}
+}
+
+impl I0 for ST1 {
+  def f() -> Unit {}
+}
