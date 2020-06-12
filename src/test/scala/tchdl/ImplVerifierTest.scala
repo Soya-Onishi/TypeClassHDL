@@ -110,4 +110,31 @@ class ImplVerifierTest extends AnyFunSuite {
     assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
   }
 
+  test("verify complicated conflict0") {
+    val global = new GlobalData
+    val filename = buildName(rootDir, filePath, "impl7.tchdl")
+    val filenames = filename +: builtInFiles
+    val trees = untilImplVerify(filenames: _*)(global)
+
+    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+  }
+
+  test("complicated conflict verification. This does not cause error") {
+    val global = new GlobalData
+    val filename = buildName(rootDir, filePath, "impl8.tchdl")
+    val filenames = filename +: builtInFiles
+    val trees = untilImplVerify(filenames: _*)(global)
+
+    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+  }
+
+  test("complicated conflict verification. This cause error because of implementation of I0 for ST[T]") {
+    val global = new GlobalData
+    val filename = buildName(rootDir, filePath, "impl9.tchdl")
+    val filenames = filename +: builtInFiles
+    val trees = untilImplVerify(filenames: _*)(global)
+
+    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+  }
+
 }

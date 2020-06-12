@@ -1,0 +1,7 @@
+package test
+
+struct ST[T] {}
+interface I[T] {}
+
+impl[T] I[ST[T]] for ST[T] {}
+impl[T] I[T] for ST[ST[T]] {}

@@ -1271,6 +1271,19 @@ object Type {
         this =:= other && isSameHP
     }
 
+    override def toString: String = {
+      val name = this.origin.name
+      val hps = this.hardwareParam.map(_.toString).mkString(", ")
+      val tps = this.typeParam.map(_.toString).mkString(", ")
+      val params =
+        if (this.typeParam.isEmpty && this.hardwareParam.isEmpty) ""
+        else if(this.hardwareParam.isEmpty) s"[$tps]"
+        else if (this.typeParam.isEmpty) s"[$hps]"
+        else s"[$hps, $tps]"
+
+      s"$name$params"
+    }
+
     /*
     def isOverlapped(
       that: Type.RefType,
@@ -1788,7 +1801,7 @@ object Type {
               if(validHPs && validTPs) Right(())
               else Left(Error.TypeMissmatch(target, caller))
             }
-          case (_: Symbol.EntityTypeSymbol, _: Symbol.TypeParamSymbol) => Right(())
+          case (_, _: Symbol.TypeParamSymbol) => Right(())
           case (_: Symbol.TypeParamSymbol, _) => Left(Error.TypeMissmatch(target, caller))
         }
       }

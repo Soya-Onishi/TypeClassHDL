@@ -99,7 +99,10 @@ trait HasParams {
 }
 
 object Symbol {
-  abstract class TypeSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags) with HasParams
+  abstract class TypeSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags) with HasParams {
+    override def toString: String = path.name.get
+  }
+
   abstract class EntityTypeSymbol(tpe: Type, flags: Modifier) extends TypeSymbol(tpe, flags) with HasImpls
   abstract class ClassTypeSymbol(tpe: Type, flags: Modifier) extends EntityTypeSymbol(tpe, flags) {
     override type ImplType = ImplementClassContainer

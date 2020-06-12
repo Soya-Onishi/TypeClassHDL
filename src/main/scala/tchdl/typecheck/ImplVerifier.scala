@@ -417,6 +417,7 @@ object ImplementInterfaceContainer {
             }
           }
         case (_: Symbol.TypeParamSymbol, _: Symbol.EntityTypeSymbol) => Some(table)
+        case (tp0: Symbol.TypeParamSymbol, tp1: Symbol.TypeParamSymbol) if tp0 == tp1 => Some(table)
         case (_, e1: Symbol.TypeParamSymbol) => table.get(e1) match {
           // if already assigned, these pair will not be conflict
           // like impl[T] Tr[T] for T and impl Tr[u32] for u64
@@ -453,7 +454,7 @@ object ImplementInterfaceContainer {
             val verified = table.collect { case (tp, tpe) if tpe.origin.isEntityTypeSymbol => tp -> tpe }
             val verifiedBounds = verified.toVector.map {
               case (tp, tpe) =>
-                val bounds = combinedTPBounds.find(_.target.origin == tp).get.bounds
+                val bounds = combinedTPBounds.find(_.target.origin == tp).map(_.bounds).getOrElse(Vector.empty)
                 val swappedBounds = bounds.map(_.replaceWithMap(Map.empty, verified))
 
                 TPBound(tpe, swappedBounds)
@@ -505,13 +506,19 @@ object ImplementInterfaceContainer {
 
         def isSameForm: Boolean = {
           def verifySameForm(tpe0: Type.RefType, tpe1: Type.RefType): Boolean = {
+            def isRefTpeContainSecificTP(tpe: Type.RefType, tp: Symbol.TypeParamSymbol): Boolean = tpe.origin match {
+              case referred: Symbol.TypeParamSymbol => referred == tp
+              case _: Symbol.EntityTypeSymbol => tpe.typeParam.exists(isRefTpeContainSecificTP(_, tp))
+            }
+
             (tpe0.origin, tpe1.origin) match {
               case (e0: Symbol.EntityTypeSymbol, e1: Symbol.EntityTypeSymbol) =>
                 e0 == e1 && (tpe0.typeParam zip tpe1.typeParam).forall {
                   case (t0, t1) => verifySameForm(t0, t1)
                 }
               case (_: Symbol.TypeParamSymbol, _: Symbol.TypeParamSymbol) => true
-              case _ => throw new ImplementationErrorException("this case should not be reached")
+              case (tp: Symbol.TypeParamSymbol, _: Symbol.EntityTypeSymbol) => !isRefTpeContainSecificTP(tpe1, tp)
+              case (_: Symbol.EntityTypeSymbol, tp: Symbol.TypeParamSymbol) => !isRefTpeContainSecificTP(tpe0, tp)
             }
           }
 
