@@ -157,10 +157,8 @@ class ParseTest extends AnyFunSuite {
   }
 
   test("parse builtin types") {
-    val filename = "src/test/builtin/types.tchdl"
-    val root = Paths.get(".").toAbsolutePath.normalize().toString
-    val path = Seq(root, filename).mkString("/")
+    val filename = buildName(rootDir, builtinPath, "types.tchdl")
 
-    parseFile(_.compilation_unit)((gen, tree) => gen(tree, path))(path)
+    parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
   }
 }

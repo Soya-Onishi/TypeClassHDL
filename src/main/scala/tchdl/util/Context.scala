@@ -12,10 +12,10 @@ abstract class Context {
   val scope: Scope = new Scope
   def path: NameSpace
 
-  def append(symbol: Symbol): Either[Error, Unit]
-  def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T]
+  def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit]
+  def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T]
 
-  def reAppend(syms: Symbol*): Either[Error, Unit] = {
+  def reAppend(syms: Symbol*)(implicit global: GlobalData): Either[Error, Unit] = {
     syms.map(append).find(_.isLeft) match {
       case Some(left) => left
       case None => Right(())
@@ -56,7 +56,7 @@ object Context {
   class RootContext(pkgName: Vector[String]) extends Context {
     override val path: NameSpace = NameSpace(pkgName, Vector.empty, None)
 
-    override def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
+    override def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
       case Some(elem: T) => LookupResult.LookupSuccess(elem)
       case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
       case None => importedSymbols.lookup(name) match {
@@ -66,16 +66,16 @@ object Context {
           case Some(elem: T) => LookupResult.LookupSuccess(elem)
           case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
           case None =>
-            RootPackageSymbol.search(pkgName)
+            global.rootPackage.search(pkgName)
               .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
               .lookup(name)
         }
       }
     }
 
-    override def append(symbol: Symbol): Either[Error, Unit] = {
+    override def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit] = {
       val intoScope = this.scope.append(symbol)
-      val intoPackage = RootPackageSymbol.search(pkgName)
+      val intoPackage = global.rootPackage.search(pkgName)
         .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
         .append(symbol)
 
@@ -117,8 +117,8 @@ object Context {
       }
     }
 
-    def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
-    def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
+    def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit] = scope.append(symbol)
+    def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
       case Some(elem: T) => LookupResult.LookupSuccess(elem)
       case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
       case None => parent.lookup(name)

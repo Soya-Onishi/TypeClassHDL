@@ -1,15 +1,17 @@
 package tchdl
 
+import org.scalatest.ParallelTestExecution
 import tchdl.ast._
 import tchdl.typecheck.Namer
 import tchdl.util._
-
 import org.scalatest.funsuite.AnyFunSuite
 
 class NamerTest extends AnyFunSuite {
   def parser(filename: String): AST = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
 
   test("named builtin") {
+    implicit val global: GlobalData = new GlobalData
+
     def lookupStruct(name: String, ctx: Context): Unit = {
       ctx.lookup[Symbol](name) match {
         case LookupResult.LookupFailure(err) => fail(s"lookup failed: err is [$err]")
@@ -24,7 +26,7 @@ class NamerTest extends AnyFunSuite {
     val tree = parser(builtinTypes).asInstanceOf[CompilationUnit]
     Namer.exec(tree)
 
-    val pkg = Symbol.RootPackageSymbol.search(Vector("std", "types")) match {
+    val pkg = global.rootPackage.search(Vector("std", "types")) match {
       case Left(name) => fail(s"$name does not here")
       case Right(pkg) => pkg
     }

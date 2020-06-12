@@ -2,21 +2,21 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Context, Error, HPBound, LookupResult, Reporter, Symbol, TPBound, Type}
+import tchdl.util._
 
 object Typer {
-  def exec(cu: CompilationUnit): CompilationUnit = {
-    val ctx = Symbol.RootPackageSymbol.search(cu.pkgName)
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
+    val ctx = global.rootPackage.search(cu.pkgName)
       .getOrElse(throw new ImplementationErrorException(s"${cu.pkgName} should be there"))
       .lookupCtx(cu.filename.get)
       .getOrElse(throw new ImplementationErrorException(s"${cu.filename.get}'s context should be there'"))
 
-    val topDefs = cu.topDefs.map(typedTopLevelDefinition(_)(ctx))
+    val topDefs = cu.topDefs.map(typedTopLevelDefinition(_)(ctx, global))
 
     CompilationUnit(cu.filename, cu.pkgName, cu.imports, topDefs)
   }
 
-  def typedTopLevelDefinition(ast: Definition)(implicit ctx: Context.RootContext): Definition = ast match {
+  def typedTopLevelDefinition(ast: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition = ast match {
     case module: ModuleDef => typedModuleDef(module)
     case struct: StructDef => typedStructDef(struct)
     case implClass: ImplementClass => typedImplementClass(implClass)
@@ -26,7 +26,7 @@ object Typer {
       throw new ImplementationErrorException(msg)
   }
 
-  def typedDefinition(ast: Definition)(implicit ctx: Context.NodeContext): Definition = ast match {
+  def typedDefinition(ast: Definition)(implicit ctx: Context.NodeContext, global: GlobalData): Definition = ast match {
     case typeDef: TypeDef => typedTypeDef(typeDef)
     case valDef: ValDef => typedValDef(valDef)
     case state: StateDef => typedStateDef(state)
@@ -38,17 +38,17 @@ object Typer {
       throw new ImplementationErrorException(msg)
   }
 
-  def typedModuleDef(module: ModuleDef)(implicit ctx: Context.RootContext): ModuleDef = {
+  def typedModuleDef(module: ModuleDef)(implicit ctx: Context.RootContext, global: GlobalData): ModuleDef = {
     module.symbol.tpe
 
     val interfaceCtx = Context(ctx, module.symbol)
     interfaceCtx.reAppend(module.hp.map(_.symbol) ++ module.tp.map(_.symbol): _*)
 
-    val typedHp = module.hp.map(typedValDef(_)(interfaceCtx))
-    val typedTp = module.tp.map(typedTypeDef(_)(interfaceCtx))
+    val typedHp = module.hp.map(typedValDef(_)(interfaceCtx, global))
+    val typedTp = module.tp.map(typedTypeDef(_)(interfaceCtx, global))
 
-    val typedParents = module.parents.map(typedValDef(_)(interfaceCtx))
-    val typedSiblings = module.siblings.map(typedValDef(_)(interfaceCtx))
+    val typedParents = module.parents.map(typedValDef(_)(interfaceCtx, global))
+    val typedSiblings = module.siblings.map(typedValDef(_)(interfaceCtx, global))
 
     val typedModule = module.copy(
       module.name,
@@ -61,11 +61,11 @@ object Typer {
       .setSymbol(module.symbol)
       .setID(module.id)
 
-    TypedCache.setTree(typedModule)
+    global.cache.set(typedModule)
     typedModule
   }
 
-  def typedStructDef(struct: StructDef)(implicit ctx: Context): StructDef = {
+  def typedStructDef(struct: StructDef)(implicit ctx: Context, global: GlobalData): StructDef = {
     struct.symbol.tpe
 
     val signatureCtx = Context(ctx, struct.symbol)
@@ -74,12 +74,12 @@ object Typer {
         struct.tp.map(_.symbol): _*
     )
 
-    val typedHp = struct.hp.map(typedValDef(_)(signatureCtx))
-    val typedTp = struct.tp.map(typedTypeDef(_)(signatureCtx))
+    val typedHp = struct.hp.map(typedValDef(_)(signatureCtx, global))
+    val typedTp = struct.tp.map(typedTypeDef(_)(signatureCtx, global))
 
     val fieldCtx = Context(signatureCtx)
     fieldCtx.reAppend(struct.fields.map(_.symbol): _*)
-    val typedFields = struct.fields.map(typedValDef(_)(fieldCtx))
+    val typedFields = struct.fields.map(typedValDef(_)(fieldCtx, global))
 
     val typedStruct = struct.copy(
       struct.name,
@@ -91,11 +91,11 @@ object Typer {
       .setSymbol(struct.symbol)
       .setID(struct.id)
 
-    TypedCache.setTree(typedStruct)
+    global.cache.set(typedStruct)
     typedStruct
   }
 
-  def typedImplementClass(impl: ImplementClass)(implicit ctx: Context.RootContext): ImplementClass = {
+  def typedImplementClass(impl: ImplementClass)(implicit ctx: Context.RootContext, global: GlobalData): ImplementClass = {
     val signatureCtx = Context(ctx, impl.symbol)
 
     signatureCtx.reAppend(
@@ -103,10 +103,10 @@ object Typer {
       impl.tp.map(_.symbol) :_*
     )
 
-    val typedHp = impl.hp.map(typedValDef(_)(signatureCtx))
-    val typedTp = impl.tp.map(typedTypeDef(_)(signatureCtx))
+    val typedHp = impl.hp.map(typedValDef(_)(signatureCtx, global))
+    val typedTp = impl.tp.map(typedTypeDef(_)(signatureCtx, global))
 
-    val typedTarget = typedTypeTree(impl.target)(signatureCtx)
+    val typedTarget = typedTypeTree(impl.target)(signatureCtx, global)
     typedTarget.tpe match {
       case Type.ErrorType => impl
       case targetTpe: Type.RefType =>
@@ -116,8 +116,8 @@ object Typer {
           impl.stages.map(_.symbol): _*
         )
 
-        val typedMethods = impl.methods.map(typedMethodDef(_)(implCtx))
-        val typedStages = impl.stages.map(typedStageDef(_)(implCtx))
+        val typedMethods = impl.methods.map(typedMethodDef(_)(implCtx, global))
+        val typedStages = impl.stages.map(typedStageDef(_)(implCtx, global))
 
         val typedImpl = impl.copy(
           typedTarget,
@@ -130,23 +130,23 @@ object Typer {
           .setSymbol(impl.symbol)
           .setID(impl.id)
 
-        TypedCache.setTree(typedImpl)
+        global.cache.set(typedImpl)
         typedImpl
     }
   }
 
-  def typedImplementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext): ImplementInterface = {
+  def typedImplementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): ImplementInterface = {
     val signatureCtx = Context(ctx, impl.symbol)
     signatureCtx.reAppend(
       impl.hp.map(_.symbol) ++
       impl.tp.map(_.symbol): _*
     )
 
-    val typedHp = impl.hp.map(Typer.typedValDef(_)(signatureCtx))
-    val typedTp = impl.tp.map(Typer.typedTypeDef(_)(signatureCtx))
+    val typedHp = impl.hp.map(Typer.typedValDef(_)(signatureCtx, global))
+    val typedTp = impl.tp.map(Typer.typedTypeDef(_)(signatureCtx, global))
 
-    val typedInterface = typedTypeTree(impl.interface)(signatureCtx)
-    val typedTarget = typedTypeTree(impl.target)(signatureCtx)
+    val typedInterface = typedTypeTree(impl.interface)(signatureCtx, global)
+    val typedTarget = typedTypeTree(impl.target)(signatureCtx, global)
 
     typedTarget.tpe match {
       case Type.ErrorType => impl
@@ -154,7 +154,7 @@ object Typer {
         val implCtx = Context(signatureCtx, targetTpe)
         implCtx.reAppend(impl.methods.map(_.symbol): _*)
 
-        val typedMethods = impl.methods.map(Typer.typedMethodDef(_)(implCtx))
+        val typedMethods = impl.methods.map(Typer.typedMethodDef(_)(implCtx, global))
 
         val typedImpl = impl.copy(
           typedInterface,
@@ -167,15 +167,15 @@ object Typer {
           .setSymbol(impl.symbol)
           .setID(impl.id)
 
-        TypedCache.setTree(typedImpl)
+        global.cache.set(typedImpl)
 
         typedImpl
     }
   }
 
-  def typedAlwaysDef(always: AlwaysDef)(implicit ctx: Context.NodeContext): AlwaysDef = {
+  def typedAlwaysDef(always: AlwaysDef)(implicit ctx: Context.NodeContext, global: GlobalData): AlwaysDef = {
     val alwaysCtx = Context(ctx, always.symbol)
-    val typedBlk = typedBlock(always.blk)(alwaysCtx)
+    val typedBlk = typedBlock(always.blk)(alwaysCtx, global)
 
     val typedAlways = always.copy(
       always.name,
@@ -184,11 +184,11 @@ object Typer {
       .setSymbol(always.symbol)
       .setID(always.id)
 
-    TypedCache.setTree(typedAlways)
+    global.cache.set(typedAlways)
     typedAlways
   }
 
-  def typedMethodDef(method: MethodDef)(implicit ctx: Context.NodeContext): MethodDef = {
+  def typedMethodDef(method: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
     method.symbol.tpe
 
     val signatureCtx = Context(ctx, method.symbol)
@@ -198,13 +198,13 @@ object Typer {
       method.params.map(_.symbol): _*
     )
 
-    val typedHp = method.hp.map(typedValDef(_)(signatureCtx))
-    val typedTp = method.tp.map(typedTypeDef(_)(signatureCtx))
-    val typedParams = method.params.map(typedValDef(_)(signatureCtx))
-    val typedRetTpe = typedTypeTree(method.retTpe)(signatureCtx)
-    val typedBlk = method.blk.map(typedBlock(_)(signatureCtx))
+    val typedHp = method.hp.map(typedValDef(_)(signatureCtx, global))
+    val typedTp = method.tp.map(typedTypeDef(_)(signatureCtx, global))
+    val typedParams = method.params.map(typedValDef(_)(signatureCtx, global))
+    val typedRetTpe = typedTypeTree(method.retTpe)(signatureCtx, global)
+    val typedBlk = method.blk.map(typedBlock(_)(signatureCtx, global))
 
-    typedBlk.foreach(TypedCache.setTree)
+    typedBlk.foreach(global.cache.set)
 
     val typedMethod = method.copy(
       method.name,
@@ -218,14 +218,14 @@ object Typer {
       .setSymbol(method.symbol)
       .setID(method.id)
 
-    TypedCache.setTree(typedMethod)
+    global.cache.set(typedMethod)
     typedMethod
   }
 
-  def typedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext): ValDef = {
+  def typedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
     vdef.symbol.tpe
 
-    val typedTpeTree = vdef.tpeTree.map(typedTypeTree(_)(ctx))
+    val typedTpeTree = vdef.tpeTree.map(typedTypeTree)
     val typedExp = vdef.expr.map(typedExpr)
 
     val typedValDef = vdef.copy(
@@ -237,30 +237,30 @@ object Typer {
       .setSymbol(vdef.symbol)
       .setID(vdef.id)
 
-    typedExp.foreach(TypedCache.setTree)
-    TypedCache.setTree(typedValDef)
+    typedExp.foreach(global.cache.set)
+    global.cache.set(typedValDef)
     typedValDef
   }
 
-  def typedStageDef(stage: StageDef)(implicit ctx: Context.NodeContext): StageDef = {
+  def typedStageDef(stage: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): StageDef = {
     stage.symbol.tpe
 
     val signatureCtx = Context(ctx, stage.symbol)
     ctx.reAppend(stage.params.map(_.symbol): _*)
 
-    val typedParams = stage.params.map(typedValDef(_)(signatureCtx))
-    val typedRetTpe = typedTypeTree(stage.retTpe)(signatureCtx)
+    val typedParams = stage.params.map(typedValDef(_)(signatureCtx, global))
+    val typedRetTpe = typedTypeTree(stage.retTpe)(signatureCtx, global)
 
     val blkCtx = Context.blk(signatureCtx)
-    stage.blk.map(Namer.nodeLevelNamed(_, blkCtx))
-    stage.states.map(Namer.nodeLevelNamed(_, blkCtx))
+    stage.blk.map(Namer.nodeLevelNamed(_)(blkCtx, global))
+    stage.states.map(Namer.nodeLevelNamed(_)(blkCtx, global))
 
     val typedBlkElems = stage.blk.map {
-      case vdef: ValDef => typedValDef(vdef)(blkCtx)
-      case expr: Expression => typedExpr(expr)(blkCtx)
+      case vdef: ValDef => typedValDef(vdef)(blkCtx, global)
+      case expr: Expression => typedExpr(expr)(blkCtx, global)
     }
 
-    val typedStates = stage.states.map(typedStateDef(_)(blkCtx))
+    val typedStates = stage.states.map(typedStateDef(_)(blkCtx, global))
 
     val typedStage = stage.copy(
       stage.name,
@@ -272,23 +272,23 @@ object Typer {
       .setSymbol(stage.symbol)
       .setID(stage.id)
 
-    TypedCache.setTree(typedStage)
+    global.cache.set(typedStage)
     typedStage
   }
 
-  def typedStateDef(state: StateDef)(implicit ctx: Context.NodeContext): StateDef = {
+  def typedStateDef(state: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): StateDef = {
     val stateCtx = Context(ctx, state.symbol)
-    val typedBlk = typedBlock(state.blk)(stateCtx)
+    val typedBlk = typedBlock(state.blk)(stateCtx, global)
 
     val typedState = state.copy(state.name, typedBlk)
       .setSymbol(state.symbol)
       .setID(state.id)
 
-    TypedCache.setTree(typedState)
+    global.cache.set(typedState)
     typedState
   }
 
-  def typedTypeDef(tpeDef: TypeDef)(implicit ctx: Context.NodeContext): TypeDef = {
+  def typedTypeDef(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
     Namer.nodeLevelNamed(tpeDef, ctx)
 
     tpeDef.symbol.tpe
@@ -297,11 +297,11 @@ object Typer {
       .setSymbol(tpeDef.symbol)
       .setID(tpeDef.id)
 
-    TypedCache.setTree(typedTpeDef)
+    global.cache.set(typedTpeDef)
     typedTpeDef
   }
 
-  def typedExpr(expr: Expression)(implicit ctx: Context.NodeContext): Expression =
+  def typedExpr(expr: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Expression =
     expr match {
       case ident: Ident => typedExprIdent(ident)
       case select: Select => typedExprSelect(select)
@@ -328,17 +328,17 @@ object Typer {
       case select: StaticSelect => throw new ImplementationErrorException("StaticSelect must not appear here")
     }
 
-  def typedExprIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
+  def typedExprIdent(ident: Ident)(implicit ctx: Context.NodeContext, global: GlobalData): Ident = {
     ctx.lookup[Symbol.TermSymbol](ident.name) match {
       case LookupResult.LookupFailure(err) =>
-        Reporter.appendError(err)
+        global.repo.error.append(err)
         ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
       case LookupResult.LookupSuccess(symbol) =>
         ident.setTpe(symbol.tpe.asRefType).setSymbol(symbol)
     }
   }
 
-  def typedExprApply(apply: Apply)(implicit ctx: Context.NodeContext): Apply = {
+  def typedExprApply(apply: Apply)(implicit ctx: Context.NodeContext, global: GlobalData): Apply = {
     val typedArgs = apply.args.map(typedExpr)
     val typedHps = apply.hps.map(typedHPExpr)
     val typedTps = apply.tps.map(typedTypeTree)
@@ -363,7 +363,7 @@ object Typer {
       val returnTpe = method match {
         case LookupResult.LookupSuccess((_, tpe)) => tpe.returnType
         case LookupResult.LookupFailure(err) =>
-          Reporter.appendError(err)
+          global.repo.error.append(err)
           Type.ErrorType
       }
 
@@ -694,7 +694,7 @@ object Typer {
   }
   */
 
-  def typedExprSelect(select: Select)(implicit ctx: Context.NodeContext): Select = {
+  def typedExprSelect(select: Select)(implicit ctx: Context.NodeContext, global: GlobalData): Select = {
     val typedSuffix = typedExpr(select.expr)
     typedSuffix.tpe match {
       case refTpe: Type.RefType =>
@@ -702,7 +702,7 @@ object Typer {
         // That's why this method does not look up method.
         refTpe.lookupField(select.name) match {
           case LookupResult.LookupFailure(err) =>
-            Reporter.appendError(err)
+            global.repo.error.append(err)
             select.copy(typedSuffix, select.name)
               .setTpe(Type.ErrorType)
               .setSymbol(Symbol.ErrorSymbol)
@@ -745,7 +745,7 @@ object Typer {
     }
   }
 
-  def typedBinOp(binop: BinOp)(implicit ctx: Context.NodeContext): BinOp = {
+  def typedBinOp(binop: BinOp)(implicit ctx: Context.NodeContext, global: GlobalData): BinOp = {
     val typedLeft = typedExpr(binop.left)
     val typedRight = typedExpr(binop.right)
 
@@ -758,7 +758,7 @@ object Typer {
 
     result match {
       case LookupResult.LookupFailure(err) =>
-        Reporter.appendError(err)
+        global.repo.error.append(err)
         binop.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
       case LookupResult.LookupSuccess((methodSymbol, methodTpe)) =>
         binop.setSymbol(methodSymbol).setTpe(methodTpe.returnType)
@@ -766,30 +766,30 @@ object Typer {
   }
 
 
-  def typedBlock(blk: Block)(implicit ctx: Context.NodeContext): Block = {
+  def typedBlock(blk: Block)(implicit ctx: Context.NodeContext, global: GlobalData): Block = {
     val blkCtx = Context.blk(ctx)
 
     val typedElems = blk.elems.map {
-      case vdef: ValDef => typedValDef(vdef)(blkCtx)
-      case expr: Expression => typedExpr(expr)(blkCtx)
+      case vdef: ValDef => typedValDef(vdef)(blkCtx, global)
+      case expr: Expression => typedExpr(expr)(blkCtx, global)
     }
 
-    val typedLast = typedExpr(blk.last)(blkCtx)
+    val typedLast = typedExpr(blk.last)(blkCtx, global)
 
     Block(typedElems, typedLast).setTpe(typedLast.tpe).setID(blk.id)
   }
 
-  def typedSelf(self: Self)(implicit ctx: Context.NodeContext): Self = {
+  def typedSelf(self: Self)(implicit ctx: Context.NodeContext, global: GlobalData): Self = {
     ctx.self match {
       case None =>
-        Reporter.appendError(Error.UsingSelfOutsideClass)
+        global.repo.error.append(Error.UsingSelfOutsideClass)
         Self().setTpe(Type.ErrorType).setID(self.id)
       case Some(tpe) =>
         Self().setTpe(tpe).setID(self.id)
     }
   }
 
-  def typedIfExpr(ifexpr: IfExpr)(implicit ctx: Context.NodeContext): IfExpr = {
+  def typedIfExpr(ifexpr: IfExpr)(implicit ctx: Context.NodeContext, global: GlobalData): IfExpr = {
     val typedCond = typedExpr(ifexpr.cond)
     val typedConseq = typedExpr(ifexpr.conseq)
     val typedAlt = ifexpr.alt.map(typedExpr)
@@ -798,7 +798,7 @@ object Typer {
     def isBit1Tpe = typedCond.tpe != Type.bitTpe(IntLiteral(1))
     def isErrorTpe = typedCond.tpe.isErrorType
     if (!isBoolTpe && !isBit1Tpe && !isErrorTpe)
-      Reporter.appendError(Error.RequireBooleanType(typedCond.tpe))
+      global.repo.error.append(Error.RequireBooleanType(typedCond.tpe))
 
     typedAlt match {
       case None =>
@@ -809,7 +809,7 @@ object Typer {
           case (tpe, Type.ErrorType) => tpe
           case (altTpe, conseqTpe)  =>
             if(altTpe =!= conseqTpe)
-              Reporter.appendError(Error.TypeMissmatch(altTpe, conseqTpe))
+              global.repo.error.append(Error.TypeMissmatch(altTpe, conseqTpe))
 
             altTpe
         }
@@ -818,7 +818,7 @@ object Typer {
     }
   }
 
-  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext): TypeTree = {
+  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext, global: GlobalData): TypeTree = {
     val TypeTree(Ident(name), hps, tps) = typeTree
 
     def error(hps: Vector[HPExpr], tps: Vector[TypeTree]) =
@@ -868,7 +868,7 @@ object Typer {
 
     ctx.lookup[Symbol.TypeSymbol](name) match {
       case LookupResult.LookupFailure(err) =>
-        Reporter.appendError(err)
+        global.repo.error.append(err)
         error(hps, tps)
       case LookupResult.LookupSuccess(symbol) =>
         val typedHPs = hps.map(typedHPExpr)
@@ -881,7 +881,7 @@ object Typer {
 
         result match {
           case Left(err) =>
-            Reporter.appendError(err)
+            global.repo.error.append(err)
             error(typedHPs, typedTPs)
           case Right(()) =>
             TypeTree(Ident(name), typedHPs, typedTPs)
@@ -1119,46 +1119,42 @@ object Typer {
   }
    */
 
-  def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext): BitLiteral = {
-    val bitSymbol = Symbol.lookupBuiltin("Bit")
-    val intSymbol = Symbol.lookupBuiltin("Int")
-    val intTpe = Type.RefType(intSymbol, Vector.empty, Vector.empty)
-    val length = IntLiteral(bit.length).setTpe(intTpe)
-
-    val bitTpe = Type.RefType(bitSymbol, Vector(length), Vector.empty)
+  def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): BitLiteral = {
+    val length = IntLiteral(bit.length).setTpe(Type.numTpe)
+    val bitTpe = Type.bitTpe(length)
 
     bit.setTpe(bitTpe).setID(bit.id)
   }
 
-  def typedIntLiteral(int: IntLiteral)(implicit ctx: Context.NodeContext): IntLiteral = {
-    val intSymbol = Symbol.lookupBuiltin("Int")
+  def typedIntLiteral(int: IntLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): IntLiteral = {
+    val intSymbol = global.builtin.lookup("Int")
     val intTpe = Type.RefType(intSymbol)
 
     int.setTpe(intTpe).setID(int.id)
   }
 
-  def typedUnitLiteral(unit: UnitLiteral)(implicit ctx: Context.NodeContext): UnitLiteral = {
-    val unitSymbol = Symbol.lookupBuiltin("Unit")
+  def typedUnitLiteral(unit: UnitLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): UnitLiteral = {
+    val unitSymbol = global.builtin.lookup("Unit")
     val unitTpe = Type.RefType(unitSymbol)
 
     unit.setTpe(unitTpe).setID(unit.id)
   }
 
-  def typedStringLiteral(str: StringLiteral)(implicit ctx: Context.NodeContext): StringLiteral = {
-    val strSymbol = Symbol.lookupBuiltin("String")
+  def typedStringLiteral(str: StringLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): StringLiteral = {
+    val strSymbol = global.builtin.lookup("String")
     val strTpe = Type.RefType(strSymbol)
 
     str.setTpe(strTpe).setID(str.id)
   }
 
-  def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext): HPExpr = expr match {
+  def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): HPExpr = expr match {
     case ident: Ident => typedHPIdent(ident)
     case binop: HPBinOp => typedHPBinOp(binop)
     case literal: IntLiteral => typedHPIntLit(literal)
     case literal: StringLiteral => typedHPStrLit(literal)
   }
 
-  def typedHPIdent(ident: Ident)(implicit ctx: Context.NodeContext): Ident = {
+  def typedHPIdent(ident: Ident)(implicit ctx: Context.NodeContext, global: GlobalData): Ident = {
     def verifyType(symbol: Symbol): Either[Error, Unit] =
       if(symbol.tpe =:= Type.numTpe || symbol.tpe =:= Type.strTpe) Right(())
       else Left(Error.RequireSpecificType(
@@ -1172,14 +1168,14 @@ object Typer {
 
     symbol match {
       case Left(err) =>
-        Reporter.appendError(err)
+        global.repo.error.append(err)
         ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
       case Right(symbol) =>
         ident.setTpe(symbol.tpe).setSymbol(symbol)
     }
   }
 
-  def typedHPBinOp(binop: HPBinOp)(implicit ctx: Context.NodeContext): HPBinOp = {
+  def typedHPBinOp(binop: HPBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): HPBinOp = {
     val typedLeft  = typedHPExpr(binop.left)
     val typedRight = typedHPExpr(binop.right)
 
@@ -1187,76 +1183,76 @@ object Typer {
     val hasStrTpe = (typedLeft.tpe =:= Type.strTpe) || (typedRight.tpe =:= Type.strTpe)
     val tpe =
       if(isValid) Type.numTpe
-      else if(hasStrTpe) { Reporter.appendError(Error.SymbolNotFound("+")); Type.ErrorType }
+      else if(hasStrTpe) { global.repo.error.append(Error.SymbolNotFound("+")); Type.ErrorType }
       else Type.ErrorType
 
     HPBinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
   }
 
-  def typedHPIntLit(int: IntLiteral): IntLiteral = {
+  def typedHPIntLit(int: IntLiteral)(implicit global: GlobalData): IntLiteral = {
     int.setTpe(Type.numTpe)
   }
 
-  def typedHPStrLit(str: StringLiteral): StringLiteral = {
+  def typedHPStrLit(str: StringLiteral)(implicit global: GlobalData): StringLiteral = {
     str.setTpe(Type.strTpe)
   }
 
 
-  def typedFinish(finish: Finish)(implicit ctx: Context.NodeContext): Finish = {
+  def typedFinish(finish: Finish)(implicit ctx: Context.NodeContext, global: GlobalData): Finish = {
     ctx.owner match {
       case _: Symbol.StateSymbol =>
       case _: Symbol.StageSymbol =>
-      case _ => Reporter.appendError(Error.FinishOutsideStage)
+      case _ => global.repo.error.append(Error.FinishOutsideStage)
     }
 
     finish.setTpe(Type.unitTpe).setID(finish.id)
   }
 
-  def typedGoto(goto: Goto)(implicit ctx: Context.NodeContext): Goto = {
+  def typedGoto(goto: Goto)(implicit ctx: Context.NodeContext, global: GlobalData): Goto = {
     ctx.owner match {
       case _: Symbol.StateSymbol =>
         ctx.lookup[Symbol.StateSymbol](goto.target) match {
-          case LookupResult.LookupFailure(err) => Reporter.appendError(err)
+          case LookupResult.LookupFailure(err) => global.repo.error.append(err)
           case _ =>
         }
-      case _ => Reporter.appendError(Error.GotoOutsideState)
+      case _ => global.repo.error.append(Error.GotoOutsideState)
     }
 
     goto.setTpe(Type.unitTpe).setID(goto.id)
   }
 
-  def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext): Generate = {
+  def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext, global: GlobalData): Generate = {
     val tpe = ctx.lookup[Symbol.StageSymbol](generate.target) match {
       case LookupResult.LookupFailure(err) =>
-        Reporter.appendError(err)
+        global.repo.error.append(err)
         Type.ErrorType
       case LookupResult.LookupSuccess(symbol) =>
         val tpe = symbol.tpe.asMethodType
         val typedArgs = generate.params.map(typedExpr)
 
-        verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(Reporter.appendError)
+        verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(global.repo.error.append)
         tpe.returnType
     }
 
     generate.setTpe(tpe)
   }
 
-  def typedRelay(relay: Relay)(implicit ctx: Context.NodeContext): Relay = {
+  def typedRelay(relay: Relay)(implicit ctx: Context.NodeContext, global: GlobalData): Relay = {
     ctx.owner match {
       case _: Symbol.StageSymbol =>
       case _: Symbol.StateSymbol =>
-      case _ => Reporter.appendError(Error.RelayOutsideStage)
+      case _ => global.repo.error.append(Error.RelayOutsideStage)
     }
 
     val tpe = ctx.lookup[Symbol.StageSymbol](relay.target) match {
       case LookupResult.LookupFailure(err) =>
-        Reporter.appendError(err)
+        global.repo.error.append(err)
         Type.ErrorType
       case LookupResult.LookupSuccess(symbol) =>
         val tpe = symbol.tpe.asMethodType
         val typedArgs = relay.params.map(typedExpr)
 
-        verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(Reporter.appendError)
+        verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(global.repo.error.append)
 
         tpe.returnType
     }
@@ -1264,7 +1260,7 @@ object Typer {
     relay.setTpe(tpe)
   }
 
-  def verifyParamTypes(expect: Vector[Type], actual: Vector[Type])(implicit ctx: Context.NodeContext): Vector[Error] = {
+  def verifyParamTypes(expect: Vector[Type], actual: Vector[Type])(implicit ctx: Context.NodeContext, global: GlobalData): Vector[Error] = {
     if (expect.length != actual.length)
       return Vector(Error.ParameterLengthMismatch(expect.length, actual.length))
 
@@ -1274,7 +1270,7 @@ object Typer {
       .map { case (e, a) => Error.TypeMissmatch(e, a) }
   }
 
-  def verifyParamType(expect: Type, actual: Type)(implicit ctx: Context.NodeContext): Vector[Error] =
+  def verifyParamType(expect: Type, actual: Type)(implicit ctx: Context.NodeContext, global: GlobalData): Vector[Error] =
     verifyParamTypes(Vector(expect), Vector(actual))
 
   /*
@@ -1311,16 +1307,4 @@ object Typer {
     TypeTree(Ident(symbol.name), typedHps, typedTps).setTpe(treeTpe).setSymbol(treeSymbol)
   }
    */
-}
-
-object TypedCache {
-  import scala.collection.mutable
-
-  private val cache = mutable.Map[Int, AST]()
-
-  def setTree(tree: AST): Unit = {
-    cache(tree.id) = tree
-  }
-
-  def getTree(tree: AST): Option[AST] = cache.get(tree.id)
 }

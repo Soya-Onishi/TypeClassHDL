@@ -36,6 +36,7 @@ object Error {
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class RequireNumOrStr(actual: Type.RefType) extends Error
+  case class RequireNumTerm(tree: HPExpr, actual: Type.RefType) extends Error
   case object RequireType extends Error
   case object RequireTypeParameter extends Error
   case class RequireStructOrModuleSymbol(name: String) extends Error
@@ -77,27 +78,6 @@ object Error {
 
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
-}
-
-object Reporter {
-  private var _errors = Vector.empty[Error]
-
-  def appendError(err: Error): Unit = {
-    def flatten(errs: Seq[Error]): Vector[Error] = {
-      errs.toVector.flatMap {
-        case err: Error.MultipleErrors => flatten(err.errs)
-        case err => Vector(err)
-      }
-    }
-
-    err match {
-      case err: Error.MultipleErrors => this._errors = flatten(err.errs) ++ this._errors
-      case err => this._errors = err +: this._errors
-    }
-  }
-
-  def errors: Vector[Error] = _errors
-  def errorCounts: Int = _errors.length
 }
 
 

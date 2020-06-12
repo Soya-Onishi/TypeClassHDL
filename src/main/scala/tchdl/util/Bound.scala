@@ -23,11 +23,11 @@ object TPBound {
   def apply(target: Type.RefType, bounds: Vector[Type.RefType]): TPBound =
     new TPBound(target, bounds)
 
-  def buildTarget(target: TypeTree)(implicit ctx: Context.NodeContext): (Option[Error], TypeTree) =
-    Type.buildType[Symbol.TypeParamSymbol](target, ctx)
+  def buildTarget(target: TypeTree)(implicit ctx: Context.NodeContext, global: GlobalData): (Option[Error], TypeTree) =
+    Type.buildType[Symbol.TypeParamSymbol](target)
 
-  def buildBounds(bounds: Vector[TypeTree])(implicit ctx: Context.NodeContext): (Option[Error], Vector[TypeTree]) = {
-    val (errs, tpes) = bounds.map(Type.buildType[Symbol.InterfaceSymbol](_, ctx)).unzip
+  def buildBounds(bounds: Vector[TypeTree])(implicit ctx: Context.NodeContext, global: GlobalData): (Option[Error], Vector[TypeTree]) = {
+    val (errs, tpes) = bounds.map(Type.buildType[Symbol.InterfaceSymbol]).unzip
     val err = errs.flatten match {
       case Vector() => None
       case errs => Some(Error.MultipleErrors(errs: _*))

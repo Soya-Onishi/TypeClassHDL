@@ -11,6 +11,8 @@ class NamerPostTest extends AnyFunSuite {
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, file))(file).asInstanceOf[CompilationUnit]
 
   test("verify imports") {
+    implicit val global: GlobalData = new GlobalData
+
     val builtin = Vector(rootDir, builtinPath, "types.tchdl").mkString("/")
     val imports = Vector("import0", "import1")
     val files = imports.map(imp => Vector(rootDir, filePath, imp + ".tchdl").mkString("/")) :+ builtin
@@ -18,11 +20,11 @@ class NamerPostTest extends AnyFunSuite {
     trees.foreach(Namer.exec)
     trees.foreach(NamerPost.exec)
 
-    assert(Reporter.errorCounts == 0, Reporter.errors.map(_.toString).mkString("\n"))
+    assert(global.repo.error.counts == 0, global.repo.error.elems.map(_.toString).mkString("\n"))
 
     (imports zip files).foreach { case (imp, file) =>
       val importPath = Vector("test", imp)
-      val pkg = Symbol.RootPackageSymbol
+      val pkg = global.rootPackage
         .search(importPath)
         .getOrElse(fail(s"${importPath.mkString("::")} does not found"))
 
@@ -37,13 +39,14 @@ class NamerPostTest extends AnyFunSuite {
   }
 
   test("verify all builtin types imported in collect") {
+    implicit val global: GlobalData = new GlobalData
     val builtin = Vector(rootDir, builtinPath, "types.tchdl").mkString("/")
     val filename = Vector(rootDir, filePath, "prelude.tchdl").mkString("/")
     val trees = Vector(filename, builtin).map(parse)
     trees.foreach(Namer.exec)
     trees.foreach(NamerPost.exec)
 
-    val Right(pkg) = Symbol.RootPackageSymbol.search(Vector("prelude"))
+    val Right(pkg) = global.rootPackage.search(Vector("prelude"))
     val ctx = pkg.lookupCtx(filename).get
 
     val builtinNames = Vector(

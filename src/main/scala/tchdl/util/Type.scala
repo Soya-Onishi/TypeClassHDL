@@ -64,77 +64,81 @@ object Type {
       throw new ImplementationErrorException("method =:= should not be called in TypeGenerator")
   }
 
-  case class ModuleTypeGenerator(module: ModuleDef, ctx: Context.RootContext) extends TypeGenerator {
+  case class ModuleTypeGenerator(module: ModuleDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
       val fieldCtx = Context(ctx, module.symbol)
-      module.parents.map(Namer.namedValDef(_, fieldCtx))
-      module.siblings.map(Namer.namedValDef(_, fieldCtx))
+      module.parents.map(Namer.namedValDef(_)(fieldCtx, global))
+      module.siblings.map(Namer.namedValDef(_)(fieldCtx, global))
 
       Type.EntityType(module.name, ctx.path, fieldCtx.scope)
     }
   }
 
-  case class StructTypeGenerator(struct: StructDef, ctx: Context.RootContext) extends TypeGenerator {
+  case class StructTypeGenerator(struct: StructDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
       val fieldCtx = Context(ctx, struct.symbol)
-      struct.fields.map(Namer.nodeLevelNamed(_, fieldCtx))
+      struct.fields.map(Namer.nodeLevelNamed(_)(fieldCtx, global))
 
       EntityType(struct.name, ctx.path, fieldCtx.scope)
     }
   }
 
-  case class InterfaceTypeGenerator(interface: InterfaceDef, ctx: Context.RootContext) extends TypeGenerator {
+  case class InterfaceTypeGenerator(interface: InterfaceDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
       val interfaceCtx = Context(ctx, interface.symbol)
-      interface.methods.map(Namer.nodeLevelNamed(_, interfaceCtx))
+      interface.methods.map(Namer.nodeLevelNamed(_)(interfaceCtx, global))
 
       EntityType(interface.name, ctx.path, interfaceCtx.scope)
     }
   }
 
-  case class MethodTypeGenerator(method: MethodDef, ctx: Context.NodeContext) extends TypeGenerator {
+  case class MethodTypeGenerator(method: MethodDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.MethodType = {
       val signatureCtx = Context(ctx, method.symbol)
       signatureCtx.reAppend(
         method.symbol.asMethodSymbol.hps ++
         method.symbol.asMethodSymbol.tps: _*
-      )
+      )(global)
 
       val paramTpes = method.params
-        .map(Namer.nodeLevelNamed(_, signatureCtx))
-        .map(Typer.typedValDef(_)(signatureCtx))
+        .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
+        .map(Typer.typedValDef(_)(signatureCtx, global))
         .map(_.symbol.tpe.asRefType)
-      val retTpes = Typer.typedTypeTree(method.retTpe)(signatureCtx).tpe.asRefType
+      val retTpes = Typer.typedTypeTree(method.retTpe)(signatureCtx, global).tpe.asRefType
 
       MethodType(paramTpes, retTpes)
     }
   }
 
-  case class VariableTypeGenerator(vdef: ValDef, ctx: Context.NodeContext) extends TypeGenerator {
+  case class VariableTypeGenerator(vdef: ValDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
       val ValDef(_, _, tpeTree, expr) = vdef
 
       (tpeTree, expr) match {
         case (None, None) =>
-          Reporter.appendError(Error.RequireType)
+          global.repo.error.append(Error.RequireType)
           Type.ErrorType
         case (None, Some(expr)) =>
-          val typedExp = Typer.typedExpr(expr)(ctx)
+          val typedExp = Typer.typedExpr(expr)(ctx, global)
           typedExp.tpe
         case (Some(tpe), _) =>
-          val typedTpe = Typer.typedTypeTree(tpe)(ctx)
+          val typedTpe = Typer.typedTypeTree(tpe)(ctx, global)
           typedTpe.tpe
       }
     }
   }
 
-  case class HPTypeGenerator(vdef: ValDef, ctx: Context.NodeContext) extends TypeGenerator {
+  case class HPTypeGenerator(vdef: ValDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
       val ValDef(_, _, Some(typeTree), _) = vdef
-      val (err, ttree) = Type.buildType[Symbol.ClassTypeSymbol](typeTree, ctx)
+
+      implicit val tpeCtx: Context.NodeContext = ctx
+      implicit val tpeGlobal: GlobalData = global
+      val (err, ttree) = Type.buildType[Symbol.ClassTypeSymbol](typeTree)
+
       err match {
         case Some(err) =>
-          Reporter.appendError(err)
+          global.repo.error.append(err)
           Type.ErrorType
         case None =>
           val tpe = ttree.tpe.asRefType
@@ -145,22 +149,22 @@ object Type {
             case Vector("std", "types", "Num") => tpe
             case Vector("std", "types", "Str") => tpe
             case _ =>
-              Reporter.appendError(Error.RequireNumOrStr(tpe))
+              global.repo.error.append(Error.RequireNumOrStr(tpe))
               Type.ErrorType
           }
       }
     }
   }
 
-  case class StageTypeGenerator(stage: StageDef, ctx: Context.NodeContext) extends TypeGenerator {
+  case class StageTypeGenerator(stage: StageDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.MethodType = {
       val paramCtx = Context(ctx, stage.symbol)
       val typedParams = stage.params
-        .map(Namer.nodeLevelNamed(_, paramCtx))
-        .map(Typer.typedValDef(_)(paramCtx))
+        .map(Namer.nodeLevelNamed(_)(paramCtx, global))
+        .map(Typer.typedValDef(_)(paramCtx, global))
         .map(_.symbol.tpe.asRefType)
 
-      val typedTpe = Typer.typedTypeTree(stage.retTpe)(paramCtx)
+      val typedTpe = Typer.typedTypeTree(stage.retTpe)(paramCtx, global)
 
       MethodType(typedParams, typedTpe.tpe.asRefType)
     }
@@ -1967,41 +1971,41 @@ object Type {
     def =:=(other: Type): Boolean = other.isErrorType
   }
 
-  def unitTpe: Type.RefType = {
-    val symbol = Symbol.lookupBuiltin("Unit")
+  def unitTpe(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.lookup("Unit")
     Type.RefType(symbol)
   }
 
-  def boolTpe: Type.RefType = {
-    val symbol = Symbol.lookupBuiltin("Boolean")
+  def boolTpe(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.lookup("Boolean")
     Type.RefType(symbol)
   }
 
-  def bitTpe(width: IntLiteral): Type.RefType = {
-    val symbol = Symbol.lookupBuiltin("Bit")
+  def bitTpe(width: IntLiteral)(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.lookup("Bit")
     val IntLiteral(value) = width
 
     if(value > 0) Type.RefType(symbol, Vector(width), Vector.empty)
     else throw new ImplementationErrorException(s"Bit's width[${value}] must be natural number")
   }
 
-  def numTpe: Type.RefType = {
-    val symbol = Symbol.lookupBuiltin("Num")
+  def numTpe(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.lookup("Num")
     Type.RefType(symbol, Vector.empty, Vector.empty)
   }
 
-  def strTpe: Type.RefType = {
-    val symbol = Symbol.lookupBuiltin("Str")
+  def strTpe(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.lookup("Str")
     Type.RefType(symbol, Vector.empty, Vector.empty)
   }
 
-  def buildType[T <: Symbol.TypeSymbol : ClassTag : TypeTag](typeTree: TypeTree, ctx: Context.NodeContext): (Option[Error], TypeTree) = {
+  def buildType[T <: Symbol.TypeSymbol](typeTree: TypeTree)(implicit ctx: Context.NodeContext, global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): (Option[Error], TypeTree) = {
     val TypeTree(ident: Ident, hps, tps) = typeTree
 
     ctx.lookup[T](ident.name) match {
       case LookupResult.LookupFailure(err) => (Some(err), typeTree.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
       case LookupResult.LookupSuccess(symbol) =>
-        buildParams(hps, tps)(ctx) match {
+        buildParams(hps, tps) match {
           case Left(err) => (Some(err), typeTree.setSymbol(symbol).setTpe(Type.ErrorType))
           case Right((hps, tps)) =>
             val refTpe = Type.RefType(symbol, hps, tps.map(_.tpe.asRefType))
@@ -2010,7 +2014,7 @@ object Type {
     }
   }
 
-  private def buildHP(hp: HPExpr)(implicit ctx: Context.NodeContext): (Option[Error], HPExpr) = {
+  private def buildHP(hp: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): (Option[Error], HPExpr) = {
     hp match {
       case lit: IntLiteral => (None, lit.setTpe(Type.numTpe))
       case lit: StringLiteral => (None, lit.setTpe(Type.strTpe))
@@ -2036,9 +2040,9 @@ object Type {
     }
   }
 
-  private def buildParams(hps: Vector[HPExpr], tps: Vector[TypeTree])(implicit ctx: Context.NodeContext): Either[Error, (Vector[HPExpr], Vector[TypeTree])] = {
+  private def buildParams(hps: Vector[HPExpr], tps: Vector[TypeTree])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Vector[HPExpr], Vector[TypeTree])] = {
     val (hpErrs, builtHPs) = hps.map(buildHP).unzip
-    val (tpErrs, builtTPs) = tps.map(buildType[Symbol.TypeSymbol](_, ctx)).unzip
+    val (tpErrs, builtTPs) = tps.map(buildType[Symbol.TypeSymbol]).unzip
 
     val allErrs = hpErrs.flatten ++ tpErrs.flatten
 

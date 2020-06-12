@@ -1,5 +1,11 @@
 enablePlugins(Antlr4Plugin)
 
+Test / parallelExecution := false
+Test / testForkedParallel := false
+Global / concurrentRestrictions := Seq(
+  Tags.limit(Tags.Test, 1)
+)
+
 lazy val antlr4Settings = Seq(
   antlr4Version in Antlr4 := "4.7.2",
   antlr4GenVisitor in Antlr4 := true,
@@ -16,18 +22,15 @@ lazy val commonSettings = Seq(
   ),
   scalacOptions ++= Seq(
     "-Ymacro-annotations"
-  ),
-  parallelExecution in ThisBuild := false
+  )
 )
 
-
-lazy val root = (project in file("."))
+lazy val compiler = (project in file("."))
   .settings(
+    name := "compiler",
     commonSettings,
     antlr4Settings,
-    name := "root",
-  ).dependsOn(macros)
-
+  )
 
 lazy val macros = (project in file("macros"))
   .settings(

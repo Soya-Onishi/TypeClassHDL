@@ -72,6 +72,8 @@ trait IInt extends Ordered[IInt] {
   override def compare(that: IInt): Int = (this, that) match {
     case (IInt.PInf, _) => 1
     case (IInt.NInf, _) => -1
+    case (IInt.Integer(_), IInt.PInf) => -1
+    case (IInt.Integer(_), IInt.NInf) => 1
     case (IInt.Integer(v0), IInt.Integer(v1)) =>
       if(v0 == v1) 0
       else if(v0 < v1) -1

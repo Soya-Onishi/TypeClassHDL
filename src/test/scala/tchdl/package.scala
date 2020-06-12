@@ -30,4 +30,6 @@ package object tchdl {
     if(errors > 0) throw new AssertionError("parse error occured")
     else ast(new ASTGenerator, tree)
   }
+
+  def buildName(path: String*): String = path.mkString("/")
 }

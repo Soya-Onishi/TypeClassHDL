@@ -313,7 +313,7 @@ object Symbol {
       new PackageSymbol(NameSpace(Vector(name), Vector.empty, None))
   }
 
-  object RootPackageSymbol extends PackageSymbol(NameSpace.empty) {
+  class RootPackageSymbol extends PackageSymbol(NameSpace.empty) {
     override def lookupCtx(name: String): Option[Context.RootContext] = {
       val msg = "try to lookup context in RootPackageSymbol"
       throw new ImplementationErrorException(msg)
@@ -340,45 +340,6 @@ object Symbol {
     override val name: String = "<error>"
     override val path: NameSpace = NameSpace.empty
     override val visibility: Visibility = Visibility.Public
-  }
-
-  import scala.collection.mutable
-
-  // There is null. However, this null will never go to outside of this builtin table.
-  // because appendBuiltin and lookupBuiltin see whether Map's value is null or not, and
-  // if it is null, methods address that case.
-  private val builtin: mutable.Map[String, Symbol.TypeSymbol] = mutable.Map[String, Symbol.TypeSymbol](
-    "Int" -> null,
-    "String" -> null,
-    "Unit" -> null,
-    "Bit" -> null,
-    "Num" -> null,
-    "Str" -> null,
-  )
-
-  def builtInNames: Vector[String] = builtin.keys.toVector
-  def builtInSymbols: Vector[Symbol.TypeSymbol] = {
-    val symbols = builtin.values.toVector
-
-    if(symbols.contains(null)) throw new ImplementationErrorException("BuiltIn types are not registered completely")
-    else symbols
-  }
-
-
-  def appendBuiltin(symbol: Symbol.TypeSymbol): Unit = {
-    builtin.get(symbol.name) match {
-      case None => throw new ImplementationErrorException(s"${symbol.name} is not a builtin type")
-      case Some(null) => builtin(symbol.name) = symbol
-      case Some(_) => throw new ImplementationErrorException(s"${symbol.name} is already assigned")
-    }
-  }
-
-  def lookupBuiltin(name: String): Symbol.TypeSymbol = {
-    builtin.get(name) match {
-      case Some(null) => throw new ImplementationErrorException(s"$name is not assigned yet")
-      case Some(symbol) => symbol
-      case None => throw new ImplementationErrorException(s"$name is not builtin type")
-    }
   }
 }
 

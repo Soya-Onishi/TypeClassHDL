@@ -2,11 +2,11 @@ package tchdl.typecheck
 
 import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
-import tchdl.util.{Bound, Context, Error, HPBound, HPRange, HasImpls, Reporter, Scope, Symbol, TPBound, Type}
+import tchdl.util._
 
 import scala.annotation.tailrec
-import scala.reflect.ClassTag
-import scala.reflect.runtime.universe.TypeTag
+import scala.reflect.{ClassTag, classTag}
+import scala.reflect.runtime.universe.{TypeTag, typeTag}
 
 // TODO:
 //   Add logic to verify whether all type parameters are used at signature
@@ -20,8 +20,8 @@ object ImplVerifier {
     def symbol: Symbol
   }
 
-  def exec(cu: CompilationUnit) = {
-    val packageSymbol = cu.pkgName.foldLeft[Symbol.PackageSymbol](Symbol.RootPackageSymbol) {
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
+    val packageSymbol = cu.pkgName.foldLeft[Symbol.PackageSymbol](global.rootPackage) {
       case (pkg, name) =>
         val Right(child) = pkg.lookup[Symbol.PackageSymbol](name).toEither
         child
@@ -29,10 +29,10 @@ object ImplVerifier {
 
     val ctx = packageSymbol.lookupCtx(cu.filename.get).get
 
-    cu.topDefs.foreach(impls(_)(ctx))
+    cu.topDefs.foreach(impls(_)(ctx, global))
   }
 
-  def buildBounds(bound: BoundTree)(implicit ctx: Context.NodeContext): Either[Error, Bound] = {
+  def buildBounds(bound: BoundTree)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Bound] = {
     def buildTPBounds(bound: TPBoundTree): Either[Error, TPBound] = {
       val (targetErrs, target) = TPBound.buildTarget(bound.target)
       val (boundsErrs, bounds) = TPBound.buildBounds(bound.bounds)
@@ -42,11 +42,58 @@ object ImplVerifier {
       else Right(TPBound(TPBoundTree(target, bounds)))
     }
 
-    def buildHPBounds(bound: HPBoundTree): Either[Error, HPBound] =
-      HPBound.verifyForm(bound) match {
-        case Right(_) => Right(HPBound(bound))
-        case Left(err) => Left(err)
+    def buildHPBounds(bound: HPBoundTree): Either[Error, HPBound] = {
+      def build(expr: HPExpr): Either[Error, HPExpr] = expr match {
+        case HPBinOp(op, left, right) => (build(left), build(right)) match {
+          case (Right(l), Right(r)) => Right(HPBinOp(op, l, r).setTpe(Type.numTpe).setID(expr.id))
+          case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
+          case (Left(err), _) => Left(err)
+          case (_, Left(err)) => Left(err)
+        }
+        case ident @ Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
+          case LookupResult.LookupSuccess(symbol) => symbol.tpe match {
+            case Type.ErrorType => Right(ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
+            case tpe: Type.RefType =>
+              if(tpe == Type.numTpe) Right(ident.setSymbol(symbol).setTpe(Type.numTpe))
+              else Left(Error.RequireNumTerm(ident, tpe))
+          }
+          case LookupResult.LookupFailure(err) =>
+            ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
+            Left(err)
+        }
+        case lit: IntLiteral => Right(lit.setTpe(Type.numTpe))
+        case lit: StringLiteral =>  Left(Error.RequireNumTerm(lit, Type.strTpe))
       }
+
+      HPBound.verifyForm(bound) match {
+        case Left(err) => Left(err)
+        case Right(_) =>
+          val hpBound = HPBound(bound)
+          val target = build(hpBound.target)
+          val bounds = hpBound.bound match {
+            case HPRange.Range(eRange, cRange) =>
+              val (maxErr, max) = eRange.max.map(build).partitionMap(identity)
+              val (minErr, min) = eRange.min.map(build).partitionMap(identity)
+              val (neErr, ne) = eRange.ne.map(build).partitionMap(identity)
+              val errs = maxErr ++ minErr ++ neErr
+
+              if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+              else Right(HPRange.Range(HPRange.ExprRange(max, min, ne), cRange))
+            case HPRange.Eq(range: HPRange.ExprEqual) => build(range.expr) match {
+              case Right(expr) => Right(HPRange.Eq(HPRange.ExprEqual(expr)))
+              case Left(err) => Left(err)
+            }
+            case range @ HPRange.Eq(_: HPRange.ConstantEqual) => Right(range)
+          }
+
+          (target, bounds) match {
+            case (Right(t), Right(bs)) => Right(HPBound(t, bs))
+            case (Left(targetErr), Left(boundsErr)) => Left(Error.MultipleErrors(targetErr, boundsErr))
+            case (Left(err), _) => Left(err)
+            case (_, Left(err)) => Left(err)
+          }
+      }
+    }
 
     bound match {
       case bound: TPBoundTree => buildTPBounds(bound)
@@ -54,7 +101,7 @@ object ImplVerifier {
     }
   }
 
-  def setBoundsForTopDefinition(definition: TopLevelDefinition)(implicit ctx: Context.RootContext): Unit = {
+  def setBoundsForTopDefinition(definition: TopLevelDefinition)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
     definition.symbol.tpe // run Namer for hardwareParam, typeParam and components
 
     val signatureCtx = Context(ctx, definition.symbol)
@@ -64,35 +111,44 @@ object ImplVerifier {
     )
 
     val (errs, bounds) = definition.bounds
-      .map(buildBounds(_)(signatureCtx))
+      .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
     errs match {
-      case Vector() =>
-        definition.symbol.asTypeSymbol.setBound(bounds)
-      case errs =>
-        errs.foreach(Reporter.appendError)
+      case Vector() => definition.symbol.asTypeSymbol.setBound(bounds)
+      case errs => errs.foreach(global.repo.error.append)
     }
   }
 
-  def implementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext): Unit = {
-    val signatureCtx = Context(ctx, impl.symbol)
+  def implementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
+    val signatureCtx: Context.NodeContext = Context(ctx, impl.symbol)
     val implSymbol = impl.symbol.asImplementSymbol
 
     signatureCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
 
-    val (interfaceErr, interface) = Type.buildType[Symbol.InterfaceSymbol](impl.interface, signatureCtx)
-    val (targetErr, target) = Type.buildType[Symbol.ClassTypeSymbol](impl.target, signatureCtx)
+    val (interfaceErr, interface) = Type.buildType[Symbol.InterfaceSymbol](impl.interface)(
+      signatureCtx,
+      global,
+      classTag[Symbol.InterfaceSymbol],
+      typeTag[Symbol.InterfaceSymbol]
+    )
+
+    val (targetErr, target) = Type.buildType[Symbol.ClassTypeSymbol](impl.target)(
+      signatureCtx,
+      global,
+      classTag[Symbol.ClassTypeSymbol],
+      typeTag[Symbol.ClassTypeSymbol]
+    )
 
     val signatureErr = Vector(interfaceErr, targetErr).flatten
     val (errs, bounds) = impl.bounds
-      .map(buildBounds(_)(signatureCtx))
+      .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
     (errs ++ signatureErr) match {
       case Vector() =>
         val implContext = Context(signatureCtx, target.tpe.asRefType)
-        impl.methods.foreach(Namer.nodeLevelNamed(_, implContext))
+        impl.methods.foreach(Namer.nodeLevelNamed(_)(implContext, global))
 
         val interfaceTpe = interface.tpe.asRefType
         val targetTpe = target.tpe.asRefType
@@ -101,20 +157,26 @@ object ImplVerifier {
         val interfaceSymbol = interface.symbol.asInterfaceSymbol
         impl.symbol.asImplementSymbol.setBound(bounds)
         interfaceSymbol.appendImpl(impl, container)
-        SymbolBuffer.append(interfaceSymbol)
+        global.buffer.interface.append(interfaceSymbol)
       case errs =>
-        errs.foreach(Reporter.appendError)
+        errs.foreach(global.repo.error.append)
     }
   }
 
-  def implementClass(impl: ImplementClass)(implicit ctx: Context.RootContext): Unit = {
+  def implementClass(impl: ImplementClass)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
     val signatureCtx = Context(ctx, impl.symbol)
     val implSymbol = impl.symbol.asImplementSymbol
     signatureCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
 
-    val (signatureErr, target) = Type.buildType[Symbol.ClassTypeSymbol](impl.target, signatureCtx)
+    val (signatureErr, target) = Type.buildType[Symbol.ClassTypeSymbol](impl.target)(
+      signatureCtx,
+      global,
+      classTag[Symbol.ClassTypeSymbol],
+      typeTag[Symbol.ClassTypeSymbol],
+    )
+
     val (boundErrs, bounds) = impl.bounds
-      .map(buildBounds(_)(signatureCtx))
+      .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
     val errs = boundErrs ++ signatureErr.toVector
@@ -122,8 +184,8 @@ object ImplVerifier {
     errs match {
       case Vector() =>
         val implContext = Context(signatureCtx, target.tpe.asRefType)
-        impl.methods.foreach(Namer.nodeLevelNamed(_, implContext))
-        impl.stages.foreach(Namer.nodeLevelNamed(_, implContext))
+        impl.methods.foreach(Namer.nodeLevelNamed(_)(implContext, global))
+        impl.stages.foreach(Namer.nodeLevelNamed(_)(implContext, global))
 
         val container = ImplementClassContainer(impl, ctx, target.tpe.asRefType, implContext.scope)
 
@@ -131,13 +193,13 @@ object ImplVerifier {
         val implSymbol = impl.symbol.asImplementSymbol
         implSymbol.setBound(bounds)
         targetSymbol.appendImpl(impl, container)
-        SymbolBuffer.append(targetSymbol)
+        global.buffer.clazz.append(targetSymbol)
       case errs =>
-        errs.foreach(Reporter.appendError)
+        errs.foreach(global.repo.error.append)
     }
   }
 
-  def impls(defTree: Definition)(implicit ctx: Context.RootContext): Unit =
+  def impls(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Unit =
     defTree match {
       case module: ModuleDef => setBoundsForTopDefinition(module)
       case struct: StructDef => setBoundsForTopDefinition(struct)
@@ -146,42 +208,8 @@ object ImplVerifier {
       case impl: ImplementClass => implementClass(impl)
       case _ =>
     }
-}
 
-object SymbolBuffer {
-  import scala.collection.mutable
-
-  private val interfaces = mutable.HashSet[Symbol.InterfaceSymbol]()
-  private val types = mutable.HashSet[Symbol.ClassTypeSymbol]()
-
-  def append(symbol: Symbol.ClassTypeSymbol): Unit = types += symbol
-  def append(symbol: Symbol.InterfaceSymbol): Unit = interfaces += symbol
-
-  /*
-  def verify(): Unit = {
-    def verifyHps(impl: Symbol.ImplementSymbol, hps: Vector[Expression], ctx: Context.RootContext): Unit = {
-      val implCtx = Context(ctx, impl)
-
-      hps.foreach { hp => Typer.typedExpr(hp)(implCtx) }
-    }
-
-    def verifyAllImpls[T <: HasImpls](sets: mutable.HashSet[T])(verifier: T#ImplType => Unit): Unit =
-      sets.foreach(_.impls.foreach(verifier))
-
-    verifyAllImpls(interfaces){
-      impl =>
-        verifyHps(impl.symbol, impl.targetInterface.hardwareParam, impl.ctx)
-        verifyHps(impl.symbol, impl.targetType.hardwareParam, impl.ctx)
-    }
-
-    verifyAllImpls(types){
-      impl =>
-        verifyHps(impl.symbol, impl.targetType.hardwareParam, impl.ctx)
-    }
-  }
-   */
-
-  def verifyImplConflict(): Unit = {
+  def verifyImplConflict()(implicit global: GlobalData): Unit = {
     /*
     def verifySameForm(
       tpe0: Type.RefType,
@@ -227,36 +255,36 @@ object SymbolBuffer {
      * param tpes  this function used to get all types impl has
      * tparam T    ImplementContainer
      */
-      /*
-    def insertRefType[T <: ImplementContainer](
-      impl0: T,
-      impl1: T,
-      map: mutable.Map[Symbol.TypeParamSymbol, Option[Type.RefType]]
-    )(
-      tpes: T => Vector[Type.RefType]
-    ): Unit = {
-      def inner(tpe0: Type.RefType, tpe1: Type.RefType): Vector[(Symbol.TypeParamSymbol, Type.RefType)] = {
-        (tpe0.origin, tpe1.origin) match {
-          case (t: Symbol.TypeParamSymbol, _) if tpe1 <|= tpe0 => Vector(t -> tpe1)
-          case (t0: Symbol.EntityTypeSymbol, t1: Symbol.EntityTypeSymbol) if t0 == t1 =>
-            tpe0.typeParam
-              .zip(tpe1.typeParam)
-              .flatMap{ case (t0, t1) => inner(t0, t1) }
-          case (_, _) => Vector.empty
-        }
+    /*
+  def insertRefType[T <: ImplementContainer](
+    impl0: T,
+    impl1: T,
+    map: mutable.Map[Symbol.TypeParamSymbol, Option[Type.RefType]]
+  )(
+    tpes: T => Vector[Type.RefType]
+  ): Unit = {
+    def inner(tpe0: Type.RefType, tpe1: Type.RefType): Vector[(Symbol.TypeParamSymbol, Type.RefType)] = {
+      (tpe0.origin, tpe1.origin) match {
+        case (t: Symbol.TypeParamSymbol, _) if tpe1 <|= tpe0 => Vector(t -> tpe1)
+        case (t0: Symbol.EntityTypeSymbol, t1: Symbol.EntityTypeSymbol) if t0 == t1 =>
+          tpe0.typeParam
+            .zip(tpe1.typeParam)
+            .flatMap{ case (t0, t1) => inner(t0, t1) }
+        case (_, _) => Vector.empty
       }
-
-      val tab = map.collect { case (key, Some(value)) => key -> value }.toMap
-      val vec = tpes(impl0)
-        .zip(tpes(impl1))
-        .map{ case (tpe0, tpe1) => (tpe0.replaceWithMap(tab), tpe1.replaceWithMap(tab)) }
-        .flatMap{ case (tpe0, tpe1) => inner(tpe0, tpe1) }
-
-      vec.groupBy(_._1)
-        .map{ case (key, pairs) => key -> pairs.head._2 }
-        .foreach{ case (key, value) => map(key) = Some(value) }
     }
-     */
+
+    val tab = map.collect { case (key, Some(value)) => key -> value }.toMap
+    val vec = tpes(impl0)
+      .zip(tpes(impl1))
+      .map{ case (tpe0, tpe1) => (tpe0.replaceWithMap(tab), tpe1.replaceWithMap(tab)) }
+      .flatMap{ case (tpe0, tpe1) => inner(tpe0, tpe1) }
+
+    vec.groupBy(_._1)
+      .map{ case (key, pairs) => key -> pairs.head._2 }
+      .foreach{ case (key, value) => map(key) = Some(value) }
+  }
+   */
 
     @tailrec
     def verifyClassImplConflict(impls: Vector[ImplementClassContainer]): Unit = {
@@ -270,7 +298,7 @@ object SymbolBuffer {
       impls.tail
         .map(verify(impls.head, _))
         .collect{ case Left(err) => err }
-        .foreach(Reporter.appendError)
+        .foreach(global.repo.error.append)
 
       verifyClassImplConflict(impls.tail)
     }
@@ -280,23 +308,49 @@ object SymbolBuffer {
       def verify(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer): Either[Error, Unit] = {
         val isConflict = ImplementInterfaceContainer.isConflict(impl0, impl1)
 
-        if(isConflict)
-          Left(Error.ImplementInterfaceConflict(impl0, impl1))
-        else
-          Right(())
+        if(isConflict) Left(Error.ImplementInterfaceConflict(impl0, impl1))
+        else Right(())
       }
 
-      impls.tail
-        .map(verify(impls.head, _))
-        .collect{ case Left(err) => err }
-        .foreach(Reporter.appendError)
+      if(impls.tail.nonEmpty) {
+        impls.tail
+          .map(verify(impls.head, _))
+          .collect{ case Left(err) => err }
+          .foreach(global.repo.error.append)
 
-      verifyInterfaceImplConflict(impls.tail)
+        verifyInterfaceImplConflict(impls.tail)
+      }
     }
 
-    interfaces.foreach(interface => verifyInterfaceImplConflict(interface.impls))
-    types.foreach(tpe => verifyClassImplConflict(tpe.impls))
+    global.buffer.interface.symbols.foreach(interface => verifyInterfaceImplConflict(interface.impls))
+    global.buffer.clazz.symbols.foreach(tpe => verifyClassImplConflict(tpe.impls))
   }
+}
+
+object SymbolBuffer {
+  /*
+  def verify(): Unit = {
+    def verifyHps(impl: Symbol.ImplementSymbol, hps: Vector[Expression], ctx: Context.RootContext): Unit = {
+      val implCtx = Context(ctx, impl)
+
+      hps.foreach { hp => Typer.typedExpr(hp)(implCtx) }
+    }
+
+    def verifyAllImpls[T <: HasImpls](sets: mutable.HashSet[T])(verifier: T#ImplType => Unit): Unit =
+      sets.foreach(_.impls.foreach(verifier))
+
+    verifyAllImpls(interfaces){
+      impl =>
+        verifyHps(impl.symbol, impl.targetInterface.hardwareParam, impl.ctx)
+        verifyHps(impl.symbol, impl.targetType.hardwareParam, impl.ctx)
+    }
+
+    verifyAllImpls(types){
+      impl =>
+        verifyHps(impl.symbol, impl.targetType.hardwareParam, impl.ctx)
+    }
+  }
+   */
 }
 
 abstract class ImplementContainer {
@@ -310,7 +364,6 @@ abstract class ImplementContainer {
   val typeParam: Vector[Symbol.TypeParamSymbol]
   val hardwareParam: Vector[Symbol.HardwareParamSymbol]
 
-  def isValid: Boolean
   final def lookup[T <: Symbol : ClassTag : TypeTag](name: String): Option[T] =
     scope.lookup(name).collect{ case symbol: T => symbol }
 
@@ -325,30 +378,6 @@ abstract class ImplementInterfaceContainer(
   val scope: Scope
 ) extends ImplementContainer {
   override type TreeType = ImplementInterface
-
-  override def isValid: Boolean = {
-    val nodeCtx = Context(ctx, symbol)
-    val beforeCounts = Reporter.errorCounts
-
-    def typedHardwareParam(hps: Vector[Expression]): Unit = {
-      hps.foreach {
-        hp =>
-          TypedCache.getTree(hp) match {
-            case Some(_) =>
-            case None =>
-              val typedHp = Typer.typedExpr(hp)(nodeCtx)
-              TypedCache.setTree(typedHp)
-          }
-      }
-    }
-
-    typedHardwareParam(targetInterface.hardwareParam)
-    typedHardwareParam(targetType.hardwareParam)
-
-    val afterCounts = Reporter.errorCounts
-    beforeCounts == afterCounts
-  }
-
   override def signature: String = s"impl $targetInterface for $targetType"
 }
 
@@ -453,11 +482,15 @@ object ImplementInterfaceContainer {
           else {
             val isOverlapped = (tpe0.hardwareParam zip tpe1.hardwareParam).forall {
               case (hp0, hp1) =>
-                def findRange(target: HPExpr, bounds: Vector[HPBound]): HPRange =
-                  bounds
-                    .find(_.target.isSameExpr(target))
-                    .map(_.bound)
-                    .getOrElse(HPRange.Range.empty)
+                def findRange(target: HPExpr, bounds: Vector[HPBound]): HPRange = target match {
+                  case IntLiteral(value) => HPRange.Eq(HPRange.ConstantEqual(value))
+                  case expr =>
+                    bounds
+                      .find(_.target.isSameExpr(expr))
+                      .map(_.bound)
+                      .getOrElse(HPRange.Range.empty)
+                }
+
 
                 val range0 = findRange(hp0, hpBound0)
                 val range1 = findRange(hp1, hpBound1)
@@ -505,26 +538,6 @@ abstract class ImplementClassContainer(
   val scope: Scope
 ) extends ImplementContainer {
   override type TreeType = ImplementClass
-
-  override def isValid: Boolean = {
-    val nodeCtx = Context(ctx, symbol)
-    val beforeCounts = Reporter.errorCounts
-
-    targetType.hardwareParam.foreach {
-      hp =>
-        TypedCache.getTree(hp) match {
-          case Some(_) =>
-          case None =>
-            val typedHp = Typer.typedExpr(hp)(nodeCtx)
-            TypedCache.setTree(typedHp)
-        }
-    }
-
-    def afterCounts = Reporter.errorCounts
-
-    beforeCounts == afterCounts
-  }
-
   override def signature: String = s"impl $targetType"
 }
 
