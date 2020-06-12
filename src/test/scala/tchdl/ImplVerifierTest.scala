@@ -135,6 +135,28 @@ class ImplVerifierTest extends AnyFunSuite {
     val trees = untilImplVerify(filenames: _*)(global)
 
     assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global.repo.error.elems))
+  }
+
+  test("impl for type parameter as target. this does not cause error") {
+    val global = new GlobalData
+    val filename = buildName(rootDir, filePath, "impl10.tchdl")
+    val filenames = filename +: builtInFiles
+    val trees = untilImplVerify(filenames: _*)(global)
+
+    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+  }
+
+  test("impl for type parameter as target. this causes implement conflict error") {
+    val global = new GlobalData
+    val filename = buildName(rootDir, filePath, "impl11.tchdl")
+    val filenames = filename +: builtInFiles
+    val trees = untilImplVerify(filenames: _*)(global)
+
+    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global.repo.error.elems))
   }
 
 }

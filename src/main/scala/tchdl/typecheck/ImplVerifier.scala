@@ -133,11 +133,11 @@ object ImplVerifier {
       typeTag[Symbol.InterfaceSymbol]
     )
 
-    val (targetErr, target) = Type.buildType[Symbol.ClassTypeSymbol](impl.target)(
+    val (targetErr, target) = Type.buildType[Symbol.TypeSymbol](impl.target)(
       signatureCtx,
       global,
-      classTag[Symbol.ClassTypeSymbol],
-      typeTag[Symbol.ClassTypeSymbol]
+      classTag[Symbol.TypeSymbol],
+      typeTag[Symbol.TypeSymbol]
     )
 
     val signatureErr = Vector(interfaceErr, targetErr).flatten
