@@ -21,3 +21,5 @@ project/plugins/project/
 # ignore files ANTLR4 generated
 *.tokens
 
+gen/
+project/metals.sbt
