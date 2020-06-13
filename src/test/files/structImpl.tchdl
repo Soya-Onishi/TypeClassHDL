@@ -1,0 +1,11 @@
+package test
+
+struct ST {
+  a: Int,
+  b: Int
+}
+
+impl ST {
+  def getA() -> Int { this.a }
+  def getB() -> Int { this.b }
+}

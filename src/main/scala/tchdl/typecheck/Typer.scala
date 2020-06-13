@@ -191,7 +191,7 @@ object Typer {
   def typedMethodDef(method: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
     method.symbol.tpe
 
-    val signatureCtx = Context(ctx, method.symbol)
+    val signatureCtx = Context(ctx, method.symbol, ctx.self)
     ctx.reAppend(
       method.hp.map(_.symbol) ++
       method.tp.map(_.symbol) ++
