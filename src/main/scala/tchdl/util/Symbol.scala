@@ -1,7 +1,5 @@
 package tchdl.util
 
-import tchdl.ast._
-import tchdl.typecheck.{ImplementContainer, ImplementClassContainer, ImplementInterfaceContainer}
 import tchdl.util.TchdlException.ImplementationErrorException
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag

@@ -1,7 +1,6 @@
 package tchdl.util
 
 import tchdl.ast._
-import tchdl.typecheck.ImplementInterfaceContainer
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.annotation.tailrec

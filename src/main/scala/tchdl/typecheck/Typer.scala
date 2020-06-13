@@ -19,6 +19,7 @@ object Typer {
   def typedTopLevelDefinition(ast: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition = ast match {
     case module: ModuleDef => typedModuleDef(module)
     case struct: StructDef => typedStructDef(struct)
+    case interface: InterfaceDef => ???
     case implClass: ImplementClass => typedImplementClass(implClass)
     case implInterface: ImplementInterface => typedImplementInterface(implInterface)
     case deftree =>
@@ -27,7 +28,7 @@ object Typer {
   }
 
   def typedDefinition(ast: Definition)(implicit ctx: Context.NodeContext, global: GlobalData): Definition = ast match {
-    case typeDef: TypeDef => typedTypeDef(typeDef)
+    case typeDef: TypeDef => typedTypeParam(typeDef)
     case valDef: ValDef => typedValDef(valDef)
     case state: StateDef => typedStateDef(state)
     case always: AlwaysDef => typedAlwaysDef(always)
@@ -45,7 +46,7 @@ object Typer {
     interfaceCtx.reAppend(module.hp.map(_.symbol) ++ module.tp.map(_.symbol): _*)
 
     val typedHp = module.hp.map(typedValDef(_)(interfaceCtx, global))
-    val typedTp = module.tp.map(typedTypeDef(_)(interfaceCtx, global))
+    val typedTp = module.tp.map(typedTypeParam(_)(interfaceCtx, global))
 
     val typedParents = module.parents.map(typedValDef(_)(interfaceCtx, global))
     val typedSiblings = module.siblings.map(typedValDef(_)(interfaceCtx, global))
@@ -75,7 +76,7 @@ object Typer {
     )
 
     val typedHp = struct.hp.map(typedValDef(_)(signatureCtx, global))
-    val typedTp = struct.tp.map(typedTypeDef(_)(signatureCtx, global))
+    val typedTp = struct.tp.map(typedTypeParam(_)(signatureCtx, global))
 
     val fieldCtx = Context(signatureCtx)
     fieldCtx.reAppend(struct.fields.map(_.symbol): _*)
@@ -95,6 +96,28 @@ object Typer {
     typedStruct
   }
 
+  def typedInterfaceDef(interfaceDef: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
+    interfaceDef.symbol.tpe
+
+    val signatureCtx = Context(ctx, interfaceDef.symbol)
+    val interface = interfaceDef.symbol.asInterfaceSymbol
+    signatureCtx.reAppend(
+      interface.hps ++
+      interface.tps: _*
+    )
+
+    val blockCtx = Context(signatureCtx)
+    val signatureDefs = interfaceDef.methods.map(typedMethodDef(_)(blockCtx, global))
+
+    InterfaceDef(
+      interfaceDef.name,
+      interfaceDef.hp,
+      interfaceDef.tp,
+      interfaceDef.bounds,
+      signatureDefs
+    )
+  }
+
   def typedImplementClass(impl: ImplementClass)(implicit ctx: Context.RootContext, global: GlobalData): ImplementClass = {
     val signatureCtx = Context(ctx, impl.symbol)
 
@@ -104,7 +127,7 @@ object Typer {
     )
 
     val typedHp = impl.hp.map(typedValDef(_)(signatureCtx, global))
-    val typedTp = impl.tp.map(typedTypeDef(_)(signatureCtx, global))
+    val typedTp = impl.tp.map(typedTypeParam(_)(signatureCtx, global))
 
     val typedTarget = typedTypeTree(impl.target)(signatureCtx, global)
     typedTarget.tpe match {
@@ -143,7 +166,7 @@ object Typer {
     )
 
     val typedHp = impl.hp.map(Typer.typedValDef(_)(signatureCtx, global))
-    val typedTp = impl.tp.map(Typer.typedTypeDef(_)(signatureCtx, global))
+    val typedTp = impl.tp.map(Typer.typedTypeParam(_)(signatureCtx, global))
 
     val typedInterface = typedTypeTree(impl.interface)(signatureCtx, global)
     val typedTarget = typedTypeTree(impl.target)(signatureCtx, global)
@@ -192,14 +215,14 @@ object Typer {
     method.symbol.tpe
 
     val signatureCtx = Context(ctx, method.symbol, ctx.self)
-    ctx.reAppend(
+    signatureCtx.reAppend(
       method.hp.map(_.symbol) ++
       method.tp.map(_.symbol) ++
       method.params.map(_.symbol): _*
     )
 
     val typedHp = method.hp.map(typedValDef(_)(signatureCtx, global))
-    val typedTp = method.tp.map(typedTypeDef(_)(signatureCtx, global))
+    val typedTp = method.tp.map(typedTypeParam(_)(signatureCtx, global))
     val typedParams = method.params.map(typedValDef(_)(signatureCtx, global))
     val typedRetTpe = typedTypeTree(method.retTpe)(signatureCtx, global)
     val typedBlk = method.blk.map(typedBlock(_)(signatureCtx, global))
@@ -288,7 +311,7 @@ object Typer {
     typedState
   }
 
-  def typedTypeDef(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
+  def typedTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
     Namer.nodeLevelNamed(tpeDef, ctx)
 
     tpeDef.symbol.tpe
@@ -299,6 +322,10 @@ object Typer {
 
     global.cache.set(typedTpeDef)
     typedTpeDef
+  }
+
+  def typedHardwareParam(hpDef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
+    ???
   }
 
   def typedExpr(expr: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Expression =
@@ -1103,4 +1130,63 @@ object Typer {
     TypeTree(Ident(symbol.name), typedHps, typedTps).setTpe(treeTpe).setSymbol(treeSymbol)
   }
    */
+}
+
+object TyperForTopDefinition {
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
+    val ctx = global.rootPackage.search(cu.pkgName)
+      .getOrElse(throw new ImplementationErrorException(s"${cu.pkgName} should be there"))
+      .lookupCtx(cu.filename.get)
+      .getOrElse(throw new ImplementationErrorException(s"${cu.filename.get}'s context should be there'"))
+
+    // val typedTopDefs = cu.topDefs.map()
+    ???
+  }
+
+  def typedTopDefs(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition =
+    defTree match {
+      case struct: StructDef => typedStructDef(struct)
+    }
+
+  def typedStructDef(struct: StructDef)(implicit ctx: Context.RootContext, global: GlobalData): StructDef = {
+    /*
+    struct.symbol.tpe
+
+    val signatureCtx = Context(ctx, struct.symbol)
+    ctx.reAppend(
+      struct.hp.map(_.symbol) ++
+      struct.tp.map(_.symbol): _*
+    )
+
+    val typedHp = struct.hp.map(typedValDef(_)(signatureCtx, global))
+    val typedTp = struct.tp.map(Typer.typedTypeParam(_)(signatureCtx, global))
+
+    val fieldCtx = Context(signatureCtx)
+    fieldCtx.reAppend(struct.fields.map(_.symbol): _*)
+    val typedFields = struct.fields.map(typedValDef(_)(fieldCtx, global))
+
+    val typedStruct = struct.copy(
+      struct.name,
+      typedHp,
+      typedTp,
+      struct.bounds,
+      typedFields
+    )
+      .setSymbol(struct.symbol)
+      .setID(struct.id)
+
+    global.cache.set(typedStruct)
+    typedStruct
+
+     */
+    ???
+  }
+
+  def typedModuleDef(moduleDef: ModuleDef)(implicit ctx: Context.RootContext, global: GlobalData): ModuleDef = {
+    ???
+  }
+
+  def typedInterfaceDef(interfaceDef: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
+    ???
+  }
 }

@@ -1,0 +1,11 @@
+package test
+
+struct ST[T] {}
+
+impl ST[Int] {
+  def forInt(st: ST[String]) -> Unit { st.forString() }
+}
+
+impl ST[String] {
+  def forString() -> Unit {}
+}

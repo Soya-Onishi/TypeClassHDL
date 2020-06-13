@@ -1,7 +1,6 @@
 package tchdl.util
 
 import tchdl.ast._
-import tchdl.typecheck.{ImplementClassContainer, ImplementInterfaceContainer}
 
 import scala.reflect.runtime.universe.TypeTag
 

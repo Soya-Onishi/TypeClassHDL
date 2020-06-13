@@ -22,10 +22,10 @@ class TyperTest extends AnyFunSuite {
     trees.foreach(NamerPost.exec)
     assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
 
-    trees.foreach(ImplVerifier.exec)
+    trees.foreach(BuildImplContainer.exec)
     assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
 
-    ImplVerifier.verifyImplConflict()
+    VerifyImplConflict.verifyImplConflict()
     assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
 
     val typedTrees = trees.map(Typer.exec)
@@ -53,5 +53,40 @@ class TyperTest extends AnyFunSuite {
 
     val Apply(select: Select, _, _, _) = methodF.blk.get.last
     assert(select.symbol == methodG.symbol)
+  }
+
+  test("polynomial type into mono type") {
+    val (trees, global) = untilTyper("structImpl2.tchdl")
+    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+
+    val select = trees.head.topDefs
+      .collect { case impl: ImplementClass => impl }
+      .head.methods
+      .head.blk.get
+      .last
+      .asInstanceOf[Select]
+
+    assert(select.tpe == Type.RefType(global.builtin.lookup("Int")))
+  }
+
+  test("call another impl's method from another impl") {
+    val (trees, global) = untilTyper("structImpl3.tchdl")
+    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+
+    val impls = trees.head.topDefs
+      .collect { case impl: ImplementClass => impl }
+
+    val implForSTInt = impls.filter(_.target.tp.head.expr.name == "Int").head
+    val implForSTString = impls.filter(_.target.tp.head.expr.name == "String").head
+    val forInt = implForSTInt.methods.filter(_.name == "forInt").head
+    val forString = implForSTString.methods.filter(_.name == "forString").head
+    val Apply(select: Select, _, _, _) = forInt.blk.get.last
+
+    assert(select.symbol == forString.symbol)
+  }
+
+  test("call impl's methods but this call causes error because of type param(Int) does not meet bounds") {
+    val (trees, global) = untilTyper("callMethod0.tchdl")
+    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
   }
 }

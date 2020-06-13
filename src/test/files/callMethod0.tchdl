@@ -1,0 +1,14 @@
+package test
+
+struct T0[T] {}
+struct T1 {}
+
+interface I0 {}
+
+impl[T] T0[T] where T: I0 {
+  def f() -> Unit {}
+}
+
+impl T1 {
+  def f(t: T0[Int]) -> Unit { t.f() }
+}

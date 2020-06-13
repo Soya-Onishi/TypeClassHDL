@@ -1,0 +1,11 @@
+package test
+
+struct ST[T] {
+  a: T
+}
+
+impl ST[Int] {
+  def getA() -> Int {
+    this.a
+  }
+}
