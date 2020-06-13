@@ -1,0 +1,11 @@
+package test
+
+struct ST {}
+
+impl ST {
+  def f() -> Unit {
+    this.g()
+  }
+
+  def g() -> Unit {}
+}
