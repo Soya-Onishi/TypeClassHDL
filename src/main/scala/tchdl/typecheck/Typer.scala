@@ -393,7 +393,7 @@ object Typer {
         val results = (methodSymbol.hps.map(_.tpe) zip typedHPs.map(_.tpe)).map {
           case (p: Type.RefType, a: Type.RefType) =>
             if(p =:= a) Right(())
-            else Left(Error.TypeMissmatch(p, a))
+            else Left(Error.TypeMissMatch(p, a))
         }
 
         val (errs, _) = results.partitionMap(identity)
@@ -605,7 +605,7 @@ object Typer {
           case (tpe, Type.ErrorType) => tpe
           case (altTpe, conseqTpe)  =>
             if(altTpe =!= conseqTpe)
-              global.repo.error.append(Error.TypeMissmatch(altTpe, conseqTpe))
+              global.repo.error.append(Error.TypeMissMatch(altTpe, conseqTpe))
 
             altTpe
         }
@@ -1063,7 +1063,7 @@ object Typer {
     (expect zip actual)
       .collect { case (e: Type.RefType, a: Type.RefType) => (e, a) }
       .filter { case (e, a) => a =:= e }
-      .map { case (e, a) => Error.TypeMissmatch(e, a) }
+      .map { case (e, a) => Error.TypeMissMatch(e, a) }
   }
 
   def verifyParamType(expect: Type, actual: Type)(implicit ctx: Context.NodeContext, global: GlobalData): Vector[Error] =

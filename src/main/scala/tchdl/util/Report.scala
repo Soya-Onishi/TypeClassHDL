@@ -24,7 +24,7 @@ sealed trait Warning extends Report
 sealed trait Info extends Report
 
 object Error {
-  case class TypeMissmatch(expect: Type, actual: Type) extends Error
+  case class TypeMissMatch(expect: Type, actual: Type) extends Error
   case class SymbolNotFound(name: String) extends Error
   case class OperationNotFound(op: Operation) extends Error
   case class PackageNotFound(name: String) extends Error
