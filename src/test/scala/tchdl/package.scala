@@ -1,6 +1,7 @@
 import tchdl.parser.ASTGenerator
 import tchdl.ast._
 import tchdl.antlr._
+import tchdl.util._
 
 import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.tree._
@@ -32,4 +33,7 @@ package object tchdl {
   }
 
   def buildName(path: String*): String = path.mkString("/")
+
+  def showErrors(errors: Vector[Error]): String =
+    errors.map(_.debugString).mkString("\n\n")
 }

@@ -295,12 +295,14 @@ object ImplVerifier {
         else Right(())
       }
 
-      impls.tail
-        .map(verify(impls.head, _))
-        .collect{ case Left(err) => err }
-        .foreach(global.repo.error.append)
+      if(impls.tail.nonEmpty) {
+        impls.tail
+          .map(verify(impls.head, _))
+          .collect{ case Left(err) => err }
+          .foreach(global.repo.error.append)
 
-      verifyClassImplConflict(impls.tail)
+        verifyClassImplConflict(impls.tail)
+      }
     }
 
     @tailrec

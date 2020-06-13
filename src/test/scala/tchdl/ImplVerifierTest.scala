@@ -23,9 +23,6 @@ class ImplVerifierTest extends AnyFunSuite {
     trees
   }
 
-  def showErrors(errors: Vector[Error]): String =
-    errors.map(_.debugString).mkString("\n\n")
-
   test("verify most simple conflict") {
     implicit val global: GlobalData = new GlobalData
     val impl0 = Vector(rootDir, filePath, "impl0.tchdl").mkString("/")

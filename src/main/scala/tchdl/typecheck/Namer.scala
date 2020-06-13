@@ -40,6 +40,7 @@ object Namer {
     val signatureCtx = Context(ctx, methodSymbol)
     val namedHPs = method.hp.map(namedHPDef(_)(signatureCtx, global))
     val namedTPs = method.tp.map(namedTPDef(_)(signatureCtx, global))
+
     methodSymbol.setHPs(namedHPs.map(_.symbol.asHardwareParamSymbol))
     methodSymbol.setTPs(namedTPs.map(_.symbol.asTypeParamSymbol))
 

@@ -154,7 +154,7 @@ expr: expr '.' (apply | EXPR_ID)    # SelectExpr
     | GENERATE EXPR_ID '(' args ')' # Generate
     | literal                  # LitExpr
     | '(' expr ')'             # ParenthesesExpr
-    | SELF                     # SelfExpr
+    | THIS                     # SelfExpr
     | EXPR_ID                  # ExprID
     ;
 
@@ -226,7 +226,7 @@ unit_lit
     ;
 
 type: TYPE_ID apply_typeparam? # NormalType
-    | SELFTYPE                 # SelfType
+    | THISTYPE                 # SelfType
     ;
 
 /*
@@ -267,7 +267,7 @@ IF: 'if';
 ELSE: 'else';
 MATCH: 'match';
 CASE: 'case';
-SELF: 'self';
+THIS: 'this';
 FOR: 'for';
 
 FINISH: 'finish';
@@ -275,7 +275,7 @@ GOTO: 'goto';
 GENERATE: 'generate';
 RELAY: 'relay';
 
-SELFTYPE: 'Self';
+THISTYPE: 'This';
 
 BIT: BITLIT;
 INT: HEXLIT | DIGITLIT;

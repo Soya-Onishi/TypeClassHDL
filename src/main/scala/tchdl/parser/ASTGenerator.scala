@@ -261,7 +261,7 @@ class ASTGenerator {
       Generate(ctx.EXPR_ID.getText, args)
     case ctx: TP.LitExprContext => literal(ctx.literal)
     case ctx: TP.ParenthesesExprContext => expr(ctx.expr)
-    case _: TP.SelfExprContext => Self()
+    case _: TP.SelfExprContext => This()
     case ctx: TP.ExprIDContext => Ident(ctx.EXPR_ID.getText)
   }
 

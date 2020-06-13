@@ -347,7 +347,7 @@ object HPBound {
               _ <- loop(right, isRoot = false)
             } yield ()
           case Ident(name) =>
-            ctx.lookupUntilSameOwner[Symbol.HardwareParamSymbol](name) match {
+            ctx.lookupDirectLocal[Symbol.HardwareParamSymbol](name) match {
               case LookupResult.LookupFailure(err) => Left(err)
               case LookupResult.LookupSuccess(_) => Right(())
             }
@@ -372,7 +372,7 @@ object HPBound {
         def verifyAllIdents(idents: Vector[Ident]): Either[Error, Range] = {
           val (errs, _) = idents.view
             .map(_.name)
-            .map(ctx.lookupUntilSameOwner[Symbol.HardwareParamSymbol])
+            .map(ctx.lookupDirectLocal[Symbol.HardwareParamSymbol])
             .map(_.toEither)
             .to(Vector)
             .partitionMap(identity)

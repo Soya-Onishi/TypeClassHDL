@@ -307,7 +307,7 @@ object Typer {
       case select: Select => typedExprSelect(select)
       case binop: BinOp => typedBinOp(binop)
       case ifExpr: IfExpr => typedIfExpr(ifExpr)
-      case self: Self => typedSelf(self)
+      case self: This => typedThis(self)
       case blk: Block => typedBlock(blk)
       case construct: Construct => ???
       case int: IntLiteral => typedIntLiteral(int)
@@ -315,7 +315,7 @@ object Typer {
       case unit: UnitLiteral => typedUnitLiteral(unit)
       case bit: BitLiteral => typedBitLiteral(bit)
       case apply: Apply => typedExprApply(apply)
-      case applyParams: ApplyParams =>
+      case _: ApplyParams =>
         throw new ImplementationErrorException("ApplyParams tree should not be typed")
       case _: ApplyTypeParams =>
         throw new ImplementationErrorException(
@@ -329,7 +329,7 @@ object Typer {
     }
 
   def typedExprIdent(ident: Ident)(implicit ctx: Context.NodeContext, global: GlobalData): Ident = {
-    ctx.lookup[Symbol.TermSymbol](ident.name) match {
+    ctx.lookupLocal[Symbol.VariableSymbol](ident.name) match {
       case LookupResult.LookupFailure(err) =>
         global.repo.error.append(err)
         ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
@@ -340,362 +340,158 @@ object Typer {
 
   def typedExprApply(apply: Apply)(implicit ctx: Context.NodeContext, global: GlobalData): Apply = {
     val typedArgs = apply.args.map(typedExpr)
-    val typedHps = apply.hps.map(typedHPExpr)
-    val typedTps = apply.tps.map(typedTypeTree)
+    val typedHPs = apply.hps.map(typedHPExpr)
+    val typedTPs = apply.tps.map(typedTypeTree)
 
     val hasError =
       typedArgs.exists(_.tpe.isErrorType) &&
-      typedHps.exists(_.tpe.isErrorType) &&
-      typedTps.exists(_.tpe.isErrorType)
+      typedHPs.exists(_.tpe.isErrorType) &&
+      typedTPs.exists(_.tpe.isErrorType)
 
-    def lookupMethod(typedSelect: Select): Apply = {
-      val prefixTpe = typedSelect.tpe.asRefType
-      val method = prefixTpe.lookupMethod3(
-        typedSelect.name,
-        typedHps,
-        typedTps.map(_.tpe.asRefType),
-        typedArgs.map(_.tpe.asRefType),
-        ctx.hpBounds,
-        ctx.tpBounds,
-        ctx
-      )
+    lazy val errorApply =
+      Apply(apply.prefix, typedHPs, typedTPs, typedArgs)
+        .setTpe(Type.ErrorType)
+        .setID(apply.id)
 
-      val returnTpe = method match {
-        case LookupResult.LookupSuccess((_, tpe)) => tpe.returnType
-        case LookupResult.LookupFailure(err) =>
-          global.repo.error.append(err)
-          Type.ErrorType
+    def lookupMethodForIdent(ident: Ident): Either[Error, Apply] = {
+      def verifyMethodValidity(method: Symbol.MethodSymbol): Either[Error, Unit] = {
+        method.tpe match {
+          case Type.ErrorType => Left(Error.DummyError)
+          case tpe: Type.MethodType =>
+            if((tpe.params :+ tpe.returnType ).exists(_.isErrorType)) Left(Error.DummyError)
+            else if (method.hps.exists(_.tpe.isErrorType)) Left(Error.DummyError)
+            else Right(())
+        }
       }
 
-      Apply(typedSelect, typedHps, typedTps, typedArgs).setTpe(returnTpe).setID(apply.id)
+      def verifyLength(methodSymbol: Symbol.MethodSymbol, methodType: Type.MethodType): Either[Error, Unit] = {
+        def verify(builder: (Int, Int) => Error)(expect: Int, actual: Int, errs: Vector[Error]): Vector[Error] =
+          if(expect == actual) errs
+          else errs :+ builder(expect, actual)
+
+        val expectArgLength = methodType.params.length
+        val actualArgLength = typedArgs.length
+        val expectHPLength = methodSymbol.hps.length
+        val actualHPLength = typedHPs.length
+        val expectTPLength = methodSymbol.tps.length
+        val actualTPLength = typedTPs.length
+        val lengthPairs = Seq(
+          (expectArgLength, actualArgLength, Error.ParameterLengthMismatch.apply _),
+          (expectHPLength, actualHPLength, Error.HardParameterLengthMismatch.apply _),
+          (expectTPLength, actualTPLength, Error.TypeParameterLengthMismatch.apply _)
+        )
+
+        val errs = lengthPairs.foldLeft(Vector.empty[Error]) {
+          case (errs, (expect, actual, builder)) => verify(builder)(expect, actual, errs)
+        }
+
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+
+      def verifyHPType(methodSymbol: Symbol.MethodSymbol): Either[Error, Unit] = {
+        val results = (methodSymbol.hps.map(_.tpe) zip typedHPs.map(_.tpe)).map {
+          case (p: Type.RefType, a: Type.RefType) =>
+            if(p =:= a) Right(())
+            else Left(Error.TypeMissmatch(p, a))
+        }
+
+        val (errs, _) = results.partitionMap(identity)
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+
+      def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
+        val (hpErrs, _) = hpBounds.map(HPBound.verifyMeetBound(_, ctx.hpBounds)).partitionMap(identity)
+        val (tpErrs, _) = tpBounds.map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds)).partitionMap(identity)
+        val errs = hpErrs ++ tpErrs
+
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      }
+
+      ctx.lookupLocal[Symbol.MethodSymbol](ident.name) match {
+        case LookupResult.LookupFailure(err) => Left(err)
+        case LookupResult.LookupSuccess(methodSymbol) => for {
+          _ <- verifyMethodValidity(methodSymbol)
+          methodType = methodSymbol.tpe.asMethodType
+          _ <- verifyLength(methodSymbol, methodType)
+          _ <- verifyHPType(methodSymbol)
+          hpTable = (methodSymbol.hps zip typedHPs).toMap
+          tpTable = (methodSymbol.tps zip typedTPs.map(_.tpe.asRefType)).toMap
+          swappedHPBound = HPBound.swapBounds(methodSymbol.hpBound, hpTable)
+          swappedTPBound = TPBound.swapBounds(methodSymbol.tpBound, hpTable, tpTable)
+          _ <- verifyEachBounds(swappedHPBound, swappedTPBound)
+          replacedTpe = methodType.replaceWithMap(hpTable, tpTable)
+          _ <- Type.RefType.verifyMethodType(replacedTpe, typedArgs.map(_.tpe.asRefType))
+          typedApply = Apply(
+            ident.setTpe(replacedTpe).setSymbol(methodSymbol),
+            typedHPs,
+            typedTPs,
+            typedArgs
+          ).setTpe(replacedTpe.returnType).setID(apply.id)
+        } yield typedApply
+      }
     }
 
-    lazy val errorApply = Apply(apply.prefix, typedHps, typedTps, typedArgs).setTpe(Type.ErrorType).setID(apply.id)
+    def lookupMethodForSelect(select: Select): Either[Error, Apply] = {
+      def verifyPrefixType(tpe: Type): Either[Error, Type.RefType] = tpe match {
+        case Type.ErrorType => Left(Error.DummyError)
+        case tpe: Type.RefType => Right(tpe)
+      }
+
+      def lookup(prefixTpe: Type.RefType): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+        val method = prefixTpe.lookupMethod(
+          select.name,
+          typedHPs,
+          typedTPs.map(_.tpe.asRefType),
+          typedArgs.map(_.tpe.asRefType),
+          ctx.hpBounds,
+          ctx.tpBounds,
+          ctx
+        )
+
+        method.toEither
+      }
+
+      val typedPrefix = typedExpr(select.prefix)
+
+      for {
+        prefixTpe <- verifyPrefixType(typedPrefix.tpe)
+        result <- lookup(prefixTpe)
+        typedApply = {
+          val (symbol, tpe) = result
+          val typedSelect =
+            Select(typedPrefix, select.name)
+              .setSymbol(symbol)
+              .setTpe(tpe)
+              .setID(select.id)
+
+          Apply(typedSelect, typedHPs, typedTPs, typedArgs)
+            .setTpe(tpe.returnType)
+            .setID(apply.id)
+        }
+      } yield typedApply
+    }
 
     if(hasError) errorApply
     else {
-      val (typedPrefix, suffix) = apply.prefix match {
-        case ident: Ident => (typedSelf(Self()), ident.name)
-        case select: Select => (typedExpr(select.expr), select.name)
+      val result = apply.prefix match {
+        case ident: Ident => lookupMethodForIdent(ident)
+        case select: Select => lookupMethodForSelect(select)
       }
 
-      typedPrefix.tpe match {
-        case Type.ErrorType => errorApply
-        case _: Type.RefType =>
-          val select = Select(typedPrefix, suffix)
-          lookupMethod(select)
+      result match {
+        case Right(apply) => apply
+        case Left(err) =>
+          global.repo.error.append(err)
+          errorApply
       }
     }
   }
-
-  /*
-  def typedExprApplyParams(apply: ApplyParams)(implicit ctx: Context.NodeContext): Apply = {
-    type ResultPair = (Type.MethodType, Vector[Expression], Vector[TypeTree])
-
-    val typedArgs = apply.args.map(typedExpr)
-
-    def filterType(tpe: Type): Either[Error, Type.MethodType] =
-      tpe match {
-        case method: Type.MethodType => Right(method)
-        case Type.ErrorType => Left(Error.DummyError)
-        case tpe => Left(Error.RequireMethodType(tpe))
-      }
-
-    def verifyArguments(method: Type.MethodType, args: Vector[Expression]): Either[Error, Unit] = {
-      val errors = verifyParamTypes(method.params, args.map(_.tpe))
-      if (errors.isEmpty) Right(())
-      else Left(Error.MultipleErrors(errors))
-    }
-    def requireTPsOrHPsMethod(applyTPs: ApplyTypeParams)(symbol: Symbol.CandidateSymbol, method: Type.MethodType): Either[Error, ResultPair] = {
-      def rejectMethodNoTPorHP: Either[Error, Unit] = {
-        val hasTP = method.typeParam.nonEmpty
-        val hasHP = method.hardwareParam.nonEmpty
-
-        if(hasTP || hasHP) Right(())
-        else Left(Error.RequireTypeParameter)
-      }
-
-      def verifyTPsAndHPsLength: Either[Error, Unit] = {
-        val tpLength = method.typeParam.length
-        val hpLength = method.hardwareParam.length
-        val expect = tpLength + hpLength
-        val actual = applyTPs.hps.length + applyTPs.tps.length
-
-        if(expect == actual) Right(())
-        else Left(Error.ParameterLengthMismatch(expect, actual))
-      }
-
-      def verifyTPsAndHPs: Either[Error, (Vector[Expression], Vector[TypeTree])] ={
-        def replaceHPExpr(expr: HPExpr, table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = expr match {
-          case binop @ HPBinOp(op, left, right) =>
-            val replacedLeft = replaceHPExpr(left, table)
-            val replacedRight = replaceHPExpr(right, table)
-
-            HPBinOp(op, replacedLeft, replacedRight).setTpe(binop.tpe).setID(binop.id)
-          case ident: Ident =>
-            table.get(ident.symbol.asHardwareParamSymbol) match {
-              case Some(expr) => expr
-              case None => throw new ImplementationErrorException(s"try found ${ident.name}, but not found")
-            }
-          case expr => expr
-        }
-
-        val (hps, tpsFirstHalf) = applyTPs.hps.splitAt(method.hardwareParam.length)
-
-        val typedHps = hps.map(typedExpr)
-        val typedTpsFirstHalf = tpsFirstHalf.map(typedType)
-        val typedTpsLatterHalf = applyTPs.tps.map(typedTypeTree(_)(ctx, acceptPkg = false))
-        val typedTps = typedTpsFirstHalf ++ typedTpsLatterHalf
-
-        val hasErrInHardArg = typedHps.exists(_.tpe.isErrorType)
-        val hardArgTable = method.hardwareParam.zip(typedHps).toMap
-        symbol.getHPBounds
-
-          // .map{ case (harg, hparam) => (harg.tpe, hparam.tpe) }
-          // .collect{ case (harg: Type.RefType, hparam: Type.RefType) => (harg, hparam) }
-          // .filterNot { case (harg, hparam) => harg <|= hparam }
-          // .map { case (harg, hparam) => Error.TypeMissmatch(hparam, harg) }
-
-        val hasErrInTypeArg = typedTps.exists(_.tpe.isErrorType)
-        val typeArgErrs = typedTps.zip(method.typeParam)
-          .filterNot{ case (targ, _) => targ.tpe.isErrorType }
-          .filterNot{ case (targ, tparam) => targ.tpe.asRefType <|= Type.RefType(tparam) }
-          .map { case (targ, tparam) => Error.NotMeetBound(targ.tpe, tparam.getBounds) }
-
-        (hardArgErrs ++ typeArgErrs).foreach(Reporter.appendError)
-
-        val isInvalid = hasErrInHardArg || hardArgErrs.nonEmpty || hasErrInTypeArg || typeArgErrs.nonEmpty
-        if(isInvalid) Left(Error.DummyError)
-        else Right((typedHps, typedTps))
-      }
-
-      /*
-      // TO_DO:
-      //   Replace type parameters interfaces have like below
-      //     where A: Interface[B] => where A: Interface[Int]
-      //
-      // TO_DO:
-      //   Implement interface implementation conflict detector
-      //
-      // TO_DO:
-      //   Implement the process to deal with the case that
-      //   implemented interface has type parameter and use type parameter
-      //   and bound's interface use entity type like below.
-      //
-      //     impl[T] Interface[T] for ... where T: ... { ... }
-      //
-      //       and
-      //
-      //     def method[T](...) ... where T: Interface[u32]
-      //
-      //   The process need to detect Interface[T] when
-      //   bounds require Interface[u32] if u32 meets T's bounds
-      */
-      /*
-      def verifyTpBounds(tps: Vector[TypeTree]): Either[Error, Unit] = {
-        def tpChecker(boundTps: Vector[Type.RefType], interfaceTps: Vector[Type.RefType]): Boolean =
-          boundTps.zip(interfaceTps).forall {
-            case (boundTp, interfaceTp) => (boundTp.origin, interfaceTp.origin) match {
-              case (_: Symbol.TypeParamSymbol, _: Symbol.EntityTypeSymbol) => false
-              case (_: Symbol.EntityTypeSymbol, tp: Symbol.TypeParamSymbol) => verifyTpBound(boundTp, tp.getBounds).isRight
-              case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) => boundTp =:= interfaceTp
-              case (btp: Symbol.TypeParamSymbol, itp: Symbol.TypeParamSymbol) =>
-                // itp: implement interface's type parameter like below
-                //
-                //   impl Interface[T] for Type
-                //                 ^^^
-                //
-                // btp: where clause's type parameter like below
-                //
-                //   where Interface[T]
-                //                  ^^^
-                // Here checks whether itp's bounds meets btp's bounds
-                // So, if itp's bounds are Test0 + Test1 and btp's bounds are Test0 + Test1 + Test2,
-                // it is invalid.
-                // However, if itp's bounds are Test0 + Test1 and btp's bound is Test0, it is valid.
-                val boundTable = itp.getBounds.groupBy(_.origin)
-
-                btp.getBounds.forall(bb => boundTable.get(bb.origin) match {
-                  case None => false
-                  case Some(bounds) => bounds.exists(ib => tpChecker(bb.typeParam, ib.typeParam))
-                })
-            }
-          }
-
-        // verify one where clause(not all where clauses)
-        def verifyTpBound(tpe: Type.RefType, bounds: Vector[Type.RefType]): Either[Error, Unit] = {
-          val implss = bounds
-            .map(_.origin.asInterfaceSymbol)
-            .map(_.lookupImpl(tpe))
-
-          // TODO
-          //   Address the case that bound's type parameter has Self type
-          val notMetBounds = bounds.zip(implss)
-            .map{ case (bound, impls) => bound -> impls.map(_.targetInterface)}
-            .flatMap{ case (bound, interfaces) =>
-              val isMeetBound = interfaces.exists {
-                interface =>
-                  val isSameOrigin = bound.origin == interface.origin
-                  isSameOrigin && tpChecker(bound.typeParam, interface.typeParam)
-              }
-
-              if(isMeetBound) None
-              else Some(bound)
-            }
-
-          if(notMetBounds.isEmpty) Right(())
-          else Left(Error.NotMeetBound(tpe, notMetBounds))
-        }
-
-        val map = (method.typeParam.map(_.asTypeParamSymbol) zip tps.map(_.tpe.asRefType)).toMap
-        val bounds = method.typeParam
-          .map(_.asTypeParamSymbol)
-          .map(_.getBounds)
-          .map(_.map(_.replaceWithTypeParamMap(map)))
-
-        val errors = tps.map(_.tpe).zip(bounds).map{
-          case (tpe: Type.RefType, bound) => verifyTpBound(tpe, bound)
-          case (Type.ErrorType, _) => ???
-          case (tpe, _) => throw new ImplementationError
-        }.collect { case Left(err) => err }
-
-        if(errors.isEmpty) Right(())
-        else Left(Error.MultipleErrors(errors))
-      }
-      */
-
-      for {
-        _ <- rejectMethodNoTPorHP
-        _ <- verifyTPsAndHPsLength
-        pairs <- verifyTPsAndHPs
-        (hps, tps) = pairs
-        map = (method.typeParam.map(_.asTypeParamSymbol) zip tps.map(_.tpe.asRefType)).toMap
-        methodTpe = method.replaceWithMap(map)
-      } yield (methodTpe, hps, tps)
-    }
-
-    def rejectTPsOrHPsMethod(_symbol: Symbol.CandidateSymbol, method: Type.MethodType): Either[Error, ResultPair] = {
-      val hasHP = method.hardwareParam.nonEmpty
-      val hasTP = method.typeParam.nonEmpty
-
-      if(hasHP || hasTP) Left(Error.NoNeedTypeParameter(method))
-      else Right((method, Vector.empty, Vector.empty))
-    }
-
-    def succeed(symbol: Symbol.CandidateSymbol)(requireTPs: (Symbol.CandidateSymbol, Type.MethodType) => Either[Error, ResultPair]): Either[Error, ResultPair] = {
-      for {
-        methodTpe0 <- filterType(symbol.tpe)
-        pairs <- requireTPs(symbol, methodTpe0)
-        (methodTpe1, hps, tps) = pairs
-        _ <- verifyArguments(methodTpe1, typedArgs)
-      } yield (methodTpe1, hps, tps)
-    }
-
-    def lookupSelectSymbol(select: Select)(
-      requireTP: Type.MethodType => Either[Error, ResultPair],
-      errorApplyGen: Expression => Apply,
-      succeedApplyGen: (Expression, Vector[Expression], Vector[TypeTree], Type.RefType) => Apply
-    ): Apply = {
-      def downcastToRefType(tpe: Type): Either[Error, Type.RefType] =
-        tpe match {
-          case refTpe: Type.RefType => Right(refTpe)
-          case _ => Left(Error.DummyError)
-        }
-
-      def lookup(tpe: Type.RefType): Either[Error, Symbol] =
-        tpe.lookupMethod(select.name) match {
-          case LookupResult.LookupSuccess(symbol) => Right(symbol)
-          case LookupResult.LookupFailure(err) => Left(err)
-        }
-
-      val typedSuffix = typedExpr(select.expr)
-      val result = for {
-        refTpe <- downcastToRefType(typedSuffix.tpe)
-        symbol <- lookup(refTpe)
-        pair <- succeed(symbol)(requireTP)
-      } yield pair
-
-
-      val selectTpe = result match {
-        case Left(_) => Type.ErrorType
-        case Right((methodTpe, _, _)) => methodTpe
-      }
-
-      val typedSelect = Select(typedSuffix, select.name).setTpe(selectTpe)
-
-      result match {
-        case Left(err) =>
-          Reporter.appendError(err)
-          errorApplyGen(typedSelect)
-        case Right((method, hps, tps)) =>
-          succeedApplyGen(typedSelect, hps, tps, method.returnType)
-      }
-    }
-
-    def lookupExprSymbol(expr: Expression)(
-      requireTP: Type.MethodType => Either[Error, ResultPair],
-      errorApply: Expression => Apply,
-      succeedApplyGen: (Expression, Vector[Expression], Vector[TypeTree], Type.RefType) => Apply
-    ): Apply = {
-      val typedExp = typedExpr(expr)
-
-      val result = for {
-        methodTpe0 <- filterType(typedExp.tpe)
-        methodTpe1 <- requireTP(methodTpe0)
-      } yield methodTpe1
-
-      result match {
-        case Left(err) =>
-          Reporter.appendError(err)
-          errorApply(typedExp)
-        case Right((methodTpe, hps, tps)) =>
-          succeedApplyGen(typedExp, hps, tps, methodTpe.returnType)
-      }
-    }
-
-    def errorApplyWithTPsOrHPs(hps: Vector[Expression])(expr: Expression): Apply =
-      Apply(expr, hps, Vector.empty, typedArgs).setTpe(Type.ErrorType).setID(apply.id)
-
-    def succeedApplyWithTPsOrHPs(expr: Expression, hps: Vector[Expression], tps: Vector[TypeTree], tpe: Type.RefType): Apply =
-      Apply(expr, hps, tps, typedArgs).setTpe(tpe).setID(apply.id)
-
-    def errorApplyWithoutTPsOrHPs(expr: Expression): Apply =
-      Apply(expr, Vector.empty, Vector.empty, typedArgs).setTpe(Type.ErrorType).setID(apply.id)
-
-    def succeedApplyWithoutTPsOrHPs(expr: Expression, _hps: Vector[Expression], _tps: Vector[TypeTree], tpe: Type.RefType): Apply =
-      Apply(expr, Vector.empty, Vector.empty, typedArgs).setTpe(tpe).setID(apply.id)
-
-    apply.suffix match {
-      case applyTPs @ ApplyTypeParams(select: Select, _, _) =>
-        lookupSelectSymbol(select)(
-          requireTPsOrHPsMethod(applyTPs),
-          errorApplyWithTPsOrHPs(applyTPs.hps),
-          succeedApplyWithTPsOrHPs
-        )
-      case applyTPs: ApplyTypeParams =>
-        lookupExprSymbol(applyTPs.suffix)(
-          requireTPsOrHPsMethod(applyTPs),
-          errorApplyWithTPsOrHPs(applyTPs.hps),
-          succeedApplyWithTPsOrHPs
-        )
-      case select: Select =>
-        lookupSelectSymbol(select)(
-          rejectTPsOrHPsMethod,
-          errorApplyWithoutTPsOrHPs,
-          succeedApplyWithoutTPsOrHPs
-        )
-      case expr: Expression =>
-        lookupExprSymbol(expr)(
-          rejectTPsOrHPsMethod,
-          errorApplyWithoutTPsOrHPs,
-          succeedApplyWithoutTPsOrHPs
-        )
-    }
-  }
-  */
 
   def typedExprSelect(select: Select)(implicit ctx: Context.NodeContext, global: GlobalData): Select = {
-    val typedSuffix = typedExpr(select.expr)
+    val typedSuffix = typedExpr(select.prefix)
     typedSuffix.tpe match {
       case refTpe: Type.RefType =>
         // This method only for reference to field of struct or module.
@@ -779,13 +575,13 @@ object Typer {
     Block(typedElems, typedLast).setTpe(typedLast.tpe).setID(blk.id)
   }
 
-  def typedSelf(self: Self)(implicit ctx: Context.NodeContext, global: GlobalData): Self = {
+  def typedThis(self: This)(implicit ctx: Context.NodeContext, global: GlobalData): This = {
     ctx.self match {
       case None =>
         global.repo.error.append(Error.UsingSelfOutsideClass)
-        Self().setTpe(Type.ErrorType).setID(self.id)
+        This().setTpe(Type.ErrorType).setID(self.id)
       case Some(tpe) =>
-        Self().setTpe(tpe).setID(self.id)
+        This().setTpe(tpe).setID(self.id)
     }
   }
 
@@ -847,11 +643,11 @@ object Typer {
     }
 
     def verifyTP(symbol: Symbol.TypeSymbol, typedHPs: Vector[HPExpr], typedTPs: Vector[TypeTree]): Either[Error, Unit] = {
-      val validTPLength = symbol.tps.length == typedTPs.length
+      val invalidTPLength = symbol.tps.length != typedTPs.length
       lazy val hasError = typedTPs.exists(_.tpe.isErrorType)
       lazy val tpRefTpe = typedTPs.map(_.tpe.asRefType)
 
-      if(validTPLength) Left(Error.TypeParameterLengthMismatch(symbol.tps.length, typedTPs.length))
+      if(invalidTPLength) Left(Error.TypeParameterLengthMismatch(symbol.tps.length, typedTPs.length))
       else if(hasError) Left(Error.DummyError)
       else {
         val hpTable = (symbol.hps zip typedHPs).toMap

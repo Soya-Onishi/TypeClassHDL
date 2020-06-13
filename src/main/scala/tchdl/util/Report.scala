@@ -3,7 +3,6 @@ package tchdl.util
 import tchdl.ast._
 import tchdl.typecheck.{ImplementClassContainer, ImplementInterfaceContainer}
 
-import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 
 sealed trait Report {

@@ -118,19 +118,34 @@ object Context {
     }
 
     def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit] = scope.append(symbol)
-    def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
-      case Some(elem: T) => LookupResult.LookupSuccess(elem)
-      case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
-      case None => parent.lookup(name)
-    }
-    def lookupUntilSameOwner[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
-      case Some(elem: T) => LookupResult.LookupSuccess(elem)
-      case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
-      case None => parent match {
-        case p: Context.NodeContext if p.owner == this.owner => p.lookupUntilSameOwner[T](name)
-        case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+
+    def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] =
+      lookingUp[T](name){ parent.lookup(name) }
+
+    def lookupDirectLocal[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = {
+      lookingUp[T](name) {
+        parent match {
+          case p: Context.NodeContext if p.owner == this.owner => p.lookupDirectLocal[T](name)
+          case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+        }
       }
     }
+
+    def lookupLocal[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] =
+      lookingUp[T](name){
+        parent match {
+          case p: Context.NodeContext if p.owner.isTermSymbol => p.lookupLocal[T](name)
+          case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+        }
+      }
+
+    private def lookingUp[T <: Symbol : ClassTag : TypeTag](name: String)(forNone: => LookupResult[T]): LookupResult[T] =
+      scope.lookup(name) match {
+        case Some(elem: T) => LookupResult.LookupSuccess(elem)
+        case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
+        case None => forNone
+      }
+
 
     def hpBounds: Vector[HPBound] = {
       def hpBound(symbol: Symbol): Vector[HPBound] = symbol match {

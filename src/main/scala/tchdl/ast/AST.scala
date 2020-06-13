@@ -642,12 +642,12 @@ case class HPBinOp(
   type Expr = Expression with HPExpr
 }
 
-case class Select(expr: Expression, name: String) extends Expression with HasSymbol
+case class Select(prefix: Expression, name: String) extends Expression with HasSymbol
 case class StaticSelect(suffix: TypeTree, name: String) extends Expression with TypeAST
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
 case class Construct(name: TypeTree, pairs: Vector[ConstructPair]) extends Expression
 case class ConstructPair(name: String, expr: Expression) extends AST
-case class Self() extends Expression
+case class This() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
 case class BitLiteral(value: BigInt, length: Int) extends Expression
 case class IntLiteral(value: Int) extends Expression with HPExpr
@@ -665,7 +665,7 @@ case class Relay(target: String, params: Vector[Expression]) extends Expression
 // In Typer, hp and tp are adjust their length
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
 case class TypeTree(expr: Ident, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
-case class SelfType() extends TypeAST
+case class ThisType() extends TypeAST
 
 trait Operation {
   def toInterface: String
