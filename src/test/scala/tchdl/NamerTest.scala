@@ -4,9 +4,8 @@ import org.scalatest.ParallelTestExecution
 import tchdl.ast._
 import tchdl.typecheck.Namer
 import tchdl.util._
-import org.scalatest.funsuite.AnyFunSuite
 
-class NamerTest extends AnyFunSuite {
+class NamerTest extends TchdlFunSuite {
   def parser(filename: String): AST = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
 
   test("named builtin") {

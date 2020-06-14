@@ -127,11 +127,36 @@ object TPBound {
   }
 
   def verifyTypeParamTarget(
-    tpBound: TPBound,
+    swappedTPBound: TPBound,
     callerHPBound: Vector[HPBound],
     callerTPBound: Vector[TPBound]
   ): Either[Error, Unit] = {
-    val results = tpBound.bounds.map { bound =>
+    callerTPBound.find(_.target.origin == swappedTPBound.target.origin) match {
+      case Some(bound) =>
+        val results = swappedTPBound.bounds.map{
+          calledBound =>
+            if(bound.bounds.exists(_ =:= calledBound)) Right(())
+            else Left(Error.NotMeetPartialTPBound(swappedTPBound.target, calledBound))
+        }
+
+        val (errs, _) = results.partitionMap(identity)
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+      case None =>
+        val isValid = swappedTPBound.bounds.isEmpty
+        lazy val errs = swappedTPBound
+          .bounds
+          .map(Error.NotMeetPartialTPBound(swappedTPBound.target, _))
+
+        if(isValid) Right(())
+        else Left(Error.MultipleErrors(errs: _*))
+    }
+
+    /*
+    val results = swappedTPBound.bounds.map { bound =>
+      callerTPBound.find(_.target.origin == swappedTPBound.target.origin) match {
+        case Some(bound) =>
+      }
       val interface = bound.origin.asInterfaceSymbol
       val hpTable = (interface.hps zip bound.hardwareParam).toMap
       val tpTable = (interface.tps zip bound.typeParam).toMap
@@ -153,6 +178,7 @@ object TPBound {
     val (errs, _) = results.partitionMap(identity)
     if(errs.isEmpty) Right(())
     else Left(Error.MultipleErrors(errs: _*))
+     */
   }
 }
 

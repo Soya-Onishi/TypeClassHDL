@@ -3,10 +3,7 @@ package tchdl
 import tchdl.ast._
 import tchdl.util._
 
-import org.scalatest.funsuite.AnyFunSuite
-import java.nio.file.Paths
-
-class ParseTest extends AnyFunSuite {
+class ParseTest extends TchdlFunSuite {
   test("binary operation test") {
     def binop(left: Expression, right: Expression, op: String): StdBinOp = {
       val operator = op match {

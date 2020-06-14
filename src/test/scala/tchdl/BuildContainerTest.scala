@@ -4,9 +4,7 @@ import tchdl.ast._
 import tchdl.util._
 import tchdl.typecheck._
 
-import org.scalatest.funsuite.AnyFunSuite
-
-class BuildContainerTest extends AnyFunSuite {
+class BuildContainerTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
@@ -30,16 +28,16 @@ class BuildContainerTest extends AnyFunSuite {
   test("struct bounds miss match type between Num and Str") {
     val (_, global) = untilBuild("typeCheckHP0.tchdl")
 
-    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.TypeMissMatch], showErrors(global.repo.error.elems))
+    assert(err.isInstanceOf[Error.TypeMissMatch], showErrors(global))
   }
 
   test("interface impl's hardware parameter miss match type between Num and Str") {
     val (_, global) = untilBuild("typeCheckHP1.tchdl")
 
-    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.TypeMissMatch], showErrors(global.repo.error.elems))
+    assert(err.isInstanceOf[Error.TypeMissMatch], showErrors(global))
   }
 }

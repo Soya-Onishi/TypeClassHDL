@@ -85,6 +85,11 @@ object TopDefTyper {
     val signatureCtx = Context(ctx, impl.symbol)
     val implSymbol = impl.symbol.asImplementSymbol
 
+    signatureCtx.reAppend(
+      implSymbol.hps ++
+        implSymbol.tps: _*
+    )
+
     val result = for {
       _ <- verifyTPBoundType(implSymbol)(signatureCtx)
       _ <- verifyType(impl.target, signatureCtx, global)
@@ -98,6 +103,11 @@ object TopDefTyper {
   def typedImplInterfaceSignature(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): ImplementInterface = {
     val signatureCtx = Context(ctx, impl.symbol)
     val implSymbol = impl.symbol.asImplementSymbol
+
+    signatureCtx.reAppend(
+      implSymbol.hps ++
+      implSymbol.tps: _*
+    )
 
     val result = for {
       _ <- verifyTPBoundType(implSymbol)(signatureCtx)

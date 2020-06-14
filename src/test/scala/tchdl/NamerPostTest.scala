@@ -4,9 +4,7 @@ import tchdl.ast._
 import tchdl.util._
 import tchdl.typecheck._
 
-import org.scalatest.funsuite.AnyFunSuite
-
-class NamerPostTest extends AnyFunSuite {
+class NamerPostTest extends TchdlFunSuite {
   private def parse(file: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, file))(file).asInstanceOf[CompilationUnit]
 

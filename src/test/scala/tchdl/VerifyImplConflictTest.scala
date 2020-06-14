@@ -4,9 +4,7 @@ import tchdl.ast._
 import tchdl.typecheck._
 import tchdl.util._
 
-import org.scalatest.funsuite.AnyFunSuite
-
-class VerifyImplConflictTest extends AnyFunSuite {
+class VerifyImplConflictTest extends TchdlFunSuite {
   private def parse(filename: String) = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
   private def untilImplVerify(names: String*): (Seq[CompilationUnit], GlobalData) = {
     implicit val global: GlobalData = new GlobalData
@@ -51,23 +49,23 @@ class VerifyImplConflictTest extends AnyFunSuite {
     val (trees, global) = untilImplVerify("impl1.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    if(global.repo.error.counts > 0) fail(showErrors(global.repo.error.elems))
+    if(global.repo.error.counts > 0) fail(showErrors(global))
   }
 
   test("verify actually overlap hardware parameter") {
     val (trees, global) = untilImplVerify("impl2.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global.repo.error.elems))
+    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global))
   }
 
   test("verify no conflict type parameter") {
     val (trees, global) = untilImplVerify("impl3.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
     val tree = trees.find(_.filename.get == buildName(rootDir, filePath, "impl3.tchdl")).get
     val interface = tree.topDefs.find(_.symbol.isInterfaceSymbol).get
     val impls = interface.symbol.asInterfaceSymbol.impls
@@ -79,14 +77,14 @@ class VerifyImplConflictTest extends AnyFunSuite {
     val (trees, global) = untilImplVerify("impl4.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
   }
 
   test("verify actually conflict between a poly type and a mono type in type parameter") {
     val (_, global) = untilImplVerify("impl5.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.ImplementInterfaceConflict])
   }
@@ -95,45 +93,45 @@ class VerifyImplConflictTest extends AnyFunSuite {
     val (_, global) = untilImplVerify("impl6.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
   }
 
   test("verify complicated conflict0") {
     val (_, global) = untilImplVerify("impl7.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
   }
 
   test("complicated conflict verification. This does not cause error") {
     val (_, global) = untilImplVerify("impl8.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
   }
 
   test("complicated conflict verification. This cause error because of implementation of I0 for ST[T]") {
     val (_, global) = untilImplVerify("impl9.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global.repo.error.elems))
+    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global))
   }
 
   test("impl for type parameter as target. this does not cause error") {
     val (_, global) = untilImplVerify("impl10.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
   }
 
   test("impl for type parameter as target. this causes implement conflict error") {
     val (trees, global) = untilImplVerify("impl11.tchdl")
     VerifyImplConflict.verifyImplConflict()(global)
 
-    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global.repo.error.elems))
+    assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global))
   }
 }

@@ -4,9 +4,7 @@ import tchdl.typecheck._
 import tchdl.util._
 import tchdl.ast._
 
-import org.scalatest.funsuite.AnyFunSuite
-
-class TyperTest extends AnyFunSuite {
+class TyperTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
@@ -17,16 +15,16 @@ class TyperTest extends AnyFunSuite {
     val trees = filenames.map(parse)
 
     trees.foreach(Namer.exec)
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
 
     trees.foreach(NamerPost.exec)
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
 
     trees.foreach(BuildImplContainer.exec)
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
 
     VerifyImplConflict.verifyImplConflict()
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
 
     val typedTrees = trees.map(Typer.exec)
     val returnedTrees = typedTrees
@@ -38,12 +36,12 @@ class TyperTest extends AnyFunSuite {
 
   test("lookup ST's field. This does not cause errors") {
     val (trees, global) = untilTyper("structImpl0.tchdl")
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
   }
 
   test("lookup ST's impl method. This does not cause errors") {
     val (trees, global) = untilTyper("structImpl1.tchdl")
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
 
     val topDefs = trees.head.topDefs
     val Vector(methodF, methodG) = topDefs
@@ -57,7 +55,7 @@ class TyperTest extends AnyFunSuite {
 
   test("polynomial type into mono type") {
     val (trees, global) = untilTyper("structImpl2.tchdl")
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
 
     val select = trees.head.topDefs
       .collect { case impl: ImplementClass => impl }
@@ -71,7 +69,7 @@ class TyperTest extends AnyFunSuite {
 
   test("call another impl's method from another impl") {
     val (trees, global) = untilTyper("structImpl3.tchdl")
-    assert(global.repo.error.counts == 0, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 0, showErrors(global))
 
     val impls = trees.head.topDefs
       .collect { case impl: ImplementClass => impl }
@@ -87,6 +85,6 @@ class TyperTest extends AnyFunSuite {
 
   test("call impl's methods but this call causes error because of type param(Int) does not meet bounds") {
     val (trees, global) = untilTyper("callMethod0.tchdl")
-    assert(global.repo.error.counts == 1, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == 1, showErrors(global))
   }
 }

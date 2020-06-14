@@ -1,13 +1,16 @@
+package tchdl
+
 import tchdl.parser.ASTGenerator
 import tchdl.ast._
 import tchdl.antlr._
 import tchdl.util._
-
 import org.antlr.v4.runtime._
 import org.antlr.v4.runtime.tree._
 import java.nio.file.Paths
 
-package object tchdl {
+import org.scalatest.funsuite.AnyFunSuite
+
+class TchdlFunSuite extends AnyFunSuite {
   val rootDir: String = Paths.get(".").toAbsolutePath.normalize.toString
   val builtinPath: String = "src/test/builtin"
   val filePath: String = "src/test/files"
@@ -34,14 +37,14 @@ package object tchdl {
 
   def buildName(path: String*): String = path.mkString("/")
 
-  def showErrors(errors: Vector[Error]): String =
-    errors.map(_.debugString).mkString("\n\n")
+  def showErrors(global: GlobalData): String =
+    global.repo.error.elems.map(_.debugString).mkString("\n\n")
 
   def expectNoError(implicit global: GlobalData): Unit = {
     expectError(0)
   }
 
   def expectError(count: Int)(implicit global: GlobalData): Unit = {
-    assert(global.repo.error.counts == count, showErrors(global.repo.error.elems))
+    assert(global.repo.error.counts == count, showErrors(global))
   }
 }
