@@ -60,6 +60,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asHardwareParamSymbol: Symbol.HardwareParamSymbol = this.asInstanceOf[Symbol.HardwareParamSymbol]
   def asVariableSymbol: Symbol.VariableSymbol = this.asInstanceOf[Symbol.VariableSymbol]
   def asMethodSymbol: Symbol.MethodSymbol = this.asInstanceOf[Symbol.MethodSymbol]
+  def asStageSymbol: Symbol.StageSymbol = this.asInstanceOf[Symbol.StageSymbol]
 
   def isTypeSymbol: Boolean = this.isInstanceOf[Symbol.TypeSymbol]
   def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]

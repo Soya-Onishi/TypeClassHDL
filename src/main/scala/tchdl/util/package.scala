@@ -25,5 +25,22 @@ package object util {
             (bs, elems.head +: as)
       }
     }
+
+    def findRemain(f: A => Boolean): (Option[A], Vector[A]) = vec match {
+      case Vector() => (Option.empty, Vector.empty)
+      case elems if f(elems.head) => (Some(elems.head), elems.tail)
+      case elems =>
+        val (opt, tail) = elems.tail.findRemain(f)
+        (opt, elems.head +: tail)
+    }
+  }
+
+  implicit class VectorEitherUnit[A](vec: Vector[Either[A, Unit]]) {
+    def combine[B](f: Vector[A] => B): Either[B, Unit] = {
+      val (lefts, _) = vec.partitionMap(identity)
+
+      if(lefts.isEmpty) Right(())
+      else Left(f(lefts))
+    }
   }
 }

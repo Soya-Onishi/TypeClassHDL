@@ -61,6 +61,10 @@ object Error {
   case class NotMeetHPBound(require: HPBound, caller: Option[HPBound]) extends Error
   case class NotMeetPartialTPBound(target: Type.RefType, require: Type.RefType) extends Error
   case class ValueNotMeetHPBound(value: Int, require: HPBound) extends Error
+  case class NotEnoughHPBound(require: HPBound) extends Error
+  case class ExcessiveHPBound(remains: Vector[HPBound]) extends Error
+  case class NotEnoughTPBound(remains: TPBound) extends Error
+  case class ExcessiveTPBound(remains: Vector[TPBound]) extends Error
   case object UsingSelfOutsideClass extends Error
   case class InvalidFormatForType(expr: Expression) extends Error
   case object FinishOutsideStage extends Error
@@ -69,6 +73,7 @@ object Error {
   case class DefinitionNameConflict(name: String) extends Error
   case class ImplementInterfaceConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer) extends Error
   case class ImplementClassConflict(impl0: ImplementClassContainer, impl1: ImplementClassContainer) extends Error
+  case class ImplementMethodInterfaceNotHas(method: Symbol.MethodSymbol, interface: Symbol.InterfaceSymbol) extends Error
   case class AmbiguousSymbols(symbols: Vector[Symbol]) extends Error
   case class AmbiguousTypeParam(symbol: Symbol.TypeParamSymbol) extends Error
   case class AmbiguousHardwareParam(symbol: Symbol.HardwareParamSymbol) extends Error
