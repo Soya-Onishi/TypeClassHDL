@@ -70,4 +70,11 @@ class TopDefTyperTest extends TchdlFunSuite {
     val error = global.repo.error.elems.head
     assert(error.isInstanceOf[Error.NotMeetHPBound])
   }
+
+  test("field has type that does not exists") {
+    val (_, global) = untilTopDefTyper("topdef5.tchdl")
+    expectError(1)(global)
+    val error = global.repo.error.elems.head
+    assert(error.isInstanceOf[Error.SymbolNotFound])
+  }
 }

@@ -1,0 +1,8 @@
+package test
+
+module Module {
+  parent: a: T
+}
+
+interface I {}
+impl I for Module {}
