@@ -134,7 +134,7 @@ object ImplMethodSigTyper {
             case None => Right(Vector.empty)
             case Some(interface) => impls.findRemain(_.target =:= interface.target) match {
               case (None, _) => Left(Error.NotEnoughTPBound(interface))
-              case (Some(impl), remains) => buildPairs(remains, interfaces.tail).map(impl +: _)
+              case (Some(impl), remains) => buildPairs(remains, interfaces.tail).map((impl, interface) +: _)
             }
           }
         }
