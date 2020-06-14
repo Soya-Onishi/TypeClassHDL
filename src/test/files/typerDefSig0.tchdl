@@ -1,0 +1,14 @@
+package test
+
+struct ST {}
+
+interface I {
+  def method(n: Int) -> Int
+}
+
+impl I for ST {
+  def method(n: String) -> Int {
+    0
+  }
+}
+
