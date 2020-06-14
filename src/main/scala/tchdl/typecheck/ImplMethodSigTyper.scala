@@ -146,7 +146,7 @@ object ImplMethodSigTyper {
         }
 
         def verifyBound(impl: TPBound, interface: TPBound): Either[Error, Unit] = {
-          def loop(implBounds: Vector[Type.RefType], interfaceBounds: Vector[Type.RefType]): Either[Error, Unit] = {
+          @tailrec def loop(implBounds: Vector[Type.RefType], interfaceBounds: Vector[Type.RefType]): Either[Error, Unit] = {
             interfaceBounds.headOption match {
               case None if implBounds.nonEmpty => Left(Error.ExcessiveTPBound(Vector(impl)))
               case None => Right(())
