@@ -171,18 +171,14 @@ object ImplMethodSigTyper {
         implMethod: Type.MethodType,
         interfaceMethod: Type.MethodType
       ): Either[Error, Unit] = {
-        val params = (implMethod.params zip interfaceMethod.params).map {
+        val implTpes = implMethod.params :+ implMethod.returnType
+        val interfaceTpes = interfaceMethod.params :+ interfaceMethod.returnType
+        val results = (implTpes zip interfaceTpes).map {
           case (impl, interface) if impl =:= interface => Right(())
           case (impl, interface) => Left(Error.TypeMissMatch(interface, impl))
         }
 
-        val implRet = implMethod.returnType
-        val interfaceRet = interfaceMethod.returnType
-        val ret =
-          if(implRet =:= interfaceRet) Right(())
-          else Left(Error.TypeMissMatch(interfaceRet, implRet))
-
-        (params :+ ret).combine(errs => Error.MultipleErrors(errs: _*))
+        results.combine(errs => Error.MultipleErrors(errs: _*))
       }
 
       val interfaceTpe = impl.interface.tpe.asRefType
