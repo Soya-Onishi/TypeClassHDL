@@ -1,0 +1,6 @@
+package test
+
+struct ST {}
+interface I {}
+impl ST {}
+impl I for ST {}

@@ -22,7 +22,8 @@ class BuildContainerTest extends TchdlFunSuite {
 
     trees.foreach(BuildImplContainer.exec)
 
-    (trees, global)
+    val cus = trees.filter(cu => filename.contains(cu.filename.get))
+    (cus, global)
   }
 
   test("struct bounds miss match type between Num and Str") {
@@ -39,5 +40,24 @@ class BuildContainerTest extends TchdlFunSuite {
     assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.TypeMissMatch], showErrors(global))
+  }
+
+  test("verify impl's type tree has type") {
+    val (Seq(tree), global) = untilBuild("impl12.tchdl")
+    expectNoError(global)
+
+    val struct = tree.topDefs.collectFirst{ case s: StructDef => s }.get
+    val interface = tree.topDefs.collectFirst{ case i: InterfaceDef => i }.get
+    val implClass = tree.topDefs.collectFirst{ case impl: ImplementClass => impl }.get
+    val implInterface = tree.topDefs.collectFirst{ case impl: ImplementInterface => impl }.get
+
+    // verify no exception raised
+    val cTargetTpe = implClass.target.tpe
+    val iTargetTpe = implInterface.target.tpe
+    val iInterfaceTpe = implInterface.interface.tpe
+
+    assert(cTargetTpe == Type.RefType(struct.symbol.asTypeSymbol))
+    assert(iTargetTpe == Type.RefType(struct.symbol.asTypeSymbol))
+    assert(iInterfaceTpe == Type.RefType(interface.symbol.asInterfaceSymbol))
   }
 }

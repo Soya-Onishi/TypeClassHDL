@@ -860,6 +860,16 @@ object Type {
     def =:=(other: Type): Boolean = other.isErrorType
   }
 
+  def intTpe(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.lookup("Int")
+    Type.RefType(symbol)
+  }
+
+  def stringTpe(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.lookup("String")
+    Type.RefType(symbol)
+  }
+
   def unitTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.lookup("Unit")
     Type.RefType(symbol)

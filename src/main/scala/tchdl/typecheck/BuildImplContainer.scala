@@ -146,6 +146,9 @@ object BuildImplContainer {
 
         val interfaceTpe = interface.tpe.asRefType
         val targetTpe = target.tpe.asRefType
+        impl.interface.setTpe(interfaceTpe).setSymbol(interface.symbol)
+        impl.target.setTpe(targetTpe).setSymbol(target.symbol)
+
         val container = ImplementInterfaceContainer(impl, ctx, interfaceTpe, targetTpe, implContext.scope)
 
         val interfaceSymbol = interface.symbol.asInterfaceSymbol
@@ -181,7 +184,10 @@ object BuildImplContainer {
         impl.methods.foreach(Namer.nodeLevelNamed(_)(implContext, global))
         impl.stages.foreach(Namer.nodeLevelNamed(_)(implContext, global))
 
-        val container = ImplementClassContainer(impl, ctx, target.tpe.asRefType, implContext.scope)
+        val targetTpe = target.tpe.asRefType
+        impl.target.setTpe(targetTpe).setSymbol(target.symbol)
+
+        val container = ImplementClassContainer(impl, ctx, targetTpe, implContext.scope)
 
         val targetSymbol = target.symbol.asClassTypeSymbol
         val implSymbol = impl.symbol.asImplementSymbol
