@@ -78,12 +78,14 @@ class Reporter {
       def flatten(errs: Seq[Error]): Vector[Error] = {
         errs.toVector.flatMap {
           case err: Error.MultipleErrors => flatten(err.errs)
+          case Error.DummyError => Vector()
           case err => Vector(err)
         }
       }
 
       err match {
         case err: Error.MultipleErrors => this._elems = flatten(err.errs) ++ this._elems
+        case Error.DummyError => // nothing to do
         case err => this._elems = err +: this._elems
       }
     }

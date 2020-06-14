@@ -336,83 +336,80 @@ object HPBound {
     } yield delegated
   }
 
-  def verifyForm(bound: HPBoundTree)(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
-    def verifyTarget(expr: HPExpr): Either[Error, Unit] = {
-      def loop(expr: HPExpr, isRoot: Boolean): Either[Error, Unit] = {
-        expr match {
-          case HPBinOp(_, left, right) =>
-            for {
-              _ <- loop(left, isRoot = false)
-              _ <- loop(right, isRoot = false)
-            } yield ()
-          case Ident(name) =>
-            ctx.lookupDirectLocal[Symbol.HardwareParamSymbol](name) match {
-              case LookupResult.LookupFailure(err) => Left(err)
-              case LookupResult.LookupSuccess(_) => Right(())
-            }
-          case _ /*Literal*/ if isRoot => Left(???)
-          case _ => Right(())
+  def verifyForm(bound: HPBoundTree)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {
+    def verifyExpr(expr: HPExpr): Either[Error, HPExpr] = expr match {
+      case lit: StringLiteral => Right(lit.setTpe(Type.strTpe))
+      case lit: IntLiteral => Right(lit.setTpe(Type.numTpe))
+      case ident: Ident => ctx
+        .lookup[Symbol.HardwareParamSymbol](ident.name)
+        .toEither
+        .map(symbol => ident.setSymbol(symbol).setTpe(symbol.tpe))
+      case HPBinOp(op, left, right) =>
+        val terms = for {
+          typedLeft  <- verifyExpr(left)
+          typedRight <- verifyExpr(right)
+        } yield (typedLeft, typedRight)
+
+        terms.flatMap {
+          case (left, right) => (left.tpe, right.tpe) match {
+            case (Type.ErrorType, _) => Left(Error.DummyError)
+            case (_, Type.ErrorType) => Left(Error.DummyError)
+            case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
+              lazy val typedBinOp = HPBinOp(op, left, right).setTpe(Type.numTpe).setID(expr.id)
+              lazy val leftTypeMissMatch = Error.TypeMissMatch(Type.numTpe, leftTpe)
+              lazy val rightTypeMissMatch = Error.TypeMissMatch(Type.numTpe, rightTpe)
+
+              if(leftTpe =:= Type.numTpe && rightTpe =:= Type.numTpe) Right(typedBinOp)
+              else if (leftTpe =!= Type.numTpe && rightTpe =!= Type.numTpe)
+                Left(Error.MultipleErrors(leftTypeMissMatch, rightTypeMissMatch))
+              else if(leftTpe =!= Type.numTpe) Left(leftTypeMissMatch)
+              else Left(rightTypeMissMatch)
+          }
         }
+    }
+
+    def verifyTarget(expr: HPExpr): Either[Error, Unit] = {
+      val result = expr match {
+        case lit: StringLiteral => Left(Error.LiteralOnTarget(lit))
+        case lit: IntLiteral => Left(Error.LiteralOnTarget(lit))
+        case expr => verifyExpr(expr)
       }
 
-      loop(expr, isRoot = true)
+      result.map(_ => ())
     }
 
     def verifyBound(bound: Vector[RangeExpr]): Either[Error, Unit] = {
       case class Range(max: Option[Int], min: Option[Int], eq: Option[Int])
 
       def verifyRanges(remain: Vector[RangeExpr], assignedRange: Range): Either[Error, Unit] = {
-        def collectIdent(expr: HPExpr): Vector[Ident] = expr match {
-          case HPBinOp(_, left, right) => collectIdent(left) ++ collectIdent(right)
-          case ident: Ident => Vector(ident)
-          case _ => Vector.empty
-        }
-
-        def verifyAllIdents(idents: Vector[Ident]): Either[Error, Range] = {
-          val (errs, _) = idents.view
-            .map(_.name)
-            .map(ctx.lookupDirectLocal[Symbol.HardwareParamSymbol])
-            .map(_.toEither)
-            .to(Vector)
-            .partitionMap(identity)
-
-          if (errs.isEmpty) Right(assignedRange)
-          else Left(Error.MultipleErrors(errs: _*))
-        }
-
-        def verifyExpr(expr: HPExpr)(intLitCase: PartialFunction[HPExpr, Either[Error, Range]]): Either[Error, Range] = {
-          intLitCase.unapply(expr) match {
+        def verify(expr: HPExpr)(rootPattern: PartialFunction[HPExpr, Either[Error, Range]]): Either[Error, Range] =
+          rootPattern.unapply(expr) match {
             case Some(ret) => ret
-            case None => expr match {
-              case _: StringLiteral => Left(???)
-              case binop: HPBinOp => (collectIdent _ andThen verifyAllIdents)(binop)
-              case ident: Ident => verifyAllIdents(Vector(ident))
-            }
+            case None => verifyExpr(expr).map(_ => assignedRange)
           }
-        }
 
         if (remain.isEmpty) Right(())
         else {
           val result = remain.head match {
-            case RangeExpr.EQ(expr) => verifyExpr(expr) {
+            case RangeExpr.EQ(expr) => verify(expr) {
               case IntLiteral(value) => assignedRange.eq match {
                 case None => Right(assignedRange.copy(eq = Some(value)))
-                case Some(_) => Left(???)
+                case Some(eq) => Left(Error.RangeAlreadyAssigned[RangeExpr.EQ](eq))
               }
             }
-            case RangeExpr.NE(expr) => verifyExpr(expr) {
+            case RangeExpr.NE(expr) => verify(expr) {
               case _: IntLiteral => Right(assignedRange)
             }
-            case RangeExpr.Max(expr) => verifyExpr(expr) {
+            case RangeExpr.Max(expr) => verify(expr) {
               case IntLiteral(value) => assignedRange.max match {
                 case None => Right(assignedRange.copy(max = Some(value)))
-                case Some(_) => Left(???)
+                case Some(max) => Left(Error.RangeAlreadyAssigned[RangeExpr.Max](max))
               }
             }
-            case RangeExpr.Min(expr) => verifyExpr(expr) {
+            case RangeExpr.Min(expr) => verify(expr) {
               case IntLiteral(value) => assignedRange.min match {
                 case None => Right(assignedRange.copy(min = Some(value)))
-                case Some(_) => Left(???)
+                case Some(min) => Left(Error.RangeAlreadyAssigned[RangeExpr.Min](min))
               }
             }
           }
@@ -421,12 +418,9 @@ object HPBound {
         }
       }
 
-      val (eqs, others) = bound.partition {
-        case _: RangeExpr.EQ => true
-        case _ => false
-      }
+      val (eqs, others) = bound.partition(_.isInstanceOf[RangeExpr.EQ])
 
-      if (eqs.nonEmpty && others.nonEmpty) Left(???)
+      if (eqs.nonEmpty && others.nonEmpty) Left(Error.EqAndOthersInSameBound(eqs, others))
       else verifyRanges(bound, Range(None, None, None))
     }
 
@@ -436,7 +430,7 @@ object HPBound {
     } yield ()
   }
 
-  def verifyAll(bounds: Vector[HPBoundTree])(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
+  def verifyAllForms(bounds: Vector[HPBoundTree])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {
     val (errs, _) = bounds.map(HPBound.verifyForm).partitionMap(identity)
 
     if (errs.isEmpty) Right(())

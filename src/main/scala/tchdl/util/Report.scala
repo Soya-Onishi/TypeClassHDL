@@ -35,6 +35,8 @@ object Error {
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class RequireNumOrStr(actual: Type.RefType) extends Error
   case class RequireNumTerm(tree: HPExpr, actual: Type.RefType) extends Error
+  case class LiteralOnTarget(lit: HPExpr) extends Error
+  case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
   case object RequireType extends Error
   case object RequireTypeParameter extends Error
   case class RequireStructOrModuleSymbol(name: String) extends Error
@@ -73,6 +75,7 @@ object Error {
   case object AttachTPToPackageSymbol extends Error
   case class InvalidTypeForHP(tpe: Type.RefType) extends Error
   case class TryDivisionByZero(expr: HPExpr) extends Error
+  case class RangeAlreadyAssigned[T <: RangeExpr : TypeTag](value: Int) extends Error
 
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error

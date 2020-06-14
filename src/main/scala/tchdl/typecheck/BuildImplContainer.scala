@@ -101,7 +101,7 @@ object BuildImplContainer {
     val signatureCtx = Context(ctx, definition.symbol)
     signatureCtx.reAppend(
       definition.hp.map(_.symbol) ++
-        definition.tp.map(_.symbol) : _*
+      definition.tp.map(_.symbol) : _*
     )
 
     val (errs, bounds) = definition.bounds

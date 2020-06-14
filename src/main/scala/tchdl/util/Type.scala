@@ -93,7 +93,7 @@ object Type {
   }
 
   case class MethodTypeGenerator(method: MethodDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
-    override def generate: Type.MethodType = {
+    override def generate: Type = {
       val signatureCtx = Context(ctx, method.symbol)
       signatureCtx.reAppend(
         method.symbol.asMethodSymbol.hps ++
@@ -103,10 +103,18 @@ object Type {
       val paramTpes = method.params
         .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
         .map(Typer.typedValDef(_)(signatureCtx, global))
-        .map(_.symbol.tpe.asRefType)
-      val retTpes = Typer.typedTypeTree(method.retTpe)(signatureCtx, global).tpe.asRefType
+        .map(_.symbol.tpe)
 
-      MethodType(paramTpes, retTpes)
+      val retTpe = Typer.typedTypeTree(method.retTpe)(signatureCtx, global).tpe
+
+      val hasErrorType = paramTpes.exists(_.isErrorType) || retTpe.isErrorType
+      if(hasErrorType) Type.ErrorType
+      else {
+        val param = paramTpes.map(_.asRefType)
+        val ret = retTpe.asRefType
+
+        MethodType(param, ret)
+      }
     }
   }
 

@@ -36,4 +36,12 @@ package object tchdl {
 
   def showErrors(errors: Vector[Error]): String =
     errors.map(_.debugString).mkString("\n\n")
+
+  def expectNoError(implicit global: GlobalData): Unit = {
+    expectError(0)
+  }
+
+  def expectError(count: Int)(implicit global: GlobalData): Unit = {
+    assert(global.repo.error.counts == count, showErrors(global.repo.error.elems))
+  }
 }
