@@ -213,6 +213,8 @@ object ImplMethodSigTyper {
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
+    impl.methods.foreach(_.symbol.tpe)
+
     val (errs, methodSymbols) = impl.methods.map(TyperUtil.verifyMethodValidity(_)(implCtx, global)).partitionMap(identity)
     val result =
       if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
