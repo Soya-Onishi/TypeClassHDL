@@ -59,4 +59,36 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val (_, global) = untilThisPhase("typerDefSig2.tchdl")
     expectError(2)(global)
   }
+
+  test("raise an error because of impl's method type parameter does not match correspond tp's bounds") {
+    val (_, global) = untilThisPhase("typerDefSig3.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotEnoughTPBound])
+  }
+
+  test("raise an error because of impl's method type parameter set bounds excessively") {
+    val (_, global) = untilThisPhase("typerDefSig4.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ExcessiveTPBound])
+  }
+
+  test("raise an error because of impl's method hardware parameter does not match correspond tp's bounds") {
+    val (_, global) = untilThisPhase("typerDefSig5.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotEnoughHPBound])
+  }
+
+  test("raise an error because of impl's method hardware parameter set bounds excessively") {
+    val (_, global) = untilThisPhase("typerDefSig6.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ExcessiveHPBound])
+  }
 }

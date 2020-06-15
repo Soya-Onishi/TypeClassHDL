@@ -1,0 +1,9 @@
+package test
+
+interface I {
+  def f[m: Num](a: Bit[m]) -> Bit[m] where m: min 3
+}
+
+impl I for Int {
+  def f[n: Num](a: Bit[n]) -> Bit[n] where n: min 1 { a }
+}

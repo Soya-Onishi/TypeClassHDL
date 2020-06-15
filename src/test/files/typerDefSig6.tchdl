@@ -1,0 +1,9 @@
+package test
+
+interface I {
+  def f[m: Num, n: Num]() -> Unit where m: min 0
+}
+
+impl I for Int {
+  def f[a: Num, b: Num]() -> Unit where a: min 0, b: max 1 {}
+}

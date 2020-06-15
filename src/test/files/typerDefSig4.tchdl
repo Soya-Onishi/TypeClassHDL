@@ -1,0 +1,10 @@
+package test
+
+interface I {
+  def f[A, B](a: A, b: B) -> Unit where A: I
+}
+
+impl I for Int {
+  def f[A, B](a: A, b: B) -> Unit where A: I, B: I {}
+}
+

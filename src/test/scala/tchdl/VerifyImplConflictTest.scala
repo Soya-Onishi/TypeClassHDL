@@ -116,7 +116,7 @@ class VerifyImplConflictTest extends TchdlFunSuite {
   }
 
   test("impl for type parameter as target. this causes implement conflict error") {
-    val (trees, global) = untilImplVerify("impl11.tchdl")
+    val (_, global) = untilImplVerify("impl11.tchdl")
 
     assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
