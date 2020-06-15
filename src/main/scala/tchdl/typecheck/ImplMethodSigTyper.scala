@@ -225,5 +225,20 @@ object ImplMethodSigTyper {
       }
 
     result.left.foreach(global.repo.error.append)
+
+    // search methods that is not implemented at impl's context
+    val interfaceMethods = impl.interface.symbol
+      .tpe.asEntityType
+      .declares
+      .toMap.collect{ case (name, method: Symbol.MethodSymbol) => name -> method }
+
+    interfaceMethods.map{
+      case (name, _) if impl.methods.exists(_.name == name) => Right(())
+      case (_, method) => Left(Error.RequireImplementMethod(method))
+    }
+      .toVector
+      .combine(errs => Error.MultipleErrors(errs: _*))
+      .left
+      .foreach(global.repo.error.append)
   }
 }

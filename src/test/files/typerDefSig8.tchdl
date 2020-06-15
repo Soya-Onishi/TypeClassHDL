@@ -1,0 +1,9 @@
+package test
+
+interface I {
+  def f[T](a: T) -> T
+}
+
+impl I for Int {
+  def f[A, B](n: A) -> B { n }
+}

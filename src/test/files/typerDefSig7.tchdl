@@ -1,0 +1,9 @@
+package test
+
+interface I {
+  def f(a: Int, b: Int) -> Int
+}
+
+impl I for Int {
+  def f(n: Int) -> Int { n }
+}

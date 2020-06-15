@@ -74,6 +74,7 @@ object Error {
   case class ImplementInterfaceConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer) extends Error
   case class ImplementClassConflict(impl0: ImplementClassContainer, impl1: ImplementClassContainer) extends Error
   case class ImplementMethodInterfaceNotHas(method: Symbol.MethodSymbol, interface: Symbol.InterfaceSymbol) extends Error
+  case class RequireImplementMethod(require: Symbol.MethodSymbol) extends Error
   case class AmbiguousSymbols(symbols: Vector[Symbol]) extends Error
   case class AmbiguousTypeParam(symbol: Symbol.TypeParamSymbol) extends Error
   case class AmbiguousHardwareParam(symbol: Symbol.HardwareParamSymbol) extends Error

@@ -1,0 +1,10 @@
+package test
+
+interface I {
+  def f(a: Int) -> Int
+  def g(b: String) -> String
+}
+
+impl I for Int {
+  def f(a: Int) -> Int { a }
+}

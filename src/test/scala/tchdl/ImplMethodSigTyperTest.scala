@@ -91,4 +91,44 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.ExcessiveHPBound])
   }
+
+  test("raise an error because of impl's method parameter length mismatch expected length") {
+    val (_, global) = untilThisPhase("typerDefSig7.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ParameterLengthMismatch])
+  }
+
+  test("raise an error because of impl's method type parameter length mismatch expected length") {
+    val (_, global) = untilThisPhase("typerDefSig8.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeParameterLengthMismatch])
+  }
+
+  test("raise an error because of impl's method hardware parameter length mismatch expected length") {
+    val (_, global) = untilThisPhase("typerDefSig9.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.HardParameterLengthMismatch])
+  }
+
+  test("raise an error because impl does not implement all methods defined at interface") {
+    val (_, global) = untilThisPhase("typerDefSig10.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireImplementMethod])
+  }
+
+  test("raise an error because impl try to implement method interface does not have") {
+    val (_, global) = untilThisPhase("typerDefSig11.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ImplementMethodInterfaceNotHas])
+  }
 }
