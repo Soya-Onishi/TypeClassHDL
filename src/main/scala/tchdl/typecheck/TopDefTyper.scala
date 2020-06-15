@@ -60,11 +60,19 @@ object TopDefTyper {
   }
 
   def typedInterfaceDef(interfaceDef: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
-    def verifyMethodValidity: Either[Error, Unit] = {
-      val methodTypes = interfaceDef.methods.map(_.symbol.tpe)
+    def verifyMethodValidity(ctx: Context.NodeContext): Either[Error, Unit] = {
+      val results = interfaceDef.methods.map {
+        methodDef =>
+          val method = methodDef.symbol.asMethodSymbol
+          if(method.tpe.isErrorType) Left(Error.DummyError)
+          else {
+            val methodCtx = Context(ctx, method)
+            methodCtx.reAppend(method.hps ++ method.tps: _*)
+            TyperUtil.verifyMethodDef(methodDef)(methodCtx, global).map(_ => ())
+          }
+      }
 
-      if(methodTypes.exists(_.isErrorType)) Left(Error.DummyError)
-      else Right(())
+      results.combine(errs => Error.MultipleErrors(errs: _*))
     }
 
     interfaceDef.symbol.tpe
@@ -74,10 +82,11 @@ object TopDefTyper {
 
     val result = for {
       _ <- verifyTPBoundType(interface)(signatureCtx)
-      _ <- verifyMethodValidity
+      _ <- verifyMethodValidity(signatureCtx)
     } yield ()
 
     result.left.foreach(global.repo.error.append)
+
     interfaceDef
   }
 
@@ -87,7 +96,7 @@ object TopDefTyper {
 
     signatureCtx.reAppend(
       implSymbol.hps ++
-        implSymbol.tps: _*
+      implSymbol.tps: _*
     )
 
     val result = for {

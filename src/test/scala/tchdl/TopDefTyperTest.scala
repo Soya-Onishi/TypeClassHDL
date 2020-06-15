@@ -28,8 +28,9 @@ class TopDefTyperTest extends TchdlFunSuite {
     expectNoError
 
     val trees1 = trees0.map(TopDefTyper.exec)
+    val cus = trees1.filter(cu => files.contains(cu.filename.get))
 
-    (trees1, global)
+    (cus, global)
   }
 
   test("not meet bounds for type parameter in impl's interface") {
@@ -76,5 +77,52 @@ class TopDefTyperTest extends TchdlFunSuite {
     expectError(1)(global)
     val error = global.repo.error.elems.head
     assert(error.isInstanceOf[Error.SymbolNotFound])
+  }
+
+  test("bounds of interface's method is set in this phase") {
+    def verifyBounds(method: Symbol.MethodSymbol, expectHP: Vector[HPBound], expectTP: Vector[TPBound]): Unit = {
+      assert(method.hpBound.length == expectHP.length)
+      assert(method.tpBound.length == expectTP.length)
+      (method.hpBound zip expectHP).foreach{ case (actual, expect) => assert(expect == actual) }
+      (method.tpBound zip expectTP).foreach{ case (actual, expect) => assert(expect == actual) }
+    }
+
+    val (Seq(tree), global) = untilTopDefTyper("topdef6.tchdl")
+    expectNoError(global)
+
+    val interface = tree.topDefs.collectFirst{ case i: InterfaceDef => i }.get
+    val f = interface.methods.find(_.name == "f").get.symbol.asMethodSymbol
+    val g = interface.methods.find(_.name == "g").get.symbol.asMethodSymbol
+    val h = interface.methods.find(_.name == "h").get.symbol.asMethodSymbol
+
+    verifyBounds(
+      f,
+      Vector.empty,
+      Vector(TPBound(Type.RefType(f.tps.head), Vector(Type.RefType(interface.symbol.asInterfaceSymbol))))
+    )
+
+    verifyBounds(
+      g,
+      Vector(HPBound(
+        Ident("m").setSymbol(g.hps.head).setTpe(Type.numTpe(global)),
+        HPRange.Range(
+          HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty),
+          HPRange.ConstantRange(IInt.PInf, IInt.Integer(0), Set.empty)
+        )
+      )),
+      Vector.empty
+    )
+
+    verifyBounds(
+      h,
+      Vector(HPBound(
+        Ident("m").setSymbol(h.hps.head).setTpe(Type.numTpe(global)),
+        HPRange.Range(
+          HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty),
+          HPRange.ConstantRange(IInt.PInf, IInt.Integer(0), Set.empty)
+        )
+      )),
+      Vector(TPBound(Type.RefType(h.tps.head), Vector(Type.RefType(interface.symbol.asInterfaceSymbol))))
+    )
   }
 }

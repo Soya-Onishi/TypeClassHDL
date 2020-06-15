@@ -10,7 +10,23 @@ trait Bound
 class TPBound(
   val target: Type.RefType,
   val bounds: Vector[Type.RefType]
-) extends Bound
+) extends Bound {
+  override def equals(obj: Any): Boolean = obj match {
+    case that: TPBound =>
+      def forall(thisBounds: Vector[Type.RefType], thatBounds: Vector[Type.RefType]): Boolean =
+        thatBounds.headOption match {
+          case None => true
+          case Some(head) => thisBounds.findRemain(_ =:= head) match {
+            case (None, _) => false
+            case (_, remains) => forall(remains, thatBounds.tail)
+          }
+        }
+      this.target =:= that.target &&
+      this.bounds.length == that.bounds.length &&
+      forall(this.bounds, that.bounds)
+    case _ => false
+  }
+}
 
 object TPBound {
   def apply(bound: TPBoundTree): TPBound =
@@ -220,6 +236,13 @@ class HPBound(
       val newConstRange = HPRange.ConstantRange(newCMax, newCMin, newCNE)
 
       Right(HPRange.Range(newExprRange, newConstRange))
+  }
+
+  override def equals(obj: Any): Boolean = obj match {
+    case that: HPBound =>
+      this.target.isSameExpr(that.target) &&
+      this.bound == that.bound
+    case _ => false
   }
 }
 
@@ -599,8 +622,37 @@ trait HPRange {
 }
 
 object HPRange {
-  case class ExprRange(max: Vector[HPExpr], min: Vector[HPExpr], ne: Vector[HPExpr])
-  case class ConstantRange(max: IInt, min: IInt, ne: Set[Int])
+  case class ExprRange(max: Vector[HPExpr], min: Vector[HPExpr], ne: Vector[HPExpr]) {
+    override def equals(obj: Any): Boolean = obj match {
+      case that: HPRange.ExprRange =>
+        @tailrec def forall(thisExpr: Vector[HPExpr], thatExpr: Vector[HPExpr]): Boolean =
+          thatExpr.headOption match {
+            case None => true
+            case Some(head) => thisExpr.findRemain(_.isSameExpr(head)) match {
+              case (None, _) => false
+              case (Some(_), remains) => forall(remains, thatExpr.tail)
+            }
+          }
+
+        this.max.length == that.max.length &&
+        this.min.length == that.min.length &&
+        this.ne.length == that.ne.length &&
+        forall(this.max, that.max) &&
+        forall(this.min, that.min) &&
+        forall(this.ne, that.ne)
+      case _ => false
+    }
+  }
+
+  case class ConstantRange(max: IInt, min: IInt, ne: Set[Int]) {
+    override def equals(obj: Any): Boolean = obj match {
+      case that: HPRange.ConstantRange =>
+        this.max == that.max &&
+        this.min == that.min &&
+        this.ne == that.ne
+      case _ => false
+    }
+  }
 
   case class Range(eRange: ExprRange, cRange: ConstantRange) extends HPRange {
     override def isOverlapped(that: HPRange): Boolean = that match {
@@ -627,6 +679,13 @@ object HPRange {
     }
 
     override def isSubsetOf(value: Int): Boolean = false
+
+    override def equals(obj: Any): Boolean = obj match {
+      case that: HPRange.Range =>
+        this.eRange == that.eRange &&
+        this.cRange == that.cRange
+      case _ => false
+    }
   }
 
   object Range {
@@ -637,8 +696,18 @@ object HPRange {
   }
 
   trait Equal
-  case class ExprEqual(expr: HPExpr) extends Equal
-  case class ConstantEqual(num: Int) extends Equal
+  case class ExprEqual(expr: HPExpr) extends Equal {
+    override def equals(obj: Any): Boolean = obj match {
+      case that: HPRange.ExprEqual => this.expr.isSameExpr(that.expr)
+      case _ => false
+    }
+  }
+  case class ConstantEqual(num: Int) extends Equal {
+    override def equals(obj: Any): Boolean = obj match {
+      case that: HPRange.ConstantEqual => this.num == that.num
+      case _ => false
+    }
+  }
 
   case class Eq(eqn: Equal) extends HPRange {
     override def isOverlapped(that: HPRange): Boolean = {
@@ -685,6 +754,11 @@ object HPRange {
     override def isSubsetOf(value: Int): Boolean = this.eqn match {
       case ConstantEqual(thisValue) => thisValue == value
       case ExprEqual(_) => false
+    }
+
+    override def equals(obj: Any): Boolean = obj match {
+      case that: HPRange.Eq => this.eqn == that.eqn
+      case _ => false
     }
   }
 

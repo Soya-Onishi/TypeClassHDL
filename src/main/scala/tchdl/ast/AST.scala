@@ -383,7 +383,9 @@ trait HasSymbol {
   def setSymbol(symbol: Symbol): this.type = { _symbol = Some(symbol); this }
 }
 
-case class CompilationUnit(filename: Option[String], pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition]) extends AST
+case class CompilationUnit(filename: Option[String], pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition]) extends AST {
+  override def toString: String = s"CU[${filename.get}, ${pkgName.mkString("::")}]"
+}
 
 case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], parents: Vector[ValDef], siblings: Vector[ValDef]) extends Definition
 case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], fields: Vector[ValDef]) extends Definition

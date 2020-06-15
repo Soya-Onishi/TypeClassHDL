@@ -1,0 +1,7 @@
+package test
+
+interface I {
+  def f[T]() -> Unit where T: I
+  def g[m: Num]() -> Unit where m: min 0
+  def h[m: Num, T]() -> Unit where T: I, m: min 0
+}

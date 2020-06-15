@@ -46,4 +46,12 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(expect == Type.intTpe(global))
     assert(actual == Type.stringTpe(global))
   }
+
+  test("reject poly method that does not have same bounds as original") {
+    val (_, global) = untilThisPhase("typerDefSig1.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotEnoughTPBound], showErrors(global))
+  }
 }

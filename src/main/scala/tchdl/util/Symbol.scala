@@ -168,12 +168,6 @@ object Symbol {
 
   class TypeParamSymbol(val path: NameSpace, tpe: Type) extends TypeSymbol(tpe, Modifier.NoModifier) {
     override val visibility: Visibility = Visibility.Private
-
-    private var _bounds: Option[Vector[Type.RefType]] = None
-    def setBounds(bounds: Vector[Type.RefType]): Unit =
-      if(_bounds.isDefined) throw new ImplementationErrorException("bounds already assigned")
-      else _bounds = Some(bounds)
-    def getBounds: Vector[Type.RefType] = _bounds.getOrElse(Vector.empty)
   }
 
   object TypeParamSymbol {
