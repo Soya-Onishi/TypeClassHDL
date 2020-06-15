@@ -1,0 +1,21 @@
+package test
+
+struct ST0[T] {
+  a: T
+}
+
+struct ST1[m: Num] where m: min 1 {
+  b: Bit[m]
+}
+
+module Mod[T] {
+  parent: p: T
+}
+
+interface I0[T] {
+  def f(n: T) -> T
+}
+
+interface I1[m: Num] where m: min 1 {
+  def g(n: Bit[m]) -> Bit[m]
+}

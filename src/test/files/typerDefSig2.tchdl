@@ -1,0 +1,10 @@
+package test
+
+interface I[T] {
+  def f(a: T) -> T
+}
+
+impl I[Int] for Int {
+  def f(a: String) -> String { a }
+}
+

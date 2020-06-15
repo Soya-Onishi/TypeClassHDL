@@ -65,11 +65,7 @@ object TopDefTyper {
         methodDef =>
           val method = methodDef.symbol.asMethodSymbol
           if(method.tpe.isErrorType) Left(Error.DummyError)
-          else {
-            val methodCtx = Context(ctx, method)
-            methodCtx.reAppend(method.hps ++ method.tps: _*)
-            TyperUtil.verifyMethodDef(methodDef)(methodCtx, global).map(_ => ())
-          }
+          else Right(())
       }
 
       results.combine(errs => Error.MultipleErrors(errs: _*))

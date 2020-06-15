@@ -125,4 +125,32 @@ class TopDefTyperTest extends TchdlFunSuite {
       Vector(TPBound(Type.RefType(h.tps.head), Vector(Type.RefType(interface.symbol.asInterfaceSymbol))))
     )
   }
+
+  test("members can use parent's poly parameters") {
+    val (Seq(tree), global) = untilTopDefTyper("topdef7.tchdl")
+    expectNoError(global)
+
+    val structs = tree.topDefs.collect{ case s: StructDef => s }
+    val module = tree.topDefs.collect{ case m: ModuleDef => m }.head
+    val interfaces = tree.topDefs.collect{ case i: InterfaceDef => i }
+
+    val st0 = structs.find(_.name == "ST0").get
+    val st1 = structs.find(_.name == "ST1").get
+    val i0 = interfaces.find(_.name == "I0").get
+    val i1 = interfaces.find(_.name == "I1").get
+
+    val a = st0.fields.head.symbol
+    val b = st1.fields.head.symbol
+    val p = module.parents.head.symbol
+    val f = i0.methods.head.symbol.tpe.asMethodType
+    val g = i1.methods.head.symbol.tpe.asMethodType
+
+    assert(a.tpe.asRefType.origin == st0.tp.head.symbol)
+    assert(b.tpe.asRefType.hardwareParam.head.asInstanceOf[Ident].symbol == st1.hp.head.symbol)
+    assert(p.tpe.asRefType.origin == module.tp.head.symbol)
+    assert(f.params.head.origin == i0.tp.head.symbol)
+    assert(f.returnType.origin == i0.tp.head.symbol)
+    assert(g.params.head.hardwareParam.head.asInstanceOf[Ident].symbol == i1.hp.head.symbol)
+    assert(g.returnType.hardwareParam.head.asInstanceOf[Ident].symbol == i1.hp.head.symbol)
+  }
 }

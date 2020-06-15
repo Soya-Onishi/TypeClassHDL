@@ -4,14 +4,7 @@ import tchdl.ast._
 import tchdl.util._
 
 object TyperUtil {
-  def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
-    def verifyHPTpes(hps: Vector[ValDef]): Either[Error, Unit] = {
-      val hasError = hps.map(_.symbol.tpe).exists(_.isErrorType)
-
-      if(hasError) Left(Error.DummyError)
-      else Right(())
-    }
-
+  def verifyMethodValidity(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
     def verifyTPBoundType(symbol: Symbol with HasParams)(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
       def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound])(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
         val (hpErrs, _) = hpBounds.map(HPBound.verifyMeetBound(_, ctx.hpBounds)).partitionMap(identity)
@@ -40,37 +33,26 @@ object TyperUtil {
       else Left(Error.MultipleErrors(errs: _*))
     }
 
-    def verifyMethodTpe(tpe: Type): Either[Error, Type.MethodType] =
-      tpe match {
+    def verifyMethodTpe: Either[Error, Unit] = {
+      val paramTpes = methodDef.params.map(_.symbol.tpe)
+      val retTpe = methodDef.retTpe.tpe
+
+      (paramTpes :+ retTpe).map {
         case Type.ErrorType => Left(Error.DummyError)
-        case tpe: Type.MethodType => Right(tpe)
-      }
+        case _ => Right(())
+      }.combine(errs => Error.MultipleErrors(errs: _*))
+    }
 
     val methodSymbol = methodDef.symbol.asMethodSymbol
     val signatureCtx = Context(ctx, methodSymbol)
     signatureCtx.reAppend (
       methodSymbol.hps ++
-        methodSymbol.tps: _*
+      methodSymbol.tps: _*
     )
 
-    val hpBoundTrees = methodDef.bounds.collect{ case b: HPBoundTree => b }
-    val tpBoundTrees = methodDef.bounds.collect{ case b: TPBoundTree => b }
-
     for {
-      _ <- verifyHPTpes(methodDef.hp)
-      _ <- HPBound.verifyAllForms(hpBoundTrees)
-      hpBounds = hpBoundTrees.map(HPBound.apply)
-      (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget).to(Vector).unzip
-      (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds).to(Vector).unzip
-      errs = (targetErrs ++ boundsErrs).flatten
-      _ <- if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*)) else Right(())
-      tpBounds = (targets zip bounds).view
-        .map{ case (t, bs) => (t.tpe.asRefType, bs.map(_.tpe.asRefType)) }
-        .map{ case (t, bs) => TPBound(t, bs) }
-        .to(Vector)
-      _ = methodSymbol.setBound(hpBounds ++ tpBounds)
       _ <- verifyTPBoundType(methodSymbol)(signatureCtx)
-      _ <- verifyMethodTpe(methodSymbol.tpe)
+      _ <- verifyMethodTpe
     } yield methodSymbol
   }
 

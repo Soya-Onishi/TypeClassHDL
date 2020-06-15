@@ -1,7 +1,7 @@
 package tchdl.util
 
 import tchdl.ast._
-import tchdl.typecheck.{Namer, Typer}
+import tchdl.typecheck.{Namer, Typer, TyperUtil}
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.reflect.ClassTag
@@ -64,19 +64,25 @@ object Type {
       throw new ImplementationErrorException("method =:= should not be called in TypeGenerator")
   }
 
-  case class ModuleTypeGenerator(module: ModuleDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
+  case class ModuleTypeGenerator(moduleDef: ModuleDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
-      val fieldCtx = Context(ctx, module.symbol)
-      module.parents.map(Namer.namedValDef(_)(fieldCtx, global))
-      module.siblings.map(Namer.namedValDef(_)(fieldCtx, global))
+      val fieldCtx = Context(ctx, moduleDef.symbol)
+      val module = moduleDef.symbol.asEntityTypeSymbol
+      fieldCtx.reAppend(module.hps ++ module.tps: _*)(global)
 
-      Type.EntityType(module.name, ctx.path, fieldCtx.scope)
+      moduleDef.parents.map(Namer.namedValDef(_)(fieldCtx, global))
+      moduleDef.siblings.map(Namer.namedValDef(_)(fieldCtx, global))
+
+      Type.EntityType(moduleDef.name, ctx.path, fieldCtx.scope)
     }
   }
 
   case class StructTypeGenerator(struct: StructDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
       val fieldCtx = Context(ctx, struct.symbol)
+      val structSymbol = struct.symbol.asEntityTypeSymbol
+      fieldCtx.reAppend(structSymbol.hps ++ structSymbol.tps: _*)(global)
+
       struct.fields.map(Namer.nodeLevelNamed(_)(fieldCtx, global))
 
       EntityType(struct.name, ctx.path, fieldCtx.scope)
@@ -86,34 +92,61 @@ object Type {
   case class InterfaceTypeGenerator(interface: InterfaceDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
       val interfaceCtx = Context(ctx, interface.symbol)
-      interface.methods.map(Namer.nodeLevelNamed(_)(interfaceCtx, global))
+      val symbol = interface.symbol.asInterfaceSymbol
+      interfaceCtx.reAppend(symbol.hps ++ symbol.tps: _*)(global)
+
+      interface.methods.map(Namer.namedMethod(_)(interfaceCtx, global))
 
       EntityType(interface.name, ctx.path, interfaceCtx.scope)
     }
   }
 
-  case class MethodTypeGenerator(method: MethodDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+  case class MethodTypeGenerator(methodDef: MethodDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
-      val signatureCtx = Context(ctx, method.symbol)
+      def verifyHPTpes(hps: Vector[ValDef]): Either[Error, Unit] =
+        hps.map(_.symbol.tpe).map {
+          case Type.ErrorType => Left(Error.DummyError)
+          case _ => Right(())
+        }.combine(errs => Error.MultipleErrors(errs: _*))
+
+      val signatureCtx = Context(ctx, methodDef.symbol)
       signatureCtx.reAppend(
-        method.symbol.asMethodSymbol.hps ++
-        method.symbol.asMethodSymbol.tps: _*
+        methodDef.symbol.asMethodSymbol.hps ++
+        methodDef.symbol.asMethodSymbol.tps: _*
       )(global)
 
-      val paramTpes = method.params
-        .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
-        .map(Typer.typedValDef(_)(signatureCtx, global))
-        .map(_.symbol.tpe)
+      val method = methodDef.symbol.asMethodSymbol
+      val hpBoundTrees = methodDef.bounds.collect{ case b: HPBoundTree => b }
+      val tpBoundTrees = methodDef.bounds.collect{ case b: TPBoundTree => b }
 
-      val retTpe = Typer.typedTypeTree(method.retTpe)(signatureCtx, global).tpe
+      val result = for {
+        _ <- verifyHPTpes(methodDef.hp)
+        _ <- HPBound.verifyAllForms(hpBoundTrees)(signatureCtx, global)
+        hpBounds = hpBoundTrees.map(HPBound.apply)
+        (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget(_)(signatureCtx, global)).to(Vector).unzip
+        (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds(_)(signatureCtx, global)).to(Vector).unzip
+        errs = (targetErrs ++ boundsErrs).flatten
+        _ <- if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*)) else Right(())
+        tpBounds = (targets zip bounds).view
+          .map{ case (t, bs) => (t.tpe.asRefType, bs.map(_.tpe.asRefType)) }
+          .map{ case (t, bs) => TPBound(t, bs) }
+          .to(Vector)
+        _ = method.setBound(hpBounds ++ tpBounds)
+        paramSymbols = methodDef.params
+          .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
+          .map(Typer.typedValDef(_)(signatureCtx, global))
+          .map(_.symbol)
+        retTpeTree = Typer.typedTypeTree(methodDef.retTpe)(signatureCtx, global)
+        _ = methodDef.retTpe.setSymbol(retTpeTree.symbol).setTpe(retTpeTree.tpe)
+        tpes = paramSymbols.map(_.tpe) :+ retTpeTree.tpe
+        _ <- if(tpes.exists(_.isErrorType)) Left(Error.DummyError) else Right(())
+      } yield (paramSymbols.map(_.tpe.asRefType), retTpeTree.tpe.asRefType)
 
-      val hasErrorType = paramTpes.exists(_.isErrorType) || retTpe.isErrorType
-      if(hasErrorType) Type.ErrorType
-      else {
-        val param = paramTpes.map(_.asRefType)
-        val ret = retTpe.asRefType
-
-        MethodType(param, ret)
+      result match {
+        case Right((params, ret)) => MethodType(params, ret)
+        case Left(err) =>
+          global.repo.error.append(err)
+          Type.ErrorType
       }
     }
   }

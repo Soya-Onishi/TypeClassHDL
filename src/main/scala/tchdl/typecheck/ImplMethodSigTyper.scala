@@ -25,7 +25,7 @@ object ImplMethodSigTyper {
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
-    val (methodErrs, _) = impl.methods.map(TyperUtil.verifyMethodDef(_)(implCtx, global)).partitionMap(identity)
+    val (methodErrs, _) = impl.methods.map(TyperUtil.verifyMethodValidity(_)(implCtx, global)).partitionMap(identity)
     val (stageErrs, _) = impl.stages.map(TyperUtil.verifyStageDef(_)(implCtx, global)).partitionMap(identity)
     val errs = methodErrs ++ stageErrs
     errs.foreach(global.repo.error.append)
@@ -213,7 +213,7 @@ object ImplMethodSigTyper {
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
-    val (errs, methodSymbols) = impl.methods.map(TyperUtil.verifyMethodDef(_)(implCtx, global)).partitionMap(identity)
+    val (errs, methodSymbols) = impl.methods.map(TyperUtil.verifyMethodValidity(_)(implCtx, global)).partitionMap(identity)
     val result =
       if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
       else {

@@ -28,6 +28,12 @@ object Namer {
   }
 
   def namedMethod(method: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
+    def verifyHPTpes(hps: Vector[ValDef]): Either[Error, Unit] =
+      hps.map(_.symbol.tpe).map {
+        case Type.ErrorType => Left(Error.DummyError)
+        case _ => Right(())
+      }.combine(errs => Error.MultipleErrors(errs: _*))
+
     val methodTpe = Type.MethodTypeGenerator(method, ctx, global)
     val methodSymbol = Symbol.MethodSymbol(
       method.name,

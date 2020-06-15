@@ -54,4 +54,9 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.NotEnoughTPBound], showErrors(global))
   }
+
+  test("reject poly interface implementation because of miss matching type") {
+    val (_, global) = untilThisPhase("typerDefSig2.tchdl")
+    expectError(2)(global)
+  }
 }
