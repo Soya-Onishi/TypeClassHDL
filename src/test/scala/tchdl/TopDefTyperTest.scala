@@ -153,4 +153,20 @@ class TopDefTyperTest extends TchdlFunSuite {
     assert(g.params.head.hardwareParam.head.asInstanceOf[Ident].symbol == i1.hp.head.symbol)
     assert(g.returnType.hardwareParam.head.asInstanceOf[Ident].symbol == i1.hp.head.symbol)
   }
+
+  test("type param into poly interface causes an error because of being not meet bounds") {
+    val (_, global) = untilTopDefTyper("topdef8.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotMeetPartialTPBound])
+  }
+
+  test("hardware param into poly interface causes an error because of being not meet bounds") {
+    val (_, global) = untilTopDefTyper("topdef9.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotMeetHPBound])
+  }
 }

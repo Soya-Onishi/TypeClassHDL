@@ -937,7 +937,7 @@ object Type {
     ctx.lookup[T](ident.name) match {
       case LookupResult.LookupFailure(err) => (Some(err), typeTree.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
       case LookupResult.LookupSuccess(symbol) =>
-        buildParams(hps, tps) match {
+        buildParams(symbol, hps, tps) match {
           case Left(err) => (Some(err), typeTree.setSymbol(symbol).setTpe(Type.ErrorType))
           case Right((hps, tps)) =>
             val errs = (symbol.hps.map(_.tpe) zip hps.map(_.tpe))
@@ -990,13 +990,28 @@ object Type {
     }
   }
 
-  private def buildParams(hps: Vector[HPExpr], tps: Vector[TypeTree])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Vector[HPExpr], Vector[TypeTree])] = {
-    val (hpErrs, builtHPs) = hps.map(buildHP).unzip
-    val (tpErrs, builtTPs) = tps.map(buildType[Symbol.TypeSymbol]).unzip
+  private def buildParams(symbol: Symbol.TypeSymbol, hps: Vector[HPExpr], tps: Vector[TypeTree])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Vector[HPExpr], Vector[TypeTree])] = {
+    def verifyLength: Either[Error, Unit] = {
+      def verify(expect: Int, actual: Int, builder: (Int, Int) => Error): Either[Error, Unit] =
+        if(expect == actual) Right(())
+        else Left(builder(expect, actual))
 
-    val allErrs = hpErrs.flatten ++ tpErrs.flatten
+      Vector(
+        verify(symbol.hps.length, hps.length, Error.HardParameterLengthMismatch.apply),
+        verify(symbol.tps.length, tps.length, Error.TypeParameterLengthMismatch.apply)
+      ).combine(errs => Error.MultipleErrors(errs: _*))
+    }
 
-    if (allErrs.isEmpty) Right(builtHPs.map(_.sort), builtTPs)
-    else Left(Error.MultipleErrors(allErrs: _*))
+    verifyLength match {
+      case Left(err) => Left(err)
+      case Right(_) =>
+        val (hpErrs, builtHPs) = hps.map(buildHP).unzip
+        val (tpErrs, builtTPs) = tps.map(buildType[Symbol.TypeSymbol]).unzip
+
+        val allErrs = hpErrs.flatten ++ tpErrs.flatten
+
+        if (allErrs.isEmpty) Right(builtHPs.map(_.sort), builtTPs)
+        else Left(Error.MultipleErrors(allErrs: _*))
+    }
   }
 }

@@ -28,7 +28,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- verifyTPBoundType(struct)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(struct)(signatureCtx)
       _ <- verifyHavingErrorType(structDef.fields)
       _ <- verifyHavingErrorType(structDef.hp)
     } yield ()
@@ -49,7 +49,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- verifyTPBoundType(module)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(module)(signatureCtx)
       _ <- verifyHavingErrorType(moduleDef.parents)
       _ <- verifyHavingErrorType(moduleDef.siblings)
       _ <- verifyHavingErrorType(moduleDef.hp)
@@ -77,7 +77,7 @@ object TopDefTyper {
     val interface = interfaceDef.symbol.asInterfaceSymbol
 
     val result = for {
-      _ <- verifyTPBoundType(interface)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(interface)(signatureCtx)
       _ <- verifyMethodValidity(signatureCtx)
     } yield ()
 
@@ -96,7 +96,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- verifyTPBoundType(implSymbol)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(implSymbol)(signatureCtx)
       _ <- verifyType(impl.target, signatureCtx, global)
     } yield ()
 
@@ -115,7 +115,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- verifyTPBoundType(implSymbol)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(implSymbol)(signatureCtx)
       _ <- verifyType(impl.target, signatureCtx, global)
       _ <- verifyType(impl.interface, signatureCtx, global)
     } yield ()
@@ -123,6 +123,13 @@ object TopDefTyper {
     result.left.foreach(global.repo.error.append)
 
     impl
+  }
+
+  private def verifyHavingErrorType(vdefs: Vector[ValDef]): Either[Error, Unit] = {
+    val hasError = vdefs.view.map(_.symbol.tpe).exists(_.isErrorType)
+
+    if(hasError) Left(Error.DummyError)
+    else Right(())
   }
 
   def verifyTopDefinition(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition =
@@ -133,42 +140,6 @@ object TopDefTyper {
       case impl: ImplementClass => typedImplClassSignature(impl)
       case impl: ImplementInterface => typedImplInterfaceSignature(impl)
     }
-
-
-  private def verifyTPBoundType(symbol: Symbol with HasParams)(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
-    def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound])(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
-      val (hpErrs, _) = hpBounds.map(HPBound.verifyMeetBound(_, ctx.hpBounds)).partitionMap(identity)
-      val (tpErrs, _) = tpBounds.map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds)).partitionMap(identity)
-      val errs = hpErrs ++ tpErrs
-
-      if(errs.isEmpty) Right(())
-      else Left(Error.MultipleErrors(errs: _*))
-    }
-
-    val tpBounds = symbol.tpBound
-    val results = tpBounds.flatMap{ tpBound => tpBound.bounds.map{
-      bound =>
-        val symbol = bound.origin.asInterfaceSymbol
-        val hpTable = (symbol.hps zip bound.hardwareParam).toMap
-        val tpTable = (symbol.tps zip bound.typeParam).toMap
-        val replacedHPBound = HPBound.swapBounds(symbol.hpBound, hpTable)
-        val replacedTPBound = TPBound.swapBounds(symbol.tpBound, hpTable, tpTable)
-
-        verifyEachBounds(replacedHPBound, replacedTPBound)
-    }}
-
-    val (errs, _) = results.partitionMap(identity)
-
-    if(errs.isEmpty) Right(())
-    else Left(Error.MultipleErrors(errs: _*))
-  }
-
-  private def verifyHavingErrorType(vdefs: Vector[ValDef]): Either[Error, Unit] = {
-    val hasError = vdefs.view.map(_.symbol.tpe).exists(_.isErrorType)
-
-    if(hasError) Left(Error.DummyError)
-    else Right(())
-  }
 
   private def verifyType(typeTree: TypeTree, ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {
     val typedTypeTree = Typer.typedTypeTree(typeTree)(ctx, global)

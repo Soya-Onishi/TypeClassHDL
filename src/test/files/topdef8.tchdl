@@ -1,0 +1,4 @@
+package test
+
+interface I[T] where T: I[T] {}
+impl[T] I[T] for Int {}

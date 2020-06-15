@@ -60,4 +60,12 @@ class BuildContainerTest extends TchdlFunSuite {
     assert(iTargetTpe == Type.RefType(struct.symbol.asTypeSymbol))
     assert(iInterfaceTpe == Type.RefType(interface.symbol.asInterfaceSymbol))
   }
+
+  test("verify type parameter length mismatch in bounds") {
+    val (_, global) = untilBuild("boundParams0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeParameterLengthMismatch])
+  }
 }
