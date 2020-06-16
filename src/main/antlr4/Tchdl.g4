@@ -106,7 +106,7 @@ state_def
     ;
 
 port_def
-    : modifier=(INPUT | INTERNAL | OUTPUT) component_def_body
+    : modifier=(INPUT | INTERNAL | OUTPUT) EXPR_ID ':' type
     ;
 
 reg_def
@@ -130,7 +130,7 @@ hp_bound_expr
     ;
 
 component_def_body
-    : EXPR_ID (':' type)? ('=' expr)?
+    : EXPR_ID (':' type)? '=' expr
     ;
 
 expr: expr '.' (apply | EXPR_ID)    # SelectExpr

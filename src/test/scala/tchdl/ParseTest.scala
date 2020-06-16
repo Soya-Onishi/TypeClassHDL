@@ -158,4 +158,36 @@ class ParseTest extends TchdlFunSuite {
 
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
   }
+
+  test("implement module with some type components") {
+    val filename = buildName(rootDir, filePath, "moduleImpl0.tchdl")
+    val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+
+    val impl = tree.topDefs.collect{ case impl: ImplementClass => impl }.head
+    val vdefs = impl.components.collect{ case vdef: ValDef => vdef }
+
+    val in = vdefs.find(_.name == "in").get
+    val inter = vdefs.find(_.name == "inter").get
+    val out = vdefs.find(_.name == "out").get
+
+    val register = vdefs.find(_.name == "register").get
+    val sub = vdefs.find(_.name == "sub").get
+
+    val method = impl.components.collect{ case method: MethodDef => method }
+    val stage = impl.components.collect{ case stage: StageDef => stage }
+    val always = impl.components.collect{ case always: AlwaysDef => always }
+
+    assert(in.flag == Modifier.Input)
+    assert(inter.flag == Modifier.Internal)
+    assert(out.flag == Modifier.Output)
+
+    assert(register.flag == Modifier.Register)
+
+    assert(sub.expr.isDefined)
+    assert(sub.expr.get.isInstanceOf[Construct])
+
+    assert(method.length == 1)
+    assert(stage.length == 1)
+    assert(always.length == 1)
+  }
 }

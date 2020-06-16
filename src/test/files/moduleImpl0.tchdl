@@ -1,0 +1,18 @@
+package test
+
+module Module {}
+impl Module {
+  input in: Bit[8]
+  internal inter: Bit[8]
+  output out: Bit[8]
+
+  reg register: Bit[3] = 0b000
+
+  mod sub: Sub = Sub{}
+
+  always a {}
+  def f(b: Bit[4]) -> Bit[4] { b }
+  stage s(elem: Bit[5]) -> Unit {}
+}
+
+module Sub {}

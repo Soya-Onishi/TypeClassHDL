@@ -203,25 +203,26 @@ class ASTGenerator {
 
   def portDef(ctx: TP.Port_defContext): ValDef = {
     val modifier = Modifier(ctx.modifier.getText)
-    val (name, tpe, expr) = componentBody(ctx.component_def_body)
+    val name = ctx.EXPR_ID.getText
+    val tpe = typeTree(ctx.`type`)
 
-    ValDef(modifier, name, tpe, expr)
+    ValDef(modifier, name, Some(tpe), None)
   }
 
   def submoduleDef(ctx: TP.Submodule_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
-    ValDef(Modifier.NoModifier, name, tpe, expr)
+    ValDef(Modifier.NoModifier, name, tpe, Some(expr))
   }
 
   def regDef(ctx: TP.Reg_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
-    ValDef(Modifier.Register, name, tpe, expr)
+    ValDef(Modifier.Register, name, tpe, Some(expr))
   }
 
-  def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeTree], Option[Expression]) = {
+  def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeTree], Expression) = {
     val name = ctx.EXPR_ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
-    val initExpr = Option(ctx.expr).map(expr)
+    val initExpr = expr(ctx.expr)
 
     (name, tpe, initExpr)
   }
