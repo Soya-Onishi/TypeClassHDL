@@ -181,8 +181,7 @@ object BuildImplContainer {
     errs match {
       case Vector() =>
         val implContext = Context(signatureCtx, target.tpe.asRefType)
-        impl.methods.foreach(Namer.nodeLevelNamed(_)(implContext, global))
-        impl.stages.foreach(Namer.nodeLevelNamed(_)(implContext, global))
+        impl.components.foreach(Namer.nodeLevelNamed(_)(implContext, global))
 
         val targetTpe = target.tpe.asRefType
         impl.target.setTpe(targetTpe).setSymbol(target.symbol)

@@ -25,10 +25,18 @@ object ImplMethodSigTyper {
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
-    impl.methods.foreach(_.symbol.tpe)
-    impl.stages.foreach(_.symbol.tpe)
-    val (methodErrs, _) = impl.methods.map(TyperUtil.verifyMethodValidity(_)(implCtx, global)).partitionMap(identity)
-    val (stageErrs, _) = impl.stages.map(TyperUtil.verifyStageDef(_)(implCtx, global)).partitionMap(identity)
+    impl.components.foreach(_.symbol.tpe)
+
+    val (methodErrs, _) = impl.components
+      .collect { case m: MethodDef => m }
+      .map(TyperUtil.verifyMethodValidity(_)(implCtx, global))
+      .partitionMap(identity)
+
+    val (stageErrs, _) = impl.components
+      .collect { case s: StageDef => s }
+      .map(TyperUtil.verifyStageDef(_)(implCtx, global))
+      .partitionMap(identity)
+
     val errs = methodErrs ++ stageErrs
     errs.foreach(global.repo.error.append)
   }
@@ -177,7 +185,7 @@ object ImplMethodSigTyper {
         val interfaceTpes = interfaceMethod.params :+ interfaceMethod.returnType
         val results = (implTpes zip interfaceTpes).map {
           case (impl, interface) if impl =:= interface => Right(())
-          case (impl, interface) => Left(Error.TypeMissMatch(interface, impl))
+          case (impl, interface) => Left(Error.TypeMismatch(interface, impl))
         }
 
         results.combine(errs => Error.MultipleErrors(errs: _*))

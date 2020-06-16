@@ -32,7 +32,7 @@ object TyperUtil {
     val stageSymbol = stageDef.symbol.asStageSymbol
     stageSymbol.tpe match {
       case Type.ErrorType => Left(Error.DummyError)
-      case _: Type.RefType => Right(stageSymbol)
+      case _: Type.MethodType => Right(stageSymbol)
     }
   }
 

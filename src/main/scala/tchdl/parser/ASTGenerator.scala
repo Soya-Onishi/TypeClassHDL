@@ -64,10 +64,9 @@ class ASTGenerator {
     val target = typeTree(ctx.`type`())
     val (hps, tps) = Option(ctx.type_param).map(polyParam).getOrElse((Vector.empty, Vector.empty))
     val bounds = Option(ctx.bounds).map(_.bound.asScala.map(bound).toVector).getOrElse(Vector.empty)
-    val methods = ctx.method_def.asScala.map(methodDef).toVector
-    val stages = ctx.stage_def.asScala.map(stageDef).toVector
+    val components = ctx.component.asScala.map(component).toVector
 
-    ImplementClass(target, hps, tps, bounds, methods, stages)
+    ImplementClass(target, hps, tps, bounds, components)
   }
 
   def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
@@ -90,6 +89,7 @@ class ASTGenerator {
   }
 
   def methodDef(ctx: TP.Method_defContext): MethodDef = {
+    val modifier = Option(ctx.modifier).map(_.getText).map(Modifier.apply).getOrElse(Modifier.NoModifier)
     val name = ctx.EXPR_ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
     val params = Option(ctx.param_defs())
@@ -98,7 +98,7 @@ class ASTGenerator {
     val tpe = typeTree(ctx.`type`)
     val blk = block(ctx.block)
 
-    MethodDef(name, hps, tps, bounds, params, tpe, Some(blk))
+    MethodDef(modifier, name, hps, tps, bounds, params, tpe, Some(blk))
   }
 
   def signatureDef(ctx: TP.Signature_defContext): MethodDef = {
@@ -109,7 +109,7 @@ class ASTGenerator {
       .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
 
-    MethodDef(name, hps, tps, bounds, params, tpe, None)
+    MethodDef(Modifier.NoModifier, name, hps, tps, bounds, params, tpe, None)
   }
 
   def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[BoundTree]) = {
@@ -132,16 +132,10 @@ class ASTGenerator {
     ctx.field_def.asScala.map(fieldDef).toVector
 
   def fieldDef(ctx: TP.Field_defContext): ValDef = {
-    val modifier = Modifier(ctx.modifier
-      .asScala
-      .map(_.getChild(0).getText)
-      .toVector
-    )
-
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(modifier, name, Some(tpe), None)
+    ValDef(Modifier.NoModifier, name, Some(tpe), None)
   }
 
   def paramDefs(ctx: TP.Param_defsContext): Vector[ValDef] = {
@@ -151,16 +145,10 @@ class ASTGenerator {
   }
 
   def paramDef(ctx: TP.Param_defContext): ValDef = {
-    val modifier = Modifier(ctx.modifier
-      .asScala
-      .map(_.getChild(0).getText)
-      .toVector
-    )
-
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(modifier, name, Some(tpe), None)
+    ValDef(Modifier.NoModifier, name, Some(tpe), None)
   }
 
   def alwaysDef(ctx: TP.Always_defContext): AlwaysDef = {
@@ -214,7 +202,7 @@ class ASTGenerator {
   }
 
   def portDef(ctx: TP.Port_defContext): ValDef = {
-    val modifier = Modifier(ctx.getChild(0).getText)
+    val modifier = Modifier(ctx.modifier.getText)
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
 
     ValDef(modifier, name, tpe, expr)

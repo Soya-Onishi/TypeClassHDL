@@ -31,7 +31,7 @@ class BuildContainerTest extends TchdlFunSuite {
 
     assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.TypeMissMatch], showErrors(global))
+    assert(err.isInstanceOf[Error.TypeMismatch], showErrors(global))
   }
 
   test("interface impl's hardware parameter miss match type between Num and Str") {
@@ -39,7 +39,7 @@ class BuildContainerTest extends TchdlFunSuite {
 
     assert(global.repo.error.counts == 1, showErrors(global))
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.TypeMissMatch], showErrors(global))
+    assert(err.isInstanceOf[Error.TypeMismatch], showErrors(global))
   }
 
   test("verify impl's type tree has type") {

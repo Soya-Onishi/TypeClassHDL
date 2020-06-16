@@ -710,7 +710,7 @@ object Type {
       def verify(caller: Type.RefType, target: Type.RefType): Either[Error, Unit] = {
         (caller.origin, target.origin) match {
           case (e0: Symbol.EntityTypeSymbol, e1: Symbol.EntityTypeSymbol) =>
-            if (e0 != e1) Left(Error.TypeMissMatch(target, caller))
+            if (e0 != e1) Left(Error.TypeMismatch(target, caller))
             else {
               val validHPs = caller.hardwareParam
                 .zip(target.hardwareParam)
@@ -722,10 +722,10 @@ object Type {
                 .forall(_.isRight)
 
               if (validHPs && validTPs) Right(())
-              else Left(Error.TypeMissMatch(target, caller))
+              else Left(Error.TypeMismatch(target, caller))
             }
           case (_, _: Symbol.TypeParamSymbol) => Right(())
-          case (_: Symbol.TypeParamSymbol, _) => Left(Error.TypeMissMatch(target, caller))
+          case (_: Symbol.TypeParamSymbol, _) => Left(Error.TypeMismatch(target, caller))
         }
       }
 
@@ -881,7 +881,7 @@ object Type {
       else {
         val (errs, _) = method.params.zip(args).map {
           case (p, a) if p =:= a => Right(())
-          case (p, a) => Left(Error.TypeMissMatch(p, a))
+          case (p, a) => Left(Error.TypeMismatch(p, a))
         }.partitionMap(identity)
 
         if (errs.isEmpty) Right(())
@@ -956,7 +956,7 @@ object Type {
           case Right((hps, tps)) =>
             val errs = (symbol.hps.map(_.tpe) zip hps.map(_.tpe))
               .filterNot { case (e, a) => e == a }
-              .map { case (e, a) => Error.TypeMissMatch(e, a) }
+              .map { case (e, a) => Error.TypeMismatch(e, a) }
 
 
             if (errs.isEmpty) {
@@ -992,8 +992,8 @@ object Type {
 
         val errs0 = Vector(err0, err1).flatten
         val errs1 =
-          if (builtLeft.tpe =!= Type.numTpe && builtLeft.tpe =!= Type.ErrorType) errs0 :+ Error.TypeMissMatch(Type.numTpe, builtLeft.tpe)
-          else if (builtRight.tpe =!= Type.numTpe && builtLeft.tpe =!= Type.ErrorType) errs0 :+ Error.TypeMissMatch(Type.numTpe, builtRight.tpe)
+          if (builtLeft.tpe =!= Type.numTpe && builtLeft.tpe =!= Type.ErrorType) errs0 :+ Error.TypeMismatch(Type.numTpe, builtLeft.tpe)
+          else if (builtRight.tpe =!= Type.numTpe && builtLeft.tpe =!= Type.ErrorType) errs0 :+ Error.TypeMismatch(Type.numTpe, builtRight.tpe)
           else errs0
 
         val (errs, tpe) =

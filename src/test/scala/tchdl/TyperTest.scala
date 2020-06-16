@@ -53,7 +53,8 @@ class TyperTest extends TchdlFunSuite {
     val Vector(methodF, methodG) = topDefs
       .collect{ case impl: ImplementClass => impl }
       .head
-      .methods
+      .components
+      .collect { case m: MethodDef => m }
 
     val Apply(select: Select, _, _, _) = methodF.blk.get.last
     assert(select.symbol == methodG.symbol)
@@ -65,7 +66,8 @@ class TyperTest extends TchdlFunSuite {
 
     val select = trees.head.topDefs
       .collect { case impl: ImplementClass => impl }
-      .head.methods
+      .head.components
+      .collect { case m: MethodDef => m }
       .head.blk.get
       .last
       .asInstanceOf[Select]
@@ -82,8 +84,8 @@ class TyperTest extends TchdlFunSuite {
 
     val implForSTInt = impls.filter(_.target.tp.head.expr.name == "Int").head
     val implForSTString = impls.filter(_.target.tp.head.expr.name == "String").head
-    val forInt = implForSTInt.methods.filter(_.name == "forInt").head
-    val forString = implForSTString.methods.filter(_.name == "forString").head
+    val forInt = implForSTInt.components.collect { case m: MethodDef => m }.filter(_.name == "forInt").head
+    val forString = implForSTString.components.collect { case m: MethodDef => m }.filter(_.name == "forString").head
     val Apply(select: Select, _, _, _) = forInt.blk.get.last
 
     assert(select.symbol == forString.symbol)
@@ -113,7 +115,8 @@ class TyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.SymbolNotFound])
 
     val impl = tree.topDefs.collect{ case impl: ImplementClass => impl }.head
-    val apply = impl.methods.find(_.name == "f").get.blk.get.last.asInstanceOf[Apply]
+    val methods = impl.components.collect{ case m: MethodDef => m }
+    val apply = methods.find(_.name == "f").get.blk.get.last.asInstanceOf[Apply]
     assert(apply.tpe == Type.ErrorType)
   }
 

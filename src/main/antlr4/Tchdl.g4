@@ -29,7 +29,7 @@ interface_def
     ;
 
 implement_class
-    : IMPLEMENT type_param? type bounds? '{' (method_def | stage_def)* '}'
+    : IMPLEMENT type_param? type bounds? '{' component* '}'
     ;
 
 implement_interface
@@ -62,7 +62,7 @@ signature_def
     ;
 
 method_def
-    : DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
+    : modifier=(INPUT | INTERNAL)? DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
     ;
 
 param_defs
@@ -70,7 +70,7 @@ param_defs
     ;
 
 param_def
-    : modifier* EXPR_ID ':' type
+    : EXPR_ID ':' type
     ;
 
 field_defs
@@ -78,7 +78,7 @@ field_defs
     ;
 
 field_def
-    : modifier* EXPR_ID ':' type
+    : EXPR_ID ':' type
     ;
 
 submodule_def
@@ -106,9 +106,7 @@ state_def
     ;
 
 port_def
-    : INPUT component_def_body
-    | INTERNAL component_def_body
-    | OUTPUT component_def_body
+    : modifier=(INPUT | INTERNAL | OUTPUT) component_def_body
     ;
 
 reg_def
@@ -129,11 +127,6 @@ hp_bound_expr
     | 'min' hp_expr # MinBound
     | 'eq' hp_expr  # EqBound
     | 'ne' hp_expr  # NeBound
-    ;
-
-modifier
-    : INPUT
-    | PUBLIC
     ;
 
 component_def_body

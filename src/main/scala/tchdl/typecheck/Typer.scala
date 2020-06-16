@@ -14,9 +14,7 @@ object Typer {
   }
 
   def diveIntoExpr(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition = {
-    def extractExprFromMethod(method: MethodDef): Block =
-      method.blk
-        .getOrElse(throw new ImplementationErrorException("methods in impl should have their body"))
+
 
 
     defTree match {
@@ -27,36 +25,14 @@ object Typer {
 
         val implBodyCtx = Context(implSigCtx, impl.target.tpe.asRefType)
 
-        val typedMethods = impl.methods.map { methodDef =>
-          val method = methodDef.symbol.asMethodSymbol
-          val methodSigCtx = Context(implBodyCtx, method)
-          methodSigCtx.reAppend(method.hps ++ method.tps ++ methodDef.params.map(_.symbol.asVariableSymbol): _*)
-
-          val body = extractExprFromMethod(methodDef)
-          val typedBody = typedBlock(body)(methodSigCtx, global)
-
-          methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
+        val typedComponents = impl.components.map {
+          case methodDef: MethodDef => typedMethodDef(methodDef)(implBodyCtx, global)
+          case stageDef:  StageDef => typedStageDef(stageDef)(implBodyCtx, global)
+          case alwaysDef: AlwaysDef => typedAlwaysDef(alwaysDef)(implBodyCtx, global)
+          case valDef: ValDef => typedValDef(valDef)(implBodyCtx, global)
         }
 
-        val typedStages = impl.stages.map { stageDef =>
-          val stage = stageDef.symbol.asStageSymbol
-          val stageSigCtx = Context(implBodyCtx, stage)
-          stageSigCtx.reAppend(stageDef.params.map(_.symbol.asVariableSymbol): _*)
-
-          val stageBodyCtx = Context(stageSigCtx)
-          stageDef.states.foreach(Namer.namedStateDef(_)(stageBodyCtx, global))
-          stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedValDef(_)(stageBodyCtx, global))
-
-          val typedStates = stageDef.states.map(typedStateDef(_)(stageBodyCtx, global))
-          val typedBodyElems = stageDef.blk.map {
-            case vdef: ValDef => typedExprValDef(vdef)(stageBodyCtx, global)
-            case expr: Expression => typedExpr(expr)(stageBodyCtx, global)
-          }
-
-          stageDef.copy(states = typedStates, blk = typedBodyElems).setSymbol(stageDef.symbol.asStageSymbol).setID(stageDef.id)
-        }
-
-        impl.copy(methods = typedMethods, stages = typedStages).setSymbol(impl.symbol).setID(impl.id)
+        impl.copy(components = typedComponents).setSymbol(impl.symbol).setID(impl.id)
       case impl: ImplementInterface =>
         val implSymbol = impl.symbol.asImplementSymbol
         val implSigCtx = Context(ctx, implSymbol)
@@ -64,20 +40,24 @@ object Typer {
 
         val implBodyCtx = Context(implSigCtx, impl.target.tpe.asRefType)
 
-        val typedMethods = impl.methods.map { methodDef =>
-          val method = methodDef.symbol.asMethodSymbol
-          val methodSigCtx = Context(implBodyCtx, method)
-          methodSigCtx.reAppend(method.hps ++ method.tps ++ methodDef.params.map(_.symbol.asVariableSymbol): _*)
-
-          val body = extractExprFromMethod(methodDef)
-          val typedBody = typedBlock(body)(methodSigCtx, global)
-
-          methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
-        }
+        val typedMethods = impl.methods.map(typedMethodDef(_)(implBodyCtx, global))
 
         impl.copy(methods = typedMethods).setSymbol(impl.symbol).setID(impl.id)
       case others => others
     }
+  }
+
+  def typedMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
+    val method = methodDef.symbol.asMethodSymbol
+    val methodSigCtx = Context(ctx, method)
+    methodSigCtx.reAppend(method.hps ++ method.tps ++ methodDef.params.map(_.symbol.asVariableSymbol): _*)
+
+    val body = methodDef.blk
+      .getOrElse(throw new ImplementationErrorException("methods in impl should have their body"))
+
+    val typedBody = typedBlock(body)(methodSigCtx, global)
+
+    methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
   }
 
   def typedAlwaysDef(always: AlwaysDef)(implicit ctx: Context.NodeContext, global: GlobalData): AlwaysDef = {
@@ -102,6 +82,17 @@ object Typer {
     ttree.foreach(global.cache.set)
     expr.foreach(global.cache.set)
 
+    if(!vdef.symbol.tpe.isErrorType) {
+      def typecheck(tree: Option[AST with HasType]): Unit = {
+        tree.filter(_.tpe.isErrorType)
+          .filter(_.tpe =!= vdef.symbol.tpe)
+          .foreach(t => global.repo.error.append(Error.TypeMismatch(vdef.symbol.tpe, t.tpe)))
+      }
+
+      typecheck(ttree)
+      typecheck(expr)
+    }
+
     vdef.copy(tpeTree = ttree, expr = expr)
       .setSymbol(vdef.symbol)
       .setID(vdef.id)
@@ -121,7 +112,7 @@ object Typer {
 
         typedExpr.tpe match {
           case Type.ErrorType => Left(Error.DummyError)
-          case exprTpe: Type.RefType if exprTpe =!= vdefTpe => Left(Error.TypeMissMatch(vdefTpe, exprTpe))
+          case exprTpe: Type.RefType if exprTpe =!= vdefTpe => Left(Error.TypeMismatch(vdefTpe, exprTpe))
           case _: Type.RefType => Right(typedExpr)
         }
     }
@@ -136,6 +127,24 @@ object Typer {
         global.repo.error.append(err)
         vdef
     }
+  }
+
+  def typedStageDef(stageDef: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): StageDef = {
+    val stage = stageDef.symbol.asStageSymbol
+    val stageSigCtx = Context(ctx, stage)
+    stageSigCtx.reAppend(stageDef.params.map(_.symbol.asVariableSymbol): _*)
+
+    val stageBodyCtx = Context(stageSigCtx)
+    stageDef.states.foreach(Namer.namedStateDef(_)(stageBodyCtx, global))
+    stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedValDef(_)(stageBodyCtx, global))
+
+    val typedStates = stageDef.states.map(typedStateDef(_)(stageBodyCtx, global))
+    val typedBodyElems = stageDef.blk.map {
+      case vdef: ValDef => typedExprValDef(vdef)(stageBodyCtx, global)
+      case expr: Expression => typedExpr(expr)(stageBodyCtx, global)
+    }
+
+    stageDef.copy(states = typedStates, blk = typedBodyElems).setSymbol(stageDef.symbol.asStageSymbol).setID(stageDef.id)
   }
 
   def typedStateDef(stateDef: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): StateDef = {
@@ -233,7 +242,7 @@ object Typer {
         val results = (methodSymbol.hps.map(_.tpe) zip typedHPs.map(_.tpe)).map {
           case (p: Type.RefType, a: Type.RefType) =>
             if(p =:= a) Right(())
-            else Left(Error.TypeMissMatch(p, a))
+            else Left(Error.TypeMismatch(p, a))
         }
 
         val (errs, _) = results.partitionMap(identity)
@@ -445,7 +454,7 @@ object Typer {
           case (tpe, Type.ErrorType) => tpe
           case (altTpe, conseqTpe)  =>
             if(altTpe =!= conseqTpe)
-              global.repo.error.append(Error.TypeMissMatch(altTpe, conseqTpe))
+              global.repo.error.append(Error.TypeMismatch(altTpe, conseqTpe))
 
             altTpe
         }
@@ -667,7 +676,7 @@ object Typer {
     (expect zip actual)
       .collect { case (e: Type.RefType, a: Type.RefType) => (e, a) }
       .filter { case (e, a) => a =:= e }
-      .map { case (e, a) => Error.TypeMissMatch(e, a) }
+      .map { case (e, a) => Error.TypeMismatch(e, a) }
   }
 
   def typedTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
@@ -682,100 +691,4 @@ object Typer {
     global.cache.set(typedTpeDef)
     typedTpeDef
   }
-
-  /*
-  def verifyTypeParams(
-    symbol: Symbol.TypeSymbol,
-    hps: Vector[HPExpr],
-    tps: Vector[TypeTree],
-    tpe: Type.EntityType
-  )(
-    implicit ctx: Context.NodeContext,
-  ): TypeTree = {
-    val actualLength = hps.length + tps.length
-    val expectLength = tpe.hardwareParam.length + tpe.typeParam.length
-
-    if (expectLength != actualLength) {
-      Reporter.appendError(Error.ParameterLengthMismatch(expectLength, actualLength))
-
-      return TypeTree(Ident(symbol.name), hps, tps).setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
-    }
-
-    val (splitHps, tpsFrontHalf) = hps.splitAt(tpe.hardwareParam.length)
-
-    val typedHps = splitHps.map(typedHardwareParamExpr)
-    val typedTpsFrontHalf = tpsFrontHalf.map(typedType)
-    val typedTpsLatterHalf = tps.map(typedTypeTree(_)(ctx, acceptPkg = false))
-    val typedTps = typedTpsFrontHalf ++ typedTpsLatterHalf
-
-    val (treeTpe, treeSymbol) =
-      if (typedHps.exists(_.tpe.isErrorType) || typedTps.exists(_.tpe.isErrorType))
-        (Type.ErrorType, Symbol.ErrorSymbol)
-      else
-        (Type.RefType(symbol, typedHps, typedTps.map(_.tpe.asRefType)), symbol)
-
-    TypeTree(Ident(symbol.name), typedHps, typedTps).setTpe(treeTpe).setSymbol(treeSymbol)
-  }
-   */
-}
-
-object TyperForTopDefinition {
-  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
-    val ctx = global.rootPackage.search(cu.pkgName)
-      .getOrElse(throw new ImplementationErrorException(s"${cu.pkgName} should be there"))
-      .lookupCtx(cu.filename.get)
-      .getOrElse(throw new ImplementationErrorException(s"${cu.filename.get}'s context should be there'"))
-
-    // val typedTopDefs = cu.topDefs.map()
-    ???
-  }
-
-  def typedTopDefs(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition =
-    defTree match {
-      case struct: StructDef => typedStructDef(struct)
-    }
-
-  def typedStructDef(struct: StructDef)(implicit ctx: Context.RootContext, global: GlobalData): StructDef = {
-    /*
-    struct.symbol.tpe
-
-    val signatureCtx = Context(ctx, struct.symbol)
-    ctx.reAppend(
-      struct.hp.map(_.symbol) ++
-      struct.tp.map(_.symbol): _*
-    )
-
-    val typedHp = struct.hp.map(typedValDef(_)(signatureCtx, global))
-    val typedTp = struct.tp.map(Typer.typedTypeParam(_)(signatureCtx, global))
-
-    val fieldCtx = Context(signatureCtx)
-    fieldCtx.reAppend(struct.fields.map(_.symbol): _*)
-    val typedFields = struct.fields.map(typedValDef(_)(fieldCtx, global))
-
-    val typedStruct = struct.copy(
-      struct.name,
-      typedHp,
-      typedTp,
-      struct.bounds,
-      typedFields
-    )
-      .setSymbol(struct.symbol)
-      .setID(struct.id)
-
-    global.cache.set(typedStruct)
-    typedStruct
-
-     */
-    ???
-  }
-
-  def typedModuleDef(moduleDef: ModuleDef)(implicit ctx: Context.RootContext, global: GlobalData): ModuleDef = {
-    ???
-  }
-
-  def typedInterfaceDef(interfaceDef: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
-    ???
-  }
-
-
 }

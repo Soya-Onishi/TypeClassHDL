@@ -124,6 +124,7 @@ class ParseTest extends TchdlFunSuite {
         Vector(TypeDef("T")),
         Vector.empty,
         Vector(MethodDef(
+          Modifier.NoModifier,
           "f",
           Vector.empty,
           Vector.empty,
@@ -131,8 +132,7 @@ class ParseTest extends TchdlFunSuite {
           Vector.empty,
           TypeTree(Ident("Unit"), Vector.empty, Vector.empty),
           Some(Block(Vector.empty, UnitLiteral()))
-        )),
-        Vector.empty
+        ))
       )
     )
   }

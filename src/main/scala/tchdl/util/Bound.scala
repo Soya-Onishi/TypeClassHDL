@@ -405,8 +405,8 @@ object HPBound {
             case (_, Type.ErrorType) => Left(Error.DummyError)
             case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
               lazy val typedBinOp = HPBinOp(op, left, right).setTpe(Type.numTpe).setID(expr.id)
-              lazy val leftTypeMissMatch = Error.TypeMissMatch(Type.numTpe, leftTpe)
-              lazy val rightTypeMissMatch = Error.TypeMissMatch(Type.numTpe, rightTpe)
+              lazy val leftTypeMissMatch = Error.TypeMismatch(Type.numTpe, leftTpe)
+              lazy val rightTypeMissMatch = Error.TypeMismatch(Type.numTpe, rightTpe)
 
               if(leftTpe =:= Type.numTpe && rightTpe =:= Type.numTpe) Right(typedBinOp)
               else if (leftTpe =!= Type.numTpe && rightTpe =!= Type.numTpe)

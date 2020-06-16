@@ -41,8 +41,8 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.TypeMissMatch])
-    val Error.TypeMissMatch(expect, actual) = err
+    assert(err.isInstanceOf[Error.TypeMismatch])
+    val Error.TypeMismatch(expect, actual) = err
     assert(expect == Type.intTpe(global))
     assert(actual == Type.stringTpe(global))
   }
@@ -144,8 +144,9 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(stB.symbol.tpe =:= Type.intTpe(global))
 
     val impl = tree.topDefs.collect { case impl: ImplementClass => impl }.head
-    val getA = impl.methods.find(_.name == "getA").get
-    val getB = impl.methods.find(_.name == "getB").get
+    val methods = impl.components.collect{ case m: MethodDef => m }
+    val getA = methods.find(_.name == "getA").get
+    val getB = methods.find(_.name == "getB").get
 
     assert(getA.symbol.tpe =:= Type.MethodType(Vector.empty, Type.intTpe(global)))
     assert(getB.symbol.tpe =:= Type.MethodType(Vector.empty, Type.intTpe(global)))
