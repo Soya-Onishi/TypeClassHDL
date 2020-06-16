@@ -233,7 +233,8 @@ class ASTGenerator {
     case ctx: TP.AddSubExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
     case ctx: TP.ApplyExprContext => applyCall(ctx.apply)
     case ctx: TP.BlockExprContext => block(ctx.block)
-    case ctx: TP.ConstructExprContext => construct(ctx.construct)
+    case ctx: TP.ConstructStructExprContext => constructStruct(ctx.construct_struct)
+    case ctx: TP.ConstructModuleExprContext => constructModule(ctx.construct_module)
     case ctx: TP.IfExprContext =>
       val cond = expr(ctx.expr)
       val conseq = block(ctx.block(0))
@@ -385,16 +386,29 @@ class ASTGenerator {
     case ctx: TP.ExprContext => expr(ctx)
   }
 
-  def construct(ctx: TP.ConstructContext): Construct = {
-    def constructPair(ctx: TP.Construct_pairContext): ConstructPair =
-      ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))
-
+  def constructStruct(ctx: TP.Construct_structContext): ConstructClass = {
     val tpe = typeTree(ctx.`type`)
     val pairs = Option(ctx.construct_pair)
-      .map(_.asScala.map(constructPair).toVector)
+      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))).toVector)
       .getOrElse(Vector.empty)
 
-    Construct(tpe, pairs)
+    ConstructClass(tpe, pairs)
+  }
+
+  def constructModule(ctx: TP.Construct_moduleContext): ConstructModule = {
+    val tpe = typeTree(ctx.`type`)
+
+    val parents = Option(ctx.parent_pair)
+      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))))
+      .getOrElse(Seq.empty)
+      .to(Vector)
+
+    val siblings = Option(ctx.sibling_pair)
+      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))))
+      .getOrElse(Seq.empty)
+      .to(Vector)
+
+    ConstructModule(tpe, parents, siblings)
   }
 
   def bound(ctx: TP.BoundContext): BoundTree = {

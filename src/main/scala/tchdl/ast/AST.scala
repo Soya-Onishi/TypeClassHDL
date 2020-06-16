@@ -23,6 +23,7 @@ sealed trait Definition extends AST with HasSymbol
 sealed trait Statement extends AST
 sealed trait BlockElem extends AST
 sealed trait Expression extends AST with BlockElem with HasType
+sealed trait Construct extends Expression
 sealed trait TypeAST extends AST with HasType with HasSymbol
 sealed trait HPExpr extends Expression {
   protected var _sortedExpr: Option[HPExpr] = None
@@ -645,8 +646,9 @@ case class HPBinOp(
 case class Select(prefix: Expression, name: String) extends Expression with HasSymbol
 case class StaticSelect(suffix: TypeTree, name: String) extends Expression with TypeAST
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
-case class Construct(name: TypeTree, pairs: Vector[ConstructPair]) extends Expression
-case class ConstructPair(name: String, expr: Expression) extends AST
+case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) extends Construct
+case class ConstructModule(target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair]) extends Construct
+case class ConstructPair(name: String, init: Expression) extends AST
 case class This() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
 case class BitLiteral(value: BigInt, length: Int) extends Expression

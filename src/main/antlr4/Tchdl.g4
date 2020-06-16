@@ -138,7 +138,8 @@ expr: expr '.' (apply | EXPR_ID)    # SelectExpr
     | expr op=('+' | '-') expr # AddSubExpr
     | apply                    # ApplyExpr
     | block                    # BlockExpr
-    | construct                # ConstructExpr
+    | construct_struct         # ConstructStructExpr
+    | construct_module         # ConstructModuleExpr
     | IF expr block (ELSE block)?                  # IfExpr
 //    | MATCH expr '{' case_def+ '}'               # MatchExpr
     | FINISH                   # Finish
@@ -188,11 +189,23 @@ block_elem
     | expr
     ;
 
-construct
+construct_struct
     : type '{' (construct_pair (',' construct_pair)*)? '}'
     ;
 
+construct_module
+    : type '{' (PARENT ':' parent_pair (',' parent_pair)*)? (SIBLING ':' sibling_pair (',' sibling_pair)*)? '}'
+    ;
+
 construct_pair
+    : EXPR_ID ':' expr
+    ;
+
+parent_pair
+    : EXPR_ID ':' expr
+    ;
+
+sibling_pair
     : EXPR_ID ':' expr
     ;
 

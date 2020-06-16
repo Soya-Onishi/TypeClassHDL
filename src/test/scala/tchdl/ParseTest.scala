@@ -184,7 +184,7 @@ class ParseTest extends TchdlFunSuite {
     assert(register.flag == Modifier.Register)
 
     assert(sub.expr.isDefined)
-    assert(sub.expr.get.isInstanceOf[Construct])
+    assert(sub.expr.get.isInstanceOf[ConstructClass])
 
     assert(method.length == 1)
     assert(stage.length == 1)
