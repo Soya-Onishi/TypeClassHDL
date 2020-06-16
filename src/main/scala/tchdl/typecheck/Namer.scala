@@ -126,8 +126,8 @@ object Namer {
 
   def namedStruct(struct: StructDef)(implicit ctx: Context.RootContext, global: GlobalData): StructDef = {
     def tryAppendBuiltIn(symbol: Symbol.StructSymbol): Unit = {
-      if(ctx.path.pkgName == Vector("std", "types") && global.builtin.names.contains(struct.name))
-        global.builtin.append(symbol)
+      if(ctx.path.pkgName == Vector("std", "types") && global.builtin.types.names.contains(struct.name))
+        global.builtin.types.append(symbol)
     }
 
     val structTpe = Type.StructTypeGenerator(struct, ctx, global)
@@ -151,6 +151,11 @@ object Namer {
   }
 
   def namedInterface(interface: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
+    def tryAppendBuiltIn(symbol: Symbol.InterfaceSymbol): Unit = {
+      if(ctx.path.pkgName == Vector("std", "interfaces") && global.builtin.interfaces.names.contains(interface.name))
+        global.builtin.interfaces.append(symbol)
+    }
+
     val interfaceTpe = Type.InterfaceTypeGenerator(interface, ctx, global)
     val interfaceSymbol = Symbol.InterfaceSymbol(
       interface.name,
@@ -166,6 +171,7 @@ object Namer {
     interfaceSymbol.setHPs(hps)
     interfaceSymbol.setTPs(tps)
 
+    tryAppendBuiltIn(interfaceSymbol)
     ctx.append(interfaceSymbol)
     interface.setSymbol(interfaceSymbol)
   }

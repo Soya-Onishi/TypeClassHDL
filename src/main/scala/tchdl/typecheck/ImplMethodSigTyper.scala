@@ -25,6 +25,8 @@ object ImplMethodSigTyper {
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
+    impl.methods.foreach(_.symbol.tpe)
+    impl.stages.foreach(_.symbol.tpe)
     val (methodErrs, _) = impl.methods.map(TyperUtil.verifyMethodValidity(_)(implCtx, global)).partitionMap(identity)
     val (stageErrs, _) = impl.stages.map(TyperUtil.verifyStageDef(_)(implCtx, global)).partitionMap(identity)
     val errs = methodErrs ++ stageErrs

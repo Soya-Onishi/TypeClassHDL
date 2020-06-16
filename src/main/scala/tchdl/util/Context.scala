@@ -36,11 +36,11 @@ abstract class Context {
 }
 
 object Context {
-  def apply(owner: Context, symbol: Symbol, self: Option[Type.RefType]): NodeContext =
-    new NodeContext(owner, symbol, self, Some(symbol.name))
-
-  def apply(owner: Context, symbol: Symbol): NodeContext =
+  def apply(owner: Context.RootContext, symbol: Symbol): NodeContext =
     new NodeContext(owner, symbol, None, Some(symbol.name))
+
+  def apply(owner: Context.NodeContext, symbol: Symbol): NodeContext =
+    new NodeContext(owner, symbol, owner.self, Some(symbol.name))
 
   def apply(owner: NodeContext, self: Type.RefType): NodeContext =
     new NodeContext(owner, owner.owner, Some(self), None)

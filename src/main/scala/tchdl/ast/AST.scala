@@ -620,8 +620,6 @@ object RangeExpr {
 }
 
 case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr
-case class ApplyParams(suffix: Expression, args: Vector[Expression]) extends Expression
-case class ApplyTypeParams(suffix: Expression, hps: Vector[Expression], tps: Vector[TypeTree]) extends Expression
 case class Apply(prefix: Expression, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
 
 abstract class BinOp extends Expression with HasSymbol {

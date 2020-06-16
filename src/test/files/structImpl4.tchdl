@@ -1,0 +1,6 @@
+package test
+
+struct ST { a: Int }
+impl ST {
+  def f() -> Int { a }
+}

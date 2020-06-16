@@ -1,0 +1,15 @@
+package std::interfaces
+
+interface Add[Param, Output] {
+  def add(that: Param) -> Output
+}
+
+impl Add[Int, Int] for Int {
+  def add(that: Int) -> Int { this + that }
+}
+
+impl[m: Num] Add[Bit[m], Bit[m]] for Bit[m]
+  where m: min 1
+{
+  def add(that: Bit[m]) -> Bit[m] { this + that }
+}

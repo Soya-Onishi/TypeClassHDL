@@ -36,7 +36,7 @@ object NamerPost {
   }
 
   private def importPreludes(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
-    val preludes = global.builtin.symbols
+    val preludes = global.builtin.types.symbols
     val ctx = getContext(cu)
     val (errs, _) = preludes.map(ctx.appendPrelude(_)).partitionMap(identity)
 

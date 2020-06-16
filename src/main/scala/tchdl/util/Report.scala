@@ -70,6 +70,7 @@ object Error {
   case class InvalidTypeForHP(tpe: Type.RefType) extends Error
   case class TryDivisionByZero(expr: HPExpr) extends Error
   case class RangeAlreadyAssigned[T <: RangeExpr : TypeTag](value: Int) extends Error
+  case class ImplTargetTypeMismatch(impl: ImplementContainer, actual: Type.RefType) extends Error
 
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error

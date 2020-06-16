@@ -1,7 +1,7 @@
 package tchdl.util
 
 import tchdl.ast._
-import tchdl.typecheck.{Namer, Typer, TyperUtil}
+import tchdl.typecheck.{Namer, Typer}
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.reflect.ClassTag
@@ -9,12 +9,17 @@ import scala.reflect.runtime.universe.TypeTag
 
 trait Type {
   def name: String
+
   def namespace: NameSpace
+
   protected def declares: Scope
 
   def asRefType: Type.RefType = this.asInstanceOf[Type.RefType]
+
   def asEntityType: Type.EntityType = this.asInstanceOf[Type.EntityType]
+
   def asParameterType: Type.TypeParamType = this.asInstanceOf[Type.TypeParamType]
+
   def asMethodType: Type.MethodType = this.asInstanceOf[Type.MethodType]
 
   def isErrorType: Boolean = this.isInstanceOf[Type.ErrorType.type]
@@ -28,6 +33,7 @@ trait Type {
    * and does not verify [[Type.RefType.hardwareParam]] because of what explained above.
    */
   def =:=(other: Type): Boolean
+
   final def =!=(other: Type): Boolean = !(this =:= other)
 }
 
@@ -35,7 +41,9 @@ object Type {
 
   abstract class TypeGenerator extends Type {
     val name = "<?>"
+
     def declares = throw new TchdlException.ImplementationErrorException("TypeGenerator prohibits an access of 'declares'")
+
     def namespace = throw new TchdlException.ImplementationErrorException("TypeGenerator prohibits an access of 'namespace'")
 
     /* ModuleDef and StructDef only need to name its header and components.
@@ -112,12 +120,12 @@ object Type {
       val signatureCtx = Context(ctx, methodDef.symbol)
       signatureCtx.reAppend(
         methodDef.symbol.asMethodSymbol.hps ++
-        methodDef.symbol.asMethodSymbol.tps: _*
+          methodDef.symbol.asMethodSymbol.tps: _*
       )(global)
 
       val method = methodDef.symbol.asMethodSymbol
-      val hpBoundTrees = methodDef.bounds.collect{ case b: HPBoundTree => b }
-      val tpBoundTrees = methodDef.bounds.collect{ case b: TPBoundTree => b }
+      val hpBoundTrees = methodDef.bounds.collect { case b: HPBoundTree => b }
+      val tpBoundTrees = methodDef.bounds.collect { case b: TPBoundTree => b }
 
       val result = for {
         _ <- verifyHPTpes(methodDef.hp)
@@ -126,10 +134,10 @@ object Type {
         (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget(_)(signatureCtx, global)).to(Vector).unzip
         (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds(_)(signatureCtx, global)).to(Vector).unzip
         errs = (targetErrs ++ boundsErrs).flatten
-        _ <- if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*)) else Right(())
+        _ <- if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*)) else Right(())
         tpBounds = (targets zip bounds).view
-          .map{ case (t, bs) => (t.tpe.asRefType, bs.map(_.tpe.asRefType)) }
-          .map{ case (t, bs) => TPBound(t, bs) }
+          .map { case (t, bs) => (t.tpe.asRefType, bs.map(_.tpe.asRefType)) }
+          .map { case (t, bs) => TPBound(t, bs) }
           .to(Vector)
         _ = method.setBound(hpBounds ++ tpBounds)
         paramSymbols = methodDef.params
@@ -139,7 +147,7 @@ object Type {
         retTpeTree = Typer.typedTypeTree(methodDef.retTpe)(signatureCtx, global)
         _ = methodDef.retTpe.setSymbol(retTpeTree.symbol).setTpe(retTpeTree.tpe)
         tpes = paramSymbols.map(_.tpe) :+ retTpeTree.tpe
-        _ <- if(tpes.exists(_.isErrorType)) Left(Error.DummyError) else Right(())
+        _ <- if (tpes.exists(_.isErrorType)) Left(Error.DummyError) else Right(())
       } yield (paramSymbols.map(_.tpe.asRefType), retTpeTree.tpe.asRefType)
 
       result match {
@@ -160,8 +168,9 @@ object Type {
           global.repo.error.append(Error.RequireType)
           Type.ErrorType
         case (None, Some(expr)) =>
-          val typedExp = Typer.typedExpr(expr)(ctx, global)
-          typedExp.tpe
+          val typedExpr = Typer.typedExpr(expr)(ctx, global)
+          global.cache.set(typedExpr)
+          typedExpr.tpe
         case (Some(tpe), _) =>
           val typedTpe = Typer.typedTypeTree(tpe)(ctx, global)
           typedTpe.tpe
@@ -295,6 +304,7 @@ object Type {
     def =:=(other: Type): Boolean = other match {
       case other: MethodType =>
         def isSameParam: Boolean = this.params == other.params
+
         def isSameRet: Boolean = this.returnType == other.returnType
 
         isSameParam && isSameRet
@@ -426,7 +436,7 @@ object Type {
 
         val errs = hpErrs ++ tpErrs
         if (errs.isEmpty) Right(())
-        else Left(Error.MultipleErrors(errs: _*))
+        else Left(Error.ImplTargetTypeMismatch(impl, target))
       }
 
       for {
@@ -509,7 +519,7 @@ object Type {
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
     ): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
-      impls.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
+      val result = impls.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
         case (right@Right(_), _) => right
         case (Left(errs), impl) =>
           lookupFromEntity(
@@ -526,40 +536,44 @@ object Type {
             case Left(err) => Left(Error.MultipleErrors(err, errs))
           }
       }
+
+      result match {
+        case right@Right(_) => right
+        case Left(Error.DummyError) => Left(Error.SymbolNotFound(methodName))
+        case other@Left(_) => other
+      }
     }
 
-    def lookupOperation(
+    def lookupOperator(
       op: Operation,
       arg: Type.RefType,
-      callerHPBounds: Vector[HPBound],
-      callerTPBounds: Vector[TPBound],
-      ctx: Context.NodeContext
-    ): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
-      ctx.interfaceTable.get(op.toInterface) match {
-        case None => LookupResult.LookupFailure(Error.OperationNotFound(op))
-        case Some(interface) =>
-          val (errs, methods) = interface.impls
-            .map(impl => lookupFromEntity(
-              impl,
-              op.toMethod,
-              this,
-              Vector(arg),
-              Vector.empty,
-              Vector.empty,
-              callerHPBounds,
-              callerTPBounds
-            ))
-            .partitionMap(identity)
+    )(implicit ctx: Context.NodeContext, global: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
+      val callerHPBounds = ctx.hpBounds
+      val callerTPBounds = ctx.tpBounds
 
-          methods match {
-            case Vector() => errs match {
-              case Vector() => LookupResult.LookupFailure(Error.OperationNotFound(op))
-              case errs => LookupResult.LookupFailure(Error.MultipleErrors(errs: _*))
-            }
-            case Vector(method) => LookupResult.LookupSuccess(method)
-            case methods => LookupResult.LookupFailure(Error.AmbiguousSymbols(methods.map(_._1)))
-          }
+      val interface = global.builtin.interfaces.lookup(op.toInterface)
+      val (errs, methods) = interface.impls
+        .map(impl => lookupFromEntity(
+          impl,
+          op.toMethod,
+          this,
+          Vector(arg),
+          Vector.empty,
+          Vector.empty,
+          callerHPBounds,
+          callerTPBounds
+        ))
+        .partitionMap(identity)
+
+      methods match {
+        case Vector() => errs match {
+          case Vector() => LookupResult.LookupFailure(Error.OperationNotFound(op))
+          case errs => LookupResult.LookupFailure(Error.MultipleErrors(errs: _*))
+        }
+        case Vector(method) => LookupResult.LookupSuccess(method)
+        case methods => LookupResult.LookupFailure(Error.AmbiguousSymbols(methods.map(_._1)))
       }
+
     }
 
     // TODO: lookup type that is defined at implementation
@@ -674,7 +688,7 @@ object Type {
       lazy val hpsMissMatch = Error.HardParameterLengthMismatch(hps.length, callerHP.length)
       lazy val tpsMissMatch = Error.TypeParameterLengthMismatch(tps.length, callerTP.length)
 
-      if(params.length != args.length) Left(paramMissMatch)
+      if (params.length != args.length) Left(paramMissMatch)
       else if (hps.length != callerHP.length) Left(hpsMissMatch)
       else if (tps.length != callerTP.length) Left(tpsMissMatch)
       else Right(())
@@ -696,18 +710,18 @@ object Type {
       def verify(caller: Type.RefType, target: Type.RefType): Either[Error, Unit] = {
         (caller.origin, target.origin) match {
           case (e0: Symbol.EntityTypeSymbol, e1: Symbol.EntityTypeSymbol) =>
-            if(e0 != e1) Left(Error.TypeMissMatch(target, caller))
+            if (e0 != e1) Left(Error.TypeMissMatch(target, caller))
             else {
               val validHPs = caller.hardwareParam
                 .zip(target.hardwareParam)
-                .forall{ case (c, t) => isHpSuperSet(c, t) }
+                .forall { case (c, t) => isHpSuperSet(c, t) }
 
               val validTPs = caller.typeParam
                 .zip(target.typeParam)
-                .map{ case (c, t) => verify(c, t) }
+                .map { case (c, t) => verify(c, t) }
                 .forall(_.isRight)
 
-              if(validHPs && validTPs) Right(())
+              if (validHPs && validTPs) Right(())
               else Left(Error.TypeMissMatch(target, caller))
             }
           case (_, _: Symbol.TypeParamSymbol) => Right(())
@@ -716,20 +730,20 @@ object Type {
       }
 
       val (errs, _) = (caller zip target)
-        .map{ case (c, t) => verify(c, t) }
+        .map { case (c, t) => verify(c, t) }
         .partitionMap(identity)
 
-      if(errs.isEmpty) Right(())
+      if (errs.isEmpty) Right(())
       else Left(Error.MultipleErrors(errs: _*))
     }
 
-    def unwrapTable[K, V](table: Map[K, Option[V]]): Either[Error, Map[K, V]] = {
+    def unwrapTable[K, V](table: Map[K, Option[V]])(err: K => Error): Either[Error, Map[K, V]] = {
       val (errs, pairs) = table.map {
         case (key, Some(value)) => Right(key -> value)
-        case (key, None) => Left(???)
+        case (key, None) => Left(err(key))
       }.partitionMap(identity)
 
-      if(errs.isEmpty) Right(pairs.toMap)
+      if (errs.isEmpty) Right(pairs.toMap)
       else Left(Error.MultipleErrors(errs.toSeq: _*))
     }
 
@@ -780,7 +794,7 @@ object Type {
         case (acc, (caller, target)) => update(caller, target, acc)
       }
 
-      unwrapTable(assigned)
+      unwrapTable(assigned)(Error.AmbiguousHardwareParam.apply)
     }
 
     def assignTPTable(
@@ -814,7 +828,7 @@ object Type {
             case (acc, (caller, target)) => update(caller, target, acc)
           }
 
-      unwrapTable(assignedTable)
+      unwrapTable(assignedTable)(Error.AmbiguousTypeParam.apply)
     }
 
     def verifyHPBounds(
@@ -823,7 +837,7 @@ object Type {
     ): Either[Error, Unit] = {
       val (errs, _) = swapped.map(HPBound.verifyMeetBound(_, callerHPBound)).partitionMap(identity)
 
-      if(errs.isEmpty) Right(())
+      if (errs.isEmpty) Right(())
       else Left(Error.MultipleErrors(errs: _*))
     }
 
@@ -863,14 +877,14 @@ object Type {
       method: Type.MethodType,
       args: Vector[Type.RefType]
     ): Either[Error, Unit] = {
-      if(method.params.length != args.length) Left(Error.ParameterLengthMismatch(method.params.length, args.length))
+      if (method.params.length != args.length) Left(Error.ParameterLengthMismatch(method.params.length, args.length))
       else {
         val (errs, _) = method.params.zip(args).map {
           case (p, a) if p =:= a => Right(())
           case (p, a) => Left(Error.TypeMissMatch(p, a))
         }.partitionMap(identity)
 
-        if(errs.isEmpty) Right(())
+        if (errs.isEmpty) Right(())
         else Left(Error.MultipleErrors(errs: _*))
       }
     }
@@ -894,40 +908,40 @@ object Type {
   }
 
   def intTpe(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.lookup("Int")
+    val symbol = global.builtin.types.lookup("Int")
     Type.RefType(symbol)
   }
 
   def stringTpe(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.lookup("String")
+    val symbol = global.builtin.types.lookup("String")
     Type.RefType(symbol)
   }
 
   def unitTpe(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.lookup("Unit")
+    val symbol = global.builtin.types.lookup("Unit")
     Type.RefType(symbol)
   }
 
   def boolTpe(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.lookup("Boolean")
+    val symbol = global.builtin.types.lookup("Bool")
     Type.RefType(symbol)
   }
 
   def bitTpe(width: IntLiteral)(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.lookup("Bit")
+    val symbol = global.builtin.types.lookup("Bit")
     val IntLiteral(value) = width
 
-    if(value > 0) Type.RefType(symbol, Vector(width), Vector.empty)
+    if (value > 0) Type.RefType(symbol, Vector(width), Vector.empty)
     else throw new ImplementationErrorException(s"Bit's width[${value}] must be natural number")
   }
 
   def numTpe(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.lookup("Num")
+    val symbol = global.builtin.types.lookup("Num")
     Type.RefType(symbol, Vector.empty, Vector.empty)
   }
 
   def strTpe(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.lookup("Str")
+    val symbol = global.builtin.types.lookup("Str")
     Type.RefType(symbol, Vector.empty, Vector.empty)
   }
 
@@ -941,11 +955,11 @@ object Type {
           case Left(err) => (Some(err), typeTree.setSymbol(symbol).setTpe(Type.ErrorType))
           case Right((hps, tps)) =>
             val errs = (symbol.hps.map(_.tpe) zip hps.map(_.tpe))
-              .filterNot{ case (e, a) => e == a}
-              .map{ case (e, a) => Error.TypeMissMatch(e, a) }
+              .filterNot { case (e, a) => e == a }
+              .map { case (e, a) => Error.TypeMissMatch(e, a) }
 
 
-            if(errs.isEmpty) {
+            if (errs.isEmpty) {
               val tpe = TypeTree(ident, hps, tps)
                 .setSymbol(symbol)
                 .setTpe(Type.RefType(symbol, hps, tps.map(_.tpe.asRefType)))
@@ -993,7 +1007,7 @@ object Type {
   private def buildParams(symbol: Symbol.TypeSymbol, hps: Vector[HPExpr], tps: Vector[TypeTree])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Vector[HPExpr], Vector[TypeTree])] = {
     def verifyLength: Either[Error, Unit] = {
       def verify(expect: Int, actual: Int, builder: (Int, Int) => Error): Either[Error, Unit] =
-        if(expect == actual) Right(())
+        if (expect == actual) Right(())
         else Left(builder(expect, actual))
 
       Vector(

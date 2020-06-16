@@ -6,3 +6,4 @@ struct String {}
 struct Unit {}
 struct Num {}
 struct Str {}
+struct Bool {}

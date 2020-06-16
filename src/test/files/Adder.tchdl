@@ -1,0 +1,9 @@
+package test
+
+module Adder {}
+
+impl[m: Num] Adder where m: min 1 {
+  input def add(a: Bit[m], b: Bit[m]) -> Bit[m] {
+    a + b
+  }
+}

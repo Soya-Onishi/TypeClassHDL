@@ -19,7 +19,7 @@ object TyperUtil {
     val signatureCtx = Context(ctx, methodSymbol)
     signatureCtx.reAppend (
       methodSymbol.hps ++
-        methodSymbol.tps: _*
+      methodSymbol.tps: _*
     )
 
     for {

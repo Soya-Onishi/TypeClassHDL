@@ -6,193 +6,77 @@ import tchdl.util._
 
 object Typer {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
-    val ctx = global.rootPackage.search(cu.pkgName)
-      .getOrElse(throw new ImplementationErrorException(s"${cu.pkgName} should be there"))
-      .lookupCtx(cu.filename.get)
-      .getOrElse(throw new ImplementationErrorException(s"${cu.filename.get}'s context should be there'"))
+    implicit val ctx = getContext(cu.pkgName, cu.filename.get)
 
-    val topDefs = cu.topDefs.map(typedTopLevelDefinition(_)(ctx, global))
+    val topDefs = cu.topDefs.map(diveIntoExpr)
 
     CompilationUnit(cu.filename, cu.pkgName, cu.imports, topDefs)
   }
 
-  def typedTopLevelDefinition(ast: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition = ast match {
-    case module: ModuleDef => typedModuleDef(module)
-    case struct: StructDef => typedStructDef(struct)
-    case interface: InterfaceDef => ???
-    case implClass: ImplementClass => typedImplementClass(implClass)
-    case implInterface: ImplementInterface => typedImplementInterface(implInterface)
-    case deftree =>
-      val msg = s"typed [${deftree.getClass.getName}] at top level but it is invalid"
-      throw new ImplementationErrorException(msg)
-  }
+  def diveIntoExpr(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition = {
+    def extractExprFromMethod(method: MethodDef): Block =
+      method.blk
+        .getOrElse(throw new ImplementationErrorException("methods in impl should have their body"))
 
-  def typedDefinition(ast: Definition)(implicit ctx: Context.NodeContext, global: GlobalData): Definition = ast match {
-    case typeDef: TypeDef => typedTypeParam(typeDef)
-    case valDef: ValDef => typedValDef(valDef)
-    case state: StateDef => typedStateDef(state)
-    case always: AlwaysDef => typedAlwaysDef(always)
-    case stage: StageDef => typedStageDef(stage)
-    case method: MethodDef => typedMethodDef(method)
-    case deftree =>
-      val msg = s"typed [${deftree.getClass.getName}] at node level but it is invalid"
-      throw new ImplementationErrorException(msg)
-  }
 
-  def typedModuleDef(module: ModuleDef)(implicit ctx: Context.RootContext, global: GlobalData): ModuleDef = {
-    module.symbol.tpe
+    defTree match {
+      case impl: ImplementClass =>
+        val implSymbol = impl.symbol.asImplementSymbol
+        val implSigCtx = Context(ctx, implSymbol)
+        implSigCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
 
-    val interfaceCtx = Context(ctx, module.symbol)
-    interfaceCtx.reAppend(module.hp.map(_.symbol) ++ module.tp.map(_.symbol): _*)
+        val implBodyCtx = Context(implSigCtx, impl.target.tpe.asRefType)
 
-    val typedHp = module.hp.map(typedValDef(_)(interfaceCtx, global))
-    val typedTp = module.tp.map(typedTypeParam(_)(interfaceCtx, global))
+        val typedMethods = impl.methods.map { methodDef =>
+          val method = methodDef.symbol.asMethodSymbol
+          val methodSigCtx = Context(implBodyCtx, method)
+          methodSigCtx.reAppend(method.hps ++ method.tps ++ methodDef.params.map(_.symbol.asVariableSymbol): _*)
 
-    val typedParents = module.parents.map(typedValDef(_)(interfaceCtx, global))
-    val typedSiblings = module.siblings.map(typedValDef(_)(interfaceCtx, global))
+          val body = extractExprFromMethod(methodDef)
+          val typedBody = typedBlock(body)(methodSigCtx, global)
 
-    val typedModule = module.copy(
-      module.name,
-      typedHp,
-      typedTp,
-      module.bounds,
-      typedParents,
-      typedSiblings
-    )
-      .setSymbol(module.symbol)
-      .setID(module.id)
+          methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
+        }
 
-    global.cache.set(typedModule)
-    typedModule
-  }
+        val typedStages = impl.stages.map { stageDef =>
+          val stage = stageDef.symbol.asStageSymbol
+          val stageSigCtx = Context(implBodyCtx, stage)
+          stageSigCtx.reAppend(stageDef.params.map(_.symbol.asVariableSymbol): _*)
 
-  def typedStructDef(struct: StructDef)(implicit ctx: Context, global: GlobalData): StructDef = {
-    struct.symbol.tpe
+          val stageBodyCtx = Context(stageSigCtx)
+          stageDef.states.foreach(Namer.namedStateDef(_)(stageBodyCtx, global))
+          stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedValDef(_)(stageBodyCtx, global))
 
-    val signatureCtx = Context(ctx, struct.symbol)
-    ctx.reAppend(
-      struct.hp.map(_.symbol) ++
-        struct.tp.map(_.symbol): _*
-    )
+          val typedStates = stageDef.states.map(typedStateDef(_)(stageBodyCtx, global))
+          val typedBodyElems = stageDef.blk.map {
+            case vdef: ValDef => typedExprValDef(vdef)(stageBodyCtx, global)
+            case expr: Expression => typedExpr(expr)(stageBodyCtx, global)
+          }
 
-    val typedHp = struct.hp.map(typedValDef(_)(signatureCtx, global))
-    val typedTp = struct.tp.map(typedTypeParam(_)(signatureCtx, global))
+          stageDef.copy(states = typedStates, blk = typedBodyElems).setSymbol(stageDef.symbol.asStageSymbol).setID(stageDef.id)
+        }
 
-    val fieldCtx = Context(signatureCtx)
-    fieldCtx.reAppend(struct.fields.map(_.symbol): _*)
-    val typedFields = struct.fields.map(typedValDef(_)(fieldCtx, global))
+        impl.copy(methods = typedMethods, stages = typedStages).setSymbol(impl.symbol).setID(impl.id)
+      case impl: ImplementInterface =>
+        val implSymbol = impl.symbol.asImplementSymbol
+        val implSigCtx = Context(ctx, implSymbol)
+        implSigCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
 
-    val typedStruct = struct.copy(
-      struct.name,
-      typedHp,
-      typedTp,
-      struct.bounds,
-      typedFields
-    )
-      .setSymbol(struct.symbol)
-      .setID(struct.id)
+        val implBodyCtx = Context(implSigCtx, impl.target.tpe.asRefType)
 
-    global.cache.set(typedStruct)
-    typedStruct
-  }
+        val typedMethods = impl.methods.map { methodDef =>
+          val method = methodDef.symbol.asMethodSymbol
+          val methodSigCtx = Context(implBodyCtx, method)
+          methodSigCtx.reAppend(method.hps ++ method.tps ++ methodDef.params.map(_.symbol.asVariableSymbol): _*)
 
-  def typedInterfaceDef(interfaceDef: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
-    interfaceDef.symbol.tpe
+          val body = extractExprFromMethod(methodDef)
+          val typedBody = typedBlock(body)(methodSigCtx, global)
 
-    val signatureCtx = Context(ctx, interfaceDef.symbol)
-    val interface = interfaceDef.symbol.asInterfaceSymbol
-    signatureCtx.reAppend(
-      interface.hps ++
-      interface.tps: _*
-    )
+          methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
+        }
 
-    val blockCtx = Context(signatureCtx)
-    val signatureDefs = interfaceDef.methods.map(typedMethodDef(_)(blockCtx, global))
-
-    InterfaceDef(
-      interfaceDef.name,
-      interfaceDef.hp,
-      interfaceDef.tp,
-      interfaceDef.bounds,
-      signatureDefs
-    )
-  }
-
-  def typedImplementClass(impl: ImplementClass)(implicit ctx: Context.RootContext, global: GlobalData): ImplementClass = {
-    val signatureCtx = Context(ctx, impl.symbol)
-
-    signatureCtx.reAppend(
-      impl.hp.map(_.symbol) ++
-      impl.tp.map(_.symbol) :_*
-    )
-
-    val typedHp = impl.hp.map(typedValDef(_)(signatureCtx, global))
-    val typedTp = impl.tp.map(typedTypeParam(_)(signatureCtx, global))
-
-    val typedTarget = typedTypeTree(impl.target)(signatureCtx, global)
-    typedTarget.tpe match {
-      case Type.ErrorType => impl
-      case targetTpe: Type.RefType =>
-        val implCtx = Context(signatureCtx, targetTpe)
-        implCtx.reAppend(
-          impl.methods.map(_.symbol) ++
-          impl.stages.map(_.symbol): _*
-        )
-
-        val typedMethods = impl.methods.map(typedMethodDef(_)(implCtx, global))
-        val typedStages = impl.stages.map(typedStageDef(_)(implCtx, global))
-
-        val typedImpl = impl.copy(
-          typedTarget,
-          typedHp,
-          typedTp,
-          impl.bounds,
-          typedMethods,
-          typedStages
-        )
-          .setSymbol(impl.symbol)
-          .setID(impl.id)
-
-        global.cache.set(typedImpl)
-        typedImpl
-    }
-  }
-
-  def typedImplementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): ImplementInterface = {
-    val signatureCtx = Context(ctx, impl.symbol)
-    signatureCtx.reAppend(
-      impl.hp.map(_.symbol) ++
-      impl.tp.map(_.symbol): _*
-    )
-
-    val typedHp = impl.hp.map(Typer.typedValDef(_)(signatureCtx, global))
-    val typedTp = impl.tp.map(Typer.typedTypeParam(_)(signatureCtx, global))
-
-    val typedInterface = typedTypeTree(impl.interface)(signatureCtx, global)
-    val typedTarget = typedTypeTree(impl.target)(signatureCtx, global)
-
-    typedTarget.tpe match {
-      case Type.ErrorType => impl
-      case targetTpe: Type.RefType =>
-        val implCtx = Context(signatureCtx, targetTpe)
-        implCtx.reAppend(impl.methods.map(_.symbol): _*)
-
-        val typedMethods = impl.methods.map(Typer.typedMethodDef(_)(implCtx, global))
-
-        val typedImpl = impl.copy(
-          typedInterface,
-          typedTarget,
-          typedHp,
-          typedTp,
-          impl.bounds,
-          typedMethods
-        )
-          .setSymbol(impl.symbol)
-          .setID(impl.id)
-
-        global.cache.set(typedImpl)
-
-        typedImpl
+        impl.copy(methods = typedMethods).setSymbol(impl.symbol).setID(impl.id)
+      case others => others
     }
   }
 
@@ -211,121 +95,56 @@ object Typer {
     typedAlways
   }
 
-  def typedMethodDef(method: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
-    method.symbol.tpe
-
-    val signatureCtx = Context(ctx, method.symbol, ctx.self)
-    signatureCtx.reAppend(
-      method.hp.map(_.symbol) ++
-      method.tp.map(_.symbol) ++
-      method.params.map(_.symbol): _*
-    )
-
-    val typedHp = method.hp.map(typedValDef(_)(signatureCtx, global))
-    val typedTp = method.tp.map(typedTypeParam(_)(signatureCtx, global))
-    val typedParams = method.params.map(typedValDef(_)(signatureCtx, global))
-    val typedRetTpe = typedTypeTree(method.retTpe)(signatureCtx, global)
-    val typedBlk = method.blk.map(typedBlock(_)(signatureCtx, global))
-
-    typedBlk.foreach(global.cache.set)
-
-    val typedMethod = method.copy(
-      method.name,
-      typedHp,
-      typedTp,
-      method.bounds,
-      typedParams,
-      typedRetTpe,
-      typedBlk
-    )
-      .setSymbol(method.symbol)
-      .setID(method.id)
-
-    global.cache.set(typedMethod)
-    typedMethod
-  }
-
   def typedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
-    vdef.symbol.tpe
+    val ttree = vdef.tpeTree.map(typedTypeTree)
+    val expr = vdef.expr.map(typedExpr)
 
-    val typedTpeTree = vdef.tpeTree.map(typedTypeTree)
-    val typedExp = vdef.expr.map(typedExpr)
+    ttree.foreach(global.cache.set)
+    expr.foreach(global.cache.set)
 
-    val typedValDef = vdef.copy(
-      vdef.flag,
-      vdef.name,
-      typedTpeTree,
-      typedExp
-    )
+    vdef.copy(tpeTree = ttree, expr = expr)
       .setSymbol(vdef.symbol)
       .setID(vdef.id)
-
-    typedExp.foreach(global.cache.set)
-    global.cache.set(typedValDef)
-    typedValDef
   }
 
-  def typedStageDef(stage: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): StageDef = {
-    stage.symbol.tpe
+  def typedExprValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
+    Namer.namedValDef(vdef)
 
-    val signatureCtx = Context(ctx, stage.symbol)
-    ctx.reAppend(stage.params.map(_.symbol): _*)
+    val result = vdef.symbol.tpe match {
+      case Type.ErrorType => Left(Error.DummyError)
+      case vdefTpe: Type.RefType =>
+        val vdefExpr = vdef.expr.getOrElse(throw new ImplementationErrorException("variable definition in the block should have expression in right"))
+        val typedExpr = global.cache.get(vdefExpr) match {
+          case Some(expr: Expression) => expr
+          case None => this.typedExpr(vdefExpr)
+        }
 
-    val typedParams = stage.params.map(typedValDef(_)(signatureCtx, global))
-    val typedRetTpe = typedTypeTree(stage.retTpe)(signatureCtx, global)
-
-    val blkCtx = Context.blk(signatureCtx)
-    stage.blk.map(Namer.nodeLevelNamed(_)(blkCtx, global))
-    stage.states.map(Namer.nodeLevelNamed(_)(blkCtx, global))
-
-    val typedBlkElems = stage.blk.map {
-      case vdef: ValDef => typedValDef(vdef)(blkCtx, global)
-      case expr: Expression => typedExpr(expr)(blkCtx, global)
+        typedExpr.tpe match {
+          case Type.ErrorType => Left(Error.DummyError)
+          case exprTpe: Type.RefType if exprTpe =!= vdefTpe => Left(Error.TypeMissMatch(vdefTpe, exprTpe))
+          case _: Type.RefType => Right(typedExpr)
+        }
     }
 
-    val typedStates = stage.states.map(typedStateDef(_)(blkCtx, global))
-
-    val typedStage = stage.copy(
-      stage.name,
-      typedParams,
-      typedRetTpe,
-      typedStates,
-      typedBlkElems
-    )
-      .setSymbol(stage.symbol)
-      .setID(stage.id)
-
-    global.cache.set(typedStage)
-    typedStage
+    result match {
+      case Right(expr) =>
+        val typeTree =  vdef.tpeTree.map(_.setTpe(vdef.symbol.tpe))
+        vdef.copy(tpeTree = typeTree, expr = Some(expr))
+          .setSymbol(vdef.symbol)
+          .setID(vdef.id)
+      case Left(err) =>
+        global.repo.error.append(err)
+        vdef
+    }
   }
 
-  def typedStateDef(state: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): StateDef = {
-    val stateCtx = Context(ctx, state.symbol)
-    val typedBlk = typedBlock(state.blk)(stateCtx, global)
+  def typedStateDef(stateDef: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): StateDef = {
+    val stateSigCtx = Context(ctx, stateDef.symbol)
+    val typedBlk = typedBlock(stateDef.blk)(stateSigCtx, global)
 
-    val typedState = state.copy(state.name, typedBlk)
-      .setSymbol(state.symbol)
-      .setID(state.id)
-
-    global.cache.set(typedState)
-    typedState
-  }
-
-  def typedTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
-    Namer.nodeLevelNamed(tpeDef, ctx)
-
-    tpeDef.symbol.tpe
-
-    val typedTpeDef = tpeDef.copy(tpeDef.name)
-      .setSymbol(tpeDef.symbol)
-      .setID(tpeDef.id)
-
-    global.cache.set(typedTpeDef)
-    typedTpeDef
-  }
-
-  def typedHardwareParam(hpDef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
-    ???
+    stateDef.copy(blk = typedBlk)
+      .setSymbol(stateDef.symbol)
+      .setID(stateDef.id)
   }
 
   def typedExpr(expr: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Expression =
@@ -342,12 +161,6 @@ object Typer {
       case unit: UnitLiteral => typedUnitLiteral(unit)
       case bit: BitLiteral => typedBitLiteral(bit)
       case apply: Apply => typedExprApply(apply)
-      case _: ApplyParams =>
-        throw new ImplementationErrorException("ApplyParams tree should not be typed")
-      case _: ApplyTypeParams =>
-        throw new ImplementationErrorException(
-          "ApplyTypeParam tree should be handled in typedExprApplyParams"
-        )
       case generate: Generate => typedGenerate(generate)
       case goto: Goto => typedGoto(goto)
       case finish: Finish => typedFinish(finish)
@@ -372,8 +185,8 @@ object Typer {
 
     val hasError =
       typedArgs.exists(_.tpe.isErrorType) &&
-      typedHPs.exists(_.tpe.isErrorType) &&
-      typedTPs.exists(_.tpe.isErrorType)
+        typedHPs.exists(_.tpe.isErrorType) &&
+        typedTPs.exists(_.tpe.isErrorType)
 
     lazy val errorApply =
       Apply(apply.prefix, typedHPs, typedTPs, typedArgs)
@@ -576,7 +389,7 @@ object Typer {
       case (Type.ErrorType, _) => LookupResult.LookupFailure(Error.DummyError)
       case (_, Type.ErrorType) => LookupResult.LookupFailure(Error.DummyError)
       case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
-        leftTpe.lookupOperation(binop.op, rightTpe, ctx.hpBounds, ctx.tpBounds, ctx)
+        leftTpe.lookupOperator(binop.op, rightTpe)
     }
 
     result match {
@@ -593,7 +406,7 @@ object Typer {
     val blkCtx = Context.blk(ctx)
 
     val typedElems = blk.elems.map {
-      case vdef: ValDef => typedValDef(vdef)(blkCtx, global)
+      case vdef: ValDef => typedExprValDef(vdef)(blkCtx, global)
       case expr: Expression => typedExpr(expr)(blkCtx, global)
     }
 
@@ -715,233 +528,6 @@ object Typer {
     }
   }
 
-  /*
-  def typedType(expr: Expression)(implicit ctx: Context.NodeContext): TypeTree = {
-    def typedTypeIdentFromExpr(ident: Ident): TypeTree = {
-      ctx.lookup[Symbol.TypeSymbol](ident.name) match {
-        case LookupResult.LookupFailure(err) =>
-          Reporter.appendError(err)
-          TypeTree(ident, Vector.empty, Vector.empty)
-            .setTpe(Type.ErrorType)
-            .setSymbol(Symbol.ErrorSymbol)
-            .setID(ident.id)
-        case LookupResult.LookupSuccess(symbol: Symbol.EntityTypeSymbol) =>
-          verifyTypeParams(symbol, Vector.empty, Vector.empty, symbol.tpe.asEntityType)
-        case LookupResult.LookupSuccess(symbol: Symbol.TypeParamSymbol) =>
-          TypeTree(ident, Vector.empty, Vector.empty)
-            .setTpe(Type.RefType(symbol, Vector.empty, Vector.empty))
-            .setSymbol(symbol)
-            .setID(ident.id)
-      }
-    }
-
-    /**
-     * This method is called at only first time.
-     *
-     * I.E.
-     *    if the code is `A::B::C`, this method is called only for (1).
-     *    And also, (2) is typed at [[typedSelectType]]
-     *    StaticSelect(                                           |
-     *      TypeTree(                                             |
-     *        StaticSelect(TypeTree(Ident(A), _, _), B) |---(2)   |
-     *        _, _,                                               |---(1)
-     *      )                                                     |
-     *      C                                                     |
-     *    )                                                       |
-     *
-     * That's why this method return TypeTree
-     * instead of StaticSelect which [[typedSelectType]] returns.
-     *
-     * This method also is called only from [[typedType]].
-     * For now, a type tree of Expression form is only for type parameter's expression part,
-     * and if parser detect `type with type parameter` or `self type`,
-     * parser transitions to type part.
-     * So, this method expect type without type parameter, and
-     * if a looked up type require type parameters,
-     * it is treated as invalid and returned as erroneous type tree.
-     */
-    def typedTypeStaticSelectFromExpr(select: StaticSelect): TypeTree = {
-      val typedTT = typedTypeTree(select.suffix)(ctx, acceptPkg = true)
-
-      def errorTypeTree =
-        TypeTree(StaticSelect(typedTT, select.name), Vector.empty, Vector.empty)
-          .setTpe(Type.ErrorType)
-          .setSymbol(Symbol.ErrorSymbol)
-          .setID(select.id)
-
-      def postProcessForLookup(result: LookupResult[Symbol.TypeSymbol]): TypeTree = result match {
-        case LookupResult.LookupFailure(err) =>
-          Reporter.appendError(err)
-          errorTypeTree
-        case LookupResult.LookupSuccess(symbol) =>
-          verifyTypeParams(symbol, Vector.empty, Vector.empty, symbol.tpe.asEntityType)
-      }
-
-      typedTT.symbol match {
-        case ps: Symbol.PackageSymbol => postProcessForLookup(ps.lookup[Symbol.TypeSymbol](select.name))
-        case _: Symbol.TypeSymbol => postProcessForLookup(typedTT.tpe.asRefType.lookupType(select.name))
-        case Symbol.ErrorSymbol => errorTypeTree
-        case symbol =>
-          val msg = s"${symbol.getClass} should not appear here"
-          throw new ImplementationErrorException(msg)
-      }
-    }
-
-    expr match {
-      case ident: Ident => typedTypeIdentFromExpr(ident)
-      case select: StaticSelect => typedTypeStaticSelectFromExpr(select)
-      case expr =>
-        Reporter.appendError(Error.InvalidFormatForType(expr))
-        TypeTree(Ident(""), Vector.empty, Vector.empty)
-          .setTpe(Type.ErrorType)
-          .setSymbol(Symbol.ErrorSymbol)
-          .setID(expr.id)
-    }
-  }
- */
-
-  /*
-  def typedTypeAST(typeAST: TypeAST)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): TypeAST = {
-    val tpeAST = typeAST match {
-      case ident: Ident => typedTypeIdent(ident)
-      case self: SelfType => typedSelfType(self)
-      case select: StaticSelect => typedSelectType(select)
-    }
-
-    tpeAST.setID(typeAST.id)
-  }
-
-  def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): TypeTree = {
-    def errorTpe(suffix: TypeAST) = TypeTree(suffix, typeTree.hp, typeTree.tp)
-      .setTpe(Type.ErrorType)
-      .setSymbol(Symbol.ErrorSymbol)
-      .setID(typeTree.id)
-
-    def buildTypeTree(suffix: TypeAST): Either[Error, TypeTree] = {
-      suffix.symbol match {
-        case Symbol.ErrorSymbol =>
-          Right(typeTree.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
-        /**
-         * There is no need to verify whether acceptPkg is true or false
-         * because that check is already done in [[typedSelectType]] or [[typedTypeIdent]].
-         */
-        case packageSymbol: Symbol.PackageSymbol =>
-          if(typeTree.hp.nonEmpty || typeTree.tp.nonEmpty) Left(Error.RejectTypeParam[Symbol.PackageSymbol]())
-          else Right(
-            TypeTree(suffix, Vector.empty, Vector.empty)
-              .setSymbol(packageSymbol)
-              .setTpe(Type.NoType)
-              .setID(typeTree.id)
-          )
-        case typeSymbol: Symbol.TypeParamSymbol =>
-          if(typeTree.hp.nonEmpty || typeTree.tp.nonEmpty) Left(Error.RejectTypeParam[Symbol.TypeParamSymbol]())
-          else Right(
-            TypeTree(suffix, Vector.empty, Vector.empty)
-              .setSymbol(typeSymbol)
-              .setTpe(typeSymbol.tpe)
-              .setID(typeTree.id)
-          )
-        case typeSymbol: Symbol.EntityTypeSymbol =>
-          Right(verifyTypeParams(typeSymbol, typeTree.hp, typeTree.tp, typeSymbol.tpe.asEntityType))
-        case symbol =>
-          val msg = s"${symbol.getClass} should not appear here"
-          throw new ImplementationErrorException(msg)
-      }
-    }
-
-    val suffix = typedTypeAST(typeTree.expr)
-    val tt = suffix match {
-      case ident: Ident => buildTypeTree(ident)
-      case select: StaticSelect => buildTypeTree(select)
-      case self: SelfType => self.tpe match {
-        case _: Type.RefType =>
-          if(typeTree.hp.nonEmpty || typeTree.tp.nonEmpty) Left(Error.RejectTPFromSelf)
-          else Right(
-            TypeTree(self, Vector.empty, Vector.empty)
-              .setTpe(self.tpe)
-              .setSymbol(self.symbol)
-              .setID(typeTree.id)
-          )
-        case Type.ErrorType => Right(errorTpe(self))
-      }
-    }
-
-    tt match {
-      case Right(tt) => tt
-      case Left(err) =>
-        Reporter.appendError(err)
-        TypeTree(suffix, typeTree.hp, typeTree.tp)
-          .setTpe(Type.ErrorType)
-          .setSymbol(Symbol.ErrorSymbol)
-          .setID(typeTree.id)
-    }
-  }
-
-  def typedTypeIdent(ident: Ident)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): Ident = {
-    val symbol = ctx.lookup[Symbol](ident.name) match {
-      case LookupResult.LookupSuccess(symbol: Symbol.TypeSymbol) => symbol
-      case LookupResult.LookupSuccess(symbol: Symbol.PackageSymbol) if acceptPkg => symbol
-      case LookupResult.LookupSuccess(symbol) =>
-        Reporter.appendError(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
-        Symbol.ErrorSymbol
-      case LookupResult.LookupFailure(err) =>
-        Reporter.appendError(err)
-        Symbol.ErrorSymbol
-
-    }
-
-    ident.setSymbol(symbol).setTpe(Type.NoType)
-  }
-
-
-  def typedSelfType(self: SelfType)(implicit ctx: Context.NodeContext): SelfType =
-    ctx.self match {
-      case None =>
-        Reporter.appendError(Error.UsingSelfOutsideClass)
-        self.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
-      case Some(tpe) =>
-        self.setTpe(tpe).setSymbol(tpe.origin)
-    }
-
-  def typedSelectType(select: StaticSelect)(implicit ctx: Context.NodeContext, acceptPkg: Boolean): StaticSelect = {
-    val typedSuffix = typedTypeTree(select.suffix)(ctx, acceptPkg = true)
-    def errorPair = (Symbol.ErrorSymbol, Type.ErrorType)
-
-    val (symbol, tpe) = typedSuffix.symbol match {
-      case Symbol.ErrorSymbol => errorPair
-      case packageSymbol: Symbol.PackageSymbol =>
-        packageSymbol.lookup(select.name) match {
-          case LookupResult.LookupSuccess(symbol) => (symbol, Type.NoType)
-          case LookupResult.LookupFailure(err) =>
-            Reporter.appendError(err)
-            errorPair
-        }
-      case _: Symbol.TypeParamSymbol =>
-        typedSuffix.tpe.asRefType.lookupType(select.name) match {
-          case LookupResult.LookupSuccess(symbol) => (symbol, Type.RefType(symbol, Vector.empty, Vector.empty))
-          case LookupResult.LookupFailure(err) =>
-            Reporter.appendError(err)
-            errorPair
-        }
-      case _ => throw new ImplementationErrorException("unexpected to reach here")
-    }
-
-    val (assignedSymbol, assignedType) = symbol match {
-      case sym: Symbol.TypeSymbol => (sym, tpe)
-      case sym: Symbol.PackageSymbol if acceptPkg => (sym, tpe)
-      case sym: Symbol.PackageSymbol =>
-        Reporter.appendError(Error.RequireSymbol[Symbol.TypeSymbol](sym))
-        (Symbol.ErrorSymbol, Type.ErrorType)
-      case sym => (sym, tpe)
-    }
-
-    StaticSelect(typedSuffix, select.name)
-      .setTpe(tpe)
-      .setSymbol(assignedSymbol)
-      .setID(select.id)
-  }
-   */
-
   def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): BitLiteral = {
     val length = IntLiteral(bit.length).setTpe(Type.numTpe)
     val bitTpe = Type.bitTpe(length)
@@ -950,77 +536,16 @@ object Typer {
   }
 
   def typedIntLiteral(int: IntLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): IntLiteral = {
-    val intSymbol = global.builtin.lookup("Int")
-    val intTpe = Type.RefType(intSymbol)
-
-    int.setTpe(intTpe).setID(int.id)
+    int.setTpe(Type.intTpe).setID(int.id)
   }
 
   def typedUnitLiteral(unit: UnitLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): UnitLiteral = {
-    val unitSymbol = global.builtin.lookup("Unit")
-    val unitTpe = Type.RefType(unitSymbol)
-
-    unit.setTpe(unitTpe).setID(unit.id)
+    unit.setTpe(Type.unitTpe).setID(unit.id)
   }
 
   def typedStringLiteral(str: StringLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): StringLiteral = {
-    val strSymbol = global.builtin.lookup("String")
-    val strTpe = Type.RefType(strSymbol)
-
-    str.setTpe(strTpe).setID(str.id)
+    str.setTpe(Type.strTpe).setID(str.id)
   }
-
-  def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): HPExpr = expr match {
-    case ident: Ident => typedHPIdent(ident)
-    case binop: HPBinOp => typedHPBinOp(binop)
-    case literal: IntLiteral => typedHPIntLit(literal)
-    case literal: StringLiteral => typedHPStrLit(literal)
-  }
-
-  def typedHPIdent(ident: Ident)(implicit ctx: Context.NodeContext, global: GlobalData): Ident = {
-    def verifyType(symbol: Symbol): Either[Error, Unit] = symbol.tpe match {
-      case Type.ErrorType => Left(Error.DummyError)
-      case tpe: Type.RefType if tpe =:= Type.numTpe => Right(())
-      case tpe: Type.RefType if tpe =:= Type.strTpe => Right(())
-      case tpe: Type.RefType => Left(Error.RequireSpecificType(tpe, Type.numTpe, Type.strTpe))
-    }
-
-    val symbol = for {
-      symbol <- ctx.lookup[Symbol.TermSymbol](ident.name).toEither
-           _ <- verifyType(symbol)
-    } yield symbol
-
-    symbol match {
-      case Left(err) =>
-        global.repo.error.append(err)
-        ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
-      case Right(symbol) =>
-        ident.setTpe(symbol.tpe).setSymbol(symbol)
-    }
-  }
-
-  def typedHPBinOp(binop: HPBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): HPBinOp = {
-    val typedLeft  = typedHPExpr(binop.left)
-    val typedRight = typedHPExpr(binop.right)
-
-    val isValid = (typedLeft.tpe =:= Type.numTpe) && (typedRight.tpe =:= Type.numTpe)
-    val hasStrTpe = (typedLeft.tpe =:= Type.strTpe) || (typedRight.tpe =:= Type.strTpe)
-    val tpe =
-      if(isValid) Type.numTpe
-      else if(hasStrTpe) { global.repo.error.append(Error.SymbolNotFound("+")); Type.ErrorType }
-      else Type.ErrorType
-
-    HPBinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
-  }
-
-  def typedHPIntLit(int: IntLiteral)(implicit global: GlobalData): IntLiteral = {
-    int.setTpe(Type.numTpe)
-  }
-
-  def typedHPStrLit(str: StringLiteral)(implicit global: GlobalData): StringLiteral = {
-    str.setTpe(Type.strTpe)
-  }
-
 
   def typedFinish(finish: Finish)(implicit ctx: Context.NodeContext, global: GlobalData): Finish = {
     ctx.owner match {
@@ -1084,6 +609,57 @@ object Typer {
     relay.setTpe(tpe)
   }
 
+  def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): HPExpr = expr match {
+    case ident: Ident => typedHPIdent(ident)
+    case binop: HPBinOp => typedHPBinOp(binop)
+    case literal: IntLiteral => typedHPIntLit(literal)
+    case literal: StringLiteral => typedHPStrLit(literal)
+  }
+
+  def typedHPIdent(ident: Ident)(implicit ctx: Context.NodeContext, global: GlobalData): Ident = {
+    def verifyType(symbol: Symbol): Either[Error, Unit] = symbol.tpe match {
+      case Type.ErrorType => Left(Error.DummyError)
+      case tpe: Type.RefType if tpe =:= Type.numTpe => Right(())
+      case tpe: Type.RefType if tpe =:= Type.strTpe => Right(())
+      case tpe: Type.RefType => Left(Error.RequireSpecificType(tpe, Type.numTpe, Type.strTpe))
+    }
+
+    val symbol = for {
+      symbol <- ctx.lookup[Symbol.TermSymbol](ident.name).toEither
+      _ <- verifyType(symbol)
+    } yield symbol
+
+    symbol match {
+      case Left(err) =>
+        global.repo.error.append(err)
+        ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+      case Right(symbol) =>
+        ident.setTpe(symbol.tpe).setSymbol(symbol)
+    }
+  }
+
+  def typedHPBinOp(binop: HPBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): HPBinOp = {
+    val typedLeft  = typedHPExpr(binop.left)
+    val typedRight = typedHPExpr(binop.right)
+
+    val isValid = (typedLeft.tpe =:= Type.numTpe) && (typedRight.tpe =:= Type.numTpe)
+    val hasStrTpe = (typedLeft.tpe =:= Type.strTpe) || (typedRight.tpe =:= Type.strTpe)
+    val tpe =
+      if(isValid) Type.numTpe
+      else if(hasStrTpe) { global.repo.error.append(Error.SymbolNotFound("+")); Type.ErrorType }
+      else Type.ErrorType
+
+    HPBinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
+  }
+
+  def typedHPIntLit(int: IntLiteral)(implicit global: GlobalData): IntLiteral = {
+    int.setTpe(Type.numTpe)
+  }
+
+  def typedHPStrLit(str: StringLiteral)(implicit global: GlobalData): StringLiteral = {
+    str.setTpe(Type.strTpe)
+  }
+
   def verifyParamTypes(expect: Vector[Type], actual: Vector[Type])(implicit ctx: Context.NodeContext, global: GlobalData): Vector[Error] = {
     if (expect.length != actual.length)
       return Vector(Error.ParameterLengthMismatch(expect.length, actual.length))
@@ -1094,8 +670,18 @@ object Typer {
       .map { case (e, a) => Error.TypeMissMatch(e, a) }
   }
 
-  def verifyParamType(expect: Type, actual: Type)(implicit ctx: Context.NodeContext, global: GlobalData): Vector[Error] =
-    verifyParamTypes(Vector(expect), Vector(actual))
+  def typedTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
+    Namer.nodeLevelNamed(tpeDef, ctx)
+
+    tpeDef.symbol.tpe
+
+    val typedTpeDef = tpeDef.copy(tpeDef.name)
+      .setSymbol(tpeDef.symbol)
+      .setID(tpeDef.id)
+
+    global.cache.set(typedTpeDef)
+    typedTpeDef
+  }
 
   /*
   def verifyTypeParams(
@@ -1190,4 +776,6 @@ object TyperForTopDefinition {
   def typedInterfaceDef(interfaceDef: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
     ???
   }
+
+
 }

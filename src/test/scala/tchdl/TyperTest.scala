@@ -15,18 +15,24 @@ class TyperTest extends TchdlFunSuite {
     val trees = filenames.map(parse)
 
     trees.foreach(Namer.exec)
-    assert(global.repo.error.counts == 0, showErrors(global))
+    expectNoError
 
     trees.foreach(NamerPost.exec)
-    assert(global.repo.error.counts == 0, showErrors(global))
+    expectNoError
 
     trees.foreach(BuildImplContainer.exec)
-    assert(global.repo.error.counts == 0, showErrors(global))
+    expectNoError
 
     VerifyImplConflict.verifyImplConflict()
-    assert(global.repo.error.counts == 0, showErrors(global))
+    expectNoError
 
-    val typedTrees = trees.map(Typer.exec)
+    val trees0 = trees.map(TopDefTyper.exec)
+    expectNoError
+
+    trees0.foreach(ImplMethodSigTyper.exec)
+    expectNoError
+
+    val typedTrees = trees0.map(Typer.exec)
     val returnedTrees = typedTrees
       .filter(tt => specifiedFileNames.contains(tt.filename.get))
       .toVector
@@ -64,7 +70,7 @@ class TyperTest extends TchdlFunSuite {
       .last
       .asInstanceOf[Select]
 
-    assert(select.tpe == Type.RefType(global.builtin.lookup("Int")))
+    assert(select.tpe == Type.RefType(global.builtin.types.lookup("Int")))
   }
 
   test("call another impl's method from another impl") {
@@ -84,7 +90,35 @@ class TyperTest extends TchdlFunSuite {
   }
 
   test("call impl's methods but this call causes error because of type param(Int) does not meet bounds") {
-    val (trees, global) = untilTyper("callMethod0.tchdl")
+    val (_, global) = untilTyper("callMethod0.tchdl")
     assert(global.repo.error.counts == 1, showErrors(global))
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.SymbolNotFound])
+  }
+
+  test("trying to lookup field without this accessor, this should cause an error") {
+    val (_, global) = untilTyper("structImpl4.tchdl")
+    assert(global.repo.error.counts == 1, showErrors(global))
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.SymbolNotFound])
+  }
+
+  test("trying to call same impl's method without this accessor. this should cause an error") {
+    val (Seq(tree), global) = untilTyper("structImpl5.tchdl")
+    assert(global.repo.error.counts == 1, showErrors(global))
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.SymbolNotFound])
+
+    val impl = tree.topDefs.collect{ case impl: ImplementClass => impl }.head
+    val apply = impl.methods.find(_.name == "f").get.blk.get.last.asInstanceOf[Apply]
+    assert(apply.tpe == Type.ErrorType)
+  }
+
+  test("adder module should typed in collect") {
+    val (Seq(tree), global) = untilTyper("Adder.tchdl")
+    expectNoError(global)
   }
 }

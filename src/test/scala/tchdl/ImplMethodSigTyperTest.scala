@@ -27,12 +27,12 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     VerifyImplConflict.verifyImplConflict()
     expectNoError
 
-    trees.foreach(TopDefTyper.exec)
+    val trees0 = trees.map(TopDefTyper.exec)
     expectNoError
 
-    trees.foreach(ImplMethodSigTyper.exec)
+    trees0.foreach(ImplMethodSigTyper.exec)
 
-    val cus = trees.filter(cu => files.contains(cu.filename.get))
+    val cus = trees0.filter(cu => files.contains(cu.filename.get))
     (cus, global)
   }
 
@@ -130,5 +130,24 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
 
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.ImplementMethodInterfaceNotHas])
+  }
+
+  test("no error to implement class") {
+    val (Seq(tree), global) = untilThisPhase("structImpl0.tchdl")
+    expectNoError(global)
+
+    val st = tree.topDefs.collect{ case st @ StructDef("ST", _, _, _, _) => st }.head
+    val stA = st.fields.find(_.name == "a").get
+    val stB = st.fields.find(_.name == "b").get
+
+    assert(stA.symbol.tpe =:= Type.intTpe(global))
+    assert(stB.symbol.tpe =:= Type.intTpe(global))
+
+    val impl = tree.topDefs.collect { case impl: ImplementClass => impl }.head
+    val getA = impl.methods.find(_.name == "getA").get
+    val getB = impl.methods.find(_.name == "getB").get
+
+    assert(getA.symbol.tpe =:= Type.MethodType(Vector.empty, Type.intTpe(global)))
+    assert(getB.symbol.tpe =:= Type.MethodType(Vector.empty, Type.intTpe(global)))
   }
 }
