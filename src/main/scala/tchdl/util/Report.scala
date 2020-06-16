@@ -27,9 +27,6 @@ object Error {
   case class SymbolNotFound(name: String) extends Error
   case class OperationNotFound(op: Operation) extends Error
   case class PackageNotFound(name: String) extends Error
-  case class SymbolIsType(name: String) extends Error
-  case class SymbolIsTerm(name: String) extends Error
-  case class SetBoundForDifferentOwner(expect: Symbol, actual: Symbol) extends Error
   case class ParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
@@ -38,16 +35,7 @@ object Error {
   case class LiteralOnTarget(lit: HPExpr) extends Error
   case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
   case object RequireType extends Error
-  case object RequireTypeParameter extends Error
-  case class RequireStructOrModuleSymbol(name: String) extends Error
-  case class RequireMethodType(actual: Type) extends Error
-  case class RequireBooleanType(actual: Type) extends Error
-  case class RequireTypeParamSymbol(name: String) extends Error
-  case class RequireStateSymbol(name: String) extends Error
-  case class RequireStageSymbol(name: String) extends Error
-  case class RequireInterfaceSymbol(name: String) extends Error
-  case class RequirePackageSymbol(name: String) extends Error
-  case class RequireSpecificType(requires: Vector[Type], actual: Type) extends Error
+  case class RequireSpecificType(actual: Type.RefType, candidates: Type.RefType*) extends Error
   case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol) extends Error
   case class RequireFlag(require: Modifier, actual: Symbol) extends Error
   case object RejectSelfType extends Error

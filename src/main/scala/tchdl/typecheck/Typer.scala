@@ -621,7 +621,7 @@ object Typer {
     def isBit1Tpe = typedCond.tpe != Type.bitTpe(IntLiteral(1))
     def isErrorTpe = typedCond.tpe.isErrorType
     if (!isBoolTpe && !isBit1Tpe && !isErrorTpe)
-      global.repo.error.append(Error.RequireBooleanType(typedCond.tpe))
+      global.repo.error.append(Error.RequireSpecificType(typedCond.tpe.asRefType, Type.boolTpe, Type.bitTpe(IntLiteral(1))))
 
     typedAlt match {
       case None =>
@@ -978,11 +978,12 @@ object Typer {
   }
 
   def typedHPIdent(ident: Ident)(implicit ctx: Context.NodeContext, global: GlobalData): Ident = {
-    def verifyType(symbol: Symbol): Either[Error, Unit] =
-      if(symbol.tpe =:= Type.numTpe || symbol.tpe =:= Type.strTpe) Right(())
-      else Left(Error.RequireSpecificType(
-        Vector(Type.numTpe, Type.strTpe), symbol.tpe
-      ))
+    def verifyType(symbol: Symbol): Either[Error, Unit] = symbol.tpe match {
+      case Type.ErrorType => Left(Error.DummyError)
+      case tpe: Type.RefType if tpe =:= Type.numTpe => Right(())
+      case tpe: Type.RefType if tpe =:= Type.strTpe => Right(())
+      case tpe: Type.RefType => Left(Error.RequireSpecificType(tpe, Type.numTpe, Type.strTpe))
+    }
 
     val symbol = for {
       symbol <- ctx.lookup[Symbol.TermSymbol](ident.name).toEither
