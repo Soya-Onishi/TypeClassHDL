@@ -179,4 +179,29 @@ class TyperTest extends TchdlFunSuite {
 
     assert(expr.tpe =:= Type.intTpe(global))
   }
+
+  test("val definition in blk should be no error") {
+    val (Seq(tree), global) = untilTyper("valdefBlk0.tchdl")
+    expectNoError(global)
+
+    val method = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method }.get
+
+    val blk = method.blk.get
+    val m = method.symbol.asMethodSymbol.hps.head
+
+    val vdef = blk.elems.head
+    val add = blk.last
+
+    assert(vdef.isInstanceOf[ValDef])
+
+    val vdef0 = vdef.asInstanceOf[ValDef]
+    val bitSymbol = global.builtin.types.lookup("Bit")
+    val expectBitTpe = Type.RefType(bitSymbol, Vector(Ident("m").setSymbol(m)), Vector.empty)
+
+    assert(vdef0.symbol.tpe =:= expectBitTpe)
+    assert(add.tpe =:= expectBitTpe)
+  }
 }
