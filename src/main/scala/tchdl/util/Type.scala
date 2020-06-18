@@ -165,7 +165,7 @@ object Type {
 
       (tpeTree, expr) match {
         case (None, None) =>
-          global.repo.error.append(Error.RequireType)
+          global.repo.error.append(Error.RequireTypeTree)
           Type.ErrorType
         case (None, Some(expr)) =>
           val typedExpr = Typer.typedExpr(expr)(ctx, global)
@@ -607,25 +607,24 @@ object Type {
       case other: RefType =>
         def isSameOrigin = this.origin == other.origin
 
-        def isSameHpType = {
+        def isSameHp = {
           def isSameLength = this.hardwareParam.length == other.hardwareParam.length
-
-          def isSameType = this.hardwareParam
+          def isSameExpr = this.hardwareParam
             .zip(other.hardwareParam)
-            .forall { case (t, o) => t.tpe =:= o.tpe }
+            .forall { case (t, o) => t.isSameExpr(o) }
 
-          isSameLength && isSameType
+          isSameLength && isSameExpr
         }
 
         def isSameTP = {
           def isSameLength = this.typeParam.length == other.typeParam.length
-
           def isSameTypes = (this.typeParam zip other.typeParam).forall { case (t, o) => t =:= o }
 
           isSameLength && isSameTypes
         }
 
-        isSameOrigin && isSameHpType && isSameTP
+        isSameOrigin && isSameHp && isSameTP
+      case _ => false
     }
 
     override def equals(obj: Any): Boolean = obj match {

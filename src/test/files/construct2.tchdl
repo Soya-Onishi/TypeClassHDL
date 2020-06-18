@@ -1,0 +1,12 @@
+package test
+
+module M0 {
+  parent:
+    m1: M1
+}
+
+module M1 {}
+
+impl M1 {
+  mod m0: M0 = M0 { m1: this }
+}

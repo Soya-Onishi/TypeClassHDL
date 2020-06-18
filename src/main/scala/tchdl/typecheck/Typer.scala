@@ -84,8 +84,8 @@ object Typer {
 
     if(!vdef.symbol.tpe.isErrorType) {
       def typecheck(tree: Option[AST with HasType]): Unit = {
-        tree.filter(_.tpe.isErrorType)
-          .filter(_.tpe =!= vdef.symbol.tpe)
+        tree.filterNot(_.tpe.isErrorType)
+          .filterNot(_.tpe =:= vdef.symbol.tpe)
           .foreach(t => global.repo.error.append(Error.TypeMismatch(vdef.symbol.tpe, t.tpe)))
       }
 

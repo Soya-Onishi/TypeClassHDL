@@ -1,6 +1,7 @@
 package tchdl.typecheck
 
 import tchdl.ast._
+import tchdl.util.TchdlException.ImplementationErrorException
 import tchdl.util._
 
 import scala.annotation.tailrec
@@ -25,19 +26,23 @@ object ImplMethodSigTyper {
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
-    impl.components.foreach(_.symbol.tpe)
 
     val (methodErrs, _) = impl.components
       .collect { case m: MethodDef => m }
-      .map(TyperUtil.verifyMethodValidity(_)(implCtx, global))
+      .map(verifyMethodDef(_)(implCtx, global))
       .partitionMap(identity)
 
     val (stageErrs, _) = impl.components
       .collect { case s: StageDef => s }
-      .map(TyperUtil.verifyStageDef(_)(implCtx, global))
+      .map(verifyStageDef(_)(implCtx, global))
       .partitionMap(identity)
 
-    val errs = methodErrs ++ stageErrs
+    val (valErrs, _) = impl.components
+      .collect { case v: ValDef => v }
+      .map{ verifyValDef(_)(implCtx, global) }
+      .partitionMap(identity)
+
+    val errs = methodErrs ++ stageErrs ++ valErrs
     errs.foreach(global.repo.error.append)
   }
 
@@ -225,7 +230,7 @@ object ImplMethodSigTyper {
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
     impl.methods.foreach(_.symbol.tpe)
 
-    val (errs, methodSymbols) = impl.methods.map(TyperUtil.verifyMethodValidity(_)(implCtx, global)).partitionMap(identity)
+    val (errs, methodSymbols) = impl.methods.map(verifyMethodDef(_)(implCtx, global)).partitionMap(identity)
     val result =
       if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
       else {
@@ -250,5 +255,58 @@ object ImplMethodSigTyper {
       .combine(errs => Error.MultipleErrors(errs: _*))
       .left
       .foreach(global.repo.error.append)
+  }
+
+  def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
+    def verifyMethodTpe: Either[Error, Unit] = {
+      val paramTpes = methodDef.params.map(_.symbol.tpe)
+      val retTpe = methodDef.retTpe.tpe
+
+      (paramTpes :+ retTpe).map {
+        case Type.ErrorType => Left(Error.DummyError)
+        case _ => Right(())
+      }.combine(errs => Error.MultipleErrors(errs: _*))
+    }
+
+    methodDef.symbol.tpe
+    val methodSymbol = methodDef.symbol.asMethodSymbol
+    val signatureCtx = Context(ctx, methodSymbol)
+    signatureCtx.reAppend (
+      methodSymbol.hps ++
+        methodSymbol.tps: _*
+    )
+
+    for {
+      _ <- TyperUtil.verifyTPBoundType(methodSymbol)(signatureCtx)
+      _ <- verifyMethodTpe
+    } yield methodSymbol
+  }
+
+  def verifyStageDef(stageDef: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.StageSymbol] = {
+    stageDef.symbol.tpe
+    val stageSymbol = stageDef.symbol.asStageSymbol
+    val self = ctx.self.getOrElse(throw new ImplementationErrorException("this type should be there"))
+
+    self.origin match {
+      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self))
+      case _: Symbol.ModuleSymbol => stageSymbol.tpe match {
+        case Type.ErrorType => Left(Error.DummyError)
+        case _: Type.MethodType => Right(stageSymbol)
+      }
+    }
+  }
+
+  def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, globla: GlobalData): Either[Error, Symbol.VariableSymbol] = {
+    val self = ctx.self.getOrElse(throw new ImplementationErrorException("this type should be there"))
+    self.origin match {
+      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self))
+      case _: Symbol.ModuleSymbol => vdef.tpeTree match {
+        case None => Left(Error.RequireTypeTree)
+        case Some(_) => vdef.symbol.tpe match {
+          case Type.ErrorType => Left(Error.DummyError)
+          case _: Type.RefType => Right(vdef.symbol.asVariableSymbol)
+        }
+      }
+    }
   }
 }

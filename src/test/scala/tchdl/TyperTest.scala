@@ -124,4 +124,17 @@ class TyperTest extends TchdlFunSuite {
     val (Seq(tree), global) = untilTyper("Adder.tchdl")
     expectNoError(global)
   }
+
+  test("constructing struct with module construct format causes an error") {
+    val (_, global) = untilTyper("construct1.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RejectParentOrSiblingIndicator])
+  }
+
+  test("constructing module with struct construct format causes an error") {
+    val (_, global) = untilTyper("construct2.tchdl")
+    expectError(1)(global)
+  }
 }

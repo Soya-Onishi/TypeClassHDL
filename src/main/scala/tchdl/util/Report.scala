@@ -34,7 +34,7 @@ object Error {
   case class RequireNumTerm(tree: HPExpr, actual: Type.RefType) extends Error
   case class LiteralOnTarget(lit: HPExpr) extends Error
   case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
-  case object RequireType extends Error
+  case object RequireTypeTree extends Error
   case class RequireSpecificType(actual: Type.RefType, candidates: Type.RefType*) extends Error
   case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol) extends Error
   case class RequireFlag(require: Modifier, actual: Symbol) extends Error
@@ -74,6 +74,8 @@ object Error {
   case class NeedParentOrSiblingIndicator(construct: ConstructClass) extends Error
   case class RejectParentOrSiblingIndicator(construct: ConstructModule) extends Error
   case class TryToConstructInterface(construct: Construct) extends Error
+
+  case class ImplementModuleComponentInStruct(tpe: Type.RefType) extends Error
 
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
