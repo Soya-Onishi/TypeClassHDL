@@ -12,3 +12,5 @@ impl[T] T0[T] where T: I0 {
 impl T1 {
   def f(t: T0[Int]) -> Int { t.f() }
 }
+
+impl I0 for Int {}

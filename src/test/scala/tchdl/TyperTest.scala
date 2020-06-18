@@ -165,4 +165,18 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.RequireSpecificType])
   }
+
+  test("method call's return type should be same as expected type of caller") {
+    val (Seq(tree), global) = untilTyper("callMethod1.tchdl")
+    expectNoError(global)
+
+    val method = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method }.get
+
+    val expr = method.blk.get.last
+
+    assert(expr.tpe =:= Type.intTpe(global))
+  }
 }
