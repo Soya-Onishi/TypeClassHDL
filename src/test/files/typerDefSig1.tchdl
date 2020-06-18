@@ -1,7 +1,7 @@
 package test
 
-interface I { def f[T]() -> Unit where T: I0 }
-interface I0 {}
+trait I { def f[T]() -> Unit where T: I0 }
+trait I0 {}
 
 impl I for Int {
   def f[T]() -> Unit {}

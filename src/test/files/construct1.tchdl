@@ -1,7 +1,5 @@
 package test
 
-
-
 struct ST0 { a: ST1 }
 impl ST0 {
   def f(m: ST1) -> ST0 {

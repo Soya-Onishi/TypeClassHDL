@@ -201,7 +201,7 @@ object Type {
             case Vector("std", "types", "Num") => tpe
             case Vector("std", "types", "Str") => tpe
             case _ =>
-              global.repo.error.append(Error.RequireNumOrStr(tpe))
+              global.repo.error.append(Error.RequireSpecificType(tpe, Type.numTpe, Type.strTpe))
               Type.ErrorType
           }
       }
@@ -626,6 +626,39 @@ object Type {
 
         isSameOrigin && isSameHp && isSameTP
       case _ => false
+    }
+
+    def isModuleType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = this.origin match {
+      case _: Symbol.ModuleSymbol => true
+      case _: Symbol.InterfaceSymbol => false
+      case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
+        case None => false
+        case Some(tpBound) =>
+          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"))
+          tpBound.bounds.exists(_ =:= moduleInterface)
+      }
+    }
+
+    def isHardwareType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = {
+      val builtinSymbols = global.builtin.types.symbols
+      this.origin match {
+        case _: Symbol.ModuleSymbol => false
+        case _: Symbol.InterfaceSymbol => false
+        case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
+          case None => false
+          case Some(tpBound) =>
+            val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("Hardware"))
+            tpBound.bounds.exists(_ =:= hardwareInterface)
+        }
+        case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
+        case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
+        case struct: Symbol.StructSymbol =>
+          val hpTable = (struct.hps zip this.hardwareParam).toMap
+          val tpTable = (struct.tps zip this.typeParam).toMap
+          val fields = struct.tpe.declares.toMap.values.to(Vector)
+          val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
+          fieldTpes.forall(_.isHardwareType)
+      }
     }
 
     override def equals(obj: Any): Boolean = obj match {

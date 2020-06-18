@@ -30,12 +30,12 @@ object Error {
   case class ParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
-  case class RequireNumOrStr(actual: Type.RefType) extends Error
-  case class RequireNumTerm(tree: HPExpr, actual: Type.RefType) extends Error
   case class LiteralOnTarget(lit: HPExpr) extends Error
   case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
   case object RequireTypeTree extends Error
   case class RequireSpecificType(actual: Type.RefType, candidates: Type.RefType*) extends Error
+  case class RequireModuleType(actual: Type.RefType) extends Error
+  case class RequireHardwareType(actual: Type.RefType) extends Error
   case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol) extends Error
   case class RequireFlag(require: Modifier, actual: Symbol) extends Error
   case object RejectSelfType extends Error
@@ -44,6 +44,7 @@ object Error {
   case object RejectPackage extends Error
   case class RejectEntityTypeFromLookup(symbol: Symbol.TypeSymbol) extends Error
   case class RejectTypeParam[From <: Symbol : TypeTag]() extends Error
+  case object RejectPolyParams extends Error
   case class NoNeedTypeParameter(method: Type.MethodType) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type]) extends Error
   case class NotMeetHPBound(require: HPBound, caller: Option[HPBound]) extends Error
@@ -74,9 +75,11 @@ object Error {
   case class RequireParentOrSiblingIndicator(construct: ConstructClass) extends Error
   case class RejectParentOrSiblingIndicator(construct: ConstructModule) extends Error
   case class TryToConstructInterface(construct: Construct) extends Error
-
+  case class InvalidModifier(expect: Vector[Modifier], actual: Modifier) extends Error
   case class ImplementModuleComponentInStruct(tpe: Type.RefType) extends Error
-
+  case class TryImplTraitByModule(impl: ImplementInterface) extends Error
+  case class TryImplInterfaceByStruct(impl: ImplementInterface) extends Error
+  case class TypeParameterMustHasConsistency(bounds: Vector[Type.RefType]) extends Error
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }

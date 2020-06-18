@@ -1,7 +1,7 @@
 package test
 
 struct ST[T] {}
-interface I {}
+trait I {}
 
 impl I for ST[Int] {}
 impl I for ST[String] {}

@@ -48,15 +48,15 @@ object BuildImplContainer {
           case LookupResult.LookupSuccess(symbol) => symbol.tpe match {
             case Type.ErrorType => Right(ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
             case tpe: Type.RefType =>
-              if(tpe == Type.numTpe) Right(ident.setSymbol(symbol).setTpe(Type.numTpe))
-              else Left(Error.RequireNumTerm(ident, tpe))
+              if(tpe =:= Type.numTpe) Right(ident.setSymbol(symbol).setTpe(Type.numTpe))
+              else Left(Error.RequireSpecificType(tpe, Type.numTpe))
           }
           case LookupResult.LookupFailure(err) =>
             ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
             Left(err)
         }
         case lit: IntLiteral => Right(lit.setTpe(Type.numTpe))
-        case lit: StringLiteral =>  Left(Error.RequireNumTerm(lit, Type.strTpe))
+        case lit: StringLiteral =>  Left(Error.RequireSpecificType(Type.strTpe, Type.numTpe))
       }
 
       HPBound.verifyForm(bound) match {
@@ -115,6 +115,34 @@ object BuildImplContainer {
   }
 
   def implementInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
+    def verifyTypeValidity(interface: Type.RefType, target: Type.RefType, ctx: Context.NodeContext): Either[Error, Unit] =
+      (interface.origin.flag, target.origin) match {
+        case (flag, _: Symbol.ModuleSymbol) if flag.hasFlag(Modifier.Interface) => Right(())
+        case (flag, _: Symbol.StructSymbol) if flag.hasFlag(Modifier.Trait) => Right(())
+        case (_, _: Symbol.ModuleSymbol) => Left(Error.TryImplTraitByModule(impl))
+        case (_, _: Symbol.StructSymbol) => Left(Error.TryImplInterfaceByStruct(impl))
+        case (flag, tp: Symbol.TypeParamSymbol) =>
+          val bounds = ctx.tpBounds.find(_.target.origin == tp).map(_.bounds).getOrElse(Vector.empty)
+
+          val hasConsistency = bounds match {
+            case Vector() => true
+            case bounds if bounds.head.origin.flag.hasFlag(Modifier.Interface) =>
+              bounds.forall(_.origin.flag.hasFlag(Modifier.Interface))
+            case bounds if bounds.head.origin.flag.hasFlag(Modifier.Trait) =>
+              bounds.forall(_.origin.flag.hasFlag(Modifier.Trait))
+          }
+
+          val isInterfaceBounds = bounds.forall(_.origin.flag.hasFlag(Modifier.Interface)) && bounds.nonEmpty
+          val isTraitBounds = bounds.forall(_.origin.flag.hasFlag(Modifier.Trait)) && bounds.nonEmpty
+
+          if(!hasConsistency) Left(Error.TypeParameterMustHasConsistency(bounds))
+          else {
+            if(isInterfaceBounds && flag.hasFlag(Modifier.Trait)) Left(Error.TryImplTraitByModule(impl))
+            else if(isTraitBounds && flag.hasFlag(Modifier.Interface)) Left(Error.TryImplInterfaceByStruct(impl))
+            else Right(())
+          }
+      }
+
     val signatureCtx: Context.NodeContext = Context(ctx, impl.symbol)
     val implSymbol = impl.symbol.asImplementSymbol
 
@@ -140,21 +168,24 @@ object BuildImplContainer {
       .partitionMap(identity)
 
     (errs ++ signatureErr) match {
-      case Vector() =>
-        val implContext = Context(signatureCtx, target.tpe.asRefType)
-        impl.methods.foreach(Namer.nodeLevelNamed(_)(implContext, global))
+      case Vector() => verifyTypeValidity(interface.tpe.asRefType, target.tpe.asRefType, signatureCtx) match {
+        case Left(err) => global.repo.error.append(err)
+        case Right(_) =>
+          val implContext = Context(signatureCtx, target.tpe.asRefType)
+          impl.methods.foreach(Namer.nodeLevelNamed(_)(implContext, global))
 
-        val interfaceTpe = interface.tpe.asRefType
-        val targetTpe = target.tpe.asRefType
-        impl.interface.setTpe(interfaceTpe).setSymbol(interface.symbol)
-        impl.target.setTpe(targetTpe).setSymbol(target.symbol)
+          val interfaceTpe = interface.tpe.asRefType
+          val targetTpe = target.tpe.asRefType
+          impl.interface.setTpe(interfaceTpe).setSymbol(interface.symbol)
+          impl.target.setTpe(targetTpe).setSymbol(target.symbol)
 
-        val container = ImplementInterfaceContainer(impl, ctx, interfaceTpe, targetTpe, implContext.scope)
+          val container = ImplementInterfaceContainer(impl, ctx, interfaceTpe, targetTpe, implContext.scope)
 
-        val interfaceSymbol = interface.symbol.asInterfaceSymbol
-        impl.symbol.asImplementSymbol.setBound(bounds)
-        interfaceSymbol.appendImpl(impl, container)
-        global.buffer.interface.append(interfaceSymbol)
+          val interfaceSymbol = interface.symbol.asInterfaceSymbol
+          impl.symbol.asImplementSymbol.setBound(bounds)
+          interfaceSymbol.appendImpl(impl, container)
+          global.buffer.traits.append(interfaceSymbol)
+      }
       case errs =>
         errs.foreach(global.repo.error.append)
     }

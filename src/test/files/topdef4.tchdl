@@ -1,4 +1,4 @@
 package test
 
 struct ST[m: Num, T] where T: I0[m] {}
-interface I0[m: Num] where m: min 0 {}
+trait I0[m: Num] where m: min 0 {}

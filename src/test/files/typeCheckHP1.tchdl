@@ -1,6 +1,6 @@
 package test
 
 struct ST[T] {}
-interface I[m: Num] {}
+trait I[m: Num] {}
 
 impl I["hello"] for ST[Int] {}

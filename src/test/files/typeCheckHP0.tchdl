@@ -1,5 +1,5 @@
 package test
 
 struct ST[T] where T: I["str"] {}
-interface I[m: Num] {}
+trait I[m: Num] {}
 

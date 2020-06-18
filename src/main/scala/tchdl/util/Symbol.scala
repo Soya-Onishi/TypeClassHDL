@@ -6,7 +6,7 @@ import scala.reflect.runtime.universe.TypeTag
 
 sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def path: NameSpace
-  def visibility: Visibility
+  def accessibility: Accessibility
 
   def name: String = path.name.get
 
@@ -54,6 +54,8 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asTermSymbol: Symbol.TermSymbol = this.asInstanceOf[Symbol.TermSymbol]
   def asEntityTypeSymbol: Symbol.EntityTypeSymbol = this.asInstanceOf[Symbol.EntityTypeSymbol]
   def asClassTypeSymbol: Symbol.ClassTypeSymbol = this.asInstanceOf[Symbol.ClassTypeSymbol]
+  def asStructSymbol: Symbol.StructSymbol = this.asInstanceOf[Symbol.StructSymbol]
+  def asModuleSymbol: Symbol.ModuleSymbol = this.asInstanceOf[Symbol.ModuleSymbol]
   def asInterfaceSymbol: Symbol.InterfaceSymbol = this.asInstanceOf[Symbol.InterfaceSymbol]
   def asTypeParamSymbol: Symbol.TypeParamSymbol = this.asInstanceOf[Symbol.TypeParamSymbol]
   def asImplementSymbol: Symbol.ImplementSymbol = this.asInstanceOf[Symbol.ImplementSymbol]
@@ -112,7 +114,7 @@ object Symbol {
 
   class StructSymbol(
     val path: NameSpace,
-    val visibility: Visibility,
+    val accessibility: Accessibility,
     flags: Modifier,
     tpe: Type
   ) extends ClassTypeSymbol(tpe, flags)
@@ -121,7 +123,7 @@ object Symbol {
     def apply(
       name: String,
       path: NameSpace,
-      visibility: Visibility,
+      visibility: Accessibility,
       flags: Modifier,
       tpe: Type
     ): StructSymbol =
@@ -130,7 +132,7 @@ object Symbol {
 
   class ModuleSymbol(
     val path: NameSpace,
-    val visibility: Visibility,
+    val accessibility: Accessibility,
     flags: Modifier,
     tpe: Type
   ) extends ClassTypeSymbol(tpe, flags)
@@ -139,7 +141,7 @@ object Symbol {
     def apply(
       name: String,
       path: NameSpace,
-      visibility: Visibility,
+      visibility: Accessibility,
       flags: Modifier,
       tpe: Type
     ): ModuleSymbol =
@@ -148,7 +150,7 @@ object Symbol {
 
   class InterfaceSymbol(
     val path: NameSpace,
-    val visibility: Visibility,
+    val accessibility: Accessibility,
     flags: Modifier,
     tpe: Type,
   ) extends EntityTypeSymbol(tpe, flags) {
@@ -159,7 +161,7 @@ object Symbol {
     def apply(
       name: String,
       path: NameSpace,
-      visibility: Visibility,
+      visibility: Accessibility,
       flags: Modifier,
       tpe: Type
     ): InterfaceSymbol =
@@ -167,7 +169,7 @@ object Symbol {
   }
 
   class TypeParamSymbol(val path: NameSpace, tpe: Type) extends TypeSymbol(tpe, Modifier.NoModifier) {
-    override val visibility: Visibility = Visibility.Private
+    override val accessibility: Accessibility = Accessibility.Private
   }
 
   object TypeParamSymbol {
@@ -180,25 +182,25 @@ object Symbol {
     tpe: Type,
     flags: Modifier
   ) extends TypeSymbol(tpe, flags) {
-    override val visibility: Visibility = Visibility.Public
+    override val accessibility: Accessibility = Accessibility.Public
   }
 
   abstract class TermSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
 
   class VariableSymbol(
     val path: NameSpace,
-    val visibility: Visibility,
+    val accessibility: Accessibility,
     flags: Modifier,
     tpe: Type
   ) extends TermSymbol(tpe, flags)
 
   object VariableSymbol {
-    def apply(name: String, path: NameSpace, visibility: Visibility, flags: Modifier, tpe: Type): VariableSymbol =
+    def apply(name: String, path: NameSpace, visibility: Accessibility, flags: Modifier, tpe: Type): VariableSymbol =
       new VariableSymbol(path.appendName(name), visibility, flags, tpe)
   }
 
   class HardwareParamSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier) {
-    val visibility: Visibility = Visibility.Private
+    val accessibility: Accessibility = Accessibility.Private
   }
 
   object HardwareParamSymbol {
@@ -208,7 +210,7 @@ object Symbol {
 
   class MethodSymbol(
     val path: NameSpace,
-    val visibility: Visibility,
+    val accessibility: Accessibility,
     flags: Modifier,
     tpe: Type
   ) extends TermSymbol(tpe, flags) with HasParams
@@ -217,7 +219,7 @@ object Symbol {
     def apply(
       name: String,
       path: NameSpace,
-      visibility: Visibility,
+      visibility: Accessibility,
       flags: Modifier,
       tpe: Type
     ): MethodSymbol =
@@ -225,7 +227,7 @@ object Symbol {
   }
 
   class AlwaysSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier) {
-    override val visibility: Visibility = Visibility.Private
+    override val accessibility: Accessibility = Accessibility.Private
   }
 
   object AlwaysSymbol {
@@ -234,7 +236,7 @@ object Symbol {
   }
 
   class StageSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier) {
-    override val visibility: Visibility = Visibility.Private
+    override val accessibility: Accessibility = Accessibility.Private
   }
 
   object StageSymbol {
@@ -243,7 +245,7 @@ object Symbol {
   }
 
   class StateSymbol(val path: NameSpace) extends Symbol(Type.NoType, Modifier.NoModifier){
-    override val visibility: Visibility = Visibility.Private
+    override val accessibility: Accessibility = Accessibility.Private
   }
 
   object StateSymbol {
@@ -255,7 +257,7 @@ object Symbol {
     val treeID: Int,
     val path: NameSpace,
   ) extends Symbol(null, Modifier.NoModifier) with HasParams {
-    override val visibility: Visibility = Visibility.Public
+    override val accessibility: Accessibility = Accessibility.Public
 
     override def setTpe(tpe: Type): Unit =
       throw new ImplementationErrorException("ImplementSymbol does not allow refer to setTpe")
@@ -280,7 +282,7 @@ object Symbol {
     import scala.collection.mutable
 
     override def name: String = path.pkgName.last
-    override val visibility: Visibility = Visibility.Public
+    override val accessibility: Accessibility = Accessibility.Public
 
     private val scope = Scope.empty
     def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
@@ -338,7 +340,7 @@ object Symbol {
   object ErrorSymbol extends Symbol(Type.ErrorType, Modifier.NoModifier) {
     override val name: String = "<error>"
     override val path: NameSpace = NameSpace.empty
-    override val visibility: Visibility = Visibility.Public
+    override val accessibility: Accessibility = Accessibility.Public
   }
 }
 

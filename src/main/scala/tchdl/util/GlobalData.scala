@@ -14,7 +14,7 @@ class GlobalData {
   }
 
   val buffer = new {
-    val interface: SymbolBuffer[Symbol.InterfaceSymbol] = new SymbolBuffer[Symbol.InterfaceSymbol] {}
+    val traits: SymbolBuffer[Symbol.InterfaceSymbol] = new SymbolBuffer[Symbol.InterfaceSymbol] {}
     val clazz: SymbolBuffer[Symbol.ClassTypeSymbol] = new SymbolBuffer[Symbol.ClassTypeSymbol] {}
   }
 }
@@ -75,6 +75,7 @@ class BuiltInInterfaces extends BuiltInSymbols[Symbol.InterfaceSymbol] {
     "Mul" -> null,
     "Div" -> null,
     "Eq" -> null,
+    "Module" -> null,
   )
 }
 

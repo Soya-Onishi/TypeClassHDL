@@ -1,6 +1,6 @@
 package test
 
-interface I {
+trait I {
   def f[m: Num](a: Bit[m]) -> Bit[m] where m: min 1
 }
 

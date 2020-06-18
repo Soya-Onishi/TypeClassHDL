@@ -1,8 +1,8 @@
 package test
 
 struct ST[T] {}
-interface I[T] {}
-interface I0 {}
+trait I[T] {}
+trait I0 {}
 
 impl [A1, B1] I[ST[A1]] for ST[B1]                 {}
 impl [A2, B2] I[A2]     for ST[ST[B2]] where A2:I0 {}

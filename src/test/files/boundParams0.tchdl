@@ -1,6 +1,6 @@
 package test
 
-interface I[T] where T: I {
+trait I[T] where T: I {
   def f(a: T) -> T
 }
 

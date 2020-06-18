@@ -1,6 +1,6 @@
 package test
 
 struct ST {}
-interface I {}
+trait I {}
 impl ST {}
 impl I for ST {}

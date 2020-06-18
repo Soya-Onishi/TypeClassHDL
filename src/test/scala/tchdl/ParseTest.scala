@@ -190,4 +190,14 @@ class ParseTest extends TchdlFunSuite {
     assert(stage.length == 1)
     assert(always.length == 1)
   }
+
+  test ("parse sibling and input method") {
+    val tree = parseString(_.method_def)((gen, tree) => gen.methodDef(tree)) {
+      "sibling input def f(a: Bit[4]) -> Bit[4] { a }"
+    }
+
+    val MethodDef(flag, _, _, _, _, _, _, _) = tree.asInstanceOf[MethodDef]
+    assert(flag.hasFlag(Modifier.Sibling))
+    assert(flag.hasFlag(Modifier.Input))
+  }
 }

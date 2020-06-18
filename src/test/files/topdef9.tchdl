@@ -1,4 +1,4 @@
 package test
 
-interface I[m: Num] where m: max 3 {}
+trait I[m: Num] where m: max 3 {}
 impl[n: Num] I[n] for Int {}

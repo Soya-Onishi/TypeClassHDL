@@ -1,6 +1,6 @@
 package test
 
-interface I[T] {
+trait I[T] {
   def f(a: T) -> T
 }
 
