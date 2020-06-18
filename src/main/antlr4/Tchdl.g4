@@ -140,7 +140,7 @@ expr: expr '.' (apply | EXPR_ID)    # SelectExpr
     | block                    # BlockExpr
     | construct_struct         # ConstructStructExpr
     | construct_module         # ConstructModuleExpr
-    | IF expr block (ELSE block)?                  # IfExpr
+    | IF '(' expr ')' expr (ELSE expr)? # IfExpr
 //    | MATCH expr '{' case_def+ '}'               # MatchExpr
     | FINISH                   # Finish
     | GOTO EXPR_ID                  # Goto

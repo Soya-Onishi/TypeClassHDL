@@ -173,6 +173,7 @@ object Type {
           typedExpr.tpe
         case (Some(tpe), _) =>
           val typedTpe = Typer.typedTypeTree(tpe)(ctx, global)
+          global.cache.set(typedTpe)
           typedTpe.tpe
       }
     }

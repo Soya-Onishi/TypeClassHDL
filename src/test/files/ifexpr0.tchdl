@@ -1,0 +1,15 @@
+package test
+
+struct ST {}
+
+impl ST {
+  def f(bool: Bool) -> Int {
+    if(bool) 1
+    else     0
+  }
+
+  def g(bool: Bit[1]) -> Bit[2] {
+    if(bool) { 0b00 }
+    else     { 0b11 }
+  }
+}

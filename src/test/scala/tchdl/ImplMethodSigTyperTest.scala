@@ -151,4 +151,12 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(getA.symbol.tpe =:= Type.MethodType(Vector.empty, Type.intTpe(global)))
     assert(getB.symbol.tpe =:= Type.MethodType(Vector.empty, Type.intTpe(global)))
   }
+
+  test("If signature has one erroneous type, there should be one error") {
+    val (_, global) = untilThisPhase("methodDef0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.SymbolNotFound])
+  }
 }

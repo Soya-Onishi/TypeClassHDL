@@ -136,5 +136,33 @@ class TyperTest extends TchdlFunSuite {
   test("constructing module with struct construct format causes an error") {
     val (_, global) = untilTyper("construct2.tchdl")
     expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireParentOrSiblingIndicator])
+  }
+
+  test("if expression's condition type must be Bit[1] or Bool type") {
+    val (_, global) = untilTyper("ifexpr0.tchdl")
+    expectNoError(global)
+  }
+
+  test("if conseq and alt expression's type must be same") {
+    val (_, global) = untilTyper("ifexpr1.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
+
+    val mismatch = err.asInstanceOf[Error.TypeMismatch]
+    assert(mismatch.expect =:= Type.stringTpe(global))
+    assert(mismatch.actual =:= Type.intTpe(global))
+  }
+
+  test("condition expression must be Bit[1], Bit[m]") {
+    val (_, global) = untilTyper("ifexpr2.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireSpecificType])
   }
 }

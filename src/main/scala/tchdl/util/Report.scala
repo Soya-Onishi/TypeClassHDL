@@ -71,7 +71,7 @@ object Error {
   case class TryDivisionByZero(expr: HPExpr) extends Error
   case class RangeAlreadyAssigned[T <: RangeExpr : TypeTag](value: Int) extends Error
   case class ImplTargetTypeMismatch(impl: ImplementContainer, actual: Type.RefType) extends Error
-  case class NeedParentOrSiblingIndicator(construct: ConstructClass) extends Error
+  case class RequireParentOrSiblingIndicator(construct: ConstructClass) extends Error
   case class RejectParentOrSiblingIndicator(construct: ConstructModule) extends Error
   case class TryToConstructInterface(construct: Construct) extends Error
 

@@ -1,0 +1,9 @@
+package test
+
+struct ST {}
+impl ST {
+  def f(bool: Bool) -> Int {
+    if(bool) 0
+    else     "hello"
+  }
+}

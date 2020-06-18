@@ -236,9 +236,9 @@ class ASTGenerator {
     case ctx: TP.ConstructStructExprContext => constructStruct(ctx.construct_struct)
     case ctx: TP.ConstructModuleExprContext => constructModule(ctx.construct_module)
     case ctx: TP.IfExprContext =>
-      val cond = expr(ctx.expr)
-      val conseq = block(ctx.block(0))
-      val alt = Option(ctx.block(1)).map(block)
+      val cond = expr(ctx.expr(0))
+      val conseq = expr(ctx.expr(1))
+      val alt = Option(ctx.expr(2)).map(expr)
 
       IfExpr(cond, conseq, alt)
     case _: TP.FinishContext => Finish()
