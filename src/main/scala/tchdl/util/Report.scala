@@ -80,6 +80,8 @@ object Error {
   case class TryImplTraitByModule(impl: ImplementInterface) extends Error
   case class TryImplInterfaceByStruct(impl: ImplementInterface) extends Error
   case class TypeParameterMustHasConsistency(bounds: Vector[Type.RefType]) extends Error
+  case class ModifierMismatch(expect: Modifier, actual: Modifier) extends Error
+
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }

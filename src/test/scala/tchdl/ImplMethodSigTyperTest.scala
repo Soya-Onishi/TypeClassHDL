@@ -159,4 +159,12 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.SymbolNotFound])
   }
+
+  test("mismatching between interface's method and impl's method causes an error") {
+    val (_, global) = untilThisPhase("interfaceImplModifier.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ModifierMismatch])
+  }
 }

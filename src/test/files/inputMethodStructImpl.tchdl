@@ -1,0 +1,6 @@
+package test
+
+struct ST
+impl ST {
+  input def f() -> Unit {}
+}

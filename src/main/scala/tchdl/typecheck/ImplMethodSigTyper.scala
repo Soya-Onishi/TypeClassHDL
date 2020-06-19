@@ -56,6 +56,11 @@ object ImplMethodSigTyper {
           .map(symbol => Right(symbol.asMethodSymbol))
           .getOrElse(Left(Error.ImplementMethodInterfaceNotHas(implMethod, interface)))
 
+      def verifyModifier(implMethod: Symbol.MethodSymbol, interfaceMethod: Symbol.MethodSymbol): Either[Error, Unit] = {
+        if(implMethod.flag == interfaceMethod.flag) Right(())
+        else Left(Error.ModifierMismatch(interfaceMethod.flag, implMethod.flag))
+      }
+
       def verifySignatureLength(implMethod: Symbol.MethodSymbol, interfaceMethod: Symbol.MethodSymbol): Either[Error, Unit] = {
         def verify(expect: Int, actual: Int, err: (Int, Int) => Error): Either[Error, Unit] =
           if(expect == actual) Right(())
@@ -201,6 +206,7 @@ object ImplMethodSigTyper {
 
       for {
         interfaceMethod <- lookupInterfaceMethod(interfaceSymbol, implMethod.name)
+        _ <- verifyModifier(implMethod, interfaceMethod)
         _ <- verifySignatureLength(implMethod, interfaceMethod)
         hpIdents = implMethod.hps.map(hp => Ident(hp.name).setSymbol(hp).setTpe(hp.tpe))
         methodHPTable = (interfaceMethod.hps zip hpIdents).toMap
@@ -258,6 +264,22 @@ object ImplMethodSigTyper {
   }
 
   def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
+    def verifyModifierValidity: Either[Error, Unit] = {
+      val self = ctx.self.getOrElse(throw new ImplementationErrorException("This type should be there"))
+      val validModifiers = self.origin match {
+        case _: Symbol.StructSymbol => Vector(Modifier.NoModifier)
+        case _: Symbol.ModuleSymbol => Vector(
+          Modifier.Input | Modifier.Sibling,
+          Modifier.Input,
+          Modifier.Sibling,
+          Modifier.Parent
+        )
+      }
+
+      if(validModifiers.contains(methodDef.flag)) Right(())
+      else Left(Error.InvalidModifier(validModifiers, methodDef.flag))
+    }
+
     def verifyMethodTpe: Either[Error, Unit] = {
       val paramTpes = methodDef.params.map(_.symbol.tpe)
       val retTpe = methodDef.retTpe.tpe
@@ -278,6 +300,7 @@ object ImplMethodSigTyper {
 
     for {
       _ <- TyperUtil.verifyTPBoundType(methodSymbol)(signatureCtx)
+      _ <- verifyModifierValidity
       _ <- verifyMethodTpe
     } yield methodSymbol
   }

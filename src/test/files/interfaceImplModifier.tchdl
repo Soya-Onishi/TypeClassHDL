@@ -1,0 +1,10 @@
+package test
+
+module M
+interface I {
+  input def f() -> Unit
+}
+
+impl I for M {
+  sibling def f() -> Unit {}
+}
