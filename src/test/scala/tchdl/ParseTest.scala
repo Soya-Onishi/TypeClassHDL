@@ -190,4 +190,17 @@ class ParseTest extends TchdlFunSuite {
     assert(stage.length == 1)
     assert(always.length == 1)
   }
+
+  test("construct two modules") {
+    val filename = buildName(rootDir, filePath, "constructModule0.tchdl")
+    val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+
+    val impl = tree.topDefs.collect { case impl: ImplementClass => impl }.head
+    val vdefs = impl.components.map{ case vdef: ValDef => vdef }
+    val s0 = vdefs.find(_.name == "s0").get
+    val s1 = vdefs.find(_.name == "s1").get
+
+    assert(s0.expr.get.isInstanceOf[ConstructClass])
+    assert(s1.expr.get.isInstanceOf[ConstructModule])
+  }
 }

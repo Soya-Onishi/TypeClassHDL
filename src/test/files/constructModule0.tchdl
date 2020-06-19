@@ -1,0 +1,13 @@
+package test
+
+module Mod {}
+module Sub0 {}
+module Sub1 { sibling: s: Sub0 }
+
+impl Mod {
+  mod s0 = Sub0 {}
+  mod s1 = Sub1 {
+    sibling:
+      s: this.s0
+  }
+}

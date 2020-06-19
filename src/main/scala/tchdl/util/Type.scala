@@ -325,7 +325,7 @@ object Type {
 
     override def declares: Scope = origin.tpe.declares
 
-    def lookupField(name: String): LookupResult[Symbol.TermSymbol] = {
+    def lookupField(name: String)(implicit ctx: Context.NodeContext): LookupResult[Symbol.TermSymbol] = {
       def lookupToClass: LookupResult[Symbol.TermSymbol] =
         origin.tpe.declares.lookup(name) match {
           // TODO: verify whether this logic needs to replace type parameter into actual type or not
@@ -334,8 +334,53 @@ object Type {
           case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
         }
 
+      def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
+        val (hpErrs, _) = hpBounds
+          .map(HPBound.verifyMeetBound(_, ctx.hpBounds))
+          .partitionMap(identity)
+
+        val (tpErrs, _) = tpBounds
+          .map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds))
+          .partitionMap(identity)
+
+        val errs = hpErrs ++ tpErrs
+        if (errs.isEmpty) Right(())
+        else Left(Error.SymbolNotFound(name))
+      }
+
+      def lookupFromImpl(clazz: Symbol.ClassTypeSymbol): LookupResult[Symbol.TermSymbol] = {
+        val result = clazz.impls.foldLeft[Either[Error, Symbol.TermSymbol]](Left(Error.DummyError)) {
+          case (right @ Right(_), _) => right
+          case (Left(_), impl) =>
+            val implSymbol = impl.symbol.asImplementSymbol
+            val (initHPTable, initTPTable) = RefType.buildTable(impl)
+            val result = for {
+              hpTable <- RefType.assignHPTable(initHPTable, Vector(this), Vector(impl.targetType))
+              tpTable <- RefType.assignTPTable(initTPTable, Vector(this), Vector(impl.targetType))
+              swappedHPBounds = HPBound.swapBounds(implSymbol.hpBound, hpTable)
+              swappedTPBounds = TPBound.swapBounds(implSymbol.tpBound, hpTable, tpTable)
+              simplifiedHPBounds <- HPBound.simplify(swappedHPBounds)
+              _ <- verifyEachBounds(simplifiedHPBounds, swappedTPBounds)
+            } yield impl
+
+            result.flatMap(
+              _.lookup[Symbol.VariableSymbol](name)
+                .map(Right.apply)
+                .getOrElse(Left(Error.SymbolNotFound(name)))
+            )
+        }
+
+        result match {
+          case Left(err) => LookupResult.LookupFailure(err)
+          case Right(symbol) => LookupResult.LookupSuccess(symbol)
+        }
+      }
+
       this.origin match {
-        case _: Symbol.ClassTypeSymbol => lookupToClass
+        case clazz: Symbol.ClassTypeSymbol => lookupToClass match {
+          case success @ LookupResult.LookupSuccess(_) => success
+          case LookupResult.LookupFailure(_) => lookupFromImpl(clazz)
+        }
         case symbol => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.ClassTypeSymbol](symbol))
       }
     }

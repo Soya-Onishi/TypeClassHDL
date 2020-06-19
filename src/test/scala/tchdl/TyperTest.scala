@@ -124,4 +124,9 @@ class TyperTest extends TchdlFunSuite {
     val (Seq(tree), global) = untilTyper("Adder.tchdl")
     expectNoError(global)
   }
+
+  test("construct modules and attach sibling") {
+    val (Seq(tree), global) = untilTyper("constructModule0.tchdl")
+    expectNoError(global)
+  }
 }
