@@ -167,4 +167,21 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.ModifierMismatch])
   }
+
+  test("defining input method in struct impl causes an error") {
+    val (_, global) = untilThisPhase("inputMethodStructImpl.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.InvalidModifier])
+
+    val invalid = err.asInstanceOf[Error.InvalidModifier]
+    assert(invalid.expect == Vector(Modifier.NoModifier))
+    assert(invalid.actual == Modifier.Input)
+  }
+
+  test("module impl's method valid modifiers") {
+    val (_, global) = untilThisPhase("allValidModifier.tchdl")
+    expectNoError(global)
+  }
 }

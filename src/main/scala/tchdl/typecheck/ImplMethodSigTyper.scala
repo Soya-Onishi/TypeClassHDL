@@ -272,7 +272,8 @@ object ImplMethodSigTyper {
           Modifier.Input | Modifier.Sibling,
           Modifier.Input,
           Modifier.Sibling,
-          Modifier.Parent
+          Modifier.Parent,
+          Modifier.NoModifier
         )
       }
 

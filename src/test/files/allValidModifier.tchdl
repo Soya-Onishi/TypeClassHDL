@@ -1,0 +1,11 @@
+package test
+
+module M
+impl M {
+          input def a() -> Unit {}
+  input sibling def b() -> Unit {}
+  sibling input def c() -> Unit {}
+         parent def d() -> Unit {}
+        sibling def e() -> Unit {}
+                def f() -> Unit {}
+}
