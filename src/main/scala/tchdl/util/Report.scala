@@ -82,6 +82,12 @@ object Error {
   case class TypeParameterMustHasConsistency(bounds: Vector[Type.RefType]) extends Error
   case class ModifierMismatch(expect: Modifier, actual: Modifier) extends Error
 
+  case class CallInterfaceFromInternal(method: Symbol.MethodSymbol) extends Error
+  case class CallPrivate(method: Symbol.MethodSymbol) extends Error
+  case class CallInvalid(method: Symbol.MethodSymbol) extends Error
+  case class CallInterfaceMustBeDirect(prefix: Type.RefType) extends Error
+  case class ReferPrivate(field: Symbol.TermSymbol) extends Error
+
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }

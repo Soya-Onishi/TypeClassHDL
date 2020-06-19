@@ -7,113 +7,154 @@ import tchdl.util.TchdlException.ImplementationErrorException
 object RefCheck {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
     val ctx = getContext(cu.pkgName, cu.filename.get)
+
+    cu.topDefs.foreach(verify(_)(ctx, global))
   }
 
-  def verifyModuleDef(moduleDef: ModuleDef)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
-    val sigCtx = Context(ctx, moduleDef.symbol)
-    val module = moduleDef.symbol.asModuleSymbol
-    sigCtx.reAppend(module.hps ++ module.tps: _*)
+  def verify(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Unit =
+    defTree match {
+      case impl: ImplementClass =>
+        val implSymbol = impl.symbol.asImplementSymbol
+        val implSigCtx = Context(ctx, impl.symbol)
+        implSigCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
 
-    def verifyModuleTypes(tpes: Vector[Type.RefType]): Either[Error, Unit] = {
-      val errors = tpes
-        .filterNot(_.isModuleType(sigCtx, global))
-        .map(tpe => Left(Error.RequireModuleType(tpe)))
+        val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
 
-      if(errors.isEmpty) Right()
-      else Left(Error.MultipleErrors(errors.map{case Left(err) => err}: _*))
+        impl.components.foreach {
+          case vdef: ValDef => verifyValDef(vdef)(implCtx, global)
+          case method: MethodDef => verifyMethodDef(method)(implCtx, global)
+          case stage: StageDef => verifyStageDef(stage)(implCtx, global)
+        }
+      case impl: ImplementInterface =>
+        val implSymbol = impl.symbol.asImplementSymbol
+        val implSigCtx = Context(ctx, impl.symbol)
+        implSigCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
+
+        val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
+
+        impl.methods.foreach(verifyMethodDef(_)(implCtx, global))
+      case _ => // nothing to do
     }
 
-    val parentResult = verifyModuleTypes(moduleDef.parents.map(_.symbol.tpe.asRefType))
-    val siblingResult = verifyModuleTypes(moduleDef.siblings.map(_.symbol.tpe.asRefType))
-    val result = (parentResult, siblingResult) match {
-      case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
-      case (left @ Left(_), _) => left
-      case (_, left @ Left(_)) => left
-      case _ => Right(())
-    }
+  def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit =
+    vdef.expr.foreach(verifyExpr)
 
-    result.left.foreach(global.repo.error.append)
-  }
-
-  def verifyModuleInterfaceMethod(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
-    def verifyNoPolyParams(method: Symbol.MethodSymbol): Either[Error, Unit] = {
-      lazy val hasHPTree = methodDef.hp.nonEmpty
-      lazy val hasTPTree = methodDef.tp.nonEmpty
-      lazy val hasHP = method.hps.nonEmpty
-      lazy val hasTP = method.tps.nonEmpty
-      val hasPolyParams = hasHPTree || hasTPTree || hasHP || hasTP
-
-      if(hasPolyParams) Left(Error.RejectPolyParams)
-      else Right(())
-    }
-
-    def verifySignatureTypes(methodType: Type.MethodType)(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
-      val paramResult = methodType.params.map { tpe =>
-        if(tpe.isHardwareType) Right(())
-        else Left(Error.RequireHardwareType(tpe))
-      }.combine(errs => Error.MultipleErrors(errs: _*))
-
-      val retResult = {
-        val retTpe = methodType.returnType
-
-        if(retTpe.isHardwareType || retTpe =:= Type.unitTpe) Right(())
-        else Left(Error.RequireHardwareType(retTpe))
-      }
-
-      (paramResult, retResult) match {
-        case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
-        case (left @ Left(_), _) => left
-        case (_, left @ Left(_)) => left
-        case _ => Right(())
-      }
-    }
-
+  def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
     val method = methodDef.symbol.asMethodSymbol
-    val sigCtx = Context(ctx, method)
-    sigCtx.reAppend(method.hps ++ method.tps: _*)
+    val methodSigCtx = Context(ctx, method)
+    methodSigCtx.reAppend(method.hps ++ method.tps: _*)
 
-    val result = (verifyNoPolyParams(method), verifySignatureTypes(method.tpe.asMethodType)(sigCtx)) match {
-      case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
-      case (left @ Left(_), _) => left
-      case (_, left @ Left(_)) => left
-      case _ => Right(())
+    methodDef.blk.foreach(verifyExpr(_)(methodSigCtx, global))
+  }
+
+  def verifyStageDef(stageDef: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    val stage = stageDef.symbol.asStageSymbol
+    val stageSigCtx = Context(ctx, stage)
+    stageSigCtx.reAppend(stageDef.params.map(_.symbol): _*)
+
+    val stageBlkCtx = Context(stageSigCtx)
+    stageDef.blk.foreach {
+      case v: ValDef => verifyValDef(v)(stageBlkCtx, global)
+      case expr: Expression => verifyExpr(expr)(stageBlkCtx, global)
+    }
+    stageDef.states.foreach(verifyStateDef(_)(stageBlkCtx, global))
+  }
+
+  def verifyStateDef(stateDef: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    val state = stateDef.symbol.asStateSymbol
+    val stateSigCtx = Context(ctx, state)
+
+    verifyExpr(stateDef.blk)(stateSigCtx, global)
+  }
+
+
+  def verifyExpr(expr: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Unit =
+    expr match {
+      case select: Select => verifySelect(select)
+      case ifExpr: IfExpr => verifyIfExpr(ifExpr)
+      case apply: Apply => verifyApply(apply)
+      case blk: Block =>
+        val blkCtx = Context.blk(ctx)
+        blk.elems.foreach {
+          case expr: Expression => verifyExpr(expr)(blkCtx, global)
+          case ValDef(_, _, _, expr) => expr.foreach(verifyExpr(_)(blkCtx, global))
+        }
+      case _ => // nothing to do
     }
 
-    result.left.foreach(global.repo.error.append)
+  def verifySelect(select: Select)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    verifyExpr(select.prefix)
+
+    val prefixTpe = select.prefix.tpe.asRefType
+    prefixTpe.lookupField(select.name) match {
+      case LookupResult.LookupSuccess(symbol) => symbol.accessibility match {
+        case Accessibility.Public => Right(())
+        case Accessibility.Private => select.prefix match {
+          case _: This => Right(())
+          case _ => Left(Error.ReferPrivate(symbol))
+        }
+      }
+      case LookupResult.LookupFailure(_) =>
+        throw new ImplementationErrorException("looked up field must be found")
+    }
   }
 
   def verifyIfExpr(ifExpr: IfExpr)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    verifyExpr(ifExpr.cond)
+    verifyExpr(ifExpr.conseq)
+    ifExpr.alt.foreach(verifyExpr)
+
     val isCondBit1 = ifExpr.cond.tpe =:= Type.bitTpe(IntLiteral(1))
+    val isRetUnit = ifExpr.tpe =:= Type.unitTpe
     val isRetHWTpe = ifExpr.tpe.asRefType.isHardwareType
 
-    if(isCondBit1 && !isRetHWTpe) {
+    if (isCondBit1 && !isRetHWTpe && !isRetUnit)
       global.repo.error.append(Error.RequireHardwareType(ifExpr.tpe.asRefType))
-    }
   }
 
   def verifyApply(apply: Apply)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
-    verifyExpr(apply.prefix)
-    val result = apply.prefix match {
-      case select @ Select(_: This, _) => select.symbol.accessibility match {
-        case Accessibility.Private => Right(())
-        case Accessibility.Public =>
-          lazy val isInput = select.symbol.hasFlag(Modifier.Input)
-          lazy val isParent = select.symbol.hasFlag(Modifier.Parent)
-          lazy val isSibling = select.symbol.hasFlag(Modifier.Sibling)
-
-          if(isInput || isParent || isSibling) Left(???)
-          else Right(())
-      }
-      case select: Select => select.symbol.accessibility match {
-        case Accessibility.Public => Right(())
-        case Accessibility.Private => Left(???)
+    def verifyCallWithSymbolPrefix(prefix: Symbol.TermSymbol, method: Symbol.MethodSymbol): Either[Error, Unit] = {
+      method.accessibility match {
+        case Accessibility.Private => Left(Error.CallPrivate(method))
+        case Accessibility.Public if method.hasFlag(prefix.flag) => Right(())
+        case Accessibility.Public if prefix.flag == Modifier.NoModifier => Right(())
+        case Accessibility.Public => Left(Error.CallInvalid(method))
       }
     }
 
+    apply.prefix match {
+      case Select(expr, _) => verifyExpr(expr)
+      case _ => // nothing to do
+    }
+
+    val result = apply.prefix match {
+      case select @ Select(_: This, _) =>
+        val method = select.symbol.asMethodSymbol
+        method.accessibility match {
+          case Accessibility.Private => Right(())
+          case Accessibility.Public =>
+            lazy val isInput = select.symbol.hasFlag(Modifier.Input)
+            lazy val isParent = select.symbol.hasFlag(Modifier.Parent)
+            lazy val isSibling = select.symbol.hasFlag(Modifier.Sibling)
+
+            if (isInput || isParent || isSibling) Left(Error.CallInterfaceFromInternal(method))
+            else Right(())
+        }
+      case select @ Select(prefix: Ident, _) =>
+        val method = select.symbol.asMethodSymbol
+        verifyCallWithSymbolPrefix(prefix.symbol.asTermSymbol, method)
+      case select @ Select(prefix: Select, _) =>
+        val method = select.symbol.asMethodSymbol
+        verifyCallWithSymbolPrefix(prefix.symbol.asTermSymbol, method)
+      case select @ Select(prefix, _) =>
+        val method = select.symbol.asMethodSymbol
+        method.accessibility match {
+          case _ if prefix.tpe.asRefType.isModuleType => Left(Error.CallInterfaceMustBeDirect(prefix.tpe.asRefType))
+          case Accessibility.Private => Left(Error.CallPrivate(method))
+          case _ => Right(())
+        }
+    }
+
     result.left.foreach(global.repo.error.append)
-  }
-
-  def verifyExpr(expr: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
-
   }
 }

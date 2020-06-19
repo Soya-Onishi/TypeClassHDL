@@ -47,8 +47,12 @@ class ASTGenerator {
 
     val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
+
     val parents = paramModules(Option(ctx.parents), Modifier.Parent)(_.EXPR_ID)(_.`type`)
+      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Parent))
+
     val siblings = paramModules(Option(ctx.siblings), Modifier.Sibling)(_.EXPR_ID)(_.`type`)
+      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Sibling))
 
     ModuleDef(name, hp, tp, bound, parents, siblings)
   }
