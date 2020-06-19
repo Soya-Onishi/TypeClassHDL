@@ -282,22 +282,39 @@ object ImplMethodSigTyper {
     }
 
     def verifyMethodTpe: Either[Error, Unit] = {
+      val modMethodModifier = Vector (
+        Modifier.Input | Modifier.Sibling,
+        Modifier.Input,
+        Modifier.Sibling,
+        Modifier.Parent,
+      )
+
+      val isInterfaceMethod = modMethodModifier.contains(methodDef.flag)
       val paramTpes = methodDef.params.map(_.symbol.tpe)
       val retTpe = methodDef.retTpe.tpe
 
-      (paramTpes :+ retTpe).map {
+      val paramResults = paramTpes.map {
         case Type.ErrorType => Left(Error.DummyError)
+        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType => Right(())
+        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe))
         case _ => Right(())
-      }.combine(errs => Error.MultipleErrors(errs: _*))
+      }
+
+      val retResult = retTpe match {
+        case Type.ErrorType => Left(Error.DummyError)
+        case tpe: Type.RefType if tpe =:= Type.unitTpe => Right(())
+        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType => Right(())
+        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe))
+        case _ => Right(())
+      }
+
+      (paramResults :+ retResult).combine(errs => Error.MultipleErrors(errs: _*))
     }
 
     methodDef.symbol.tpe
     val methodSymbol = methodDef.symbol.asMethodSymbol
     val signatureCtx = Context(ctx, methodSymbol)
-    signatureCtx.reAppend (
-      methodSymbol.hps ++
-        methodSymbol.tps: _*
-    )
+    signatureCtx.reAppend (methodSymbol.hps ++ methodSymbol.tps: _*)
 
     for {
       _ <- TyperUtil.verifyTPBoundType(methodSymbol)(signatureCtx, global)
