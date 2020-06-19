@@ -169,4 +169,32 @@ class TopDefTyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.NotMeetHPBound])
   }
+
+  test("interface that has methods without modifiers causes an error") {
+    val (_, global) = untilTopDefTyper("interfaceWithoutModifier0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.InvalidModifier])
+    val invalid = err.asInstanceOf[Error.InvalidModifier]
+    assert(invalid.actual == Modifier.NoModifier)
+  }
+
+  test("trait that has methods with modifiers causes an error") {
+    val (_, global) = untilTopDefTyper("traitWithModifier0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.InvalidModifier])
+    val invalid = err.asInstanceOf[Error.InvalidModifier]
+    assert(invalid.actual == Modifier.Input)
+  }
+
+  test("interface that has a method with invalid modifier combination causes an error") {
+    val (_, global) = untilTopDefTyper("interfaceWithInvalidModifier.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.InvalidModifier])
+  }
 }

@@ -1,0 +1,6 @@
+package test
+
+module M
+interface I {
+  sibling parent def f() -> Unit
+}

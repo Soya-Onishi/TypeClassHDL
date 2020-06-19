@@ -119,6 +119,13 @@ class ASTGenerator {
   }
 
   def signatureDef(ctx: TP.Signature_defContext): MethodDef = {
+    val modifier = ctx.signature_accessor.asScala
+      .map(_.getText)
+      .map(Modifier.apply)
+      .foldLeft[Modifier](Modifier.NoModifier) {
+        case (acc, modifier) => acc | modifier
+      }
+
     val name = ctx.EXPR_ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
     val params = Option(ctx.param_defs())
@@ -126,7 +133,7 @@ class ASTGenerator {
       .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
 
-    MethodDef(Modifier.NoModifier, name, hps, tps, bounds, params, tpe, None)
+    MethodDef(modifier, name, hps, tps, bounds, params, tpe, None)
   }
 
   def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[BoundTree]) = {

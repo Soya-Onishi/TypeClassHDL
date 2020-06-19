@@ -1,0 +1,10 @@
+package test
+
+struct ST
+trait I {
+  input def e() -> Unit
+}
+
+impl I for ST {
+  input def e() -> Unit {}
+}

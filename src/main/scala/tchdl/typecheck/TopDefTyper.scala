@@ -60,7 +60,26 @@ object TopDefTyper {
   }
 
   def typedInterfaceDef(interfaceDef: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
-    def verifyMethodValidity(ctx: Context.NodeContext): Either[Error, Unit] = {
+    def verifyModifierValidity: Either[Error, Unit] = {
+      val isTrait = interfaceDef.flag.hasFlag(Modifier.Trait)
+
+      val validModifiers =
+        if(isTrait) Vector(Modifier.NoModifier)
+        else Vector(
+          Modifier.Sibling | Modifier.Internal,
+          Modifier.Input,
+          Modifier.Sibling,
+          Modifier.Parent
+        )
+
+      interfaceDef.methods
+        .filterNot(method => validModifiers.contains(method.flag))
+        .map(method => Error.InvalidModifier(validModifiers, method.flag))
+        .map(Left.apply[Error, Unit])
+        .combine(errs => Error.MultipleErrors(errs: _*))
+    }
+
+    def verifyMethodValidity: Either[Error, Unit] = {
       val results = interfaceDef.methods.map {
         methodDef =>
           val method = methodDef.symbol.asMethodSymbol
@@ -78,7 +97,8 @@ object TopDefTyper {
 
     val result = for {
       _ <- TyperUtil.verifyTPBoundType(interface)(signatureCtx)
-      _ <- verifyMethodValidity(signatureCtx)
+      _ <- verifyModifierValidity
+      _ <- verifyMethodValidity
     } yield ()
 
     result.left.foreach(global.repo.error.append)
