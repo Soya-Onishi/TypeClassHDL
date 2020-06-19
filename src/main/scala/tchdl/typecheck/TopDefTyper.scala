@@ -28,7 +28,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- TyperUtil.verifyTPBoundType(struct)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(struct)(signatureCtx, global)
       _ <- verifyHavingErrorType(structDef.fields)
       _ <- verifyHavingErrorType(structDef.hp)
     } yield ()
@@ -49,7 +49,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- TyperUtil.verifyTPBoundType(module)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(module)(signatureCtx, global)
       _ <- verifyHavingErrorType(moduleDef.parents)
       _ <- verifyHavingErrorType(moduleDef.siblings)
       _ <- verifyHavingErrorType(moduleDef.hp)
@@ -96,7 +96,7 @@ object TopDefTyper {
     val interface = interfaceDef.symbol.asInterfaceSymbol
 
     val result = for {
-      _ <- TyperUtil.verifyTPBoundType(interface)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(interface)(signatureCtx, global)
       _ <- verifyModifierValidity
       _ <- verifyMethodValidity
     } yield ()
@@ -116,7 +116,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- TyperUtil.verifyTPBoundType(implSymbol)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(implSymbol)(signatureCtx, global)
       _ <- verifyType(impl.target, signatureCtx, global)
     } yield ()
 
@@ -135,7 +135,7 @@ object TopDefTyper {
     )
 
     val result = for {
-      _ <- TyperUtil.verifyTPBoundType(implSymbol)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(implSymbol)(signatureCtx, global)
       _ <- verifyType(impl.target, signatureCtx, global)
       _ <- verifyType(impl.interface, signatureCtx, global)
     } yield ()

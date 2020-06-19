@@ -306,8 +306,7 @@ object Typer {
           typedTPs.map(_.tpe.asRefType),
           typedArgs.map(_.tpe.asRefType),
           ctx.hpBounds,
-          ctx.tpBounds,
-          ctx
+          ctx.tpBounds
         )
 
         method.toEither
@@ -400,7 +399,12 @@ object Typer {
     }
   }
 
-  def typedPair(targetTpe: Type.RefType, pair: ConstructPair)(implicit ctx: Context.NodeContext, global: GlobalData): (Option[Error], ConstructPair) = {
+  def typedPair(
+    targetTpe: Type.RefType,
+    pair: ConstructPair,
+    hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
+    tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
+  )(implicit ctx: Context.NodeContext, global: GlobalData): (Option[Error], ConstructPair) = {
     val typedInit = typedExpr(pair.init)
     val typedPair = pair.copy(init = typedInit).setID(pair.id)
 
@@ -410,7 +414,8 @@ object Typer {
         case (Type.ErrorType, _) => Some(Error.DummyError)
         case (_, Type.ErrorType) => Some(Error.DummyError)
         case (fieldTpe: Type.RefType, exprTpe: Type.RefType) =>
-          if(fieldTpe =:= exprTpe) None
+          val replacedFieldTpe = fieldTpe.replaceWithMap(hpTable, tpTable)
+          if(replacedFieldTpe =:= exprTpe) None
           else Some(Error.TypeMismatch(fieldTpe, exprTpe))
       }
     }
@@ -424,7 +429,9 @@ object Typer {
     typedTarget.tpe match {
       case Type.ErrorType => construct.copy(target = typedTarget).setTpe(Type.ErrorType).setID(construct.id)
       case tpe: Type.RefType =>
-        val (errOpts, typedPairs) = construct.fields.map(typedPair(tpe, _)).unzip
+        val hpTable = (tpe.origin.hps zip tpe.hardwareParam).toMap
+        val tpTable = (tpe.origin.tps zip tpe.typeParam).toMap
+        val (errOpts, typedPairs) = construct.fields.map(typedPair(tpe, _, hpTable, tpTable)).unzip
         val errs = errOpts.flatten
 
         errs.foreach(global.repo.error.append)
@@ -450,8 +457,10 @@ object Typer {
     typedTarget.tpe match {
       case Type.ErrorType => construct.copy(target = typedTarget).setTpe(Type.ErrorType).setID(construct.id)
       case tpe: Type.RefType =>
-        val (errOpts0, typedParents) = construct.parents.map(typedPair(tpe, _)).unzip
-        val (errOpts1, typedSiblings) = construct.siblings.map(typedPair(tpe, _)).unzip
+        val hpTable = (tpe.origin.hps zip tpe.hardwareParam).toMap
+        val tpTable = (tpe.origin.tps zip tpe.typeParam).toMap
+        val (errOpts0, typedParents) = construct.parents.map(typedPair(tpe, _, hpTable, tpTable)).unzip
+        val (errOpts1, typedSiblings) = construct.siblings.map(typedPair(tpe, _, hpTable, tpTable)).unzip
 
         (errOpts0 ++ errOpts1).flatten.foreach(global.repo.error.append)
 

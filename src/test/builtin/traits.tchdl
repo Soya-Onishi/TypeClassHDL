@@ -13,3 +13,19 @@ impl[m: Num] Add[Bit[m], Bit[m]] for Bit[m]
 {
   def add(that: Bit[m]) -> Bit[m] { this + that }
 }
+
+trait Sub[Param, Output] {
+  def sub(that: Param) -> Output
+}
+
+impl Sub[Int, Int] for Int {
+  def sub(that: Int) -> Int { this + that }
+}
+
+impl[m: Num] Sub[Bit[m], Bit[m]] for Bit[m]
+  where m: min 1
+{
+  def sub(that: Bit[m]) -> Bit[m] { this + that }
+}
+
+trait HW {}

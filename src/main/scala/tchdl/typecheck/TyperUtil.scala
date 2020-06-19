@@ -3,7 +3,7 @@ package tchdl.typecheck
 import tchdl.util._
 
 object TyperUtil {
-  def verifyTPBoundType(symbol: Symbol with HasParams)(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
+  def verifyTPBoundType(symbol: Symbol with HasParams)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {
     def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound])(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
       val (hpErrs, _) = hpBounds.map(HPBound.verifyMeetBound(_, ctx.hpBounds)).partitionMap(identity)
       val (tpErrs, _) = tpBounds.map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds)).partitionMap(identity)

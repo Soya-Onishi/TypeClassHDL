@@ -49,7 +49,7 @@ object ImplementInterfaceContainer {
       override val hardwareParam: Vector[Symbol.HardwareParamSymbol] = implTree.hp.map(_.symbol.asHardwareParamSymbol)
     }
 
-  def isConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer): Boolean = {
+  def isConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer)(implicit global: GlobalData): Boolean = {
     // if tpe0 = Type[u32] and tpe1 = Type[T]
     // T -> None => T -> Some(u32)
     // if tpe0 = Type[T] and tpe1 = Type[u32]
@@ -215,7 +215,7 @@ object ImplementClassContainer {
       override val hardwareParam: Vector[Symbol.HardwareParamSymbol] = implTree.hp.map(_.symbol.asHardwareParamSymbol)
     }
 
-  def isConflict(impl0: ImplementClassContainer, impl1: ImplementClassContainer): Boolean = {
+  def isConflict(impl0: ImplementClassContainer, impl1: ImplementClassContainer)(implicit global: GlobalData): Boolean = {
     def buildTable(
       tpe0: Type.RefType,
       tpe1: Type.RefType,
@@ -325,7 +325,7 @@ object ImplementClassContainer {
     val swappedTarget1 = impl1.targetType.replaceWithMap(Map.empty, table)
 
     isSameForm(swappedTarget0, swappedTarget1) &&
-      isOverlapHPBounds(impl0.targetType, impl1.targetType, impl0.symbol.hpBound, impl1.symbol.hpBound) &&
-      isMeetTPBounds(table)
+    isOverlapHPBounds(impl0.targetType, impl1.targetType, impl0.symbol.hpBound, impl1.symbol.hpBound) &&
+    isMeetTPBounds(table)
   }
 }

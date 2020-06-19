@@ -146,7 +146,11 @@ object Namer {
 
   def namedInterface(interface: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
     def tryAppendBuiltIn(symbol: Symbol.InterfaceSymbol): Unit = {
-      if(ctx.path.pkgName == Vector("std", "traits") && global.builtin.interfaces.names.contains(interface.name))
+      lazy val isTraitPkg = ctx.path.pkgName == Vector("std", "traits")
+      lazy val isInterfacePkg = ctx.path.pkgName == Vector("std", "interfaces")
+      lazy val isBuiltInName = global.builtin.interfaces.names.contains(interface.name)
+
+      if((isTraitPkg || isInterfacePkg) && isBuiltInName)
         global.builtin.interfaces.append(symbol)
     }
 

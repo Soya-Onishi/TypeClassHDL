@@ -87,7 +87,7 @@ object TPBound {
     swapped: TPBound,
     callerHPBound: Vector[HPBound],
     callerTPBound: Vector[TPBound]
-  ): Either[Error, Unit] =
+  )(implicit global: GlobalData): Either[Error, Unit] =
     swapped.target.origin match {
       case _: Symbol.EntityTypeSymbol => verifyEntityTarget(swapped, callerHPBound, callerTPBound)
       case _: Symbol.TypeParamSymbol => verifyTypeParamTarget(swapped, callerHPBound, callerTPBound)
@@ -97,7 +97,10 @@ object TPBound {
     tpBound: TPBound,
     callerHPBound: Vector[HPBound],
     callerTPBound: Vector[TPBound]
-  ): Either[Error, Unit] = {
+  )(implicit global: GlobalData): Either[Error, Unit] = {
+    lazy val hwSymbol = global.builtin.interfaces.lookup("HW")
+    lazy val modSymbol = global.builtin.interfaces.lookup("Module")
+
     def verify(impl: ImplementInterfaceContainer, bound: Type.RefType): Boolean = {
       val initHPTable = impl.hardwareParam.map(_ -> Option.empty[HPExpr]).toMap
       val initTPTable = impl.typeParam.map(_ -> Option.empty[Type.RefType]).toMap
@@ -128,13 +131,55 @@ object TPBound {
       result.isRight
     }
 
-    val results = tpBound.bounds.map { bound =>
-      val impls = bound.origin.asInterfaceSymbol.impls
-      val isValid = impls.exists(impl => verify(impl, bound))
-
-      if(isValid) Right(())
-      else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+    def isHardwareType(tpe: Type.RefType): Boolean = {
+      val builtinSymbols = global.builtin.types.symbols
+      tpe.origin match {
+        case _: Symbol.ModuleSymbol => false
+        case _: Symbol.InterfaceSymbol => false
+        case tp: Symbol.TypeParamSymbol => callerTPBound.find(_.target.origin == tp) match {
+          case None => false
+          case Some(tpBound) =>
+            val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
+            tpBound.bounds.exists(_ =:= hardwareInterface)
+        }
+        case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
+        case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
+        case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
+        case struct: Symbol.StructSymbol =>
+          val hpTable = (struct.hps zip tpe.hardwareParam).toMap
+          val tpTable = (struct.tps zip tpe.typeParam).toMap
+          val fields = struct.tpe.declares.toMap.values.to(Vector)
+          val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
+          fieldTpes.forall(isHardwareType)
+      }
     }
+
+    def isModuleType(tpe: Type.RefType): Boolean = tpe.origin match {
+      case _: Symbol.ModuleSymbol => true
+      case _: Symbol.InterfaceSymbol => false
+      case tp: Symbol.TypeParamSymbol => callerTPBound.find(_.target.origin == tp) match {
+        case None => false
+        case Some(tpBound) =>
+          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"))
+          tpBound.bounds.exists(_ =:= moduleInterface)
+      }
+    }
+
+
+    val results = tpBound.bounds.map { bound => bound.origin match {
+      case hw if hw == hwSymbol =>
+        if(isHardwareType(tpBound.target)) Right(())
+        else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+      case mod if mod == modSymbol =>
+        if(isModuleType(tpBound.target)) Right(())
+        else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+      case interface: Symbol.InterfaceSymbol =>
+        val impls = interface.impls
+        val isValid = impls.exists(impl => verify(impl, bound))
+
+        if(isValid) Right(())
+        else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+    }}
 
     val (errs, _) = results.partitionMap(identity)
 

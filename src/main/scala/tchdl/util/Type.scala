@@ -9,17 +9,12 @@ import scala.reflect.runtime.universe.TypeTag
 
 trait Type {
   def name: String
-
   def namespace: NameSpace
-
-  protected def declares: Scope
+  def declares: Scope
 
   def asRefType: Type.RefType = this.asInstanceOf[Type.RefType]
-
   def asEntityType: Type.EntityType = this.asInstanceOf[Type.EntityType]
-
   def asParameterType: Type.TypeParamType = this.asInstanceOf[Type.TypeParamType]
-
   def asMethodType: Type.MethodType = this.asInstanceOf[Type.MethodType]
 
   def isErrorType: Boolean = this.isInstanceOf[Type.ErrorType.type]
@@ -87,12 +82,12 @@ object Type {
 
   case class StructTypeGenerator(struct: StructDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
-      val fieldCtx = Context(ctx, struct.symbol)
+      val sigCtx = Context(ctx, struct.symbol)
       val structSymbol = struct.symbol.asEntityTypeSymbol
-      fieldCtx.reAppend(structSymbol.hps ++ structSymbol.tps: _*)(global)
+      sigCtx.reAppend(structSymbol.hps ++ structSymbol.tps: _*)(global)
 
+      val fieldCtx = Context(sigCtx)
       struct.fields.map(Namer.nodeLevelNamed(_)(fieldCtx, global))
-
       EntityType(struct.name, ctx.path, fieldCtx.scope)
     }
   }
@@ -326,7 +321,7 @@ object Type {
 
     override def declares: Scope = origin.tpe.declares
 
-    def lookupField(name: String)(implicit ctx: Context.NodeContext): LookupResult[Symbol.TermSymbol] = {
+    def lookupField(name: String)(implicit ctx: Context.NodeContext, global: GlobalData): LookupResult[Symbol.TermSymbol] = {
       def lookupToClass: LookupResult[Symbol.TermSymbol] =
         origin.tpe.declares.lookup(name) match {
           // TODO: verify whether this logic needs to replace type parameter into actual type or not
@@ -393,8 +388,7 @@ object Type {
       args: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound],
-      ctx: Context.NodeContext
-    ): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit ctx: Context.NodeContext, globalData: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
       val result = this.origin match {
         case entity: Symbol.EntityTypeSymbol =>
           lookupFromImpls(
@@ -464,7 +458,7 @@ object Type {
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
-    ): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val (initHpTable, initTpTable) = RefType.buildTable(impl)
       val lookupResult = impl.lookup[Symbol.MethodSymbol](methodName) match {
         case None => Left(Error.SymbolNotFound(methodName))
@@ -519,7 +513,7 @@ object Type {
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
-    ): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val (initHpTable, initTpTable) = RefType.buildSymbolTable(interface, interfaceHPs, interfaceTPs)
       val lookupResult = interface.tpe.declares.lookup(methodName) match {
         case Some(symbol: Symbol.MethodSymbol) => Right(symbol)
@@ -564,7 +558,7 @@ object Type {
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
-    ): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val result = impls.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
         case (right@Right(_), _) => right
         case (Left(errs), impl) =>
@@ -598,28 +592,54 @@ object Type {
       val callerTPBounds = ctx.tpBounds
 
       val interface = global.builtin.interfaces.lookup(op.toInterface)
-      val (errs, methods) = interface.impls
-        .map(impl => lookupFromEntity(
-          impl,
-          op.toMethod,
-          this,
-          Vector(arg),
-          Vector.empty,
-          Vector.empty,
-          callerHPBounds,
-          callerTPBounds
-        ))
-        .partitionMap(identity)
+      this.origin match {
+        case _: Symbol.EntityTypeSymbol =>
+          val (errs, methods) = interface.impls
+            .map(impl => lookupFromEntity(
+              impl,
+              op.toMethod,
+              this,
+              Vector(arg),
+              Vector.empty,
+              Vector.empty,
+              callerHPBounds,
+              callerTPBounds
+            ))
+            .partitionMap(identity)
 
-      methods match {
-        case Vector() => errs match {
-          case Vector() => LookupResult.LookupFailure(Error.OperationNotFound(op))
-          case errs => LookupResult.LookupFailure(Error.MultipleErrors(errs: _*))
-        }
-        case Vector(method) => LookupResult.LookupSuccess(method)
-        case methods => LookupResult.LookupFailure(Error.AmbiguousSymbols(methods.map(_._1)))
+          methods match {
+            case Vector() => errs match {
+              case Vector() => LookupResult.LookupFailure(Error.OperationNotFound(op))
+              case errs => LookupResult.LookupFailure(Error.MultipleErrors(errs: _*))
+            }
+            case Vector(method) => LookupResult.LookupSuccess(method)
+            case methods => LookupResult.LookupFailure(Error.AmbiguousSymbols(methods.map(_._1)))
+          }
+        case _: Symbol.TypeParamSymbol =>
+          callerTPBounds.find(_.target =:= this) match {
+            case None => LookupResult.LookupFailure(Error.OperationNotFound(op))
+            case Some(tpBound) => tpBound.bounds.find(_.origin == interface) match {
+              case None => LookupResult.LookupFailure(Error.OperationNotFound(op))
+              case Some(interfaceTpe) =>
+                val result = lookupFromTypeParam(
+                  interface,
+                  interfaceTpe.hardwareParam,
+                  interfaceTpe.typeParam,
+                  op.toMethod,
+                  Vector(arg),
+                  Vector.empty,
+                  Vector.empty,
+                  callerHPBounds,
+                  callerTPBounds
+                )
+
+                result match {
+                  case Left(err) => LookupResult.LookupFailure(err)
+                  case Right(pair) => LookupResult.LookupSuccess(pair)
+                }
+            }
+          }
       }
-
     }
 
     // TODO: lookup type that is defined at implementation
@@ -692,7 +712,7 @@ object Type {
         case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
           case None => false
           case Some(tpBound) =>
-            val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("Hardware"))
+            val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
             tpBound.bounds.exists(_ =:= hardwareInterface)
         }
         case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true

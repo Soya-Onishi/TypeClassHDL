@@ -1,0 +1,70 @@
+package test::alu
+
+import std::traits::Add
+import std::traits::Sub
+import std::traits::HW
+import std::interfaces::Module
+
+struct Complex[T] {
+  real: T,
+  imag: T
+}
+
+impl[T] Add[Complex[T], Complex[T]] for Complex[T]
+  where T: Add[T, T]
+{
+  def add(that: Complex[T]) -> Complex[T] {
+    val real = this.real + that.real
+    val imag = this.imag + that.imag
+
+    Complex[T] {
+      real: real,
+      imag: imag
+    }
+  }
+}
+
+impl[T] Sub[Complex[T], Complex[T]] for Complex[T]
+  where T: Sub[T, T]
+{
+  def sub(that: Complex[T]) -> Complex[T] {
+    val real = this.real - that.real
+    val imag = this.imag - that.imag
+
+    Complex[T] {
+      real: real,
+      imag: imag
+    }
+  }
+}
+
+module Top
+impl Top {
+  mod alu: ALU[Complex[Bit[8]]] = ALU[Complex[Bit[8]]] {}
+
+  always adding {
+    val a = Complex[Bit[8]] {
+      real: 0b00000001,
+      imag: 0b00001111
+    }
+
+    val b = Complex[Bit[8]] {
+      real: 0b00000011,
+      imag: 0b11000000
+    }
+
+    val c = this.alu.add(a, b)
+    val d = this.alu.sub(a, b)
+  }
+}
+
+module ALU[T] where T: HW
+impl[T] ALU[T] where T: HW + Add[T, T] + Sub[T, T] {
+  input def add(a: T, b: T) -> T {
+    a + b
+  }
+
+  input def sub(a: T, b: T) -> T {
+    a - b
+  }
+}

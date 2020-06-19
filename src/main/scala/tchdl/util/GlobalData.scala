@@ -75,6 +75,7 @@ class BuiltInInterfaces extends BuiltInSymbols[Symbol.InterfaceSymbol] {
     "Mul" -> null,
     "Div" -> null,
     "Eq" -> null,
+    "HW" -> null,
     "Module" -> null,
   )
 }

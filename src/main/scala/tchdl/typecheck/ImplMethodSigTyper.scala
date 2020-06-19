@@ -300,7 +300,7 @@ object ImplMethodSigTyper {
     )
 
     for {
-      _ <- TyperUtil.verifyTPBoundType(methodSymbol)(signatureCtx)
+      _ <- TyperUtil.verifyTPBoundType(methodSymbol)(signatureCtx, global)
       _ <- verifyModifierValidity
       _ <- verifyMethodTpe
     } yield methodSymbol

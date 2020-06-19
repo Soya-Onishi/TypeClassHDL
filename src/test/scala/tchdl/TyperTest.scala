@@ -209,4 +209,52 @@ class TyperTest extends TchdlFunSuite {
     assert(vdef0.symbol.tpe =:= expectBitTpe)
     assert(add.tpe =:= expectBitTpe)
   }
+
+  test("implement ALU") {
+    val (Seq(tree), global) = untilTyper("ALU.tchdl")
+    expectNoError(global)
+
+    val modules = tree.topDefs.collect{ case m: ModuleDef => m }
+    val implClass = tree.topDefs.collect{ case impl: ImplementClass => impl }
+    val implInterface = tree.topDefs.collect{ case impl: ImplementInterface => impl }
+    val struct = tree.topDefs.collectFirst{ case s: StructDef => s }.get
+    val topImpl = implClass.find(_.target.symbol.name == "Top").get
+    val aluImpl = implClass.find(_.target.symbol.name == "ALU").get
+
+    val complex = struct.symbol.asStructSymbol
+    val complexBit8 = Type.RefType(complex, Vector.empty, Vector(Type.bitTpe(IntLiteral(8))(global)))
+
+    val always = topImpl.components.collectFirst{ case always: AlwaysDef => always }.get
+    val alwaysA = always.blk.elems.collectFirst{ case vdef @ ValDef(_, "a", _, _) => vdef }.get
+    val alwaysB = always.blk.elems.collectFirst{ case vdef @ ValDef(_, "b", _, _) => vdef }.get
+    val alwaysC = always.blk.elems.collectFirst{ case vdef @ ValDef(_, "c", _, _) => vdef }.get
+    val alwaysD = always.blk.elems.collectFirst{ case vdef @ ValDef(_, "d", _, _) => vdef }.get
+
+    assert(alwaysA.symbol.tpe.asRefType =:= complexBit8)
+    assert(alwaysB.symbol.tpe.asRefType =:= complexBit8)
+    assert(alwaysC.symbol.tpe.asRefType =:= complexBit8)
+    assert(alwaysD.symbol.tpe.asRefType =:= complexBit8)
+    assert(alwaysA.expr.get.tpe.asRefType =:= complexBit8)
+    assert(alwaysB.expr.get.tpe.asRefType =:= complexBit8)
+    assert(alwaysC.expr.get.tpe.asRefType =:= complexBit8)
+    assert(alwaysD.expr.get.tpe.asRefType =:= complexBit8)
+
+    val implAdd = implInterface.find(_.interface.symbol.name == "Add").get
+    val implSub = implInterface.find(_.interface.symbol.name == "Sub").get
+
+    val add = implAdd.methods.find(_.name == "add").get
+    val addReal = add.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "real").get
+    val addImag = add.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "imag").get
+    val addT = Type.RefType(implAdd.tp.head.symbol.asTypeParamSymbol)
+    assert(addReal.symbol.tpe.asRefType =:= addT)
+    assert(addImag.symbol.tpe.asRefType =:= addT)
+
+    val sub = implSub.methods.find(_.name == "sub").get
+    val subReal = sub.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "real").get
+    val subImag = sub.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "imag").get
+    val subT = Type.RefType(implSub.tp.head.symbol.asTypeParamSymbol)
+    assert(subReal.symbol.tpe.asRefType =:= subT)
+    assert(subImag.symbol.tpe.asRefType =:= subT)
+
+  }
 }
