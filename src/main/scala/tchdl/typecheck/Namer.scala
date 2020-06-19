@@ -53,7 +53,7 @@ object Namer {
       vdef.name,
       ctx.path,
       Accessibility.Private,
-      Modifier.NoModifier,
+      vdef.flag,
       Type.VariableTypeGenerator(vdef, ctx, global)
     )
 

@@ -24,6 +24,7 @@ object RefCheck {
           case vdef: ValDef => verifyValDef(vdef)(implCtx, global)
           case method: MethodDef => verifyMethodDef(method)(implCtx, global)
           case stage: StageDef => verifyStageDef(stage)(implCtx, global)
+          case always: AlwaysDef => verifyAlways(always)(implCtx, global)
         }
       case impl: ImplementInterface =>
         val implSymbol = impl.symbol.asImplementSymbol
@@ -67,6 +68,11 @@ object RefCheck {
     verifyExpr(stateDef.blk)(stateSigCtx, global)
   }
 
+  def verifyAlways(alwaysDef: AlwaysDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    val alwaysCtx = Context(ctx, alwaysDef.symbol)
+    verifyExpr(alwaysDef.blk)(alwaysCtx, global)
+  }
+
 
   def verifyExpr(expr: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Unit =
     expr match {
@@ -79,6 +85,7 @@ object RefCheck {
           case expr: Expression => verifyExpr(expr)(blkCtx, global)
           case ValDef(_, _, _, expr) => expr.foreach(verifyExpr(_)(blkCtx, global))
         }
+        verifyExpr(blk.last)(blkCtx, global)
       case _ => // nothing to do
     }
 
@@ -116,9 +123,12 @@ object RefCheck {
     def verifyCallWithSymbolPrefix(prefix: Symbol.TermSymbol, method: Symbol.MethodSymbol): Either[Error, Unit] = {
       method.accessibility match {
         case Accessibility.Private => Left(Error.CallPrivate(method))
-        case Accessibility.Public if method.hasFlag(prefix.flag) => Right(())
-        case Accessibility.Public if prefix.flag == Modifier.NoModifier => Right(())
-        case Accessibility.Public => Left(Error.CallInvalid(method))
+        case Accessibility.Public if prefix.hasFlag(method.flag) => Right(())
+        case Accessibility.Public if prefix.flag == Modifier.NoModifier && method.hasFlag(Modifier.Input) => Right(())
+        case Accessibility.Public if method.hasFlag(Modifier.Input) => Left(Error.CallInvalid(method))
+        case Accessibility.Public if method.hasFlag(Modifier.Sibling) => Left(Error.CallInvalid(method))
+        case Accessibility.Public if method.hasFlag(Modifier.Parent) => Left(Error.CallInvalid(method))
+        case Accessibility.Public => Right(())
       }
     }
 

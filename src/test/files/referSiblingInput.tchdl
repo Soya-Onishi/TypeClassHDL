@@ -1,0 +1,28 @@
+package test
+
+module Top
+module Sub0 {
+  sibling:
+    s1: Sub1
+}
+module Sub1
+
+impl Top {
+  mod s0: Sub0 =
+    Sub0 {
+      sibling:
+        s1: this.s1
+    }
+
+  mod s1: Sub1 = Sub1 {}
+}
+
+impl Sub0 {
+  def call() -> Unit {
+    this.s1.method()
+  }
+}
+
+impl Sub1 {
+  input def method() -> Unit {}
+}

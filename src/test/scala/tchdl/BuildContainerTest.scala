@@ -68,4 +68,12 @@ class BuildContainerTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.TypeParameterLengthMismatch])
   }
+
+  test("append modifier into module's field symbols correctly") {
+    val (Seq(tree), _) = untilBuild("parentSibling.tchdl")
+    val module = tree.topDefs.collect{ case m: ModuleDef => m }.find(_.name == "M").get
+
+    module.parents.foreach(parent => assert(parent.symbol.hasFlag(Modifier.Parent)))
+    module.siblings.foreach(sibling => assert(sibling.symbol.hasFlag(Modifier.Sibling)))
+  }
 }

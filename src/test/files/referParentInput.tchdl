@@ -1,0 +1,21 @@
+package test
+
+module Top
+module Sub {
+  parent:
+    top: Top
+}
+
+impl Top {
+  mod sub: Sub =
+    Sub {
+      parent :
+        top: this
+    }
+
+  input def f() -> Unit {}
+}
+
+impl Sub {
+  def f() -> Unit { this.top.f() }
+}

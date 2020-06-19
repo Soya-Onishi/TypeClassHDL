@@ -69,9 +69,11 @@ object Type {
 
   case class ModuleTypeGenerator(moduleDef: ModuleDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
-      val fieldCtx = Context(ctx, moduleDef.symbol)
+      val sigCtx = Context(ctx, moduleDef.symbol)
       val module = moduleDef.symbol.asEntityTypeSymbol
-      fieldCtx.reAppend(module.hps ++ module.tps: _*)(global)
+      sigCtx.reAppend(module.hps ++ module.tps: _*)(global)
+
+      val fieldCtx = Context(sigCtx)
 
       moduleDef.parents.map(Namer.namedValDef(_)(fieldCtx, global))
       moduleDef.siblings.map(Namer.namedValDef(_)(fieldCtx, global))

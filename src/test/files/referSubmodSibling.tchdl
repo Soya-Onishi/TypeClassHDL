@@ -1,0 +1,15 @@
+package test
+
+module Top
+impl Top {
+  mod sub: Sub = Sub {}
+
+  def f() -> Bit[2] {
+    this.sub.f(0b00)
+  }
+}
+
+module Sub
+impl Sub {
+  sibling def f(n: Bit[2]) -> Bit[2] { n }
+}
