@@ -307,17 +307,31 @@ object ImplMethodSigTyper {
   }
 
   def verifyStageDef(stageDef: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.StageSymbol] = {
+    def verifyDefinitionPositionValidity(self: Type.RefType, stage: Symbol.StageSymbol): Either[Error, Type.MethodType]  = self.origin match {
+      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self))
+      case _: Symbol.ModuleSymbol => stage.tpe match {
+        case Type.ErrorType => Left(Error.DummyError)
+        case tpe: Type.MethodType => Right(tpe)
+      }
+    }
+
+    def verifySignature(stage: Type.MethodType): Either[Error, Unit] = {
+      val errs = stage.params.filterNot(_.isHardwareType).map(Error.RequireHardwareType.apply).map(Left.apply[Error, Unit])
+      val err =
+        if(stage.returnType =:= Type.unitTpe) Right(())
+        else Left(Error.RequireSpecificType(stage.returnType, Type.unitTpe))
+
+      (errs :+ err).combine(errs => Error.MultipleErrors(errs: _*))
+    }
+
     stageDef.symbol.tpe
     val stageSymbol = stageDef.symbol.asStageSymbol
     val self = ctx.self.getOrElse(throw new ImplementationErrorException("this type should be there"))
 
-    self.origin match {
-      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self))
-      case _: Symbol.ModuleSymbol => stageSymbol.tpe match {
-        case Type.ErrorType => Left(Error.DummyError)
-        case _: Type.MethodType => Right(stageSymbol)
-      }
-    }
+    for {
+      stageTpe <- verifyDefinitionPositionValidity(self, stageSymbol)
+      _ <- verifySignature(stageTpe)
+    } yield stageSymbol
   }
 
   def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, globla: GlobalData): Either[Error, Symbol.VariableSymbol] = {

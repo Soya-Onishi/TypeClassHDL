@@ -1,0 +1,8 @@
+package test
+
+struct ST
+
+module M
+impl M {
+  stage s(st: ST) -> Unit {}
+}

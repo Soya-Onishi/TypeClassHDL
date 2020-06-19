@@ -184,4 +184,20 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val (_, global) = untilThisPhase("allValidModifier.tchdl")
     expectNoError(global)
   }
+
+  test("stage's parameter must be hardware type") {
+    val (_, global) = untilThisPhase("stageWithSWType0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireHardwareType])
+  }
+
+  test("stage's return type must be Unit or Future[_]") {
+    val (_, global) = untilThisPhase("stageWithInvalidRet.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireSpecificType])
+  }
 }

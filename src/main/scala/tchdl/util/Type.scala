@@ -697,6 +697,7 @@ object Type {
         }
         case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
         case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
+        case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
         case struct: Symbol.StructSymbol =>
           val hpTable = (struct.hps zip this.hardwareParam).toMap
           val tpTable = (struct.tps zip this.typeParam).toMap
