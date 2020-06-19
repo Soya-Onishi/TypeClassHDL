@@ -1,6 +1,6 @@
 package test
 
-interface I {
+trait I {
   def f[A, B](a: A, b: B) -> Unit where A: I
 }
 

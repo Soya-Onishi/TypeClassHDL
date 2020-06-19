@@ -76,24 +76,33 @@ object Typer {
   }
 
   def typedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
-    val ttree = vdef.tpeTree.map(typedTypeTree)
-    val expr = vdef.expr.map(typedExpr)
+    val vdefTpe = vdef.symbol.tpe
 
-    ttree.foreach(global.cache.set)
-    expr.foreach(global.cache.set)
-
-    if(!vdef.symbol.tpe.isErrorType) {
-      def typecheck(tree: Option[AST with HasType]): Unit = {
-        tree.filter(_.tpe.isErrorType)
-          .filter(_.tpe =!= vdef.symbol.tpe)
-          .foreach(t => global.repo.error.append(Error.TypeMismatch(vdef.symbol.tpe, t.tpe)))
-      }
-
-      typecheck(ttree)
-      typecheck(expr)
+    val typedTpeTree = vdef.tpeTree.flatMap(global.cache.get) match {
+      case Some(tree: TypeTree) => Some(tree)
+      case None => vdef.tpeTree.map(typedTypeTree)
     }
 
-    vdef.copy(tpeTree = ttree, expr = expr)
+    val typedExpression = vdef.expr.flatMap(global.cache.get) match {
+      case Some(expr: Expression) => Some(expr)
+      case None => vdef.expr.map(typedExpr)
+    }
+
+    typedTpeTree.foreach(global.cache.set)
+    typedExpression.foreach(global.cache.set)
+
+    if(!vdefTpe.isErrorType) {
+      def typecheck(tree: Option[AST with HasType]): Unit = {
+        tree.filterNot(_.tpe.isErrorType)
+          .filterNot(_.tpe =:= vdefTpe)
+          .foreach(t => global.repo.error.append(Error.TypeMismatch(vdefTpe, t.tpe)))
+      }
+
+      typecheck(typedTpeTree)
+      typecheck(typedExpression)
+    }
+
+    vdef.copy(tpeTree = typedTpeTree, expr = typedExpression)
       .setSymbol(vdef.symbol)
       .setID(vdef.id)
   }
@@ -426,7 +435,7 @@ object Typer {
           case _: Symbol.ModuleSymbol if construct.fields.isEmpty =>
             ConstructModule(typedTarget, Vector.empty, Vector.empty).setTpe(tpe).setID(construct.id)
           case _: Symbol.ModuleSymbol =>
-            global.repo.error.append(Error.NeedParentOrSiblingIndicator(construct))
+            global.repo.error.append(Error.RequireParentOrSiblingIndicator(construct))
             ConstructClass(typedTarget, typedPairs).setTpe(Type.ErrorType).setID(construct.id)
           case _: Symbol.InterfaceSymbol =>
             global.repo.error.append(Error.TryToConstructInterface(construct))
@@ -509,10 +518,10 @@ object Typer {
     val typedConseq = typedExpr(ifexpr.conseq)
     val typedAlt = ifexpr.alt.map(typedExpr)
 
-    def isBoolTpe = typedCond.tpe != Type.boolTpe
-    def isBit1Tpe = typedCond.tpe != Type.bitTpe(IntLiteral(1))
+    def isBoolTpe = typedCond.tpe =:= Type.boolTpe
+    def isBit1Tpe = typedCond.tpe =:= Type.bitTpe(IntLiteral(1))
     def isErrorTpe = typedCond.tpe.isErrorType
-    if (!isBoolTpe && !isBit1Tpe && !isErrorTpe)
+    if (!isErrorTpe && !isBoolTpe && !isBit1Tpe)
       global.repo.error.append(Error.RequireSpecificType(typedCond.tpe.asRefType, Type.boolTpe, Type.bitTpe(IntLiteral(1))))
 
     typedAlt match {
@@ -623,7 +632,7 @@ object Typer {
   }
 
   def typedStringLiteral(str: StringLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): StringLiteral = {
-    str.setTpe(Type.strTpe).setID(str.id)
+    str.setTpe(Type.stringTpe).setID(str.id)
   }
 
   def typedFinish(finish: Finish)(implicit ctx: Context.NodeContext, global: GlobalData): Finish = {

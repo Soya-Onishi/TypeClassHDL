@@ -28,18 +28,12 @@ object Namer {
   }
 
   def namedMethod(method: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
-    def verifyHPTpes(hps: Vector[ValDef]): Either[Error, Unit] =
-      hps.map(_.symbol.tpe).map {
-        case Type.ErrorType => Left(Error.DummyError)
-        case _ => Right(())
-      }.combine(errs => Error.MultipleErrors(errs: _*))
-
     val methodTpe = Type.MethodTypeGenerator(method, ctx, global)
     val methodSymbol = Symbol.MethodSymbol(
       method.name,
       ctx.path,
-      Visibility.Public,
-      Modifier.NoModifier,
+      Accessibility.Public,
+      method.flag,
       methodTpe
     )
 
@@ -58,7 +52,7 @@ object Namer {
     val symbol = Symbol.VariableSymbol(
       vdef.name,
       ctx.path,
-      Visibility.Private,
+      Accessibility.Private,
       Modifier.NoModifier,
       Type.VariableTypeGenerator(vdef, ctx, global)
     )
@@ -109,7 +103,7 @@ object Namer {
     val moduleSymbol = Symbol.ModuleSymbol(
       module.name,
       ctx.path,
-      Visibility.Public,
+      Accessibility.Public,
       Modifier.NoModifier,
       moduleTpe
     )
@@ -134,7 +128,7 @@ object Namer {
     val structSymbol = Symbol.StructSymbol(
       struct.name,
       ctx.path,
-      Visibility.Public,
+      Accessibility.Public,
       Modifier.NoModifier,
       structTpe
     )
@@ -152,7 +146,7 @@ object Namer {
 
   def namedInterface(interface: InterfaceDef)(implicit ctx: Context.RootContext, global: GlobalData): InterfaceDef = {
     def tryAppendBuiltIn(symbol: Symbol.InterfaceSymbol): Unit = {
-      if(ctx.path.pkgName == Vector("std", "interfaces") && global.builtin.interfaces.names.contains(interface.name))
+      if(ctx.path.pkgName == Vector("std", "traits") && global.builtin.interfaces.names.contains(interface.name))
         global.builtin.interfaces.append(symbol)
     }
 
@@ -160,8 +154,8 @@ object Namer {
     val interfaceSymbol = Symbol.InterfaceSymbol(
       interface.name,
       ctx.path,
-      Visibility.Public,
-      Modifier.NoModifier,
+      Accessibility.Public,
+      interface.flag,
       interfaceTpe
     )
 

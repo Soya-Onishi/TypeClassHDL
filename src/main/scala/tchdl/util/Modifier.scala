@@ -7,6 +7,10 @@ class Modifier(_value: Option[BigInt] = None) {
   def &(that: Modifier): Modifier = new Modifier(Some(this.value & that.value))
   def hasFlag(flag: Modifier): Boolean = (this.value & flag.value) > 0
   def hasNoFlag(flag: Modifier): Boolean = !this.hasFlag(flag)
+  override def equals(obj: Any): Boolean = obj match {
+    case that: Modifier => this.value == that.value
+    case _ => false
+  }
 }
 
 object Modifier {
@@ -41,8 +45,6 @@ object Modifier {
   case object Sibling extends Modifier
   case object Parent extends Modifier
 
-  case object Method extends Modifier
-  case object Always extends Modifier
-  case object Stage extends Modifier
-  case object State extends Modifier
+  case object Interface extends Modifier
+  case object Trait extends Modifier
 }

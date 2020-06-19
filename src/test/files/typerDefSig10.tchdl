@@ -1,6 +1,6 @@
 package test
 
-interface I {
+trait I {
   def f(a: Int) -> Int
   def g(b: String) -> String
 }

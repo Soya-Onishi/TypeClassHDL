@@ -14,14 +14,19 @@ import_clause
 top_definition
     : module_def
     | struct_def
-    | implement_class
+    | trait_def
     | interface_def
+    | implement_class
     | implement_interface
 //    | enum_def
     ;
 
 module_def
     : MODULE TYPE_ID type_param? bounds? ('{' parents? siblings? '}')?
+    ;
+
+trait_def
+    : TRAIT TYPE_ID type_param? bounds? '{' (signature_def)* '}'
     ;
 
 interface_def
@@ -54,15 +59,23 @@ component
     ;
 
 struct_def
-    : STRUCT TYPE_ID type_param? bounds? '{' field_defs? '}'
+    : STRUCT TYPE_ID type_param? bounds? ('{' field_defs? '}')?
     ;
 
 signature_def
-    : DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds?
+    : signature_accessor* DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds?
+    ;
+
+signature_accessor
+    : INPUT | SIBLING | PARENT
     ;
 
 method_def
-    : modifier=(INPUT | INTERNAL)? DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
+    : method_accessor* DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
+    ;
+
+method_accessor
+    : INPUT | INTERNAL | SIBLING | PARENT
     ;
 
 param_defs
@@ -140,7 +153,7 @@ expr: expr '.' (apply | EXPR_ID)    # SelectExpr
     | block                    # BlockExpr
     | construct_struct         # ConstructStructExpr
     | construct_module         # ConstructModuleExpr
-    | IF expr block (ELSE block)?                  # IfExpr
+    | IF '(' expr ')' expr (ELSE expr)? # IfExpr
 //    | MATCH expr '{' case_def+ '}'               # MatchExpr
     | FINISH                   # Finish
     | GOTO EXPR_ID                  # Goto
@@ -249,6 +262,7 @@ enum_field_def
 PACKAGE: 'package';
 IMPORT: 'import';
 CLASS: 'class';
+TRAIT: 'trait';
 INTERFACE: 'interface';
 IMPLEMENT: 'impl';
 MODULE: 'module';

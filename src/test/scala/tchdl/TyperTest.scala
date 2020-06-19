@@ -129,4 +129,84 @@ class TyperTest extends TchdlFunSuite {
     val (Seq(tree), global) = untilTyper("constructModule0.tchdl")
     expectNoError(global)
   }
+
+  test("constructing struct with module construct format causes an error") {
+    val (_, global) = untilTyper("construct1.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RejectParentOrSiblingIndicator])
+  }
+
+  test("constructing module with struct construct format causes an error") {
+    val (_, global) = untilTyper("construct2.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireParentOrSiblingIndicator])
+  }
+
+  test("if expression's condition type must be Bit[1] or Bool type") {
+    val (_, global) = untilTyper("ifexpr0.tchdl")
+    expectNoError(global)
+  }
+
+  test("if conseq and alt expression's type must be same") {
+    val (_, global) = untilTyper("ifexpr1.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
+
+    val mismatch = err.asInstanceOf[Error.TypeMismatch]
+    assert(mismatch.expect =:= Type.stringTpe(global))
+    assert(mismatch.actual =:= Type.intTpe(global))
+  }
+
+  test("condition expression must be Bit[1], Bit[m]") {
+    val (_, global) = untilTyper("ifexpr2.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireSpecificType])
+  }
+
+  test("method call's return type should be same as expected type of caller") {
+    val (Seq(tree), global) = untilTyper("callMethod1.tchdl")
+    expectNoError(global)
+
+    val method = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method }.get
+
+    val expr = method.blk.get.last
+
+    assert(expr.tpe =:= Type.intTpe(global))
+  }
+
+  test("val definition in blk should be no error") {
+    val (Seq(tree), global) = untilTyper("valdefBlk0.tchdl")
+    expectNoError(global)
+
+    val method = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method }.get
+
+    val blk = method.blk.get
+    val m = method.symbol.asMethodSymbol.hps.head
+
+    val vdef = blk.elems.head
+    val add = blk.last
+
+    assert(vdef.isInstanceOf[ValDef])
+
+    val vdef0 = vdef.asInstanceOf[ValDef]
+    val bitSymbol = global.builtin.types.lookup("Bit")
+    val expectBitTpe = Type.RefType(bitSymbol, Vector(Ident("m").setSymbol(m)), Vector.empty)
+
+    assert(vdef0.symbol.tpe =:= expectBitTpe)
+    assert(add.tpe =:= expectBitTpe)
+  }
 }

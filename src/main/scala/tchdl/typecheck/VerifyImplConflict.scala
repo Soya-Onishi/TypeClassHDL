@@ -52,7 +52,7 @@ object VerifyImplConflict {
       }
     }
 
-    global.buffer.interface.symbols.foreach(interface => verifyInterfaceImplConflict(interface.impls))
+    global.buffer.traits.symbols.foreach(interface => verifyInterfaceImplConflict(interface.impls))
     global.buffer.clazz.symbols.foreach(tpe => verifyClassImplConflict(tpe.impls))
   }
 }

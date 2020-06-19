@@ -1,6 +1,6 @@
 package test
 
-interface I {}
+trait I {}
 impl I for Int {
   def f(a: Int) -> Int { a }
 }

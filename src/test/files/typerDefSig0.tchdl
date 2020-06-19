@@ -2,7 +2,7 @@ package test
 
 struct ST {}
 
-interface I {
+trait I {
   def method(n: Int) -> Int
 }
 

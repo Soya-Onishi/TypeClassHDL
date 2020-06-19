@@ -27,6 +27,7 @@ class ASTGenerator {
       case ctx: TP.Module_defContext => moduleDef(ctx)
       case ctx: TP.Method_defContext => methodDef(ctx)
       case ctx: TP.Struct_defContext => structDef(ctx)
+      case ctx: TP.Trait_defContext => traitDef(ctx)
       case ctx: TP.Interface_defContext => interfaceDef(ctx)
       case ctx: TP.Implement_classContext => implementClass(ctx)
       case ctx: TP.Implement_interfaceContext => implementInterface(ctx)
@@ -69,15 +70,26 @@ class ASTGenerator {
     ImplementClass(target, hps, tps, bounds, components)
   }
 
-  def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
+  def traitDef(ctx: TP.Trait_defContext): InterfaceDef = {
     val name = ctx.TYPE_ID.getText
-    val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
+    val (hp, tp, bound) = definitionHeader(ctx.type_param, ctx.bounds)
     val methods = ctx.signature_def
       .asScala
       .map(signatureDef)
       .toVector
 
-    InterfaceDef(name, hp, tp, bound, methods)
+    InterfaceDef(Modifier.Trait, name, hp, tp, bound, methods)
+  }
+
+  def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
+    val name = ctx.TYPE_ID.getText
+    val (hp, tp, bound) = definitionHeader(ctx.type_param, ctx.bounds)
+    val methods = ctx.signature_def
+      .asScala
+      .map(signatureDef)
+      .toVector
+
+    InterfaceDef(Modifier.Interface, name, hp, tp, bound, methods)
   }
 
   def implementInterface(ctx: TP.Implement_interfaceContext): ImplementInterface = {
@@ -89,7 +101,12 @@ class ASTGenerator {
   }
 
   def methodDef(ctx: TP.Method_defContext): MethodDef = {
-    val modifier = Option(ctx.modifier).map(_.getText).map(Modifier.apply).getOrElse(Modifier.NoModifier)
+    val modifier = ctx.method_accessor.asScala
+      .map(_.getText)
+      .map(Modifier.apply)
+      .foldLeft[Modifier](Modifier.NoModifier) {
+        case (acc, modifier) => acc | modifier
+      }
     val name = ctx.EXPR_ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
     val params = Option(ctx.param_defs())
@@ -236,9 +253,9 @@ class ASTGenerator {
     case ctx: TP.ConstructStructExprContext => constructStruct(ctx.construct_struct)
     case ctx: TP.ConstructModuleExprContext => constructModule(ctx.construct_module)
     case ctx: TP.IfExprContext =>
-      val cond = expr(ctx.expr)
-      val conseq = block(ctx.block(0))
-      val alt = Option(ctx.block(1)).map(block)
+      val cond = expr(ctx.expr(0))
+      val conseq = expr(ctx.expr(1))
+      val alt = Option(ctx.expr(2)).map(expr)
 
       IfExpr(cond, conseq, alt)
     case _: TP.FinishContext => Finish()

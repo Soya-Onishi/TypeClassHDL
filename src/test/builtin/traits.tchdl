@@ -1,6 +1,6 @@
-package std::interfaces
+package std::traits
 
-interface Add[Param, Output] {
+trait Add[Param, Output] {
   def add(that: Param) -> Output
 }
 

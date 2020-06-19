@@ -1,7 +1,7 @@
 package test
 
 struct ST[m: Num] {}
-interface I {}
+trait I {}
 
 impl[m: Num] I for ST[m] where m: min 0 & max 10 {}
 impl[m: Num] I for ST[m] where m: min 5 {}

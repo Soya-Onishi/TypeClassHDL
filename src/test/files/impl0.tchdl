@@ -3,7 +3,7 @@ package test
 struct ST0 {}
 struct ST1 {}
 
-interface I0 {
+trait I0 {
   def f() -> Unit
 }
 

@@ -1,8 +1,8 @@
 package test
 
 struct ST[T] {}
-interface I0 {}
-interface I1 {}
+trait I0 {}
+trait I1 {}
 
 impl[T] I0 for ST[T] where T : I1 {}
 impl I0 for ST[Int] {}

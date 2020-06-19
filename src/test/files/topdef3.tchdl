@@ -1,5 +1,5 @@
 package test
 
 struct ST[T] where T: I0[Int] {}
-interface I0[T] where T: I1 {}
-interface I1 {}
+trait I0[T] where T: I1 {}
+trait I1 {}

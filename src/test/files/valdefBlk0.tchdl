@@ -1,0 +1,9 @@
+package test
+
+struct ST {}
+impl ST {
+  def f[m: Num](a: Bit[m], b: Bit[m], c: Bit[m]) -> Bit[m] where m: min 1 {
+    val tmp = a + b
+    c + tmp
+  }
+}

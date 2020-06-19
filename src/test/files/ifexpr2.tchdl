@@ -1,0 +1,9 @@
+package test
+
+struct ST {}
+impl ST {
+  def f[m: Num](bool: Bit[m]) -> Bit[1] where m : min 1 {
+    if(bool) 0b1
+    else     0b0
+  }
+}

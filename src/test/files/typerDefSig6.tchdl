@@ -1,6 +1,6 @@
 package test
 
-interface I {
+trait I {
   def f[m: Num, n: Num]() -> Unit where m: min 0
 }
 

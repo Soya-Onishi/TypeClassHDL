@@ -12,10 +12,10 @@ module Mod[T] {
   parent: p: T
 }
 
-interface I0[T] {
+trait I0[T] {
   def f(n: T) -> T
 }
 
-interface I1[m: Num] where m: min 1 {
+trait I1[m: Num] where m: min 1 {
   def g(n: Bit[m]) -> Bit[m]
 }
