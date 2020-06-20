@@ -44,6 +44,7 @@ object Modifier {
   case object Public extends Modifier
   case object Sibling extends Modifier
   case object Parent extends Modifier
+  case object Child extends Modifier
 
   case object Interface extends Modifier
   case object Trait extends Modifier

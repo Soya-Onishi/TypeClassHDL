@@ -88,6 +88,8 @@ object Error {
   case class CallInterfaceMustBeDirect(prefix: Type.RefType) extends Error
   case class ReferPrivate(field: Symbol.TermSymbol) extends Error
 
+  case class CyclicModuleInstantiation(module: Type.RefType, route: Vector[Type.RefType]) extends Error
+
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }
