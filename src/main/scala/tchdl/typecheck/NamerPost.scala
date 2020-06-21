@@ -22,7 +22,6 @@ object NamerPost {
     val verifiedImports = cu.imports.map { imprt =>
       global.rootPackage
         .search(imprt.dropRight(1))
-        .left.map(Error.SymbolNotFound.apply)
         .flatMap { packageSymbol =>
           val name = imprt.last
           packageSymbol.lookup[Symbol.TypeSymbol](name).toEither

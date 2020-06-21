@@ -1,0 +1,16 @@
+package test
+
+module Top[m: Num] where m : min 1
+impl[m: Num] Top[m] where m: min 1 {
+  mod sub: Sub[m] = Sub[m] {}
+  input def function(a: Bit[m], b: Bit[m]) -> Bit[m] {
+    this.sub.add(a, b)
+  }
+}
+
+module Sub[m: Num] where m : min 1
+impl[m: Num] Sub[m] where m: min 1 {
+  input def add(a: Bit[m], b: Bit[m]) -> Bit[m] {
+    a + b
+  }
+}

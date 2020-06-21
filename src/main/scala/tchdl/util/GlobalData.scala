@@ -17,6 +17,11 @@ class GlobalData {
     val traits: SymbolBuffer[Symbol.InterfaceSymbol] = new SymbolBuffer[Symbol.InterfaceSymbol] {}
     val clazz: SymbolBuffer[Symbol.ClassTypeSymbol] = new SymbolBuffer[Symbol.ClassTypeSymbol] {}
   }
+
+  val command = new {
+    var topModulePkg: Vector[String] = Vector.empty
+    var topModule: Option[TypeTree] = Option.empty[TypeTree]
+  }
 }
 
 trait BuiltInSymbols[T <: Symbol] {
@@ -86,6 +91,7 @@ class TypedTreeCache {
   private val cache = mutable.Map[Int, AST]()
 
   def get(tree: AST): Option[AST] = cache.get(tree.id)
+  def get(id: Int): Option[AST] = cache.get(id)
   def set(tree: AST): Unit = cache(tree.id) = tree
 }
 

@@ -1,0 +1,10 @@
+package test
+
+module Top
+impl Top {
+  mod sub0: Sub[4] = Sub[4] {}
+  mod sub1: Sub[4] = Sub[4] {}
+  mod sub2: Sub[8] = Sub[8] {}
+}
+
+module Sub[m: Num]

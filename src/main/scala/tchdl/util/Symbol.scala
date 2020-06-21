@@ -326,14 +326,15 @@ object Symbol {
       throw new ImplementationErrorException(msg)
     }
 
-    def search(pkgName: Vector[String]): Either[String, Symbol.PackageSymbol] = {
-      pkgName.foldLeft[Either[String, Symbol.PackageSymbol]](Right(this)){
+    def search(pkgName: Vector[String]): Either[Error, Symbol.PackageSymbol] = {
+      pkgName.foldLeft[Either[Error, Symbol.PackageSymbol]](Right(this)){
         case (Left(name), _) => Left(name)
         case (Right(symbol), name) =>
+          val searchedName = (symbol.path.pkgName :+ name).mkString("::")
           symbol.lookup[Symbol.PackageSymbol](name)
             .toEither
             .map(Right.apply)
-            .getOrElse(Left(name))
+            .getOrElse(Left(Error.PackageNotFound(searchedName)))
       }
     }
   }

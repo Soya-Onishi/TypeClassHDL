@@ -239,7 +239,7 @@ class ASTGenerator {
 
   def submoduleDef(ctx: TP.Submodule_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
-    ValDef(Modifier.NoModifier, name, tpe, Some(expr))
+    ValDef(Modifier.Child, name, tpe, Some(expr))
   }
 
   def regDef(ctx: TP.Reg_defContext): ValDef = {

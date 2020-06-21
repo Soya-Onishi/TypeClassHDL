@@ -90,6 +90,8 @@ object Error {
 
   case class CyclicModuleInstantiation(module: Type.RefType, route: Vector[Type.RefType]) extends Error
 
+  case class RequireLiteral(actual: AST) extends Error
+
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }

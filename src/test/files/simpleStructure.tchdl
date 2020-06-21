@@ -1,0 +1,8 @@
+package test
+
+module Top
+impl Top {
+  mod sub: Sub = Sub {}
+}
+
+module Sub

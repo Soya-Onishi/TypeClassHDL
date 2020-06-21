@@ -124,7 +124,7 @@ object RefCheck {
       method.accessibility match {
         case Accessibility.Private => Left(Error.CallPrivate(method))
         case Accessibility.Public if prefix.hasFlag(method.flag) => Right(())
-        case Accessibility.Public if prefix.flag == Modifier.NoModifier && method.hasFlag(Modifier.Input) => Right(())
+        case Accessibility.Public if prefix.hasFlag(Modifier.Child) && method.hasFlag(Modifier.Input) => Right(())
         case Accessibility.Public if method.hasFlag(Modifier.Input) => Left(Error.CallInvalid(method))
         case Accessibility.Public if method.hasFlag(Modifier.Sibling) => Left(Error.CallInvalid(method))
         case Accessibility.Public if method.hasFlag(Modifier.Parent) => Left(Error.CallInvalid(method))

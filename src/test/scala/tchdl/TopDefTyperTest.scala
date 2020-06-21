@@ -197,4 +197,16 @@ class TopDefTyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.InvalidModifier])
   }
+
+  test("sub module's variable has Child modifier") {
+    val (Seq(tree), global) = untilTopDefTyper("submodule0.tchdl")
+    expectNoError(global)
+
+    val impl = tree.topDefs.collectFirst{ case impl: ImplementClass => impl }.get
+    val sub = impl.components.collectFirst{ case vdef: ValDef => vdef }.map(_.symbol).get
+
+    assert(sub.name == "sub")
+    assert(sub.hasFlag(Modifier.Child))
+    assert(sub.flag == Modifier.Child)
+  }
 }

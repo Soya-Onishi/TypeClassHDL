@@ -14,9 +14,6 @@ object Typer {
   }
 
   def diveIntoExpr(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition = {
-
-
-
     defTree match {
       case impl: ImplementClass =>
         val implSymbol = impl.symbol.asImplementSymbol
@@ -32,7 +29,9 @@ object Typer {
           case valDef: ValDef => typedValDef(valDef)(implBodyCtx, global)
         }
 
-        impl.copy(components = typedComponents).setSymbol(impl.symbol).setID(impl.id)
+        val typedImpl = impl.copy(components = typedComponents).setSymbol(impl.symbol).setID(impl.id)
+        global.cache.set(typedImpl)
+        typedImpl
       case impl: ImplementInterface =>
         val implSymbol = impl.symbol.asImplementSymbol
         val implSigCtx = Context(ctx, implSymbol)
@@ -42,7 +41,9 @@ object Typer {
 
         val typedMethods = impl.methods.map(typedMethodDef(_)(implBodyCtx, global))
 
-        impl.copy(methods = typedMethods).setSymbol(impl.symbol).setID(impl.id)
+        val typedImpl = impl.copy(methods = typedMethods).setSymbol(impl.symbol).setID(impl.id)
+        global.cache.set(typedImpl)
+        typedImpl
       case others => others
     }
   }
