@@ -92,6 +92,8 @@ object Error {
 
   case class RequireLiteral(actual: AST) extends Error
 
+  case class TopModuleHasNoImpl(tpe: Type.RefType) extends Error
+
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }

@@ -22,6 +22,9 @@ class GlobalData {
     var topModulePkg: Vector[String] = Vector.empty
     var topModule: Option[TypeTree] = Option.empty[TypeTree]
   }
+
+  val compilationUnits: Vector[CompilationUnit] = Vector.empty
+  var topModule: Option[Type.RefType] = None
 }
 
 trait BuiltInSymbols[T <: Symbol] {

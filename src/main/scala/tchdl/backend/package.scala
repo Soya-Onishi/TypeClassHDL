@@ -38,4 +38,13 @@ package object backend {
     case Some(tree: T) => Some(tree)
     case Some(_) => None
   }
+
+  trait HPElem
+  object HPElem {
+    case class Num(n: Int) extends HPElem
+    case class Str(s: String) extends HPElem
+  }
+
+  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType])
+
 }

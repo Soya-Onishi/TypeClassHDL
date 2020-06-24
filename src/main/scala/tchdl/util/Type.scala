@@ -460,7 +460,7 @@ object Type {
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
-    )(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val (initHpTable, initTpTable) = RefType.buildTable(impl)
       val lookupResult = impl.lookup[Symbol.MethodSymbol](methodName) match {
         case None => Left(Error.SymbolNotFound(methodName))
@@ -515,7 +515,7 @@ object Type {
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
-    )(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val (initHpTable, initTpTable) = RefType.buildSymbolTable(interface, interfaceHPs, interfaceTPs)
       val lookupResult = interface.tpe.declares.lookup(methodName) match {
         case Some(symbol: Symbol.MethodSymbol) => Right(symbol)
@@ -560,7 +560,7 @@ object Type {
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
-    )(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val result = impls.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
         case (right@Right(_), _) => right
         case (Left(errs), impl) =>
@@ -589,10 +589,9 @@ object Type {
     def lookupOperator(
       op: Operation,
       arg: Type.RefType,
-    )(implicit ctx: Context.NodeContext, global: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
-      val callerHPBounds = ctx.hpBounds
-      val callerTPBounds = ctx.tpBounds
-
+      callerHPBounds: Vector[HPBound],
+      callerTPBounds: Vector[TPBound]
+    )(implicit global: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
       val interface = global.builtin.interfaces.lookup(op.toInterface)
       this.origin match {
         case _: Symbol.EntityTypeSymbol =>
@@ -644,6 +643,30 @@ object Type {
       }
     }
 
+    def lookupMethodFromBounds(
+      args: Vector[Type.RefType],
+      callerHP: Vector[HPExpr],
+      callerTP: Vector[Type.RefType],
+      bounds: Vector[Type.RefType],
+      methodName: String
+    )(implicit global: GlobalData): (Symbol.MethodSymbol, Type.MethodType) = {
+      val impls = bounds.view
+        .map(_.origin.asInterfaceSymbol)
+        .flatMap(_.impls)
+
+      val lookupResult = lookupFromImpls(
+        impls,
+        methodName,
+        args,
+        callerHP,
+        callerTP,
+        Vector.empty,
+        Vector.empty
+      )
+
+      lookupResult.getOrElse(throw new ImplementationErrorException("method should be found"))
+    }
+
     // TODO: lookup type that is defined at implementation
     def lookupType(name: String): LookupResult[Symbol.TypeSymbol] = {
       def lookupToTypeParam(tp: Symbol.TypeParamSymbol): LookupResult[Symbol.TypeSymbol] = ???
@@ -654,22 +677,15 @@ object Type {
       }
     }
 
-    def replaceWithMap(hpMap: Map[Symbol.HardwareParamSymbol, HPExpr], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.RefType = {
-      def replaceHP(expr: HPExpr): HPExpr = expr match {
-        case ident: Ident => hpMap.getOrElse(ident.symbol.asHardwareParamSymbol, ident)
-        case binop: HPBinOp => HPBinOp(binop.op, replaceHP(binop.left), replaceHP(binop.right))
-        case others => others
-      }
-
+    def replaceWithMap(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr], tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.RefType =
       origin match {
-        case symbol: Symbol.TypeParamSymbol => tpMap.getOrElse(symbol, this)
+        case symbol: Symbol.TypeParamSymbol => tpTable.getOrElse(symbol, this)
         case _ => RefType(
           this.origin,
-          this.hardwareParam.map(replaceHP),
-          typeParam.map(_.replaceWithMap(hpMap, tpMap))
+          this.hardwareParam.map(_.replaceWithMap(hpTable)),
+          typeParam.map(_.replaceWithMap(hpTable, tpTable))
         )
       }
-    }
 
     override def =:=(other: Type): Boolean = other match {
       case other: RefType =>

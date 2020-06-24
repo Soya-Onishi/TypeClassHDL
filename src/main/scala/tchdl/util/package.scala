@@ -1,6 +1,9 @@
 package tchdl
 
 package object util {
+  type HPTable = Map[Symbol.HardwareParamSymbol, tchdl.ast.HPExpr]
+  type TPTable = Map[Symbol.TypeParamSymbol, Type.RefType]
+
   implicit class VectorFindElement[A](vec: Vector[A]) {
     def collectFirstRemain[B](f: PartialFunction[A, B]): (Option[B], Vector[A]) = {
       f.unapply(vec.head) match {

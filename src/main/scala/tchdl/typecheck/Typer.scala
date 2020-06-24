@@ -487,7 +487,7 @@ object Typer {
       case (Type.ErrorType, _) => LookupResult.LookupFailure(Error.DummyError)
       case (_, Type.ErrorType) => LookupResult.LookupFailure(Error.DummyError)
       case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
-        leftTpe.lookupOperator(binop.op, rightTpe)
+        leftTpe.lookupOperator(binop.op, rightTpe, ctx.hpBounds, ctx.tpBounds)
     }
 
     result match {

@@ -31,19 +31,23 @@ object BuildGeneratedModuleList {
         .combine(errs => Error.MultipleErrors(errs: _*))
     }
 
-    val moduleTree = global.command.topModule.get
+    val topModuleTree = global.command.topModule.get
 
     val list = for {
       pkg <- getPackage
-      typeTree <- buildTypeTree(moduleTree, pkg)
-      moduleTpe = typeTree.tpe.asRefType
-      _ <- verifyType(moduleTpe)
-      moduleList <- constructModule(moduleTpe, Vector.empty, Vector.empty)
-    } yield moduleList
+      typeTree <- buildTypeTree(topModuleTree, pkg)
+      topModuleTpe = typeTree.tpe.asRefType
+      _ <- verifyType(topModuleTpe)
+      moduleList <- constructModule(topModuleTpe, Vector.empty, Vector.empty)
+    } yield (moduleList, topModuleTpe)
 
     list match {
-      case Left(err) => global.repo.error.append(err); None
-      case Right(moduleList) => Some(moduleList)
+      case Left(err) =>
+        global.repo.error.append(err)
+        None
+      case Right((moduleList, topModuleTpe)) =>
+        global.topModule = Some(topModuleTpe)
+        Some(moduleList)
     }
   }
 
