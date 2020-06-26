@@ -3,9 +3,9 @@ package tchdl.backend.ast
 import tchdl.backend._
 import tchdl.util._
 
-sealed trait BackendAST
-sealed trait Def extends BackendAST with HasType
-sealed trait Expr extends BackendAST with HasType
+sealed trait BackendIR
+sealed trait Def extends BackendIR with HasType
+sealed trait Expr extends BackendIR with HasType
 
 trait HasType {
   val tpe: BackendType
@@ -22,8 +22,8 @@ case class ConstructStruct(target: BackendType, pairs: Map[String, Expr]) extend
   val tpe = target
 }
 
-case class Assign(target: Term, expr: Expr) extends BackendAST
-case class Return(expr: Expr) extends BackendAST
+case class Assign(target: Term, expr: Expr) extends BackendIR
+case class Return(expr: Expr) extends BackendIR
 
 case class CallMethod(label: MethodLabel, accessor: Option[Term], hargs: Vector[HPElem], args: Vector[Term], tpe: BackendType) extends Expr
 case class CallBuiltIn(label: String, args: Vector[Term], tpe: BackendType) extends Expr
@@ -32,7 +32,7 @@ case class CallInterface(label: MethodLabel, accessor: Term, args: Vector[Term],
 case class ReferField(accessor: Term, field: String, tpe: BackendType) extends Expr
 
 case class Ident(id: Term.Variable, tpe: BackendType) extends Expr
-case class IfExpr(cond: Term, conseq: Vector[BackendAST], alt: Vector[BackendAST], tpe: BackendType) extends Expr
+case class IfExpr(cond: Term, conseq: Vector[BackendIR], alt: Vector[BackendIR], tpe: BackendType) extends Expr
 
 case class IntLiteral(value: Int)(implicit global: GlobalData) extends Expr {
   val tpe: BackendType = BackendType (

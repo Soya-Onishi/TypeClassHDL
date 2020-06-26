@@ -26,35 +26,35 @@ case class ModuleContainer(
 
 object ModuleContainer {
   def empty(tpe: BackendType): ModuleContainer =
-    ModuleContainer(tpe, Vector.empty, Vector.empty, Vector.empty)
+    ModuleContainer(tpe, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
 }
 
 case class MethodContainer(
   label: MethodLabel,
   hargs: Vector[ast.Term.Variable],
   args: Vector[ast.Term.Variable],
-  code: Vector[ast.BackendAST]
+  code: Vector[ast.BackendIR]
 ) extends BackendContainer
 
 case class StageContainer(
   label: StageLabel,
   args: Vector[ast.Term.Variable],
   states: Vector[StateContainer],
-  code: Vector[ast.BackendAST]
+  code: Vector[ast.BackendIR]
 ) extends BackendContainer
 
 case class StateContainer (
   symbol: Symbol.StateSymbol,
-  code: Vector[ast.BackendAST]
+  code: Vector[ast.BackendIR]
 ) extends BackendContainer
 
 case class FieldContainer(
   flag: Modifier,
   symbol: Symbol.VariableSymbol,
-  code: Vector[ast.BackendAST]
-)
+  code: Vector[ast.BackendIR]
+) extends BackendContainer
 
 case class AlwaysContainer (
   symbol: Symbol.AlwaysSymbol,
-  code: Vector[ast.BackendAST]
-)
+  code: Vector[ast.BackendIR]
+) extends BackendContainer

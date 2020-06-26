@@ -1,6 +1,7 @@
 package tchdl.util
 
 import tchdl.ast._
+import tchdl.backend._
 
 import scala.reflect.runtime.universe.TypeTag
 
@@ -88,7 +89,7 @@ object Error {
   case class CallInterfaceMustBeDirect(prefix: Type.RefType) extends Error
   case class ReferPrivate(field: Symbol.TermSymbol) extends Error
 
-  case class CyclicModuleInstantiation(module: Type.RefType, route: Vector[Type.RefType]) extends Error
+  case class CyclicModuleInstantiation(module: BackendType, route: Vector[BackendType]) extends Error
 
   case class RequireLiteral(actual: AST) extends Error
 

@@ -24,7 +24,6 @@ class GlobalData {
   }
 
   val compilationUnits: Vector[CompilationUnit] = Vector.empty
-  var topModule: Option[Type.RefType] = None
 }
 
 trait BuiltInSymbols[T <: Symbol] {

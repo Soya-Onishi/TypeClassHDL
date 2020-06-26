@@ -20,7 +20,11 @@ abstract class ImplementContainer {
   final def lookup[T <: Symbol : ClassTag : TypeTag](name: String): Option[T] =
     scope.lookup(name).collect{ case symbol: T => symbol }
 
-  def signature: String
+  final override def hashCode(): Int = super.hashCode()
+  final override def equals(obj: Any): Boolean = obj match {
+    case that: ImplementContainer => this.hashCode == that.hashCode
+    case _ => false
+  }
 }
 
 
@@ -31,7 +35,7 @@ abstract class ImplementInterfaceContainer(
   val scope: Scope
 ) extends ImplementContainer {
   override type TreeType = ImplementInterface
-  override def signature: String = s"impl $targetInterface for $targetType"
+  override def toString: String = s"impl $targetInterface for $targetType"
 }
 
 object ImplementInterfaceContainer {
@@ -198,7 +202,7 @@ abstract class ImplementClassContainer(
   val scope: Scope
 ) extends ImplementContainer {
   override type TreeType = ImplementClass
-  override def signature: String = s"impl $targetType"
+  override def toString: String = s"impl $targetType"
 }
 
 object ImplementClassContainer {

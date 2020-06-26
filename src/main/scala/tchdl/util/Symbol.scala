@@ -30,18 +30,18 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   }
 
   private var _flag: Modifier = __flag
+  def flag: Modifier = _flag
   def setFlag(flag: Modifier): this.type = {
-    _flag = flag;
+    _flag = flag
     this
   }
   def addFlag(flag: Modifier): this.type = {
-    _flag |= flag;
+    _flag |= flag
     this
   }
   def hasFlag(flag: Modifier): Boolean = {
     _flag.hasFlag(flag)
   }
-  def flag: Modifier = _flag
 
   override def equals(obj: Any): Boolean = obj match {
     case sym: Symbol => this.getClass == sym.getClass && this.path == sym.path
