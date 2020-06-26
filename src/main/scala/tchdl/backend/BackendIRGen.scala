@@ -14,7 +14,7 @@ object BackendIRGen {
 
   def exec(modules: Vector[BuiltModule])(implicit global: GlobalData): (Vector[ModuleContainer], Vector[MethodContainer]) = {
     val (moduleContainers, labels) = modules.map(buildModule).unzip
-    val labelSet = labels.flatten.to(Set)
+    val labelSet = labels.flatten.toSet
 
     val initSummary = Summary(moduleContainers, Vector.empty, labelSet)
     val summary = build(initSummary)
@@ -117,7 +117,7 @@ object BackendIRGen {
         }
 
         val (containers, labels) = pairs.unzip
-        val labelSet = labels.flatten.to(Set)
+        val labelSet = labels.flatten.toSet
         val assignedModule = containers.foldLeft(moduleContainer) {
           case (module, c: MethodContainer) => module.addInterface(c)
           case (module, c: StageContainer) => module.addStage(c)
@@ -129,7 +129,7 @@ object BackendIRGen {
     }
   }
 
-  def buildMethod(methodDef: frontend.MethodDef, label: MethodLabel)(implicit ctx: BackendContext, global: GlobalData): (MethodContainer, Set[_ <: BackendLabel]) = {
+  def buildMethod(methodDef: frontend.MethodDef, label: MethodLabel)(implicit ctx: BackendContext, global: GlobalData): (MethodContainer, Set[BackendLabel]) = {
     val hargVariables = methodDef.hp.map { hp =>
       hp.symbol.tpe match {
         case tpe: Type.RefType if tpe =:= Type.numTpe =>
@@ -151,7 +151,7 @@ object BackendIRGen {
         val name = symbol.path
 
         backend.Term.Variable(name, tpe)
-    }.to(Vector)
+    }.toVector
 
     val method = methodDef.symbol.asMethodSymbol
     val impl = findImplClassTree(method, global)
@@ -168,7 +168,7 @@ object BackendIRGen {
     (MethodContainer(label, hargVariables, argVariables, nodes :+ expr), labels)
   }
 
-  def buildStage(stageDef: frontend.StageDef, label: StageLabel)(implicit ctx: BackendContext, global: GlobalData): (StageContainer, Set[_ <: BackendLabel]) = {
+  def buildStage(stageDef: frontend.StageDef, label: StageLabel)(implicit ctx: BackendContext, global: GlobalData): (StageContainer, Set[BackendLabel]) = {
     val BuildResult(blkNodes, None, blkLabels) = stageDef.blk
       .map(buildBlockElem)
       .foldLeft(BuildResult(Vector.empty, None, Set.empty)) {
@@ -187,12 +187,12 @@ object BackendIRGen {
         val name = symbol.path
 
         backend.Term.Variable(name, tpe)
-    }.to(Vector)
+    }.toVector
 
     (StageContainer(label, argVariables, states, blkNodes), blkLabels ++ stateLabels.flatten)
   }
 
-  def buildState(stateDef: frontend.StateDef)(implicit ctx: BackendContext, global: GlobalData): (StateContainer, Set[_ <: BackendLabel]) = {
+  def buildState(stateDef: frontend.StateDef)(implicit ctx: BackendContext, global: GlobalData): (StateContainer, Set[BackendLabel]) = {
     val BuildResult(nodes, last, labels) = buildBlk(stateDef.blk)
     val code = nodes ++ last.map(Vector(_)).getOrElse(Vector.empty)
 
@@ -248,7 +248,7 @@ object BackendIRGen {
   }
 
   def buildApply(apply: frontend.Apply)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    case class Summary(nodes: Vector[backend.BackendIR], passeds: Vector[backend.Term.Node], labels: Set[MethodLabel])
+    case class Summary(nodes: Vector[backend.BackendIR], passeds: Vector[backend.Term.Node], labels: Set[BackendLabel])
 
     def replaceTPBound(bound: TPBound): TPBound = {
       val replacedBounds = bound.bounds
@@ -297,7 +297,7 @@ object BackendIRGen {
     val targs = apply.tps.view
       .map(_.tpe.asRefType)
       .map(convertToBackendType(_, ctx.hpTable, ctx.tpTable))
-      .to(Vector)
+      .toVector
 
     apply.prefix match {
       case select @ frontend.Select(prefix, methodName) =>
@@ -451,7 +451,7 @@ object BackendIRGen {
   }
 
   def buildConstructClass(construct: frontend.ConstructClass)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    case class Summary(nodes: Vector[backend.BackendIR], initPairs: Vector[(String, backend.Expr)], labels: Set[MethodLabel])
+    case class Summary(nodes: Vector[backend.BackendIR], initPairs: Vector[(String, backend.Expr)], labels: Set[BackendLabel])
 
     val Summary(nodes, inits, labels) = construct.fields.foldLeft(Summary(Vector.empty, Vector.empty, Set.empty)) {
       case (tempSummary, frontend.ConstructPair(name, init)) =>
@@ -472,7 +472,7 @@ object BackendIRGen {
   }
 
   def buildConstructModule(construct: frontend.ConstructModule)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    case class Summary(nodes: Vector[backend.BackendIR], inits: Map[String, backend.Expr], labels: Set[MethodLabel])
+    case class Summary(nodes: Vector[backend.BackendIR], inits: Map[String, backend.Expr], labels: Set[BackendLabel])
 
     def buildInitSection(pairs: Vector[frontend.ConstructPair]): Summary = {
       pairs.foldLeft(Summary(Vector.empty, Map.empty, Set.empty)) {
@@ -556,11 +556,11 @@ object BackendIRGen {
 abstract class BuildResult {
   val nodes: Vector[backend.BackendIR]
   val last: Option[backend.Expr]
-  val labels: Set[MethodLabel]
+  val labels: Set[BackendLabel]
 }
 
 object BuildResult {
-  def apply(nodes: Vector[backend.BackendIR], last: Option[backend.Expr], labels: Set[MethodLabel]): BuildResult = {
+  def apply(nodes: Vector[backend.BackendIR], last: Option[backend.Expr], labels: Set[BackendLabel]): BuildResult = {
     val _nodes = nodes
     val _last = last
     val _labels = labels
@@ -582,7 +582,7 @@ object BuildResult {
     }
   }
 
-  def unapply(obj: Any): Option[(Vector[backend.BackendIR], Option[backend.Expr], Set[MethodLabel])] =
+  def unapply(obj: Any): Option[(Vector[backend.BackendIR], Option[backend.Expr], Set[BackendLabel])] =
     obj match {
       case result: BuildResult => Some(result.nodes, result.last, result.labels)
       case _ => None

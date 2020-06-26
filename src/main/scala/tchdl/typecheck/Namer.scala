@@ -164,8 +164,8 @@ object Namer {
     )
 
     val signatureCtx = Context(ctx, interfaceSymbol)
-    val hps = interface.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).to(Vector)
-    val tps = interface.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    val hps = interface.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).toVector
+    val tps = interface.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
     interfaceSymbol.setHPs(hps)
     interfaceSymbol.setTPs(tps)
 
@@ -177,8 +177,8 @@ object Namer {
   def namedImplInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): ImplementInterface = {
     val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
     val signatureCtx = Context(ctx, implSymbol)
-    val hps = impl.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).to(Vector)
-    val tps = impl.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    val hps = impl.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).toVector
+    val tps = impl.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
     implSymbol.setHPs(hps)
     implSymbol.setTPs(tps)
 
@@ -188,8 +188,8 @@ object Namer {
   def namedImplClass(impl: ImplementClass)(implicit ctx: Context.RootContext, global: GlobalData): ImplementClass = {
     val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
     val signatureCtx = Context(ctx, implSymbol)
-    val hps = impl.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).to(Vector)
-    val tps = impl.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).to(Vector)
+    val hps = impl.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).toVector
+    val tps = impl.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
     implSymbol.setHPs(hps)
     implSymbol.setTPs(tps)
 

@@ -99,7 +99,7 @@ object BuildGeneratedModuleList {
       val subModuleTpes = subModules.view
         .map(_.symbol.tpe.asRefType)
         .map(convertToBackendType(_, hpTable, tpTable))
-        .to(Vector)
+        .toVector
 
       val result = subModuleTpes.foldLeft[Either[Error, Vector[BuiltModule]]](Right(builtModules)) {
         case (Right(modules), subModule) if modules.exists(_.module == subModule)  => Right(modules)

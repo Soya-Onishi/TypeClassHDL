@@ -64,7 +64,7 @@ object TPBound {
 
     def swapTP(tpe: Type.RefType): Type.RefType = {
       lazy val swappedTP = tpe.typeParam.map(swapTP)
-      lazy val swappedHP = tpe.hardwareParam.view.map(swapHP).map(_.sort).to(Vector)
+      lazy val swappedHP = tpe.hardwareParam.view.map(swapHP).map(_.sort).toVector
       tpe.origin match {
         case _: Symbol.EntityTypeSymbol =>
           Type.RefType(tpe.origin, swappedHP, swappedTP)
@@ -148,7 +148,7 @@ object TPBound {
         case struct: Symbol.StructSymbol =>
           val hpTable = (struct.hps zip tpe.hardwareParam).toMap
           val tpTable = (struct.tps zip tpe.typeParam).toMap
-          val fields = struct.tpe.declares.toMap.values.to(Vector)
+          val fields = struct.tpe.declares.toMap.values.toVector
           val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
           fieldTpes.forall(isHardwareType)
       }
@@ -476,11 +476,15 @@ object HPBound {
       case class Range(max: Option[Int], min: Option[Int], eq: Option[Int])
 
       def verifyRanges(remain: Vector[RangeExpr], assignedRange: Range): Either[Error, Unit] = {
-        def verify(expr: HPExpr)(rootPattern: PartialFunction[HPExpr, Either[Error, Range]]): Either[Error, Range] =
+        def verify(expr: HPExpr)(rootPattern: PartialFunction[HPExpr, Either[Error, Range]]): Either[Error, Range] = {
+          rootPattern.applyOrElse(expr, (expr: HPExpr) => verifyExpr(expr).map(_ => assignedRange))
+          /*
           rootPattern.unapply(expr) match {
             case Some(ret) => ret
             case None => verifyExpr(expr).map(_ => assignedRange)
           }
+          */
+        }
 
         if (remain.isEmpty) Right(())
         else {

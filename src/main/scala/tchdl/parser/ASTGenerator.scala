@@ -2,11 +2,11 @@ package tchdl.parser
 
 import org.antlr.v4.runtime.tree.TerminalNode
 import tchdl.ast._
-import tchdl.util.Modifier
+import tchdl.util._
 import tchdl.antlr.{TchdlParser => TP}
 import tchdl.util.TchdlException.ImplementationErrorException
 
-import scala.jdk.CollectionConverters._
+import scala.collection.JavaConverters._
 
 class ASTGenerator {
   def apply(ctx: TP.Compilation_unitContext, filename: String): CompilationUnit = {
@@ -429,12 +429,12 @@ class ASTGenerator {
     val parents = Option(ctx.parent_pair)
       .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))))
       .getOrElse(Seq.empty)
-      .to(Vector)
+      .toVector
 
     val siblings = Option(ctx.sibling_pair)
       .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))))
       .getOrElse(Seq.empty)
-      .to(Vector)
+      .toVector
 
     ConstructModule(tpe, parents, siblings)
   }

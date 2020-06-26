@@ -128,14 +128,14 @@ object Type {
         _ <- verifyHPTpes(methodDef.hp)
         _ <- HPBound.verifyAllForms(hpBoundTrees)(signatureCtx, global)
         hpBounds = hpBoundTrees.map(HPBound.apply)
-        (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget(_)(signatureCtx, global)).to(Vector).unzip
-        (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds(_)(signatureCtx, global)).to(Vector).unzip
+        (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget(_)(signatureCtx, global)).toVector.unzip
+        (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds(_)(signatureCtx, global)).toVector.unzip
         errs = (targetErrs ++ boundsErrs).flatten
         _ <- if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*)) else Right(())
         tpBounds = (targets zip bounds).view
           .map { case (t, bs) => (t.tpe.asRefType, bs.map(_.tpe.asRefType)) }
           .map { case (t, bs) => TPBound(t, bs) }
-          .to(Vector)
+          .toVector
         _ = method.setBound(hpBounds ++ tpBounds)
         paramSymbols = methodDef.params
           .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
@@ -409,7 +409,7 @@ object Type {
                 .values.view
                 .map(_.impls)
                 .map(lookupFromImpls(_, methodName, args, callerHP, callerTP, callerHPBound, callerTPBound))
-                .to(Vector)
+                .toVector
                 .partitionMap(identity)
 
               methods match {
@@ -739,7 +739,7 @@ object Type {
         case struct: Symbol.StructSymbol =>
           val hpTable = (struct.hps zip this.hardwareParam).toMap
           val tpTable = (struct.tps zip this.typeParam).toMap
-          val fields = struct.tpe.declares.toMap.values.to(Vector)
+          val fields = struct.tpe.declares.toMap.values.toVector
           val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
           fieldTpes.forall(_.isHardwareType)
       }
