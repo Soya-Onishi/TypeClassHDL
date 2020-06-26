@@ -1,49 +1,84 @@
 package tchdl
 
+import scala.collection.generic.{CanBuildFrom, MapFactory}
+import scala.util.Try
+
 package object util {
   type HPTable = Map[Symbol.HardwareParamSymbol, tchdl.ast.HPExpr]
   type TPTable = Map[Symbol.TypeParamSymbol, Type.RefType]
 
-  implicit class VectorFindElement[A](vec: Vector[A]) {
-    def collectFirstRemain[B](f: PartialFunction[A, B]): (Option[B], Vector[A]) = {
-      f.unapply(vec.head) match {
-        case elem@Some(_) => (elem, vec.tail)
-        case None => vec.tail match {
-          case Vector() => (None, Vector.empty)
-          case tail =>
-            val (found, remain) = tail.collectFirstRemain(f)
-            (found, vec.head +: remain)
-        }
+  implicit class TraversableEitherUnit[A, F[+X] <: Traversable[X]](iter: F[Either[A, Unit]]) {
+    def combine[B](f: F[A] => B)(implicit cbf: CanBuildFrom[F[A], A, F[A]]): Either[B, Unit] = {
+      val builder = cbf()
+
+      iter.foreach {
+        case Left(elem) => builder += elem
+        case Right(_) =>
       }
-    }
 
-    def collectPartition[B](f: PartialFunction[A, B]): (Vector[B], Vector[A]) = vec match {
-      case Vector() => (Vector.empty, Vector.empty)
-      case elems => f.unapply(elems.head) match {
-          case Some(elem) =>
-            val (bs, as) = elems.tail.collectPartition(f)
-            (elem +: bs, as)
-          case None =>
-            val (bs, as) = elems.tail.collectPartition(f)
-            (bs, elems.head +: as)
-      }
-    }
-
-    def findRemain(f: A => Boolean): (Option[A], Vector[A]) = vec match {
-      case Vector() => (Option.empty, Vector.empty)
-      case elems if f(elems.head) => (Some(elems.head), elems.tail)
-      case elems =>
-        val (opt, tail) = elems.tail.findRemain(f)
-        (opt, elems.head +: tail)
-    }
-  }
-
-  implicit class VectorEitherUnit[A](vec: Vector[Either[A, Unit]]) {
-    def combine[B](f: Vector[A] => B): Either[B, Unit] = {
-      val (lefts, _) = vec.partitionMap(identity)
-
+      val lefts = builder.result()
       if(lefts.isEmpty) Right(())
       else Left(f(lefts))
     }
+  }
+
+  implicit class TraversableUtil[T, F[X] <: Traversable[X]](iter: F[T]) {
+    def partitionMap[A1, A2](f: T => Either[A1, A2])(implicit cbfa1: CanBuildFrom[F[T], A1, F[A1]], cbfa2: CanBuildFrom[F[T], A2, F[A2]]): (F[A1], F[A2]) = {
+      val builderA1 = cbfa1()
+      val builderA2 = cbfa2()
+
+      iter.foreach { f(_) match {
+        case Left(a1) =>  builderA1 += a1
+        case Right(a2) =>  builderA2 += a2
+      }}
+
+      (builderA1.result(), builderA2.result())
+    }
+
+    def collectFirstRemain[B](f: PartialFunction[T, B])(implicit cbfa: CanBuildFrom[F[T], T, F[T]]): (Option[B], F[T]) = {
+      var firstElem = Option.empty[B]
+      val builder = cbfa()
+
+      iter.foreach {
+        case elem if firstElem.isEmpty && f.isDefinedAt(elem) => firstElem = Some(f(elem))
+        case elem => builder += elem
+      }
+
+      (firstElem, builder.result())
+    }
+
+    def collectPartition[B](f: PartialFunction[T, B])(implicit cbfb: CanBuildFrom[F[T], B, F[B]], cbf: CanBuildFrom[F[T], T, F[T]]): (F[B], F[T]) = {
+      val builderB = cbfb()
+      val builderT = cbf()
+
+      iter.foreach {
+        case elem if f.isDefinedAt(elem) => builderB += f(elem)
+        case elem => builderT += elem
+      }
+
+      (builderB.result(), builderT.result())
+    }
+
+    def findRemain(f: T => Boolean)(implicit cbf: CanBuildFrom[F[T], T, F[T]]): (Option[T], F[T]) = {
+      var foundElem = Option.empty[T]
+      val builder = cbf()
+
+      iter.foreach {
+        case elem if foundElem.isEmpty && f(elem) => foundElem = Some(elem)
+        case elem => builder += elem
+      }
+
+      (foundElem, builder.result())
+    }
+  }
+
+  implicit class MapFactoryUtil[CC[X, Y] <: Map[X, Y] with scala.collection.MapLike[X, Y, CC[X, Y]], A, B](factory: MapFactory[CC]) {
+    def from(iter: Seq[(A, B)]): CC[A, B] = {
+      factory(iter: _*)
+    }
+  }
+
+  implicit class ToXXXOption(from: String) {
+    def toIntOption: Option[Int] = Try(from.toInt).toOption
   }
 }
