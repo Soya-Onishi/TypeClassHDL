@@ -185,13 +185,13 @@ object ImplementInterfaceContainer {
           lazy val implInterface1 = impl1.targetInterface.replaceWithMap(Map.empty, table)
 
           verifySameForm(implTarget0, implTarget1) &&
-            verifySameForm(implInterface0, implInterface1)
+          verifySameForm(implInterface0, implInterface1)
         }
 
         isSameForm &&
-          isMeetTPBounds &&
-          isOverlapHPBounds(impl0.targetType, impl1.targetType, impl0.symbol.hpBound, impl1.symbol.hpBound) &&
-          isOverlapHPBounds(impl0.targetInterface, impl1.targetInterface, impl0.symbol.hpBound, impl1.symbol.hpBound)
+        isMeetTPBounds &&
+        isOverlapHPBounds(impl0.targetType, impl1.targetType, impl0.symbol.hpBound, impl1.symbol.hpBound) &&
+        isOverlapHPBounds(impl0.targetInterface, impl1.targetInterface, impl0.symbol.hpBound, impl1.symbol.hpBound)
     }
   }
 }

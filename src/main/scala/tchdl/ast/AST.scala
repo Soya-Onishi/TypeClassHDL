@@ -147,7 +147,7 @@ sealed trait HPExpr extends Expression {
   def replaceWithMap(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
     def loop(expr: HPExpr): HPExpr = expr match {
       case HPBinOp(op, left, right) => HPBinOp(op, loop(left), loop(right))
-      case ident: Ident => hpTable(ident.symbol.asHardwareParamSymbol)
+      case ident: Ident => hpTable.getOrElse(ident.symbol.asHardwareParamSymbol, ident)
       case e => e
     }
 

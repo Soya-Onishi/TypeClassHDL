@@ -14,16 +14,27 @@ package object backend {
   trait HPElem
   object HPElem {
     case class Num(n: Int) extends HPElem {
-      override def hashCode(): Int = n.hashCode
+      override def hashCode(): Int = this.n.hashCode
+      override def toString = this.n.toString
     }
 
     case class Str(s: String) extends HPElem {
-      override def hashCode(): Int = s.hashCode
+      override def hashCode(): Int = this.s.hashCode
+      override def toString = this.s
     }
   }
 
   case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType]) {
     override def hashCode(): Int = symbol.hashCode + hargs.hashCode + hargs.hashCode
+    override def toString = {
+      val head = symbol.name
+      val args = hargs.map(_.toString) ++ targs.map(_.toString)
+
+      args match {
+        case Vector() => head
+        case args => s"$head[${args.mkString(",")}]"
+      }
+    }
   }
 
   def convertToBackendType(

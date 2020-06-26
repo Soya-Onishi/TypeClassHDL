@@ -3,7 +3,7 @@ package tchdl.util
 import tchdl.ast._
 import tchdl.util.TchdlException._
 
-class GlobalData {
+abstract class GlobalData {
   val repo: Reporter = new Reporter
   val rootPackage: Symbol.RootPackageSymbol = new Symbol.RootPackageSymbol
   val cache: TypedTreeCache = new TypedTreeCache
@@ -24,6 +24,18 @@ class GlobalData {
   }
 
   val compilationUnits: Vector[CompilationUnit] = Vector.empty
+}
+
+object GlobalData {
+  def apply(cus: Vector[CompilationUnit]) =
+    new GlobalData {
+      override val compilationUnits = cus
+    }
+
+  def apply() =
+    new GlobalData {
+      override val compilationUnits = Vector.empty
+    }
 }
 
 trait BuiltInSymbols[T <: Symbol] {
