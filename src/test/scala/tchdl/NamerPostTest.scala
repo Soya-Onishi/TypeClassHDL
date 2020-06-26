@@ -9,7 +9,7 @@ class NamerPostTest extends TchdlFunSuite {
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, file))(file).asInstanceOf[CompilationUnit]
 
   test("verify imports") {
-    implicit val global: GlobalData = new GlobalData
+    implicit val global: GlobalData = GlobalData()
 
     val builtin = Vector(rootDir, builtinPath, "types.tchdl").mkString("/")
     val imports = Vector("import0", "import1")
@@ -37,7 +37,7 @@ class NamerPostTest extends TchdlFunSuite {
   }
 
   test("verify all builtin types imported in collect") {
-    implicit val global: GlobalData = new GlobalData
+    implicit val global: GlobalData = GlobalData()
     val builtin = Vector(rootDir, builtinPath, "types.tchdl").mkString("/")
     val filename = Vector(rootDir, filePath, "prelude.tchdl").mkString("/")
     val trees = Vector(filename, builtin).map(parse)

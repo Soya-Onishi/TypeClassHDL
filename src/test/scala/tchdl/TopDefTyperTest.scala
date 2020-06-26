@@ -9,7 +9,7 @@ class TopDefTyperTest extends TchdlFunSuite {
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
   def untilTopDefTyper(names: String*): (Seq[CompilationUnit], GlobalData) = {
-    implicit val global: GlobalData = new GlobalData
+    implicit val global: GlobalData = GlobalData()
     val files = names.map(buildName(rootDir, filePath, _))
     val filenames = files ++ builtInFiles
 

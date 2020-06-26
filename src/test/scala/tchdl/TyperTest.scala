@@ -9,7 +9,7 @@ class TyperTest extends TchdlFunSuite {
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
   def untilTyper(names: String*): (Vector[CompilationUnit], GlobalData) = {
-    implicit val global: GlobalData = new GlobalData
+    implicit val global: GlobalData = GlobalData()
     val specifiedFileNames = names.map(buildName(rootDir, filePath, _))
     val filenames = specifiedFileNames ++ builtInFiles
     val trees = filenames.map(parse)

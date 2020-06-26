@@ -7,7 +7,7 @@ import tchdl.util._
 class VerifyImplConflictTest extends TchdlFunSuite {
   private def parse(filename: String) = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
   private def untilImplVerify(names: String*): (Seq[CompilationUnit], GlobalData) = {
-    implicit val global: GlobalData = new GlobalData
+    implicit val global: GlobalData = GlobalData()
     val filename = names.map(buildName(rootDir, filePath, _))
     val filenames = filename ++ builtInFiles
     val trees = filenames.map(parse).map(_.asInstanceOf[CompilationUnit])

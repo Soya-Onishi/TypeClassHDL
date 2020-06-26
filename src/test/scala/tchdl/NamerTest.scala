@@ -9,7 +9,7 @@ class NamerTest extends TchdlFunSuite {
   def parser(filename: String): AST = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename)
 
   test("named builtin") {
-    implicit val global: GlobalData = new GlobalData
+    implicit val global: GlobalData = GlobalData()
 
     def lookupStruct(name: String, ctx: Context): Unit = {
       ctx.lookup[Symbol](name) match {

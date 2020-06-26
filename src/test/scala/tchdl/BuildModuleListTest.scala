@@ -10,14 +10,17 @@ class BuildModuleListTest extends TchdlFunSuite {
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
   def untilThisPhase(pkgRoute: Vector[String], module: String, names: String*): (Seq[CompilationUnit], Vector[BuiltModule], GlobalData) = {
-    implicit val global: GlobalData = new GlobalData
     val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree))(module).asInstanceOf[TypeTree]
-    global.command.topModulePkg = pkgRoute
-    global.command.topModule = Some(moduleTree)
+
+
 
     val files = names.map(buildName(rootDir, filePath, _))
     val filenames = files ++ builtInFiles
     val trees = filenames.map(parse)
+
+    implicit val global: GlobalData = GlobalData(trees.toVector)
+    global.command.topModulePkg = pkgRoute
+    global.command.topModule = Some(moduleTree)
 
     trees.foreach(Namer.exec)
     expectNoError
@@ -43,7 +46,7 @@ class BuildModuleListTest extends TchdlFunSuite {
     trees1.foreach(RefCheck.exec)
     expectNoError
 
-    val list = BuildGeneratedModuleList.exec.getOrElse(Vector.empty)
+    val list = BuildGeneratedModuleList.exec
     val cus = trees1.filter(cu => files.contains(cu.filename.get))
     (cus, list, global)
   }
@@ -57,8 +60,8 @@ class BuildModuleListTest extends TchdlFunSuite {
     val top = modules(0)
     val sub = modules(1)
 
-    assert(top.childIDs.length == 1)
-    assert(top.childIDs.head == sub.id)
+    assert(top.children.length == 1)
+    assert(top.children.head == sub.module)
     assert(top.impl.isDefined)
     assert(sub.impl.isEmpty)
   }
@@ -72,8 +75,8 @@ class BuildModuleListTest extends TchdlFunSuite {
     val top = modules(0)
     val sub = modules(1)
 
-    assert(top.module.hardwareParam.head == IntLiteral(4))
-    assert(sub.module.hardwareParam.head == IntLiteral(4))
+    assert(top.module.hargs.head == HPElem.Num(4))
+    assert(sub.module.hargs.head == HPElem.Num(4))
   }
 
   test("when constructing exactly same type, use same module's id") {
@@ -83,14 +86,12 @@ class BuildModuleListTest extends TchdlFunSuite {
     assert(modules.length == 3)
 
     val subMod = tree.topDefs.collectFirst{ case mod: ModuleDef if mod.name == "Sub" => mod }.get
-    val sub4Tpe = Type.RefType(subMod.symbol.asTypeSymbol, Vector(IntLiteral(4)), Vector.empty)
-    val sub8Tpe = Type.RefType(subMod.symbol.asTypeSymbol, Vector(IntLiteral(8)), Vector.empty)
+    val sub4Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(4)), Vector.empty)
+    val sub8Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(8)), Vector.empty)
 
-    val top  = modules(0)
-    val sub4 = modules.find(_.module =:= sub4Tpe).get
-    val sub8 = modules.find(_.module =:= sub8Tpe).get
+    val top  = modules.head
 
-    assert(top.childIDs.count(_ == sub4.id) == 2)
-    assert(top.childIDs.count(_ == sub8.id) == 1)
+    assert(top.children.count(_ == sub4Tpe) == 2)
+    assert(top.children.count(_ == sub8Tpe) == 1)
   }
 }
