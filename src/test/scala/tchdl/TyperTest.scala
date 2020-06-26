@@ -256,5 +256,9 @@ class TyperTest extends TchdlFunSuite {
     assert(subReal.symbol.tpe.asRefType =:= subT)
     assert(subImag.symbol.tpe.asRefType =:= subT)
 
+    val addThisReal = addReal.expr.collect{ case StdBinOp(_, left: Select, _) => left }.get
+    val addThatReal = addReal.expr.collect{ case StdBinOp(_, _, right: Select) => right }.get
+    assert(addThisReal.tpe.asRefType =:= addT)
+    assert(addThatReal.tpe.asRefType =:= addT)
   }
 }

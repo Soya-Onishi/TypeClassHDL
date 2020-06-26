@@ -170,7 +170,7 @@ object Typer {
     expr match {
       case ident: Ident => typedExprIdent(ident)
       case select: Select => typedExprSelect(select)
-      case binop: BinOp => typedBinOp(binop)
+      case binop: StdBinOp => typedStdBinOp(binop)
       case ifExpr: IfExpr => typedIfExpr(ifExpr)
       case self: This => typedThis(self)
       case blk: Block => typedBlock(blk)
@@ -479,7 +479,7 @@ object Typer {
     }
   }
 
-  def typedBinOp(binop: BinOp)(implicit ctx: Context.NodeContext, global: GlobalData): BinOp = {
+  def typedStdBinOp(binop: StdBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): BinOp = {
     val typedLeft = typedExpr(binop.left)
     val typedRight = typedExpr(binop.right)
 
@@ -495,7 +495,10 @@ object Typer {
         global.repo.error.append(err)
         binop.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
       case LookupResult.LookupSuccess((methodSymbol, methodTpe)) =>
-        binop.setSymbol(methodSymbol).setTpe(methodTpe.returnType)
+        StdBinOp(binop.op, typedLeft, typedRight)
+          .setSymbol(methodSymbol)
+          .setTpe(methodTpe.returnType)
+          .setID(binop.id)
     }
   }
 
