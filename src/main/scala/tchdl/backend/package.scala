@@ -141,15 +141,20 @@ package object backend {
 
   def buildHPTable(
     hps: Vector[Symbol.HardwareParamSymbol],
-    caller: BackendType,
-    target: Type.RefType
+    callers: Vector[BackendType],
+    targets: Vector[Type.RefType]
   ): ListMap[Symbol.HardwareParamSymbol, HPElem] = {
     val initTable = ListMap.from(hps.map(_ -> Option.empty[HPElem]))
-    val assigned = (caller.hargs zip target.hardwareParam).foldLeft(initTable) {
-      case (tab, (callerHArg, ident: frontend.Ident)) =>
-        val hp = ident.symbol.asHardwareParamSymbol
-        tab.updated(hp, Some(callerHArg))
-      case (tab, _) => tab
+
+    val assigned = (callers zip targets).foldLeft(initTable) {
+      case (table, (caller, target)) => (caller.hargs zip target.hardwareParam).foldLeft(table) {
+        case (tab, (callerHArg, ident: frontend.Ident)) =>
+          val hp = ident.symbol.asHardwareParamSymbol
+
+          if(tab.contains(hp)) tab.updated(hp, Some(callerHArg))
+          else tab
+        case (tab, _) => tab
+      }
     }
 
     assigned.map {
@@ -158,10 +163,22 @@ package object backend {
     }
   }
 
+  def buildHPTable(
+    hps: Vector[Symbol.HardwareParamSymbol],
+    caller: BackendType,
+    target: Type.RefType
+  ): ListMap[Symbol.HardwareParamSymbol, HPElem] = buildHPTable(hps, Vector(caller), Vector(target))
+
   def buildTPTable(
     tps: Vector[Symbol.TypeParamSymbol],
     caller: BackendType,
     target: Type.RefType
+  ): ListMap[Symbol.TypeParamSymbol, BackendType] = buildTPTable(tps, Vector(caller), Vector(target))
+
+  def buildTPTable(
+    tps: Vector[Symbol.TypeParamSymbol],
+    callers: Vector[BackendType],
+    targets: Vector[Type.RefType]
   ): ListMap[Symbol.TypeParamSymbol, BackendType] = {
     def loop(
       table: ListMap[Symbol.TypeParamSymbol, Option[BackendType]],
@@ -170,7 +187,8 @@ package object backend {
     ): ListMap[Symbol.TypeParamSymbol, Option[BackendType]] =
       (callerSide.targs zip targetSide.typeParam).foldLeft(table) {
         case (tab, (callerTArg, tpe)) => tpe.origin match {
-          case tp: Symbol.TypeParamSymbol => tab.updated(tp, Some(callerTArg))
+          case tp: Symbol.TypeParamSymbol if tab.contains(tp) => tab.updated(tp, Some(callerTArg))
+          case _: Symbol.TypeParamSymbol => tab
           case _: Symbol.EntityTypeSymbol => (callerTArg.targs zip tpe.typeParam).foldLeft(tab) {
             case (t, (caller, target)) => loop(t, caller, target)
           }
@@ -178,7 +196,10 @@ package object backend {
       }
 
     val initTable = ListMap.from(tps.map(_ -> Option.empty[BackendType]))
-    loop(initTable, caller, target).map {
+    val assigned = (callers zip targets).foldLeft(initTable) {
+      case (table, (caller, target)) => loop(table, caller, target)
+    }
+    assigned.map {
       case (key, Some(value)) => key -> value
       case (_, None) => throw new ImplementationErrorException("this table should be all assigned")
     }

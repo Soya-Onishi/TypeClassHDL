@@ -29,6 +29,7 @@ case class CallMethod(label: MethodLabel, accessor: Option[Term], hargs: Vector[
 case class CallBuiltIn(label: String, args: Vector[Term], tpe: BackendType) extends Expr
 case class CallInterface(label: MethodLabel, accessor: Term, args: Vector[Term], tpe: BackendType) extends Expr
 
+case class This(tpe: BackendType) extends Expr
 case class ReferField(accessor: Term, field: String, tpe: BackendType) extends Expr
 
 case class Ident(id: Term.Variable, tpe: BackendType) extends Expr

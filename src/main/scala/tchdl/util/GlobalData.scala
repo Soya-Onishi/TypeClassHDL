@@ -18,23 +18,39 @@ abstract class GlobalData {
     val clazz: SymbolBuffer[Symbol.ClassTypeSymbol] = new SymbolBuffer[Symbol.ClassTypeSymbol] {}
   }
 
-  val command = new {
-    var topModulePkg: Vector[String] = Vector.empty
-    var topModule: Option[TypeTree] = Option.empty[TypeTree]
+  val command: Command
+  def compilationUnits: Vector[CompilationUnit] = throw new ImplementationErrorException("Compilation Units not assigned yet")
+
+  def assignCompilationUnits(cus: Vector[CompilationUnit]): GlobalData = {
+    val _repo = repo
+    val _rootPackage = rootPackage
+    val _cache = cache
+    val _builtin = builtin
+    val _buffer = buffer
+    val _command = command
+
+    new GlobalData {
+      override val repo = _repo
+      override val rootPackage = _rootPackage
+      override val cache = _cache
+      override val builtin = _builtin
+      override val buffer = _buffer
+      override val command = _command
+      override val compilationUnits = cus
+    }
   }
 
-  val compilationUnits: Vector[CompilationUnit] = Vector.empty
 }
 
 object GlobalData {
-  def apply(cus: Vector[CompilationUnit]) =
+  def apply(pkgName: Vector[String], module: TypeTree) =
     new GlobalData {
-      override val compilationUnits = cus
+      override val command = Command(pkgName, Some(module))
     }
 
   def apply() =
     new GlobalData {
-      override val compilationUnits = Vector.empty
+      override val command = Command(Vector.empty, None)
     }
 }
 
@@ -145,3 +161,8 @@ trait SymbolBuffer[T] {
   def symbols: Vector[T] = _symbols.toVector
   def append(symbol: T): Unit = _symbols += symbol
 }
+
+case class Command(
+  topModulePkg: Vector[String],
+  topModule: Option[TypeTree]
+)

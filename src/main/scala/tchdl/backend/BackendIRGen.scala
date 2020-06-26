@@ -209,6 +209,7 @@ object BackendIRGen {
       case construct: frontend.ConstructClass => buildConstructClass(construct)
       case construct: frontend.ConstructModule => buildConstructModule(construct)
       case ifexpr: frontend.IfExpr => buildIfExpr(ifexpr)
+      case ths: frontend.This => buildThis(ths)
       case finish: frontend.Finish => ???
       case goto: frontend.Goto => ???
       case generate: frontend.Generate => ???
@@ -281,22 +282,6 @@ object BackendIRGen {
       methodSymbol
     }
 
-    def makeLabel(
-      method: Symbol.MethodSymbol,
-      accessor: BackendType,
-      hargs: Vector[HPElem],
-      targs: Vector[BackendType]
-    ): MethodLabel = {
-      val hpTable = ListMap.newBuilder[Symbol.HardwareParamSymbol, HPElem]
-        .addAll(method.hps zip hargs)
-        .result()
-      val tpTable = ListMap.newBuilder[Symbol.TypeParamSymbol, BackendType]
-        .addAll(method.tps zip targs)
-        .result()
-
-      MethodLabel(method, accessor, hpTable, tpTable)
-    }
-
     val argSummary = apply.args.foldLeft(Summary(Vector.empty, Vector.empty, Set.empty)) {
       case (summary, arg) =>
         val BuildResult(nodes, Some(expr), labels) = buildExpr(arg)
@@ -334,7 +319,7 @@ object BackendIRGen {
             lookupImplMethod(accessorTpe, hargs, targs, argSummary.passeds.map(_.tpe), methodName)
         }
 
-        val label = makeLabel(referredMethodSymbol, accessor.tpe, hargs, targs)
+        val label = makeLabel(referredMethodSymbol, accessor.tpe, argSummary.passeds.map(_.tpe), hargs, targs)
         val call = select.symbol match {
           case _: Symbol.MethodSymbol if isInterface => backend.CallInterface(label, accessor, argSummary.passeds, retTpe)
           case _: Symbol.MethodSymbol => backend.CallMethod(label, Some(accessor), hargs, argSummary.passeds, retTpe)
@@ -392,19 +377,17 @@ object BackendIRGen {
         .toEither
         .getOrElse(throw new ImplementationErrorException(s"operator[${binop.op}] for [$leftTpe] and [$rightTpe] should be found"))
 
-      val emptyHPTable = ListMap.empty[Symbol.HardwareParamSymbol, HPElem]
-      val emptyTPTable = ListMap.empty[Symbol.TypeParamSymbol, BackendType]
+      val label = makeLabel(operator, leftNode.tpe, Vector(rightNode.tpe), Vector.empty, Vector.empty)
       val retTpe = convertToBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
 
-      val label = MethodLabel(operator, accessor.tpe, emptyHPTable, emptyTPTable)
       backend.CallMethod(label, Some(accessor), Vector.empty, Vector(arg), retTpe)
     }
 
     val call = builtInPairs.get(binop.op) match {
       case None => buildCallMethod
       case Some(candidates) =>
-        val leftTpeSymbol = binop.left.tpe.asRefType.origin
-        val rightTpeSymbol = binop.right.tpe.asRefType.origin
+        val leftTpeSymbol = leftNode.tpe.symbol
+        val rightTpeSymbol = rightNode.tpe.symbol
         val called = candidates.find {
           case (left, right, _) => left == leftTpeSymbol && right == rightTpeSymbol
         }
@@ -422,6 +405,37 @@ object BackendIRGen {
     }
 
     BuildResult(nodes, Some(call), returnedLabels)
+  }
+
+  def makeLabel(
+    method: Symbol.MethodSymbol,
+    accessor: BackendType,
+    args: Vector[BackendType],
+    hargs: Vector[HPElem],
+    targs: Vector[BackendType]
+  )(implicit global: GlobalData): MethodLabel = {
+    val (implHPTable, implTPTable) = findImplClassTree(method, global) orElse findImplInterfaceTree(method, global) match {
+      case Some(implTree: frontend.ImplementClass) =>
+        val impl = implTree.symbol.asImplementSymbol
+        val hpTable = buildHPTable(impl.hps, accessor, implTree.target.tpe.asRefType)
+        val tpTable = buildTPTable(impl.tps, accessor, implTree.target.tpe.asRefType)
+
+        (hpTable, tpTable)
+      case Some(implTree: frontend.ImplementInterface) =>
+        val impl = implTree.symbol.asImplementSymbol
+        val callerTpes = accessor +: args
+        val targetTpes = implTree.target.tpe.asRefType +: method.tpe.asMethodType.params
+
+        val hpTable = buildHPTable(impl.hps, callerTpes, targetTpes)
+        val tpTable = buildTPTable(impl.tps, callerTpes, targetTpes)
+
+        (hpTable, tpTable)
+    }
+
+    val hpTable = implHPTable ++ ListMap.from(method.hps zip hargs)
+    val tpTable = implTPTable ++ ListMap.from(method.tps zip targs)
+
+    MethodLabel(method, accessor, hpTable, tpTable)
   }
 
   def buildBlk(blk: frontend.Block)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
@@ -507,6 +521,13 @@ object BackendIRGen {
     )
 
     BuildResult(condNodes, Some(expr), condLabels ++ conseqLabels ++ altLabels)
+  }
+
+  def buildThis(ths: frontend.This)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    val tpe = convertToBackendType(ths.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+    val expr = backend.This(tpe)
+
+    BuildResult(Vector.empty, Some(expr), Set.empty)
   }
 
   def buildBlockElem(elem: frontend.BlockElem)(implicit ctx: BackendContext, global: GlobalData): BuildResult =

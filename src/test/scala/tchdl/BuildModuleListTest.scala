@@ -12,15 +12,11 @@ class BuildModuleListTest extends TchdlFunSuite {
   def untilThisPhase(pkgRoute: Vector[String], module: String, names: String*): (Seq[CompilationUnit], Vector[BuiltModule], GlobalData) = {
     val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree))(module).asInstanceOf[TypeTree]
 
-
-
     val files = names.map(buildName(rootDir, filePath, _))
     val filenames = files ++ builtInFiles
     val trees = filenames.map(parse)
 
-    implicit val global: GlobalData = GlobalData(trees.toVector)
-    global.command.topModulePkg = pkgRoute
-    global.command.topModule = Some(moduleTree)
+    implicit val global: GlobalData = GlobalData(pkgRoute, moduleTree)
 
     trees.foreach(Namer.exec)
     expectNoError
@@ -46,9 +42,10 @@ class BuildModuleListTest extends TchdlFunSuite {
     trees1.foreach(RefCheck.exec)
     expectNoError
 
-    val list = BuildGeneratedModuleList.exec
+    val newGlobal = global.assignCompilationUnits(trees1.toVector)
+    val list = BuildGeneratedModuleList.exec(newGlobal)
     val cus = trees1.filter(cu => files.contains(cu.filename.get))
-    (cus, list, global)
+    (cus, list, newGlobal)
   }
 
   test("top and one sub module, this should generate list correctly") {
