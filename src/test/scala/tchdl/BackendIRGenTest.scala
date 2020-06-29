@@ -61,11 +61,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(methods.isEmpty)
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
-    val topTpe = BackendType(topSymbol, Vector.empty, Vector.empty)
+    val topTpe = BackendType(topSymbol, Vector.empty, Vector.empty, Map.empty)
     val top = modules.find(_.tpe == topTpe).get
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
-    val subTpe = BackendType(subSymbol, Vector.empty, Vector.empty)
+    val subTpe = BackendType(subSymbol, Vector.empty, Vector.empty, Map.empty)
 
     assert(top.interfaces.isEmpty)
     assert(top.stages.isEmpty)
@@ -87,11 +87,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(methods.isEmpty)
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
-    val topTpe = BackendType(topSymbol, Vector(HPElem.Num(4)), Vector.empty)
+    val topTpe = BackendType(topSymbol, Vector(HPElem.Num(4)), Vector.empty, Map.empty)
     val top = modules.find(_.tpe == topTpe).get
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
-    val subTpe = BackendType(subSymbol, Vector(HPElem.Num(4)), Vector.empty)
+    val subTpe = BackendType(subSymbol, Vector(HPElem.Num(4)), Vector.empty, Map.empty)
     val sub = modules.find(_.tpe == subTpe).get
 
     assert(top.interfaces.length == 1)
@@ -101,17 +101,16 @@ class BackendIRGenTest extends TchdlFunSuite {
     val function = top.interfaces.head
     val add = sub.interfaces.head
 
-    val functionParamA = findMethodTree(function.label.symbol, global).flatMap(_.params.find(_.name == "a")).map(_.symbol.path).get
-    val functionParamB = findMethodTree(function.label.symbol, global).flatMap(_.params.find(_.name == "b")).map(_.symbol.path).get
     val bit = global.builtin.types.lookup("Bit")
-    val bit4 = BackendType(bit, Vector(HPElem.Num(4)), Vector.empty)
+    val bit4 = BackendType(bit, Vector(HPElem.Num(4)), Vector.empty, Map.empty)
 
     assert(function.code == Vector(
-      Temp("TEMP_2", subTpe, ReferField(Term.This, "sub", subTpe)),
-      Temp("TEMP_0", bit4, Ident(Term.Variable(functionParamA, bit4), bit4)),
-      Temp("TEMP_1", bit4, Ident(Term.Variable(functionParamB, bit4), bit4)),
-      CallInterface(add.label, Term.Node("TEMP_2", subTpe), Vector(Term.Node("TEMP_0", bit4), Term.Node("TEMP_1", bit4)), bit4)
+      Temp("TEMP_2", ReferField(Term.This, "sub", subTpe)),
+      Temp("TEMP_0", Ident(Term.Variable("function$a", bit4), bit4)),
+      Temp("TEMP_1", Ident(Term.Variable("function$b", bit4), bit4)),
     ))
+
+    assert(function.ret == CallInterface(add.label, Term.Variable("TEMP_2", subTpe), Vector(Term.Variable("TEMP_0", bit4), Term.Variable("TEMP_1", bit4)), bit4))
   }
 
   test("build ALU circuit description should generate code correctly") {

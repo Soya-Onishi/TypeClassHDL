@@ -12,6 +12,7 @@ lazy val commonSettings = Seq(
   scalaVersion := "2.12.11",
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-reflect" % scalaVersion.value,
+    "edu.berkeley.cs" %% "firrtl" % "1.3.2",
     "org.scalatest" %% "scalatest" % "3.1.0" % "test",
   ),
   scalacOptions ++= Seq(

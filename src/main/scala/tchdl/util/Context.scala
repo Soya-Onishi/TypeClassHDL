@@ -12,6 +12,8 @@ abstract class Context {
   val scope: Scope = new Scope
   def path: NameSpace
 
+  def self: Option[Type.RefType]
+
   def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit]
   def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T]
 
@@ -36,10 +38,7 @@ abstract class Context {
 }
 
 object Context {
-  def apply(owner: Context.RootContext, symbol: Symbol): NodeContext =
-    new NodeContext(owner, symbol, None, Some(symbol.name))
-
-  def apply(owner: Context.NodeContext, symbol: Symbol): NodeContext =
+  def apply(owner: Context, symbol: Symbol): NodeContext =
     new NodeContext(owner, symbol, owner.self, Some(symbol.name))
 
   def apply(owner: NodeContext, self: Type.RefType): NodeContext =
@@ -51,10 +50,11 @@ object Context {
   def blk(owner: NodeContext): NodeContext =
     new NodeContext(owner, owner.owner, owner.self, Some(owner.getBlkID.toString))
 
-  def root(filename: String, pkgName: Vector[String]): RootContext = new RootContext(pkgName)
+  def root(pkgName: Vector[String]): RootContext = new RootContext(pkgName)
 
   class RootContext(pkgName: Vector[String]) extends Context {
     override val path: NameSpace = NameSpace(pkgName, Vector.empty, None)
+    override val self: Option[Type.RefType] = None
 
     override def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
       case Some(elem: T) => LookupResult.LookupSuccess(elem)

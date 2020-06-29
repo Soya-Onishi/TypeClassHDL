@@ -323,7 +323,7 @@ object Type {
 
     override def declares: Scope = origin.tpe.declares
 
-    def lookupField(name: String)(implicit ctx: Context.NodeContext, global: GlobalData): LookupResult[Symbol.TermSymbol] = {
+    def lookupField(name: String, callerHPBounds: Vector[HPBound], callerTPBounds: Vector[TPBound])(implicit global: GlobalData): LookupResult[Symbol.TermSymbol] = {
       def lookupToClass: LookupResult[Symbol.TermSymbol] =
         origin.tpe.declares.lookup(name) match {
           // TODO: verify whether this logic needs to replace type parameter into actual type or not
@@ -334,11 +334,11 @@ object Type {
 
       def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
         val (hpErrs, _) = hpBounds
-          .map(HPBound.verifyMeetBound(_, ctx.hpBounds))
+          .map(HPBound.verifyMeetBound(_, callerHPBounds))
           .partitionMap(identity)
 
         val (tpErrs, _) = tpBounds
-          .map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds))
+          .map(TPBound.verifyMeetBound(_, callerHPBounds, callerTPBounds))
           .partitionMap(identity)
 
         val errs = hpErrs ++ tpErrs

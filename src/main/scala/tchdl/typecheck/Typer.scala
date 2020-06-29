@@ -355,7 +355,7 @@ object Typer {
       case refTpe: Type.RefType =>
         // This method only for reference to field of struct or module.
         // That's why this method does not look up method.
-        refTpe.lookupField(select.name) match {
+        refTpe.lookupField(select.name, ctx.hpBounds, ctx.tpBounds) match {
           case LookupResult.LookupFailure(err) =>
             global.repo.error.append(err)
             select.copy(typedSuffix, select.name)
@@ -409,7 +409,7 @@ object Typer {
     val typedInit = typedExpr(pair.init)
     val typedPair = pair.copy(init = typedInit).setID(pair.id)
 
-    val err = targetTpe.lookupField(pair.name) match {
+    val err = targetTpe.lookupField(pair.name, ctx.hpBounds, ctx.tpBounds) match {
       case LookupResult.LookupFailure(err) => Some(err)
       case LookupResult.LookupSuccess(symbol) => (symbol.tpe, typedInit.tpe) match {
         case (Type.ErrorType, _) => Some(Error.DummyError)

@@ -15,7 +15,7 @@ object Namer {
       }
     }
 
-    val root = Context.root(cu.filename.get, cu.pkgName)
+    val root = Context.root(cu.pkgName)
     cu.topDefs.map(topLevelNamed(_)(root, global))
     packageSymbol.appendCtx(cu.filename.get, root)
   }

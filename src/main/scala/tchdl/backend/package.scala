@@ -24,7 +24,7 @@ package object backend {
     }
   }
 
-  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType]) {
+  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType], fields: Map[String, BackendType]) {
     override def hashCode(): Int = symbol.hashCode + hargs.hashCode + hargs.hashCode
     override def toString = {
       val head = symbol.name
@@ -35,6 +35,40 @@ package object backend {
         case args => s"$head[${args.mkString(",")}]"
       }
     }
+
+    lazy val toFirrtlString: String = {
+      val head = {
+        val pkg = this.symbol.path.pkgName.mkString("_")
+        val name = this.symbol.path.name.get
+
+        s"${pkg}_$name"
+      }
+
+      val args = {
+        val hargs = this.hargs.map(_.toString)
+        val targs = this.targs.map(_.toFirrtlString)
+
+        val hargStr =
+          if(hargs.isEmpty) ""
+          else "__" + hargs.mkString("_")
+
+        val targStr =
+          if(targs.isEmpty) ""
+          else "__" + targs.mkString("_")
+
+        hargStr + targStr
+      }
+
+      head + args
+    }
+
+    def isHardware(implicit global: GlobalData): Boolean =
+      symbol match {
+        case bit if bit == global.builtin.types.lookup("Bit") => true
+        case symbol if global.builtin.types.symbols.contains(symbol) => false
+        case _ if fields.isEmpty => false
+        case _ => fields.values.forall(_.isHardware)
+      }
   }
 
   def convertToBackendType(
@@ -47,7 +81,16 @@ package object backend {
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
 
-        BackendType(tpe.origin, hargs, targs)
+        val fieldHPTable = (tpe.origin.hps zip hargs).toMap
+        val fieldTPTable = (tpe.origin.tps zip targs).toMap
+
+        val fieldTpes = tpe.declares.toMap.map {
+          case (fieldName, field) =>
+            val tpe = convertToBackendType(field.tpe.asRefType, fieldHPTable, fieldTPTable)
+            fieldName -> tpe
+        }
+
+        BackendType(tpe.origin, hargs, targs, fieldTpes)
       case tp: Symbol.TypeParamSymbol =>
         tpTable.getOrElse(tp, throw new ImplementationErrorException(s"$tp should be found in tpTable"))
     }
@@ -202,6 +245,17 @@ package object backend {
     assigned.map {
       case (key, Some(value)) => key -> value
       case (_, None) => throw new ImplementationErrorException("this table should be all assigned")
+    }
+  }
+
+  class TempCounter {
+    var count = 0
+
+    def get(): Int = {
+      val next = count + 1
+      count = next
+
+      next
     }
   }
 }

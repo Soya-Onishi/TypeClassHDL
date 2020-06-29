@@ -83,8 +83,8 @@ class BuildModuleListTest extends TchdlFunSuite {
     assert(modules.length == 3)
 
     val subMod = tree.topDefs.collectFirst{ case mod: ModuleDef if mod.name == "Sub" => mod }.get
-    val sub4Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(4)), Vector.empty)
-    val sub8Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(8)), Vector.empty)
+    val sub4Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(4)), Vector.empty, Map.empty)
+    val sub8Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(8)), Vector.empty, Map.empty)
 
     val top  = modules.head
 

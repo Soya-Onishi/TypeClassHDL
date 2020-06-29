@@ -1,8 +1,11 @@
 package tchdl.backend
 
 import tchdl.util._
+import scala.collection.immutable.ListMap
 
-trait BackendContainer
+trait BackendContainer {
+  def toFirrtlString: String
+}
 
 case class ModuleContainer(
   tpe: BackendType,
@@ -22,6 +25,8 @@ case class ModuleContainer(
 
   def addField(field: FieldContainer): ModuleContainer =
     this.copy(fields = this.fields :+ field)
+
+  lazy val toFirrtlString = tpe.toFirrtlString
 }
 
 object ModuleContainer {
@@ -31,30 +36,51 @@ object ModuleContainer {
 
 case class MethodContainer(
   label: MethodLabel,
-  hargs: Vector[ast.Term.Variable],
-  args: Vector[ast.Term.Variable],
-  code: Vector[ast.BackendIR]
-) extends BackendContainer
+  hargs: ListMap[String, BackendType],
+  args: ListMap[String, BackendType],
+  code: Vector[ast.Stmt],
+  ret: ast.Expr
+) extends BackendContainer {
+  def activeName: String = label.toString + "$active"
+  def retName: String = label.toString + "$ret"
+
+  lazy val toFirrtlString: String = label.toString
+}
 
 case class StageContainer(
   label: StageLabel,
-  args: Vector[ast.Term.Variable],
+  args: ListMap[String, BackendType],
   states: Vector[StateContainer],
-  code: Vector[ast.BackendIR]
-) extends BackendContainer
+  code: Vector[ast.Stmt]
+) extends BackendContainer {
+  lazy val toFirrtlString: String = label.symbol.name
+}
 
 case class StateContainer (
   symbol: Symbol.StateSymbol,
-  code: Vector[ast.BackendIR]
-) extends BackendContainer
+  stageFirrtlString: String,
+  code: Vector[ast.Stmt]
+) extends BackendContainer {
+  lazy val toFirrtlString: String = {
+    val name = symbol.name
+
+    stageFirrtlString + "$" + name
+  }
+}
 
 case class FieldContainer(
   flag: Modifier,
   symbol: Symbol.VariableSymbol,
-  code: Vector[ast.BackendIR]
-) extends BackendContainer
+  code: Vector[ast.Stmt],
+  ret: Option[ast.Expr],
+  tpe: BackendType
+) extends BackendContainer {
+  override def toFirrtlString: String = symbol.name
+}
 
 case class AlwaysContainer (
   symbol: Symbol.AlwaysSymbol,
-  code: Vector[ast.BackendIR]
-) extends BackendContainer
+  code: Vector[ast.Stmt]
+) extends BackendContainer {
+  override def toFirrtlString: String = symbol.name
+}

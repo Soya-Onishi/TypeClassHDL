@@ -41,7 +41,7 @@ object BackendIRGen {
     val renewedSummary = unConstructedLabels.foldLeft(summary) {
       case (summary, label: MethodLabel) if isInterface(label.symbol) =>
         val method = findMethodTree(label.symbol, global).getOrElse(throw new ImplementationErrorException("method tree should be found"))
-        val context = BackendContext(label.hps, label.tps, Vector.empty, Vector.empty)
+        val context = BackendContext(label)
         val (container, labels) = buildMethod(method, label)(context, global)
 
         val modules = summary.modules.map {
@@ -52,13 +52,13 @@ object BackendIRGen {
         Summary(modules, summary.methods, summary.labels ++ labels)
       case (summary, label: MethodLabel) =>
         val method = findMethodTree(label.symbol, global).getOrElse(throw new ImplementationErrorException("method tree should be found"))
-        val context = BackendContext(label.hps, label.tps, Vector.empty, Vector.empty)
+        val context = BackendContext(label)
         val (container, labels) = buildMethod(method, label)(context, global)
 
         Summary(summary.modules, summary.methods :+ container, summary.labels ++ labels)
       case (summary, label: StageLabel) =>
         val stage = findStageTree(label.symbol, global).getOrElse(throw new ImplementationErrorException("stage tree should be found"))
-        val context = BackendContext(label.hps, label.tps, Vector.empty, Vector.empty)
+        val context = BackendContext(label)
         val (container, labels) = buildStage(stage, label)(context, global)
 
         val modules = summary.modules.map {
@@ -82,23 +82,24 @@ object BackendIRGen {
         val hpTable = buildHPTable(impl.symbol.hps, builtModule.module, impl.targetType)
         val tpTable = buildTPTable(impl.symbol.tps, builtModule.module, impl.targetType)
 
-        val context = BackendContext(hpTable, tpTable, Vector.empty, Vector.empty)
         val implTree = findImplClassTree(impl.symbol.asImplementSymbol, global).getOrElse(throw new ImplementationErrorException("impl tree should be found"))
 
         val pairs = implTree.components.map {
           case method: frontend.MethodDef =>
-            val label = MethodLabel(method.symbol.asMethodSymbol, moduleContainer.tpe, hpTable, tpTable)
-            val (container, labels) = buildMethod(method, label)(context, global)
+            val label = MethodLabel(method.symbol.asMethodSymbol, moduleContainer.tpe, None, hpTable, tpTable)
+            val context = BackendContext(label)
+            val (container, labels) = buildMethod(method)(context, global)
 
             (container, labels)
           case stage: frontend.StageDef =>
             val label = StageLabel(stage.symbol.asStageSymbol, moduleContainer.tpe, hpTable, tpTable)
-            val (container, labels) = buildStage(stage, label)(context, global)
+            val context = BackendContext(label)
+            val (container, labels) = buildStage(stage)(context, global)
 
             (container, labels)
           case always: frontend.AlwaysDef =>
             val BuildResult(nodes, Some(last), labels) = buildBlk(always.blk)(context, global)
-            val code = nodes :+ last
+            val code = nodes :+ backend.Abandon(last)
             val container = AlwaysContainer(always.symbol.asAlwaysSymbol, code)
 
             (container, labels)
@@ -107,10 +108,14 @@ object BackendIRGen {
               .map(buildExpr(_)(context, global))
               .getOrElse(BuildResult(Vector.empty, None, Set.empty))
 
+            val tpe = convertToBackendType(vdef.symbol.tpe.asRefType, hpTable, tpTable)
+
             val container = FieldContainer(
               vdef.flag,
               vdef.symbol.asVariableSymbol,
-              exprResult.nodes ++ exprResult.last
+              exprResult.nodes,
+              exprResult.last,
+              tpe
             )
 
             (container, exprResult.labels)
@@ -129,46 +134,24 @@ object BackendIRGen {
     }
   }
 
-  def buildMethod(methodDef: frontend.MethodDef, label: MethodLabel)(implicit ctx: BackendContext, global: GlobalData): (MethodContainer, Set[BackendLabel]) = {
-    val hargVariables = methodDef.hp.map { hp =>
-      hp.symbol.tpe match {
-        case tpe: Type.RefType if tpe =:= Type.numTpe =>
-          val int = global.builtin.types.lookup("Int")
-          val intTpe = BackendType(int, Vector.empty, Vector.empty)
+  def buildMethod(methodDef: frontend.MethodDef)(implicit ctx: BackendContext[MethodLabel], global: GlobalData): (MethodContainer, Set[BackendLabel]) = {
+    val methodName = ctx.label.toString
 
-          backend.Term.Variable(hp.symbol.path, intTpe)
-        case tpe: Type.RefType if tpe =:= Type.strTpe =>
-          val str = global.builtin.types.lookup("String")
-          val strTpe = BackendType(str, Vector.empty, Vector.empty)
+    val hargNames = methodDef.hp.map(hp => methodName + "$" + hp.name)
+    val hargTpes = methodDef.hp.view.map(_.symbol.tpe.asRefType).map(convertToBackendType(_, ctx.label.hps, ctx.label.tps))
+    val hargs = ListMap.from(hargNames zip hargTpes)
 
-          backend.Term.Variable(hp.symbol.path, strTpe)
-      }
-    }
-
-    val argVariables = methodDef.params.view.map(_.symbol).map {
-      symbol =>
-        val tpe = convertToBackendType(symbol.tpe.asRefType, label.hps, label.tps)
-        val name = symbol.path
-
-        backend.Term.Variable(name, tpe)
-    }.toVector
-
-    val method = methodDef.symbol.asMethodSymbol
-    val impl = findImplClassTree(method, global)
-      .orElse(findImplInterfaceTree(method, global))
-      .getOrElse(throw new ImplementationErrorException("method symbol should be found in implement"))
-      .symbol.asImplementSymbol
+    val argNames = methodDef.params.map(param => methodName + "$" + param.name)
+    val argTpes = methodDef.params.map(_.symbol.tpe.asRefType).map(convertToBackendType(_, ctx.label.hps, ctx.label.tps))
+    val args = ListMap.from(argNames zip argTpes)
 
     val blk = methodDef.blk.getOrElse(throw new ImplementationErrorException("impl's method should have body"))
-    val hpBound = impl.hpBound ++ method.hpBound
-    val tpBound = impl.tpBound ++ method.tpBound
-    val thisMethodCtx = ctx.copy(label.hps, label.tps, hpBound, tpBound)
-    val BuildResult(nodes, Some(expr), labels) = buildExpr(blk)(thisMethodCtx, global)
+    val BuildResult(nodes, Some(expr), labels) = buildExpr(blk)
 
-    (MethodContainer(label, hargVariables, argVariables, nodes :+ expr), labels)
+    (MethodContainer(ctx.label, hargs, args, nodes, expr), labels)
   }
 
-  def buildStage(stageDef: frontend.StageDef, label: StageLabel)(implicit ctx: BackendContext, global: GlobalData): (StageContainer, Set[BackendLabel]) = {
+  def buildStage(stageDef: frontend.StageDef)(implicit ctx: BackendContext[StageLabel], global: GlobalData): (StageContainer, Set[BackendLabel]) = {
     val BuildResult(blkNodes, None, blkLabels) = stageDef.blk
       .map(buildBlockElem)
       .foldLeft(BuildResult(Vector.empty, None, Set.empty)) {
@@ -181,25 +164,22 @@ object BackendIRGen {
       }
 
     val (states, stateLabels) = stageDef.states.map(buildState).unzip
-    val argVariables = stageDef.params.view.map(_.symbol).map {
-      symbol =>
-        val tpe = convertToBackendType(symbol.tpe.asRefType, label.hps, label.tps)
-        val name = symbol.path
+    val argNames = stageDef.params.map(_.symbol.name)
+    val argTpes = stageDef.params.view.map(_.symbol.tpe.asRefType).map(convertToBackendType(_, ctx.hpTable, ctx.tpTable))
+    val args = ListMap.from(argNames zip argTpes)
 
-        backend.Term.Variable(name, tpe)
-    }.toVector
-
-    (StageContainer(label, argVariables, states, blkNodes), blkLabels ++ stateLabels.flatten)
+    (StageContainer(ctx.label, args, states, blkNodes), blkLabels ++ stateLabels.flatten)
   }
 
-  def buildState(stateDef: frontend.StateDef)(implicit ctx: BackendContext, global: GlobalData): (StateContainer, Set[BackendLabel]) = {
+  def buildState(stateDef: frontend.StateDef)(implicit ctx: BackendContext[StateLabel], global: GlobalData): (StateContainer, Set[BackendLabel]) = {
     val BuildResult(nodes, last, labels) = buildBlk(stateDef.blk)
-    val code = nodes ++ last.map(Vector(_)).getOrElse(Vector.empty)
+    val lastStmt = last.map(backend.Abandon.apply).getOrElse(backend.Abandon(backend.UnitLiteral()))
+    val code = nodes :+ lastStmt
 
     (StateContainer(stateDef.symbol.asStateSymbol, code), labels)
   }
 
-  def buildExpr(expr: frontend.Expression)(implicit ctx: BackendContext, global: GlobalData): BuildResult =
+  def buildExpr[T <: BackendLabel](expr: frontend.Expression)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult =
     expr match {
       case ident: frontend.Ident => buildIdent(ident)
       case select: frontend.Select => buildSelect(select)
@@ -222,7 +202,7 @@ object BackendIRGen {
 
   def buildIdent(ident: frontend.Ident)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
     val tpe = convertToBackendType(ident.tpe.asRefType, ctx.hpTable, ctx.tpTable)
-    val term = backend.Term.Variable(ident.symbol.path, tpe)
+    val term = backend.Term.Variable(nameFromPath(ident.symbol.path), tpe)
 
     BuildResult(Vector.empty, Some(backend.Ident(term, tpe)), Set.empty)
   }
@@ -231,24 +211,15 @@ object BackendIRGen {
     val selectRefTpe = select.tpe.asRefType
     val selectTpe = convertToBackendType(selectRefTpe, ctx.hpTable, ctx.tpTable)
 
-    select.prefix match {
-      case frontend.This() =>
-        BuildResult(
-          Vector.empty,
-          Some(backend.ReferField(backend.Term.This, select.name, selectTpe)),
-          Set.empty
-        )
-      case expr =>
-        val BuildResult(nodes, Some(last), labels) = buildExpr(expr)
-        val node = backend.Temp(ctx.temp.get(), last.tpe, last)
-        val refer = backend.ReferField(backend.Term.Node(node.name, node.tpe), select.name, selectTpe)
+    val BuildResult(nodes, Some(last), labels) = buildExpr(select.prefix)
+    val node = backend.Temp(ctx.temp.get(), last)
+    val refer = backend.ReferField(backend.Term.Temp(node.id, last.tpe), select.name, selectTpe)
 
-        BuildResult(nodes :+ node, Some(refer), labels)
-    }
+    BuildResult(nodes :+ node, Some(refer), labels)
   }
 
   def buildApply(apply: frontend.Apply)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    case class Summary(nodes: Vector[backend.BackendIR], passeds: Vector[backend.Term.Node], labels: Set[BackendLabel])
+    case class Summary(nodes: Vector[backend.Stmt], passeds: Vector[backend.Term.Temp], labels: Set[BackendLabel])
 
     def replaceTPBound(bound: TPBound): TPBound = {
       val replacedBounds = bound.bounds
@@ -285,10 +256,10 @@ object BackendIRGen {
     val argSummary = apply.args.foldLeft(Summary(Vector.empty, Vector.empty, Set.empty)) {
       case (summary, arg) =>
         val BuildResult(nodes, Some(expr), labels) = buildExpr(arg)
-        val node = backend.Temp(ctx.temp.get(), expr.tpe, expr)
+        val node = backend.Temp(ctx.temp.get(), expr)
 
         val newTemps = summary.nodes ++ nodes :+ node
-        val newTerms = summary.passeds :+ backend.Term.Node(node.name, node.tpe)
+        val newTerms = summary.passeds :+ backend.Term.Temp(node.id, expr.tpe)
 
         Summary(newTemps, newTerms, labels)
     }
@@ -302,8 +273,8 @@ object BackendIRGen {
     apply.prefix match {
       case select @ frontend.Select(prefix, methodName) =>
         val BuildResult(nodes, Some(last), labels) = buildExpr(prefix)
-        val accessorNode = backend.Temp(ctx.temp.get(), last.tpe, last)
-        val accessor = backend.Term.Node(accessorNode.name, accessorNode.tpe)
+        val accessorNode = backend.Temp(ctx.temp.get(), last)
+        val accessor = backend.Term.Temp(accessorNode.id, last.tpe)
         val isInterface =
           select.symbol.hasFlag(Modifier.Input) ||
           select.symbol.hasFlag(Modifier.Parent) ||
@@ -363,21 +334,21 @@ object BackendIRGen {
 
     val BuildResult(leftNodes, Some(leftExpr), leftLabels) = buildExpr(binop.left)
     val BuildResult(rightNodes, Some(rightExpr), rightLabels) = buildExpr(binop.right)
-    val leftNode = backend.Temp(ctx.temp.get(), leftExpr.tpe, leftExpr)
-    val rightNode = backend.Temp(ctx.temp.get(), rightExpr.tpe, rightExpr)
+    val leftNode = backend.Temp(ctx.temp.get(), leftExpr)
+    val rightNode = backend.Temp(ctx.temp.get(), rightExpr)
     val nodes = (leftNodes :+ leftNode) ++ (rightNodes :+ rightNode)
-    val accessor = backend.Term.Node(leftNode.name, leftNode.tpe)
-    val arg = backend.Term.Node(rightNode.name, rightNode.tpe)
+    val accessor = backend.Term.Temp(leftNode.id, leftExpr.tpe)
+    val arg = backend.Term.Temp(rightNode.id, rightExpr.tpe)
 
     def buildCallMethod: backend.CallMethod = {
-      val leftTpe = convertToRefType(leftNode.tpe)
-      val rightTpe = convertToRefType(rightNode.tpe)
+      val leftTpe = convertToRefType(leftExpr.tpe)
+      val rightTpe = convertToRefType(rightExpr.tpe)
 
       val (operator, _) = leftTpe.lookupOperator(binop.op, rightTpe, Vector.empty, Vector.empty)
         .toEither
         .getOrElse(throw new ImplementationErrorException(s"operator[${binop.op}] for [$leftTpe] and [$rightTpe] should be found"))
 
-      val label = makeLabel(operator, leftNode.tpe, Vector(rightNode.tpe), Vector.empty, Vector.empty)
+      val label = makeLabel(operator, leftExpr.tpe, Vector(rightExpr.tpe), Vector.empty, Vector.empty)
       val retTpe = convertToBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
 
       backend.CallMethod(label, Some(accessor), Vector.empty, Vector(arg), retTpe)
@@ -386,12 +357,12 @@ object BackendIRGen {
     val call = builtInPairs.get(binop.op) match {
       case None => buildCallMethod
       case Some(candidates) =>
-        val leftTpeSymbol = leftNode.tpe.symbol
-        val rightTpeSymbol = rightNode.tpe.symbol
+        val leftTpeSymbol = leftExpr.tpe.symbol
+        val rightTpeSymbol = rightExpr.tpe.symbol
         val called = candidates.find {
           case (left, right, _) => left == leftTpeSymbol && right == rightTpeSymbol
         }
-        val retTpe = leftNode.tpe
+        val retTpe = leftExpr.tpe
 
         called match {
           case None => buildCallMethod
@@ -414,13 +385,13 @@ object BackendIRGen {
     hargs: Vector[HPElem],
     targs: Vector[BackendType]
   )(implicit global: GlobalData): MethodLabel = {
-    val (implHPTable, implTPTable) = findImplClassTree(method, global) orElse findImplInterfaceTree(method, global) match {
+    val (implHPTable, implTPTable, interface) = findImplClassTree(method, global) orElse findImplInterfaceTree(method, global) match {
       case Some(implTree: frontend.ImplementClass) =>
         val impl = implTree.symbol.asImplementSymbol
         val hpTable = buildHPTable(impl.hps, accessor, implTree.target.tpe.asRefType)
         val tpTable = buildTPTable(impl.tps, accessor, implTree.target.tpe.asRefType)
 
-        (hpTable, tpTable)
+        (hpTable, tpTable, None)
       case Some(implTree: frontend.ImplementInterface) =>
         val impl = implTree.symbol.asImplementSymbol
         val callerTpes = accessor +: args
@@ -428,14 +399,16 @@ object BackendIRGen {
 
         val hpTable = buildHPTable(impl.hps, callerTpes, targetTpes)
         val tpTable = buildTPTable(impl.tps, callerTpes, targetTpes)
+        val interface = implTree.interface.tpe.asRefType
+        val interfaceTpe = convertToBackendType(interface, hpTable, tpTable)
 
-        (hpTable, tpTable)
+        (hpTable, tpTable, Some(interfaceTpe))
     }
 
     val hpTable = implHPTable ++ ListMap.from(method.hps zip hargs)
     val tpTable = implTPTable ++ ListMap.from(method.tps zip targs)
 
-    MethodLabel(method, accessor, hpTable, tpTable)
+    MethodLabel(method, accessor, interface, hpTable, tpTable)
   }
 
   def buildBlk(blk: frontend.Block)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
@@ -451,7 +424,7 @@ object BackendIRGen {
   }
 
   def buildConstructClass(construct: frontend.ConstructClass)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    case class Summary(nodes: Vector[backend.BackendIR], initPairs: Vector[(String, backend.Expr)], labels: Set[BackendLabel])
+    case class Summary(nodes: Vector[backend.Stmt], initPairs: Vector[(String, backend.Expr)], labels: Set[BackendLabel])
 
     val Summary(nodes, inits, labels) = construct.fields.foldLeft(Summary(Vector.empty, Vector.empty, Set.empty)) {
       case (tempSummary, frontend.ConstructPair(name, init)) =>
@@ -472,7 +445,7 @@ object BackendIRGen {
   }
 
   def buildConstructModule(construct: frontend.ConstructModule)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    case class Summary(nodes: Vector[backend.BackendIR], inits: Map[String, backend.Expr], labels: Set[BackendLabel])
+    case class Summary(nodes: Vector[backend.Stmt], inits: Map[String, backend.Expr], labels: Set[BackendLabel])
 
     def buildInitSection(pairs: Vector[frontend.ConstructPair]): Summary = {
       pairs.foldLeft(Summary(Vector.empty, Map.empty, Set.empty)) {
@@ -508,16 +481,16 @@ object BackendIRGen {
       case Some(result) => result
     }
 
-    val condLastNode = backend.Temp(ctx.temp.get(), condExpr.tpe, condExpr)
-    val conseqLastNode = backend.Temp(ctx.temp.get(), conseqExpr.tpe, conseqExpr)
-    val altLastNode = altExpr.map(expr => backend.Temp(ctx.temp.get(), expr.tpe, expr))
+    val condLastNode = backend.Temp(ctx.temp.get(), condExpr)
     val unitTpe = convertToBackendType(Type.unitTpe, Map.empty, Map.empty)
 
     val expr = backend.IfExpr(
-      backend.Term.Node(condLastNode.name, condLastNode.tpe),
-      conseqNodes :+ conseqLastNode,
-      altNodes ++ altLastNode.map(Vector(_)).getOrElse(Vector.empty),
-      altLastNode.map(_.tpe).getOrElse(unitTpe)
+      backend.Term.Temp(condLastNode.id, condExpr.tpe),
+      conseqNodes,
+      conseqExpr,
+      altNodes,
+      altExpr.getOrElse(backend.UnitLiteral()),
+      altExpr.map(_.tpe).getOrElse(unitTpe)
     )
 
     BuildResult(condNodes, Some(expr), condLabels ++ conseqLabels ++ altLabels)
@@ -534,33 +507,34 @@ object BackendIRGen {
     elem match {
       case expr: frontend.Expression =>
         val BuildResult(nodes, Some(last), labels) = buildExpr(expr)
-        val lastNode = backend.Temp(ctx.temp.get(), last.tpe, last)
+        val lastNode = backend.Abandon(last)
 
         BuildResult(nodes :+ lastNode, None, labels)
       case vdef: frontend.ValDef =>
         val refTpe = vdef.symbol.tpe.asRefType
         val tpe = convertToBackendType(refTpe, ctx.hpTable, ctx.tpTable)
-        val v = backend.Variable(vdef.symbol.path, tpe)
 
-        val BuildResult(exprs, Some(last), labels) = buildExpr(vdef.expr
+        val BuildResult(stmts, Some(last), labels) = buildExpr(vdef.expr
             .getOrElse(throw new ImplementationErrorException("method's variable definition should have initialization expression"))
         )
 
-        val assignTarget = backend.Term.Variable(vdef.symbol.path, last.tpe)
-        val assign = backend.Assign(assignTarget, last)
+        val v = backend.Variable(nameFromPath(vdef.symbol.path), tpe, last)
 
-        BuildResult(v +: exprs :+ assign, None, labels)
+        BuildResult(stmts :+ v, None, labels)
     }
+
+  def nameFromPath(path: NameSpace)(implicit ctx: BackendContext): String =
+    (path.path.tail :+ path.name.get).mkString("$")
 }
 
 abstract class BuildResult {
-  val nodes: Vector[backend.BackendIR]
+  val nodes: Vector[backend.Stmt]
   val last: Option[backend.Expr]
   val labels: Set[BackendLabel]
 }
 
 object BuildResult {
-  def apply(nodes: Vector[backend.BackendIR], last: Option[backend.Expr], labels: Set[BackendLabel]): BuildResult = {
+  def apply(nodes: Vector[backend.Stmt], last: Option[backend.Expr], labels: Set[BackendLabel]): BuildResult = {
     val _nodes = nodes
     val _last = last
     val _labels = labels
@@ -582,7 +556,7 @@ object BuildResult {
     }
   }
 
-  def unapply(obj: Any): Option[(Vector[backend.BackendIR], Option[backend.Expr], Set[BackendLabel])] =
+  def unapply(obj: Any): Option[(Vector[backend.Stmt], Option[backend.Expr], Set[BackendLabel])] =
     obj match {
       case result: BuildResult => Some(result.nodes, result.last, result.labels)
       case _ => None

@@ -93,7 +93,7 @@ object RefCheck {
     verifyExpr(select.prefix)
 
     val prefixTpe = select.prefix.tpe.asRefType
-    prefixTpe.lookupField(select.name) match {
+    prefixTpe.lookupField(select.name, ctx.hpBounds, ctx.tpBounds) match {
       case LookupResult.LookupSuccess(symbol) => symbol.accessibility match {
         case Accessibility.Public => Right(())
         case Accessibility.Private => select.prefix match {

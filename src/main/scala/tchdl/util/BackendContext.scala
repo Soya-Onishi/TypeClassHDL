@@ -2,53 +2,32 @@ package tchdl.util
 
 import tchdl.backend._
 
-abstract class BackendContext() {
-  import scala.collection.mutable
+abstract class BackendContext[T <: BackendLabel]() {
+  val temp: TempCounter = new TempCounter
 
-  val temp: TempNamer = new TempNamer
-  val methodTable: mutable.Map[MethodLabel, Option[MethodContainer]] = mutable.Map()
-  val interfaceTable: mutable.Map[BackendType, MethodLabel] = mutable.Map()
-
+  val label: T
   val hpTable: Map[Symbol.HardwareParamSymbol, HPElem]
   val tpTable: Map[Symbol.TypeParamSymbol, BackendType]
-  val hpBounds: Vector[HPBound]
-  val tpBounds: Vector[TPBound]
 
-  def copy(
-    _hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
-    _tpTable: Map[Symbol.TypeParamSymbol, BackendType],
-    _hpBounds: Vector[HPBound],
-    _tpBounds: Vector[TPBound]
-  ): BackendContext = {
+  def copy(_label: T): BackendContext[T] = {
     val oldTemp = this.temp
-    val oldMethodTable = this.methodTable
-    val oldInterfaceTable = this.interfaceTable
 
-    new BackendContext {
+    new BackendContext[T] {
       override val temp = oldTemp
-      override val methodTable = oldMethodTable
-      override val interfaceTable = oldInterfaceTable
 
-      override val hpTable = _hpTable
-      override val tpTable = _tpTable
-      override val hpBounds = _hpBounds
-      override val tpBounds = _tpBounds
+      override val label = _label
+      override val hpTable = _label.hps
+      override val tpTable = _label.tps
     }
   }
 }
 
 object BackendContext {
-  def apply(
-    _hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
-    _tpTable: Map[Symbol.TypeParamSymbol, BackendType],
-    _hpBounds: Vector[HPBound],
-    _tpBounds: Vector[TPBound]
-  ): BackendContext = {
-    new BackendContext {
-      override val hpTable = _hpTable
-      override val tpTable = _tpTable
-      override val hpBounds = _hpBounds
-      override val tpBounds = _tpBounds
+  def apply[T <: BackendLabel](_label: T): BackendContext[T] = {
+    new BackendContext[T] {
+      override val label = _label
+      override val hpTable = _label.hps
+      override val tpTable = _label.tps
     }
   }
 }
