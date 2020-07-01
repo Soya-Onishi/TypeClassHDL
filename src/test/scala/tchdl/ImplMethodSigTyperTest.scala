@@ -193,6 +193,11 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.RequireHardwareType])
   }
 
+  test("stage that has no parameter and return unit make no error") {
+    val (_, global) = untilThisPhase("stageWithoutParam.tchdl")
+    expectNoError(global)
+  }
+
   test("stage's return type must be Unit or Future[_]") {
     val (_, global) = untilThisPhase("stageWithInvalidRet.tchdl")
     expectError(1)(global)
