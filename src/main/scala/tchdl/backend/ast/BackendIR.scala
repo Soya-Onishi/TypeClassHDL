@@ -35,6 +35,16 @@ case class ReferField(accessor: Term, field: FieldLabel, tpe: BackendType) exten
 case class Ident(id: Term.Variable, tpe: BackendType) extends Expr
 case class IfExpr(cond: Term.Temp, conseq: Vector[Stmt], conseqLast: Expr, alt: Vector[Stmt], altLast: Expr, tpe: BackendType) extends Expr
 
+case class Finish(stage: StageLabel)(implicit global: GlobalData) extends Expr {
+  val tpe = convertToBackendType(Type.unitTpe, Map.empty, Map.empty)
+}
+
+case class Goto(state: StateLabel)(implicit global: GlobalData) extends Expr {
+  val tpe = convertToBackendType(Type.unitTpe, Map.empty, Map.empty)
+}
+
+case class Generate(stage: StageLabel, args: Vector[Term], tpe: BackendType) extends Expr
+
 case class IntLiteral(value: Int)(implicit global: GlobalData) extends Expr {
   val tpe: BackendType = BackendType (
     global.builtin.types.lookup("Int"),

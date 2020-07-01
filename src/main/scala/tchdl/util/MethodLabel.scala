@@ -74,12 +74,12 @@ case class StageLabel(
 case class StateLabel(
   symbol: Symbol.StateSymbol,
   accessor: BackendType,
-  stage: String,
+  stage: StageLabel,
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
   override type SymbolType = Symbol.StateSymbol
-  override lazy val toString: String = stage + "$" + symbol.name
+  override lazy val toString: String = stage.toString + "$" + symbol.name
 }
 
 case class AlwaysLabel(

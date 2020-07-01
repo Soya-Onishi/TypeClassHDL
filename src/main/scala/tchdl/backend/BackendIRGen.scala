@@ -214,7 +214,7 @@ object BackendIRGen {
     val (states, labelsFromState) = stageDef.states.map{
       state =>
         val stage = ctx.label
-        val label = StateLabel(state.symbol.asStateSymbol, stage.accessor, stage.toString, ctx.label.hps, ctx.label.tps)
+        val label = StateLabel(state.symbol.asStateSymbol, stage.accessor, ctx.label, ctx.label.hps, ctx.label.tps)
         val context = BackendContext(label, ctx.tpBound)
 
         buildState(state)(context, global)
@@ -245,10 +245,10 @@ object BackendIRGen {
       case construct: frontend.ConstructModule => buildConstructModule(construct)
       case ifexpr: frontend.IfExpr => buildIfExpr(ifexpr)
       case ths: frontend.This => buildThis(ths)
-      case finish: frontend.Finish => ???
-      case goto: frontend.Goto => ???
-      case generate: frontend.Generate => ???
-      case relay: frontend.Relay => ???
+      case _: frontend.Finish => buildFinish
+      case goto: frontend.Goto => buildGoto(goto)
+      case generate: frontend.Generate => buildGenerate(generate)
+      case relay: frontend.Relay => buildRelay(relay)
       case frontend.IntLiteral(value) => BuildResult(backend.IntLiteral(value))
       case frontend.BitLiteral(value, length) => BuildResult(backend.BitLiteral(value, HPElem.Num(length)))
       case frontend.UnitLiteral() => BuildResult(backend.UnitLiteral())
@@ -557,6 +557,62 @@ object BackendIRGen {
     val expr = backend.This(tpe)
 
     BuildResult(Vector.empty, Some(expr), Set.empty)
+  }
+
+  def buildFinish[T <: BackendLabel](implicit ctx: BackendContext[T], global: GlobalData): BuildResult =
+    finishPart
+
+  def buildGenerate[T <: BackendLabel](generate: frontend.Generate)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult =
+    generatePart(generate.params, generate.symbol.asStageSymbol)
+
+  def buildGoto[T <: BackendLabel](goto: frontend.Goto)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult = {
+    val stateLabel = ctx.label.asInstanceOf[StateLabel]
+    val targetLabel = StateLabel(
+      goto.symbol.asStateSymbol,
+      ctx.label.accessor,
+      stateLabel.stage,
+      ctx.label.hps,
+      ctx.label.tps
+    )
+
+    val gotoExpr = backend.Goto(targetLabel)
+    BuildResult(Vector.empty, Some(gotoExpr), Set.empty)
+  }
+
+  def buildRelay[T <: BackendLabel](relay: frontend.Relay)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult = {
+    val BuildResult(_, Some(finish), _) = finishPart
+    val BuildResult(stmts, generate, labels) = generatePart(relay.params, relay.symbol.asStageSymbol)
+    val abandonFinish = backend.Abandon(finish)
+
+    BuildResult(stmts :+ abandonFinish, generate, labels)
+  }
+
+  def finishPart[T <: BackendLabel](implicit ctx: BackendContext[T], global: GlobalData): BuildResult = {
+    val stage = ctx.label match {
+      case label: StageLabel => label
+      case state: StateLabel => state.stage
+    }
+
+    BuildResult(Vector.empty, Some(backend.Finish(stage)), Set.empty)
+  }
+
+  def generatePart[T <: BackendLabel](params: Vector[frontend.Expression], target: Symbol.StageSymbol)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult = {
+    val argResults = params.map(buildExpr)
+
+    val argStmts = argResults.flatMap(_.nodes)
+    val argLabels = argResults.flatMap(_.labels).toSet
+
+    val argExprs = argResults.map(_.last.get)
+    val argPassedTemps = argExprs.map(expr => backend.Temp(ctx.temp.get(), expr))
+    val argPassedTerms = (argExprs zip argPassedTemps).map{
+      case (expr, temp) => backend.Term.Temp(temp.id, expr.tpe)
+    }
+
+    val targetLabel = StageLabel(target, ctx.label.accessor, ctx.label.hps, ctx.label.tps)
+    val unitTpe = convertToBackendType(Type.unitTpe, Map.empty, Map.empty)
+    val generate = backend.Generate(targetLabel, argPassedTerms, unitTpe)
+
+    BuildResult(argStmts ++ argPassedTemps, Some(generate), argLabels)
   }
 
   def buildBlockElem[T <: BackendLabel](elem: frontend.BlockElem)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult =
