@@ -659,16 +659,20 @@ object Typer {
   }
 
   def typedGoto(goto: Goto)(implicit ctx: Context.NodeContext, global: GlobalData): Goto = {
-    ctx.owner match {
+    val symbol = ctx.owner match {
       case _: Symbol.StateSymbol =>
         ctx.lookup[Symbol.StateSymbol](goto.target) match {
-          case LookupResult.LookupFailure(err) => global.repo.error.append(err)
-          case _ =>
+          case LookupResult.LookupSuccess(symbol) => symbol
+          case LookupResult.LookupFailure(err) =>
+            global.repo.error.append(err)
+            Symbol.ErrorSymbol
         }
-      case _ => global.repo.error.append(Error.GotoOutsideState)
+      case _ =>
+        global.repo.error.append(Error.GotoOutsideState)
+        Symbol.ErrorSymbol
     }
 
-    goto.setTpe(Type.unitTpe).setID(goto.id)
+    goto.setSymbol(symbol).setTpe(Type.unitTpe).setID(goto.id)
   }
 
   def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext, global: GlobalData): Generate = {

@@ -1,0 +1,32 @@
+package test
+
+module M
+impl M {
+  input def function(a: Bit[8], b: Bit[8]) -> Unit {
+    generate st1(a, b)
+  }
+
+  stage st1(a: Bit[8], b: Bit[8]) -> Unit {
+    val c = a + b
+
+    state s1 {
+      val d = c + b
+
+      goto s2
+      generate st2(d)
+    }
+
+    state s2 {
+      val e = c + a
+      relay st3(e)
+    }
+  }
+
+  stage st2(x: Bit[8]) -> Unit {
+    finish
+  }
+
+  stage st3(y: Bit[8]) -> Unit {
+    finish
+  }
+}

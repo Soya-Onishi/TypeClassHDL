@@ -286,5 +286,48 @@ class TyperTest extends TchdlFunSuite {
   test("use relay outside of stage or state causes an error") {
     val (_, global) = untilTyper("relayStage0.tchdl")
     expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RelayOutsideStage.type])
+  }
+
+  test("valid sequence circuit") {
+    val (Seq(tree), global) = untilTyper("validSequenceCircuit.tchdl")
+    expectNoError(global)
+
+    val impl = tree.topDefs.collectFirst{ case impl: ImplementClass => impl }.get
+    val input = impl.components.collectFirst{ case mdef: MethodDef => mdef }.get
+    val stages = impl.components.collect{ case stage: StageDef => stage }
+    val st1 = stages.find(_.name == "st1").get
+    val st2 = stages.find(_.name == "st2").get
+    val st3 = stages.find(_.name == "st3").get
+
+    val unitSymbol = global.builtin.types.lookup("Unit")
+    val bit8 = Type.bitTpe(IntLiteral(8))(global)
+
+    assert(input.blk.get.last.isInstanceOf[Generate])
+    val inputGenerate = input.blk.get.last.asInstanceOf[Generate]
+    assert(inputGenerate.symbol == st1.symbol)
+    assert(inputGenerate.tpe.asRefType.origin == unitSymbol)
+
+    val s1 = st1.states.find(_.name == "s1").get
+    val s2 = st1.states.find(_.name == "s2").get
+
+
+    assert(s1.blk.elems.last.isInstanceOf[Goto])
+    val s1Goto = s1.blk.elems.last.asInstanceOf[Goto]
+    assert(s1Goto.symbol == s2.symbol)
+
+    assert(s1.blk.last.isInstanceOf[Generate])
+    val s1Generate = s1.blk.last.asInstanceOf[Generate]
+    assert(s1Generate.symbol == st2.symbol)
+    assert(s1Generate.tpe.asRefType.origin == unitSymbol)
+    assert(s1Generate.params.head.tpe =:= bit8)
+
+    assert(s2.blk.last.isInstanceOf[Relay])
+    val s2Generate = s2.blk.last.asInstanceOf[Relay]
+    assert(s2Generate.symbol == st3.symbol)
+    assert(s2Generate.tpe.asRefType.origin == unitSymbol)
+    assert(s2Generate.params.head.tpe =:= bit8)
   }
 }
