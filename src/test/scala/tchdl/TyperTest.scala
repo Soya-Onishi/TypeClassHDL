@@ -261,4 +261,30 @@ class TyperTest extends TchdlFunSuite {
     assert(addThisReal.tpe.asRefType =:= addT)
     assert(addThatReal.tpe.asRefType =:= addT)
   }
+
+  test("generate non existential stage causes an error") {
+    val (_, global) = untilTyper("generateStage0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.SymbolNotFound])
+  }
+
+  test("generate exist stage causes no error") {
+    val (_, global) = untilTyper("generateStage1.tchdl")
+    expectNoError(global)
+  }
+
+  test("use goto outside of state causes an error") {
+    val (_, global) = untilTyper("gotoState0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.GotoOutsideState.type])
+  }
+
+  test("use relay outside of stage or state causes an error") {
+    val (_, global) = untilTyper("relayStage0.tchdl")
+    expectError(1)(global)
+  }
 }

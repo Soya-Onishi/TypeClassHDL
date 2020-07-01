@@ -1,0 +1,10 @@
+package test
+
+module M
+impl M {
+  input def f() -> Unit {
+    relay st1()
+  }
+
+  stage st1() -> Unit {}
+}

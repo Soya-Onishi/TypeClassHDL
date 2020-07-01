@@ -1,0 +1,10 @@
+package test
+
+module M
+impl M {
+  input def func() -> Unit  {
+    generate st0()
+  }
+
+  stage st() -> Unit { finish }
+}

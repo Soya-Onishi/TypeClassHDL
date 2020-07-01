@@ -467,20 +467,6 @@ object Type {
         case Some(symbol) => Right(symbol)
       }
 
-      def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
-        val (hpErrs, _) = hpBounds
-          .map(HPBound.verifyMeetBound(_, callerHPBound))
-          .partitionMap(identity)
-
-        val (tpErrs, _) = tpBounds
-          .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
-          .partitionMap(identity)
-
-        val errs = hpErrs ++ tpErrs
-        if (errs.isEmpty) Right(())
-        else Left(Error.ImplTargetTypeMismatch(impl, target))
-      }
-
       for {
         method <- lookupResult
         _ <- RefType.verifySignatureLength(method, args, callerHP, callerTP)
@@ -493,13 +479,13 @@ object Type {
         swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
         swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
         simplifiedHPBound <- HPBound.simplify(swappedHpBound)
-        _ <- verifyEachBounds(simplifiedHPBound, swappedTpBound)
+        _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, callerHPBound, callerTPBound, impl, target)
         (methodHpTable, methodTpTable) = RefType.buildSymbolTable(method, callerHP, callerTP)
         appendHpTable = hpTable ++ methodHpTable
         appendTpTable = tpTable ++ methodTpTable
         methodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
         methodTpBound = TPBound.swapBounds(method.tpBound, appendHpTable, appendTpTable)
-        _ <- verifyEachBounds(methodHpBound, methodTpBound)
+        _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound, impl, target)
         swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable)
         _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
@@ -583,6 +569,60 @@ object Type {
         case right@Right(_) => right
         case Left(Error.DummyError) => Left(Error.SymbolNotFound(methodName))
         case other@Left(_) => other
+      }
+    }
+
+    def lookupStage(
+      stageName: String,
+      args: Vector[Type.RefType],
+      callerHPBounds: Vector[HPBound],
+      callerTPBounds: Vector[TPBound]
+    )(implicit global: GlobalData): LookupResult[(Symbol.StageSymbol, Type.MethodType)] = {
+      def verifySignatureLength(stage: Symbol.StageSymbol): Either[Error, Unit] = {
+        val paramLength = stage.tpe.asMethodType.params.length
+        val argLength = args.length
+
+        if(paramLength == argLength) Right(())
+        else Left(Error.ParameterLengthMismatch(paramLength, argLength))
+      }
+
+      def lookupFromImpl(impl: ImplementContainer): Either[Error, (Symbol.StageSymbol, Type.MethodType)] = {
+        val (initHPTable, initTPTable) = RefType.buildTable(impl)
+        val lookupResult = impl.lookup[Symbol.StageSymbol](stageName) match {
+          case None => Left(Error.SymbolNotFound(stageName))
+          case Some(symbol) => Right(symbol)
+        }
+
+        for {
+          stage <- lookupResult
+          _ <- verifySignatureLength(stage)
+          stageTpe = stage.tpe.asMethodType
+          callers = this +: args
+          targets = impl.targetType +: stageTpe.params
+          _ <- RefType.verifySuperSets(callers, targets)
+          hpTable <- RefType.assignHPTable(initHPTable, callers, targets)
+          tpTable <- RefType.assignTPTable(initTPTable, callers, targets)
+          swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
+          swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
+          simplifiedHPBound <- HPBound.simplify(swappedHpBound)
+          _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, Vector.empty, Vector.empty, impl, this)
+          swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable)
+          _ <- RefType.verifyMethodType(swappedTpe, args)
+        } yield (stage, stageTpe)
+      }
+
+      val impls = this.origin.asInstanceOf[Symbol.EntityTypeSymbol].impls
+      val result = impls.foldLeft[Either[Error, (Symbol.StageSymbol, Type.MethodType)]](Left(Error.DummyError)) {
+        case (right @ Right(_), _) => right
+        case (Left(errs), impl) => lookupFromImpl(impl) match {
+          case right @ Right(_) => right
+          case Left(err) => Left(Error.MultipleErrors(errs, err))
+        }
+      }
+
+      result match {
+        case Right(pair) => LookupResult.LookupSuccess(pair)
+        case Left(err) => LookupResult.LookupFailure(err)
       }
     }
 

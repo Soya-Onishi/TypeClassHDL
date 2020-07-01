@@ -1,0 +1,10 @@
+package test
+
+module M
+impl M {
+  input def f() -> Unit {
+    generate st()
+  }
+
+  stage st() -> Unit {}
+}

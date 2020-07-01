@@ -672,42 +672,51 @@ object Typer {
   }
 
   def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext, global: GlobalData): Generate = {
-    val tpe = ctx.lookup[Symbol.StageSymbol](generate.target) match {
-      case LookupResult.LookupFailure(err) =>
-        global.repo.error.append(err)
-        Type.ErrorType
-      case LookupResult.LookupSuccess(symbol) =>
-        val tpe = symbol.tpe.asMethodType
-        val typedArgs = generate.params.map(typedExpr)
+    val self = ctx.self.getOrElse(throw new ImplementationErrorException("stage must be in module instance"))
+    val typedArgs = generate.params.map(typedExpr)
 
-        verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(global.repo.error.append)
-        tpe.returnType
-    }
+    val (symbol, tpe) =
+      if(typedArgs.exists(_.tpe.isErrorType)) (Symbol.ErrorSymbol, Type.ErrorType)
+      else self.lookupStage(generate.target, typedArgs.map(_.tpe.asRefType), ctx.hpBounds, ctx.tpBounds) match {
+        case LookupResult.LookupFailure(err) =>
+          global.repo.error.append(err)
+          (Symbol.ErrorSymbol, Type.ErrorType)
+        case LookupResult.LookupSuccess((stageSymbol, stageType)) =>
+          (stageSymbol, stageType.returnType)
+      }
 
-    generate.setTpe(tpe)
+    Generate(generate.target, typedArgs)
+      .setSymbol(symbol)
+      .setTpe(tpe)
+      .setID(generate.id)
   }
 
   def typedRelay(relay: Relay)(implicit ctx: Context.NodeContext, global: GlobalData): Relay = {
+    def verifyRelayTarget: Relay = {
+      val self = ctx.self.getOrElse(throw new ImplementationErrorException("stage must be in module instance"))
+      val typedArgs = relay.params.map(typedExpr)
+
+      val (symbol, tpe) =
+        if(typedArgs.exists(_.tpe.isErrorType)) (Symbol.ErrorSymbol, Type.ErrorType)
+        else {
+          self.lookupStage(relay.target, typedArgs.map(_.tpe.asRefType), ctx.hpBounds, ctx.tpBounds) match {
+            case LookupResult.LookupSuccess((symbol, tpe)) => (symbol, tpe.returnType)
+            case LookupResult.LookupFailure(err) =>
+              global.repo.error.append(err)
+              (Symbol.ErrorSymbol, Type.ErrorType)
+          }
+        }
+
+      Relay(relay.target, typedArgs).setSymbol(symbol).setTpe(tpe).setID(relay.id)
+    }
+
     ctx.owner match {
-      case _: Symbol.StageSymbol =>
-      case _: Symbol.StateSymbol =>
-      case _ => global.repo.error.append(Error.RelayOutsideStage)
+      case _: Symbol.StageSymbol => verifyRelayTarget
+      case _: Symbol.StateSymbol => verifyRelayTarget
+      case _ =>
+        global.repo.error.append(Error.RelayOutsideStage)
+        relay.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
     }
-
-    val tpe = ctx.lookup[Symbol.StageSymbol](relay.target) match {
-      case LookupResult.LookupFailure(err) =>
-        global.repo.error.append(err)
-        Type.ErrorType
-      case LookupResult.LookupSuccess(symbol) =>
-        val tpe = symbol.tpe.asMethodType
-        val typedArgs = relay.params.map(typedExpr)
-
-        verifyParamTypes(tpe.params, typedArgs.map(_.tpe)).foreach(global.repo.error.append)
-
-        tpe.returnType
-    }
-
-    relay.setTpe(tpe)
   }
 
   def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): HPExpr = expr match {

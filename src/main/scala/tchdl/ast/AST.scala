@@ -657,9 +657,9 @@ case class UnitLiteral() extends Expression
 case class StringLiteral(str: String) extends Expression with HPExpr
 
 case class Finish() extends Expression
-case class Goto(target: String) extends Expression
-case class Generate(target: String, params: Vector[Expression]) extends Expression
-case class Relay(target: String, params: Vector[Expression]) extends Expression
+case class Goto(target: String) extends Expression with HasSymbol
+case class Generate(target: String, params: Vector[Expression]) extends Expression with HasSymbol
+case class Relay(target: String, params: Vector[Expression]) extends Expression with HasSymbol
 
 // To make easier to implement parser,
 // hp's length and tp's length maybe incorrect before Typer.

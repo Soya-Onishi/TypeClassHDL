@@ -6,6 +6,29 @@ import tchdl.util.TchdlException.ImplementationErrorException
 import scala.annotation.tailrec
 
 trait Bound
+object Bound {
+  def verifyEachBounds(
+    hpBounds: Vector[HPBound],
+    tpBounds: Vector[TPBound],
+    callerHPBound: Vector[HPBound],
+    callerTPBound: Vector[TPBound],
+    impl: ImplementContainer,
+    target: Type.RefType
+  )(implicit global: GlobalData): Either[Error, Unit] = {
+    val (hpErrs, _) = hpBounds
+      .map(HPBound.verifyMeetBound(_, callerHPBound))
+      .partitionMap(identity)
+
+    val (tpErrs, _) = tpBounds
+      .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+      .partitionMap(identity)
+
+    val errs = hpErrs ++ tpErrs
+    if (errs.isEmpty) Right(())
+    else Left(Error.ImplTargetTypeMismatch(impl, target))
+  }
+}
+
 
 class TPBound(
   val target: Type.RefType,
