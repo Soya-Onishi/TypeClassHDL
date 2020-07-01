@@ -109,7 +109,7 @@ object Typer {
   }
 
   def typedExprValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
-    Namer.namedValDef(vdef)
+    Namer.namedLocalDef(vdef)
 
     val result = vdef.symbol.tpe match {
       case Type.ErrorType => Left(Error.DummyError)
@@ -146,7 +146,7 @@ object Typer {
 
     val stageBodyCtx = Context(stageSigCtx)
     stageDef.states.foreach(Namer.namedStateDef(_)(stageBodyCtx, global))
-    stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedValDef(_)(stageBodyCtx, global))
+    stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedFieldDef(_)(stageBodyCtx, global))
 
     val typedStates = stageDef.states.map(typedStateDef(_)(stageBodyCtx, global))
     val typedBodyElems = stageDef.blk.map {

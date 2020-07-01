@@ -49,10 +49,10 @@ class ASTGenerator {
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
 
     val parents = paramModules(Option(ctx.parents), Modifier.Parent)(_.EXPR_ID)(_.`type`)
-      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Parent))
+      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Parent | Modifier.Field))
 
     val siblings = paramModules(Option(ctx.siblings), Modifier.Sibling)(_.EXPR_ID)(_.`type`)
-      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Sibling))
+      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Sibling | Modifier.Field))
 
     ModuleDef(name, hp, tp, bound, parents, siblings)
   }
@@ -163,7 +163,7 @@ class ASTGenerator {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(Modifier.NoModifier, name, Some(tpe), None)
+    ValDef(Modifier.Field, name, Some(tpe), None)
   }
 
   def paramDefs(ctx: TP.Param_defsContext): Vector[ValDef] = {
@@ -176,7 +176,7 @@ class ASTGenerator {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(Modifier.NoModifier, name, Some(tpe), None)
+    ValDef(Modifier.Local, name, Some(tpe), None)
   }
 
   def alwaysDef(ctx: TP.Always_defContext): AlwaysDef = {
@@ -191,7 +191,7 @@ class ASTGenerator {
     val tpe = Option(ctx.`type`).map(typeTree)
     val initExpr = expr(ctx.expr)
 
-    ValDef(Modifier.NoModifier, name, tpe, Some(initExpr))
+    ValDef(Modifier.Local, name, tpe, Some(initExpr))
   }
 
   def stageDef(ctx: TP.Stage_defContext): StageDef = {
@@ -230,7 +230,7 @@ class ASTGenerator {
   }
 
   def portDef(ctx: TP.Port_defContext): ValDef = {
-    val modifier = Modifier(ctx.modifier.getText)
+    val modifier = Modifier(ctx.modifier.getText) | Modifier.Field
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`)
 
@@ -239,12 +239,12 @@ class ASTGenerator {
 
   def submoduleDef(ctx: TP.Submodule_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
-    ValDef(Modifier.Child, name, tpe, Some(expr))
+    ValDef(Modifier.Child | Modifier.Field, name, tpe, Some(expr))
   }
 
   def regDef(ctx: TP.Reg_defContext): ValDef = {
     val (name, tpe, expr) = componentBody(ctx.component_def_body)
-    ValDef(Modifier.Register, name, tpe, Some(expr))
+    ValDef(Modifier.Register | Modifier.Field, name, tpe, Some(expr))
   }
 
   def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeTree], Expression) = {

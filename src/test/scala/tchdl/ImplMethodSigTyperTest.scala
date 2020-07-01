@@ -200,4 +200,9 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.RequireSpecificType])
   }
+
+  test("internal function must cause no errors") {
+    val (_, global) = untilThisPhase("InputCallInternal.tchdl")
+    expectNoError(global)
+  }
 }

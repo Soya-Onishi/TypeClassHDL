@@ -129,7 +129,7 @@ object Symbol {
       flags: Modifier,
       tpe: Type
     ): StructSymbol =
-      new StructSymbol(path.appendName(name), visibility, flags, tpe)
+      new StructSymbol(path.appendComponentName(name), visibility, flags, tpe)
   }
 
   class ModuleSymbol(
@@ -147,7 +147,7 @@ object Symbol {
       flags: Modifier,
       tpe: Type
     ): ModuleSymbol =
-      new ModuleSymbol(path.appendName(name), visibility, flags, tpe)
+      new ModuleSymbol(path.appendComponentName(name), visibility, flags, tpe)
   }
 
   class InterfaceSymbol(
@@ -167,7 +167,7 @@ object Symbol {
       flags: Modifier,
       tpe: Type
     ): InterfaceSymbol =
-      new InterfaceSymbol(path.appendName(name), visibility, flags, tpe)
+      new InterfaceSymbol(path.appendComponentName(name), visibility, flags, tpe)
   }
 
   class TypeParamSymbol(val path: NameSpace, tpe: Type) extends TypeSymbol(tpe, Modifier.NoModifier) {
@@ -176,7 +176,7 @@ object Symbol {
 
   object TypeParamSymbol {
     def apply(name: String, path: NameSpace, tpe: Type): TypeParamSymbol =
-      new TypeParamSymbol(path.appendName(name), tpe)
+      new TypeParamSymbol(path.appendInnerName(name), tpe)
   }
 
   class FieldTypeSymbol(
@@ -197,8 +197,11 @@ object Symbol {
   ) extends TermSymbol(tpe, flags)
 
   object VariableSymbol {
-    def apply(name: String, path: NameSpace, visibility: Accessibility, flags: Modifier, tpe: Type): VariableSymbol =
-      new VariableSymbol(path.appendName(name), visibility, flags, tpe)
+    def field(name: String, path: NameSpace, visibility: Accessibility, flags: Modifier, tpe: Type): VariableSymbol =
+      new VariableSymbol(path.appendComponentName(name), visibility, flags, tpe)
+
+    def local(name: String, path: NameSpace, visibility: Accessibility, flags: Modifier, tpe: Type): VariableSymbol =
+      new VariableSymbol(path.appendInnerName(name), visibility, flags, tpe)
   }
 
   class HardwareParamSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier) {
@@ -207,7 +210,7 @@ object Symbol {
 
   object HardwareParamSymbol {
     def apply(name: String, path: NameSpace, tpe: Type): HardwareParamSymbol =
-      new HardwareParamSymbol(path.appendName(name), tpe)
+      new HardwareParamSymbol(path.appendInnerName(name), tpe)
   }
 
   class MethodSymbol(
@@ -225,7 +228,7 @@ object Symbol {
       flags: Modifier,
       tpe: Type
     ): MethodSymbol =
-      new MethodSymbol(path.appendName(name), visibility, flags, tpe)
+      new MethodSymbol(path.appendComponentName(name), visibility, flags, tpe)
   }
 
   class AlwaysSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier) {
@@ -234,7 +237,7 @@ object Symbol {
 
   object AlwaysSymbol {
     def apply(name: String, path: NameSpace): AlwaysSymbol =
-      new AlwaysSymbol(path.appendName(name))
+      new AlwaysSymbol(path.appendComponentName(name))
   }
 
   class StageSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier) {
@@ -243,16 +246,16 @@ object Symbol {
 
   object StageSymbol {
     def apply(name: String, path: NameSpace, tpe: Type): StageSymbol =
-      new StageSymbol(path.appendName(name), tpe)
+      new StageSymbol(path.appendComponentName(name), tpe)
   }
 
-  class StateSymbol(val path: NameSpace) extends Symbol(Type.NoType, Modifier.NoModifier){
+  class StateSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier){
     override val accessibility: Accessibility = Accessibility.Private
   }
 
   object StateSymbol {
     def apply(name: String, path: NameSpace): StateSymbol =
-      new StateSymbol(path.appendName(name))
+      new StateSymbol(path.appendComponentName(name))
   }
 
   class ImplementSymbol(
@@ -270,11 +273,8 @@ object Symbol {
   }
 
   object ImplementSymbol {
-    def apply(
-      id: Int,
-      path: NameSpace,
-    ): ImplementSymbol = {
-      new ImplementSymbol(id, path.appendName(ImplementId.id().toString))
+    def apply(id: Int, path: NameSpace): ImplementSymbol = {
+      new ImplementSymbol(id, path.appendComponentName(ImplementId.id().toString))
     }
   }
 
@@ -309,11 +309,11 @@ object Symbol {
   object PackageSymbol {
     def apply(parent: PackageSymbol, name: String): PackageSymbol = {
       val pkg = parent.path.pkgName :+ name
-      new PackageSymbol(NameSpace(pkg, Vector.empty, None))
+      new PackageSymbol(NameSpace(pkg, Vector.empty, Vector.empty))
     }
 
     def apply(name: String): PackageSymbol =
-      new PackageSymbol(NameSpace(Vector(name), Vector.empty, None))
+      new PackageSymbol(NameSpace(Vector(name), Vector.empty, Vector.empty))
   }
 
   class RootPackageSymbol extends PackageSymbol(NameSpace.empty) {

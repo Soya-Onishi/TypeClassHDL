@@ -11,22 +11,29 @@ package object backend {
     override def hashCode(): Int = module.hashCode() + impl.hashCode + children.hashCode
   }
 
-  trait HPElem
+  trait ToFirrtlString {
+    def toFirrtlString: String
+  }
+
+  trait HPElem extends ToFirrtlString
+
   object HPElem {
     case class Num(n: Int) extends HPElem {
       override def hashCode(): Int = this.n.hashCode
-      override def toString = this.n.toString
+      override def toString: String = this.n.toString
+      override def toFirrtlString: String = this.toString
     }
 
     case class Str(s: String) extends HPElem {
       override def hashCode(): Int = this.s.hashCode
-      override def toString = this.s
+      override def toString: String = this.s
+      override def toFirrtlString: String = this.toString
     }
   }
 
-  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType], fields: Map[String, BackendType]) {
+  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType], fields: Map[String, BackendType]) extends ToFirrtlString {
     override def hashCode(): Int = symbol.hashCode + hargs.hashCode + hargs.hashCode
-    override def toString = {
+    override def toString: String = {
       val head = symbol.name
       val args = hargs.map(_.toString) ++ targs.map(_.toString)
 
@@ -36,7 +43,7 @@ package object backend {
       }
     }
 
-    lazy val toFirrtlString: String = {
+    override lazy val toFirrtlString: String = {
       val head = {
         val pkg = this.symbol.path.pkgName.mkString("_")
         val name = this.symbol.path.name.get
@@ -84,8 +91,8 @@ package object backend {
         val fieldHPTable = (tpe.origin.hps zip hargs).toMap
         val fieldTPTable = (tpe.origin.tps zip targs).toMap
 
-        val fieldTpes = tpe.declares.toMap.map {
-          case (fieldName, field) =>
+        val fieldTpes = tpe.declares.toMap.collect {
+          case (fieldName, field) if field.hasFlag(Modifier.Field) =>
             val tpe = convertToBackendType(field.tpe.asRefType, fieldHPTable, fieldTPTable)
             fieldName -> tpe
         }
@@ -136,22 +143,22 @@ package object backend {
       .find(_.symbol == impl)
   }
 
-  def findImplClassTree(method: Symbol.MethodSymbol, global: GlobalData): Option[frontend.ImplementClass] = {
+  def findImplClassTree(term: Symbol.TermSymbol, global: GlobalData): Option[frontend.ImplementClass] = {
     global.compilationUnits
-      .filter(_.pkgName == method.path.pkgName)
+      .filter(_.pkgName == term.path.pkgName)
       .view
       .flatMap(_.topDefs)
       .collect { case impl: frontend.ImplementClass => impl }
-      .find(_.components.exists(_.symbol == method))
+      .find(_.components.exists(_.symbol == term))
   }
 
-  def findImplInterfaceTree(method: Symbol.MethodSymbol, global: GlobalData): Option[frontend.ImplementInterface] = {
+  def findImplInterfaceTree(term: Symbol.TermSymbol, global: GlobalData): Option[frontend.ImplementInterface] = {
     global.compilationUnits
-      .filter(_.pkgName == method.path.pkgName)
+      .filter(_.pkgName == term.path.pkgName)
       .view
       .flatMap(_.topDefs)
       .collect { case impl: frontend.ImplementInterface => impl }
-      .find(_.methods.exists(_.symbol == method))
+      .find(_.methods.exists(_.symbol == term))
   }
 
   def findMethodTree(method: Symbol.MethodSymbol, global: GlobalData): Option[frontend.MethodDef] = {

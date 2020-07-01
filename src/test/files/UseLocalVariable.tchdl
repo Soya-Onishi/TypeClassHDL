@@ -1,0 +1,9 @@
+package test
+
+module Top
+impl Top {
+  input def func(in: Bit[8]) -> Bit[8] {
+    val local = in
+    local
+  }
+}

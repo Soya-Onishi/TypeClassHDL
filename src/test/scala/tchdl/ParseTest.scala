@@ -39,7 +39,7 @@ class ParseTest extends TchdlFunSuite {
 
   test("struct definitions test") {
     def field(name: String, tpe: TypeTree): ValDef =
-      ValDef(Modifier.NoModifier, name, Some(tpe), None)
+      ValDef(Modifier.Field, name, Some(tpe), None)
 
     val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)) _
 
@@ -80,8 +80,8 @@ class ParseTest extends TchdlFunSuite {
         Vector.empty,
         Vector.empty,
         Vector.empty,
-        Vector(ValDef(Modifier.Parent, "p", Some(TypeTree(Ident("M1"), Vector.empty, Vector.empty)), None)),
-        Vector(ValDef(Modifier.Sibling, "s", Some(TypeTree(Ident("M2"), Vector.empty, Vector.empty)), None)),
+        Vector(ValDef(Modifier.Parent | Modifier.Field, "p", Some(TypeTree(Ident("M1"), Vector.empty, Vector.empty)), None)),
+        Vector(ValDef(Modifier.Sibling | Modifier.Field, "s", Some(TypeTree(Ident("M2"), Vector.empty, Vector.empty)), None)),
       )
     )
 
@@ -89,7 +89,7 @@ class ParseTest extends TchdlFunSuite {
       parser("module Mod[m: Num, T] where m: min 1 & max 3, T: I0 + I1") ==
       ModuleDef (
         "Mod",
-        Vector(ValDef(Modifier.NoModifier, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
+        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
         Vector(TypeDef("T")),
         Vector(
           HPBoundTree(
@@ -145,7 +145,7 @@ class ParseTest extends TchdlFunSuite {
       ImplementInterface(
         TypeTree(Ident("I"), Vector(Ident("m")), Vector.empty),
         TypeTree(Ident("Type"), Vector.empty, Vector(TypeTree(Ident("T"), Vector.empty, Vector.empty))),
-        Vector(ValDef(Modifier.NoModifier, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
+        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
         Vector(TypeDef("T")),
         Vector.empty,
         Vector.empty
@@ -177,11 +177,11 @@ class ParseTest extends TchdlFunSuite {
     val stage = impl.components.collect{ case stage: StageDef => stage }
     val always = impl.components.collect{ case always: AlwaysDef => always }
 
-    assert(in.flag == Modifier.Input)
-    assert(inter.flag == Modifier.Internal)
-    assert(out.flag == Modifier.Output)
+    assert(in.flag == (Modifier.Input | Modifier.Field))
+    assert(inter.flag == (Modifier.Internal | Modifier.Field))
+    assert(out.flag == (Modifier.Output | Modifier.Field))
 
-    assert(register.flag == Modifier.Register)
+    assert(register.flag == (Modifier.Register | Modifier.Field))
 
     assert(sub.expr.isDefined)
     assert(sub.expr.get.isInstanceOf[ConstructClass])

@@ -8,8 +8,9 @@ abstract class BackendContext[T <: BackendLabel]() {
   val label: T
   val hpTable: Map[Symbol.HardwareParamSymbol, HPElem]
   val tpTable: Map[Symbol.TypeParamSymbol, BackendType]
+  val tpBound: Map[Type.RefType, Vector[BackendType]]
 
-  def copy(_label: T): BackendContext[T] = {
+  def copy(_label: T, _tpBound: Map[Type.RefType, Vector[BackendType]]): BackendContext[T] = {
     val oldTemp = this.temp
 
     new BackendContext[T] {
@@ -18,16 +19,18 @@ abstract class BackendContext[T <: BackendLabel]() {
       override val label = _label
       override val hpTable = _label.hps
       override val tpTable = _label.tps
+      override val tpBound = _tpBound
     }
   }
 }
 
 object BackendContext {
-  def apply[T <: BackendLabel](_label: T): BackendContext[T] = {
+  def apply[T <: BackendLabel](_label: T, _tpBound: Map[Type.RefType, Vector[BackendType]]): BackendContext[T] = {
     new BackendContext[T] {
       override val label = _label
       override val hpTable = _label.hps
       override val tpTable = _label.tps
+      override val tpBound = _tpBound
     }
   }
 }

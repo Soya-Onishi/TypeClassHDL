@@ -273,6 +273,7 @@ object ImplMethodSigTyper {
           Modifier.Input,
           Modifier.Sibling,
           Modifier.Parent,
+          Modifier.Internal,
           Modifier.NoModifier
         )
       }

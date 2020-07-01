@@ -11,6 +11,13 @@ class Modifier(_value: Option[BigInt] = None) {
     case that: Modifier => this.value == that.value
     case _ => false
   }
+
+  override def toString: String = {
+    Modifier.modifiers
+      .filter{ case (key, _) => this.hasFlag(key) }
+      .map{ case (_, name) => name }
+      .mkString(" | ")
+  }
 }
 
 object Modifier {
@@ -36,6 +43,23 @@ object Modifier {
     c
   }
 
+  lazy val modifiers = Map (
+    Input -> "Input",
+    Internal -> "Internal",
+    Output -> "Output",
+    Register -> "Register",
+    Public -> "Public",
+    Sibling -> "Sibling",
+    Parent -> "Parent",
+    Child -> "Child",
+
+    Interface -> "Interface",
+    Trait -> "Trait",
+
+    Local -> "Local",
+    Field -> "Field",
+  )
+
   case object NoModifier extends Modifier(Some(0))
   case object Input extends Modifier
   case object Internal extends Modifier
@@ -48,4 +72,7 @@ object Modifier {
 
   case object Interface extends Modifier
   case object Trait extends Modifier
+
+  case object Local extends Modifier
+  case object Field extends Modifier
 }

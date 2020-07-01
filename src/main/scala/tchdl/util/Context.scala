@@ -39,21 +39,21 @@ abstract class Context {
 
 object Context {
   def apply(owner: Context, symbol: Symbol): NodeContext =
-    new NodeContext(owner, symbol, owner.self, Some(symbol.name))
+    new NodeContext(owner, symbol, owner.self, symbol.path)
 
   def apply(owner: NodeContext, self: Type.RefType): NodeContext =
-    new NodeContext(owner, owner.owner, Some(self), None)
+    new NodeContext(owner, owner.owner, Some(self), owner.path)
 
   def apply(owner: NodeContext): NodeContext =
-    new NodeContext(owner, owner.owner, owner.self, None)
+    new NodeContext(owner, owner.owner, owner.self, owner.path)
 
   def blk(owner: NodeContext): NodeContext =
-    new NodeContext(owner, owner.owner, owner.self, Some(owner.getBlkID.toString))
+    new NodeContext(owner, owner.owner, owner.self, owner.path.appendInnerName(owner.getBlkID.toString))
 
   def root(pkgName: Vector[String]): RootContext = new RootContext(pkgName)
 
   class RootContext(pkgName: Vector[String]) extends Context {
-    override val path: NameSpace = NameSpace(pkgName, Vector.empty, None)
+    override val path: NameSpace = NameSpace(pkgName, Vector.empty, Vector.empty)
     override val self: Option[Type.RefType] = None
 
     override def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
@@ -108,15 +108,8 @@ object Context {
     val parent: Context,
     val owner: Symbol,
     val self: Option[Type.RefType],
-    name: Option[String]
+    val path: NameSpace
   ) extends Context {
-    override def path: NameSpace = {
-      name match {
-        case Some(n) => parent.path.appendName(n)
-        case None => parent.path
-      }
-    }
-
     def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit] = scope.append(symbol)
 
     def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] =
@@ -177,19 +170,20 @@ object Context {
   }
 }
 
-case class NameSpace(pkgName: Vector[String], path: Vector[String], name: Option[String]) {
-  def appendName(name: String): NameSpace = {
-    this.name match {
-      case None => this.copy(name = Some(name))
-      case Some(n) =>
-        val path = this.path ++ Vector(n)
-        this.copy(path = path, name = Some(name))
-    }
+case class NameSpace(pkgName: Vector[String], rootPath: Vector[String], innerPath: Vector[String]) {
+  override def hashCode(): Int = pkgName.hashCode + rootPath.hashCode + innerPath.hashCode
+  def name: Option[String] = innerPath.lastOption orElse rootPath.lastOption
+
+  def appendComponentName(name: String): NameSpace = {
+    assert(innerPath.isEmpty)
+    this.copy(rootPath = this.rootPath :+ name)
   }
+
+  def appendInnerName(name: String): NameSpace = this.copy(innerPath = this.innerPath :+ name)
 }
 
 object NameSpace {
-  def empty: NameSpace = NameSpace(Vector.empty, Vector.empty, None)
+  def empty: NameSpace = NameSpace(Vector.empty, Vector.empty, Vector.empty)
 }
 
 object ImplementId {

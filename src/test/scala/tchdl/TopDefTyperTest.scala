@@ -207,6 +207,7 @@ class TopDefTyperTest extends TchdlFunSuite {
 
     assert(sub.name == "sub")
     assert(sub.hasFlag(Modifier.Child))
-    assert(sub.flag == Modifier.Child)
+    assert(sub.hasFlag(Modifier.Field))
+    assert(sub.flag == (Modifier.Child | Modifier.Field))
   }
 }

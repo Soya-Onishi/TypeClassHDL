@@ -9,6 +9,7 @@ trait BackendContainer {
 
 case class ModuleContainer(
   tpe: BackendType,
+  hps: Map[String, HPElem],
   interfaces: Vector[MethodContainer],
   stages: Vector[StageContainer],
   always: Vector[AlwaysContainer],
@@ -30,8 +31,8 @@ case class ModuleContainer(
 }
 
 object ModuleContainer {
-  def empty(tpe: BackendType): ModuleContainer =
-    ModuleContainer(tpe, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
+  def empty(tpe: BackendType, hps: Map[String, HPElem]): ModuleContainer =
+    ModuleContainer(tpe, hps, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
 }
 
 case class MethodContainer(
@@ -53,29 +54,24 @@ case class StageContainer(
   states: Vector[StateContainer],
   code: Vector[ast.Stmt]
 ) extends BackendContainer {
-  lazy val toFirrtlString: String = label.symbol.name
+  lazy val toFirrtlString: String = label.toString
 }
 
 case class StateContainer (
-  symbol: Symbol.StateSymbol,
-  stageFirrtlString: String,
+  label: StateLabel,
   code: Vector[ast.Stmt]
 ) extends BackendContainer {
-  lazy val toFirrtlString: String = {
-    val name = symbol.name
-
-    stageFirrtlString + "$" + name
-  }
+  lazy val toFirrtlString: String = label.toString
 }
 
 case class FieldContainer(
   flag: Modifier,
-  symbol: Symbol.VariableSymbol,
+  label: FieldLabel,
   code: Vector[ast.Stmt],
   ret: Option[ast.Expr],
   tpe: BackendType
 ) extends BackendContainer {
-  override def toFirrtlString: String = symbol.name
+  override def toFirrtlString: String = label.toString
 }
 
 case class AlwaysContainer (

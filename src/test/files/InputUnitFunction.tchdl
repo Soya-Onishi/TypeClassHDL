@@ -1,0 +1,6 @@
+package test::inner
+
+module Top
+impl Top {
+  input def f() -> Unit {}
+}

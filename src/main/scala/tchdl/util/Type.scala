@@ -75,8 +75,8 @@ object Type {
 
       val fieldCtx = Context(sigCtx)
 
-      moduleDef.parents.map(Namer.namedValDef(_)(fieldCtx, global))
-      moduleDef.siblings.map(Namer.namedValDef(_)(fieldCtx, global))
+      moduleDef.parents.map(Namer.namedFieldDef(_)(fieldCtx, global))
+      moduleDef.siblings.map(Namer.namedFieldDef(_)(fieldCtx, global))
 
       Type.EntityType(moduleDef.name, ctx.path, fieldCtx.scope)
     }

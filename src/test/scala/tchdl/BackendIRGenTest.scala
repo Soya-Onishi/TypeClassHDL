@@ -8,6 +8,8 @@ import tchdl.backend._
 import tchdl.backend.ast._
 import tchdl.typecheck._
 
+import scala.collection.immutable.ListMap
+
 class BackendIRGenTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
@@ -72,9 +74,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(top.always.isEmpty)
     assert(top.fields.length == 1)
 
-    val code = top.fields.head.code
-    assert(code.length == 1)
-    val construct = code.head
+    val subDef = top.fields.head
+    assert(subDef.code.isEmpty)
+    assert(subDef.ret.isDefined)
+
+    val Some(construct) = subDef.ret
     assert(construct == backend.ast.ConstructModule(subTpe, Map.empty, Map.empty))
   }
 
@@ -94,6 +98,13 @@ class BackendIRGenTest extends TchdlFunSuite {
     val subTpe = BackendType(subSymbol, Vector(HPElem.Num(4)), Vector.empty, Map.empty)
     val sub = modules.find(_.tpe == subTpe).get
 
+    val subFieldSymbol = tree.topDefs
+      .collect{ case impl: frontend.ImplementClass => impl }
+      .find(_.target.symbol.name == "Top")
+      .get.components
+      .collectFirst{ case vdef: frontend.ValDef if vdef.flag.hasFlag(Modifier.Field) => vdef }
+      .get.symbol.asVariableSymbol
+
     assert(top.interfaces.length == 1)
     assert(top.fields.length == 1)
     assert(sub.interfaces.length == 1)
@@ -104,13 +115,12 @@ class BackendIRGenTest extends TchdlFunSuite {
     val bit = global.builtin.types.lookup("Bit")
     val bit4 = BackendType(bit, Vector(HPElem.Num(4)), Vector.empty, Map.empty)
 
-    assert(function.code == Vector(
-      Temp("TEMP_2", ReferField(Term.This, "sub", subTpe)),
-      Temp("TEMP_0", Ident(Term.Variable("function$a", bit4), bit4)),
-      Temp("TEMP_1", Ident(Term.Variable("function$b", bit4), bit4)),
-    ))
+    assert(function.code(0) == Temp(3, This(topTpe)))
+    assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, topTpe, ListMap.empty, ListMap.empty), subTpe)))
+    assert(function.code(2) == Temp(1, Ident(Term.Variable("function$a", bit4), bit4)))
+    assert(function.code(3) == Temp(2, Ident(Term.Variable("function$b", bit4), bit4)))
 
-    assert(function.ret == CallInterface(add.label, Term.Variable("TEMP_2", subTpe), Vector(Term.Variable("TEMP_0", bit4), Term.Variable("TEMP_1", bit4)), bit4))
+    assert(function.ret == CallInterface(add.label, Term.Temp(4, subTpe), Vector(Term.Temp(1, bit4), Term.Temp(2, bit4)), bit4))
   }
 
   test("build ALU circuit description should generate code correctly") {
@@ -127,5 +137,26 @@ class BackendIRGenTest extends TchdlFunSuite {
 
     assert(methods.exists(_.label.symbol == add))
     assert(methods.exists(_.label.symbol == sub))
+  }
+
+  test("build input interface method with internal call") {
+    val (modules, methods, _) = untilThisPhase(Vector("test"), "Top", "InputCallInternal.tchdl")
+
+    assert(modules.length == 1)
+    assert(methods.isEmpty)
+
+    val inputFunc = modules.head.interfaces.find(_.label.symbol.name == "inputFunc").get
+    val internalFunc = modules.head.interfaces.find(_.label.symbol.name == "internalFunc").get
+
+    val topTpe = modules.head.tpe
+    val bit8 = internalFunc.ret.tpe
+
+    assert(inputFunc.code.length == 2)
+    assert(inputFunc.ret == CallInterface(
+      internalFunc.label,
+      Term.Temp(2, topTpe),
+      Vector(Term.Temp(1, bit8)),
+      bit8
+    ))
   }
 }

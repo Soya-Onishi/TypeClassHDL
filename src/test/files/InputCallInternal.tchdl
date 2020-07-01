@@ -1,0 +1,12 @@
+package test
+
+module Top
+impl Top {
+  input def inputFunc(in: Bit[8]) -> Bit[8] {
+    this.internalFunc(in)
+  }
+
+  internal def internalFunc(x: Bit[8]) -> Bit[8] {
+    x
+  }
+}

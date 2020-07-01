@@ -48,8 +48,21 @@ object Namer {
     method.setSymbol(methodSymbol)
   }
 
-  def namedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
-    val symbol = Symbol.VariableSymbol(
+  def namedFieldDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
+    val symbol = Symbol.VariableSymbol.field(
+      vdef.name,
+      ctx.path,
+      Accessibility.Private,
+      vdef.flag,
+      Type.VariableTypeGenerator(vdef, ctx, global)
+    )
+
+    ctx.append(symbol)
+    vdef.setSymbol(symbol)
+  }
+
+  def namedLocalDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
+    val symbol = Symbol.VariableSymbol.local(
       vdef.name,
       ctx.path,
       Accessibility.Private,
@@ -200,7 +213,8 @@ object Namer {
     val namedTree = ast match {
       case always: AlwaysDef => namedAlways(always)
       case method: MethodDef => namedMethod(method)
-      case vdef: ValDef => namedValDef(vdef)
+      case vdef: ValDef if vdef.flag.hasFlag(Modifier.Field) => namedFieldDef(vdef)
+      case vdef: ValDef => namedLocalDef(vdef)
       case stage: StageDef => namedStageDef(stage)
       case state: StateDef => namedStateDef(state)
       case typeDef: TypeDef => namedTPDef(typeDef)
