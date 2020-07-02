@@ -4,11 +4,12 @@ import tchdl.ast._
 import tchdl.backend._
 import tchdl.util._
 import tchdl.typecheck._
-
-import firrtl.ir
 import firrtl._
 import firrtl.transforms._
 import firrtl.passes._
+
+import java.io.{File, FileWriter}
+import java.nio.file.Files
 
 class FirrtlCodeGenTest extends TchdlFunSuite {
   def extractHashCode(regex: String, from: String): String = {
@@ -78,7 +79,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
       InferTypes,
       ResolveFlows,
       InferWidths(),
-      new ConstantPropagation)
+      new ConstantPropagation,
+      CheckInitialization
+    )
 
     // Run transforms and capture final state
     val finalState = transforms.foldLeft(state) {
@@ -86,6 +89,17 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     }
 
     finalState.circuit
+  }
+
+  def runFirrtl(circuit: ir.Circuit): Unit = {
+    val file = Files.createTempFile(null, ".fir")
+    Files.write(file, circuit.serialize.getBytes)
+    val circuitString = Files.readString(file)
+
+    println(circuitString)
+
+    val command = Array("-i", file.toString)
+    firrtl.stage.FirrtlMain.main(command)
   }
 
   test("build most simple code") {
@@ -231,5 +245,13 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "M", "validSequenceCircuit.tchdl")
 
     transform(circuit)
+  }
+
+  test("compile ALU without always statement") {
+    val (circuit, _) = untilThisPhase(Vector("test", "alu"), "Top", "ALUwithoutAlways.tchdl")
+
+    // println(circuit.serialize)
+
+    runFirrtl(circuit)
   }
 }

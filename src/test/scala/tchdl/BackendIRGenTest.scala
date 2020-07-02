@@ -117,8 +117,10 @@ class BackendIRGenTest extends TchdlFunSuite {
 
     assert(function.code(0) == Temp(3, This(topTpe)))
     assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, topTpe, ListMap.empty, ListMap.empty), subTpe)))
-    assert(function.code(2) == Temp(1, Ident(Term.Variable("function$a", bit4), bit4)))
-    assert(function.code(3) == Temp(2, Ident(Term.Variable("function$b", bit4), bit4)))
+    val Temp(_, Ident(Term.Variable(functionA, _), _)) = function.code(2)
+    val Temp(_, Ident(Term.Variable(functionB, _), _)) = function.code(3)
+    assert(functionA.matches("function_[0-9a-f]+\\$a"))
+    assert(functionB.matches("function_[0-9a-f]+\\$b"))
 
     assert(function.ret == CallInterface(add.label, Term.Temp(4, subTpe), Vector(Term.Temp(1, bit4), Term.Temp(2, bit4)), bit4))
   }

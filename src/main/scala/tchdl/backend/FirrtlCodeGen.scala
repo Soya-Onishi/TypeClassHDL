@@ -443,7 +443,35 @@ object FirrtlCodeGen {
     val tpeString = field.tpe.toFirrtlString
     val module = ir.DefInstance(ir.NoInfo, field.toFirrtlString, tpeString)
 
-    (stmts ++ retStmts, module)
+    val submodName = field.toFirrtlString
+    def subField(name: String): ir.SubField = ir.SubField(ir.Reference(submodName, ir.UnknownType), name, ir.UnknownType)
+    val connectClock = ir.Connect(ir.NoInfo, subField(clockName), clockRef)
+    val connectReset = ir.Connect(ir.NoInfo, subField(resetName), resetRef)
+    val interfaces = ctx.interfaces(field.tpe)
+      .filter {
+        interface =>
+          val flag = interface.label.symbol.flag
+          flag.hasFlag(Modifier.Input) || flag.hasFlag(Modifier.Sibling)
+      }
+
+    val interfaceInits = interfaces.flatMap {
+      interface =>
+        val active = subField(interface.activeName)
+        val ret = Some(interface.ret.tpe)
+          .filter(tpe => convertToRefType(tpe) =:= Type.unitTpe)
+          .map(_ => interface.retName)
+          .map(subField)
+        val params = interface.params.keys.map(subField)
+
+        val turnOff = ir.Connect(ir.NoInfo, active, ir.UIntLiteral(0))
+        val invalids = (params ++ ret).map(ir.IsInvalid(ir.NoInfo, _)).toVector
+
+        turnOff +: invalids
+    }
+
+    val initModule = Vector(connectClock, connectReset) ++ interfaceInits
+
+    (stmts ++ retStmts ++ initModule, module)
   }
 
   def runAlways(always: AlwaysContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[ir.Statement] = {
