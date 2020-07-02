@@ -159,4 +159,67 @@ class BackendIRGenTest extends TchdlFunSuite {
       bit8
     ))
   }
+
+  test("generate stage correctly") {
+    val (modules, methods, _) = untilThisPhase(Vector("test"), "M", "generateStage1.tchdl")
+
+    assert(methods.isEmpty)
+    assert(modules.length == 1)
+
+    val module = modules.head
+
+    assert(module.interfaces.length == 1)
+    assert(module.stages.length == 1)
+
+    val interface = module.interfaces.head
+    val stage = module.stages.head
+
+    assert(interface.ret.isInstanceOf[Generate])
+    val Generate(generatedStage, _, _) = interface.ret
+    assert(generatedStage == stage.label)
+
+    assert(stage.code.length == 1)
+    val Abandon(Finish(finishedStage)) = stage.code.head
+    assert(finishedStage == stage.label)
+  }
+
+  test("build valid stage code correctly") {
+    val (modules, _, _) = untilThisPhase(Vector("test"), "M", "validSequenceCircuit.tchdl")
+    val module = modules.head
+
+    assert(module.stages.length == 3)
+
+    val st1 = module.stages.find(_.label.symbol.name == "st1").get
+    val st2 = module.stages.find(_.label.symbol.name == "st2").get
+    val st3 = module.stages.find(_.label.symbol.name == "st3").get
+
+    assert(st1.states.length == 2)
+
+    val s1 = st1.states.find(_.label.symbol.name == "s1").get
+    val s2 = st1.states.find(_.label.symbol.name == "s2").get
+
+    val s1Goto = s1.code.collectFirst{ case Abandon(goto: Goto) => goto }.get
+    val s1Generate = s1.code.collectFirst{ case Abandon(gen: Generate) => gen }.get
+
+    val s2Finish = s2.code.collectFirst{ case Abandon(finish: Finish) => finish }.get
+    val s2Generate = s2.code.collectFirst{ case Abandon(gen: Generate) => gen }.get
+
+    assert(s1Goto.state == s2.label)
+    assert(s1Generate.stage == st2.label)
+
+    assert(s2Finish.stage == st1.label)
+    assert(s2Generate.stage == st3.label)
+
+    val st2Finish = st2.code.collectFirst{ case Abandon(finish: Finish) => finish }.get
+    val st3Finish = st3.code.collectFirst{ case Abandon(finish: Finish) => finish }.get
+
+    assert(st2Finish.stage == st2.label)
+    assert(st3Finish.stage == st3.label)
+
+    val (st1AName, _) = st1.args.head
+    val (st1BName, _) = st1.args.tail.head
+
+    assert(st1AName == "st1$a")
+    assert(st1BName == "st1$b")
+  }
 }

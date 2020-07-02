@@ -54,6 +54,10 @@ case class StageContainer(
   states: Vector[StateContainer],
   code: Vector[ast.Stmt]
 ) extends BackendContainer {
+  def activeName: String = label.toString + "$_active"
+  def retName: String = label.toString + "$_ret"
+  def stateName: String = label.toString + "$_state"
+
   lazy val toFirrtlString: String = label.toString
 }
 

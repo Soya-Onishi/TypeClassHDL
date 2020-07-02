@@ -3,11 +3,11 @@ package tchdl.backend
 import tchdl.backend.{ast => backend}
 import tchdl.util._
 import tchdl.util.TchdlException._
-import firrtl.ir
+import firrtl.{PrimOps, ir}
 
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.reflect.classTag
+import scala.math
 
 
 object FirrtlCodeGen {
@@ -355,7 +355,9 @@ object FirrtlCodeGen {
       .map(runSubModule(_)(stack, ctx, global))
       .unzip
 
-    val ports = inputs ++ outputs
+    val clk = ir.Port(ir.NoInfo, clockName, ir.Input, ir.ClockType)
+    val reset = ir.Port(ir.NoInfo, resetName, ir.Input, ir.UIntType(ir.IntWidth(1)))
+    val ports = Vector(clk, reset) ++ inputs ++ outputs
     val initStmts = (inputStmts ++ outputStmts ++ internalStmts ++ regStmts ++ moduleStmts).flatten
     val components = internals ++ registers ++ modules
     val fieldStmts = components ++ initStmts
@@ -363,13 +365,14 @@ object FirrtlCodeGen {
     val alwaysStmts = module.always.flatMap(runAlways(_)(stack, ctx, global))
     val (interfacePorts, interfaceStmts) = module.interfaces.map(buildInterfaceSignature(_)(stack, global)).unzip
     val interfaceConds = module.interfaces.map(runInterface(_)(stack, ctx, global))
-    // val stages = module.stages.map(runStage(_)(stack, ctx, global))
+    val stageStmts = module.stages.flatMap(buildStageSignature(_)(stack, global))
+    val stageConds = module.stages.map(runStage(_)(stack, ctx, global))
 
     ir.Module(
       ir.NoInfo,
       module.tpe.toFirrtlString,
       ports ++ interfacePorts.flatten,
-      ir.Block(fieldStmts ++ interfaceStmts.flatten ++ alwaysStmts ++ interfaceConds)
+      ir.Block(fieldStmts ++ interfaceStmts.flatten ++ stageStmts ++ alwaysStmts ++ interfaceConds ++ stageConds)
     )
   }
 
@@ -440,12 +443,73 @@ object FirrtlCodeGen {
     always.code.flatMap(runStmt)
   }
 
-  def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, global: GlobalData): Vector[ir.Statement] = {
-    ???
+  def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, global: GlobalData): Vector[ir.DefRegister] = {
+    stage.args.foreach { case (name, _) => stack.lock(name) }
+    val args = stage.args
+      .map{ case (name, tpe) => stack.refer(name) -> tpe }
+      .map{ case (name, tpe) => name -> HardInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
+      .toVector
+
+    args.foreach { case (name, instance) => stack.scope(name) = instance}
+
+    val active = ir.DefRegister(
+      ir.NoInfo,
+      stage.activeName,
+      ir.UIntType(ir.IntWidth(1)),
+      clockRef,
+      resetRef,
+      ir.UIntLiteral(0)
+    )
+
+    def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
+    def stateWidth(x: Double): Double = (math.ceil _ compose log2)(x)
+
+    val state =
+      if(stage.states.length <= 1) None
+      else Some(ir.DefRegister (
+        ir.NoInfo,
+        stage.stateName,
+        ir.UIntType(ir.IntWidth(stateWidth(stage.states.length).toInt)),
+        clockRef,
+        resetRef,
+        ir.UIntLiteral(0)
+      ))
+
+    val regs = args.map {
+      case (name, instance) =>
+        ir.DefRegister(
+          ir.NoInfo,
+          name.name,
+          convertToFirrtlType(instance.tpe),
+          clockRef,
+          resetRef,
+          ir.Reference(name.name, ir.UnknownType)
+        )
+    }
+
+    (active +: regs) ++ state
   }
 
-  def runStage(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.FirrtlNode], ir.Conditionally) = {
-    ???
+  def runStage(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): ir.Conditionally = {
+    val stmts = stage.code.flatMap(runStmt)
+    val states = stage.states.zipWithIndex.map {
+      case (state, idx) =>
+        val stateStmts = state.code.flatMap(runStmt)
+        val stateRef = ir.Reference(stage.stateName, ir.UnknownType)
+        ir.Conditionally(
+          ir.NoInfo,
+          ir.DoPrim(PrimOps.Eq, Seq(stateRef, ir.UIntLiteral(idx)), Seq.empty, ir.UnknownType),
+          ir.Block(stateStmts),
+          ir.EmptyStmt
+        )
+    }
+
+    ir.Conditionally(
+      ir.NoInfo,
+      ir.Reference(stage.activeName, ir.UnknownType),
+      ir.Block(stmts ++ states),
+      ir.EmptyStmt
+    )
   }
 
   def buildInterfaceSignature(interface: MethodContainer)(implicit stack: StackFrame, global: GlobalData): (Vector[ir.Port], Vector[ir.Statement]) = {
@@ -594,6 +658,9 @@ object FirrtlCodeGen {
       case call: backend.CallInterface => runCallInterface(call)
       case call: backend.CallBuiltIn => runCallBuiltIn(call)
       case ifExpr: backend.IfExpr => runIfExpr(ifExpr)
+      case finish: backend.Finish => runFinish(finish)
+      case goto: backend.Goto => runGoto(goto)
+      case generate: backend.Generate => runGenerate(generate)
       case backend.IntLiteral(value) => RunResult(Vector.empty, IntInstance(value))
       case backend.UnitLiteral() => RunResult(Vector.empty, UnitInstance())
       case backend.StringLiteral(value) => RunResult(Vector.empty, StringInstance(value))
@@ -867,6 +934,43 @@ object FirrtlCodeGen {
     construct.siblings.map { _ => throw new ImplementationErrorException("module's sibling feature does not support yet")}
 
     RunResult(Vector.empty, ModuleInstance(construct.tpe))
+  }
+
+  def runFinish(finish: backend.Finish)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    val stageName = finish.stage.toString
+    val active = stageName + "$_active"
+    val activeRef = ir.Reference(active, ir.UnknownType)
+    val finishStmt = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(0))
+
+    RunResult(Vector(finishStmt), UnitInstance())
+  }
+
+  def runGoto(goto: backend.Goto)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    val stateIndex = goto.state.index
+    val stageState = goto.state.stage.toString + "$_state"
+    val stateRef = ir.Reference(stageState, ir.UnknownType)
+    val changeState = ir.Connect(ir.NoInfo, stateRef, ir.UIntLiteral(stateIndex))
+
+    RunResult(Vector(changeState), UnitInstance())
+  }
+
+  def runGenerate(generate: backend.Generate)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    val activeName = generate.stage.toString + "$_active"
+    val activeRef = ir.Reference(activeName, ir.UnknownType)
+    val argNames = generate.args.map {
+      case backend.Term.Temp(id, _) => stack.refer(id)
+      case backend.Term.Temp(name, _) => stack.refer(name)
+    }
+    val argRefs = argNames.map(name => ir.Reference(name.name, ir.UnknownType))
+
+    generate.stage
+    val paramNames = generate.stage.params.keys.toVector
+    val paramRefs = paramNames.map(name => ir.Reference(name, ir.UnknownType))
+
+    val activate = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(1))
+    val params = (paramRefs zip argRefs).map{ case (param, arg) => ir.Connect(ir.NoInfo, param, arg) }
+
+    RunResult(activate +: params, UnitInstance())
   }
 
   def convertToFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {

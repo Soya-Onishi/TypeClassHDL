@@ -193,4 +193,10 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     transform(circuit)
   }
+
+  test("compile sequential circuit") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "M", "validSequenceCircuit.tchdl")
+    println(circuit.serialize)
+    transform(circuit)
+  }
 }

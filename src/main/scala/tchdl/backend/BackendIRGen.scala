@@ -135,7 +135,12 @@ object BackendIRGen {
 
             (container, labels)
           case stage: frontend.StageDef =>
-            val label = StageLabel(stage.symbol.asStageSymbol, module, hpTable, tpTable)
+            val params = stage.params
+              .map(param => param.name -> param.symbol.tpe.asRefType)
+              .map{ case (name, tpe) => (stage.symbol.name + "$" + name) -> tpe}
+              .map{ case (name, tpe) => name -> convertToBackendType(tpe, hpTable, tpTable)}
+
+            val label = StageLabel(stage.symbol.asStageSymbol, module, ListMap.from(params), hpTable, tpTable)
             val context = BackendContext(label, tpBound)
             val (container, labels) = buildStage(stage)(context, global)
 
@@ -211,15 +216,15 @@ object BackendIRGen {
           )
       }
 
-    val (states, labelsFromState) = stageDef.states.map{
-      state =>
-        val stage = ctx.label
-        val label = StateLabel(state.symbol.asStateSymbol, stage.accessor, ctx.label, ctx.label.hps, ctx.label.tps)
+    val (states, labelsFromState) = stageDef.states.zipWithIndex.map {
+      case (state, idx) =>
+        val label = StateLabel(state.symbol.asStateSymbol, ctx.label.accessor, ctx.label, idx, ctx.label.hps, ctx.label.tps)
         val context = BackendContext(label, ctx.tpBound)
 
         buildState(state)(context, global)
     }.unzip
-    val argNames = stageDef.params.map(_.symbol.name)
+
+    val argNames = stageDef.params.map(param => ctx.label.toString + "$" + param.name)
     val argTpes = stageDef.params.view.map(_.symbol.tpe.asRefType).map(convertToBackendType(_, ctx.hpTable, ctx.tpTable))
     val args = ListMap.from(argNames zip argTpes)
 
@@ -565,12 +570,20 @@ object BackendIRGen {
   def buildGenerate[T <: BackendLabel](generate: frontend.Generate)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult =
     generatePart(generate.params, generate.symbol.asStageSymbol)
 
+
   def buildGoto[T <: BackendLabel](goto: frontend.Goto)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult = {
     val stateLabel = ctx.label.asInstanceOf[StateLabel]
+    val stageTree = findStageTree(stateLabel.stage.symbol, global).get
+    val targetStateIdx = stageTree.states.zipWithIndex
+      .find{ case (state, _) => state.symbol == goto.symbol }
+      .map{ case (_, idx) => idx }
+      .get
+
     val targetLabel = StateLabel(
       goto.symbol.asStateSymbol,
       ctx.label.accessor,
       stateLabel.stage,
+      targetStateIdx,
       ctx.label.hps,
       ctx.label.tps
     )
@@ -596,8 +609,8 @@ object BackendIRGen {
     BuildResult(Vector.empty, Some(backend.Finish(stage)), Set.empty)
   }
 
-  def generatePart[T <: BackendLabel](params: Vector[frontend.Expression], target: Symbol.StageSymbol)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult = {
-    val argResults = params.map(buildExpr)
+  def generatePart[T <: BackendLabel](args: Vector[frontend.Expression], target: Symbol.StageSymbol)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult = {
+    val argResults = args.map(buildExpr(_)(ctx, global))
 
     val argStmts = argResults.flatMap(_.nodes)
     val argLabels = argResults.flatMap(_.labels).toSet
@@ -608,11 +621,20 @@ object BackendIRGen {
       case (expr, temp) => backend.Term.Temp(temp.id, expr.tpe)
     }
 
-    val targetLabel = StageLabel(target, ctx.label.accessor, ctx.label.hps, ctx.label.tps)
+    val stageTree = findStageTree(target, global).get
+    val params = stageTree.params
+      .map(param => param.name)
+      .map(param => target.name + "$" + param)
+      .zip(argExprs)
+      .map{ case (name, expr) => name -> expr.tpe }
+    val paramList = ListMap.from(params)
+
+
+    val targetLabel = StageLabel(target, ctx.label.accessor, paramList, ctx.label.hps, ctx.label.tps)
     val unitTpe = convertToBackendType(Type.unitTpe, Map.empty, Map.empty)
     val generate = backend.Generate(targetLabel, argPassedTerms, unitTpe)
 
-    BuildResult(argStmts ++ argPassedTemps, Some(generate), argLabels)
+    BuildResult(argStmts ++ argPassedTemps, Some(generate), argLabels + targetLabel)
   }
 
   def buildBlockElem[T <: BackendLabel](elem: frontend.BlockElem)(implicit ctx: BackendContext[T], global: GlobalData): BuildResult =
@@ -636,12 +658,8 @@ object BackendIRGen {
     }
 
   def nameFromPath[T <: BackendLabel](path: NameSpace)(implicit ctx: BackendContext[T]): String = {
-    val prefix = ctx.label.toString
-
-    path.innerPath match {
-      case Vector() => prefix
-      case inner => prefix + "$" + inner.mkString("$")
-    }
+    val names = path.rootPath.filterNot(_.forall(_.isDigit)) ++ path.innerPath
+    names.mkString("$")
   }
 }
 

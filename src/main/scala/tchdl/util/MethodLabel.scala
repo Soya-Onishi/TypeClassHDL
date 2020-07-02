@@ -64,6 +64,7 @@ case class MethodLabel(
 case class StageLabel(
   symbol: Symbol.StageSymbol,
   accessor: BackendType,
+  params: ListMap[String, BackendType],
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
@@ -75,6 +76,7 @@ case class StateLabel(
   symbol: Symbol.StateSymbol,
   accessor: BackendType,
   stage: StageLabel,
+  index: Int,
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {

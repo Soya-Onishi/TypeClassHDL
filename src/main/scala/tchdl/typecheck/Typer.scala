@@ -146,7 +146,7 @@ object Typer {
 
     val stageBodyCtx = Context(stageSigCtx)
     stageDef.states.foreach(Namer.namedStateDef(_)(stageBodyCtx, global))
-    stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedFieldDef(_)(stageBodyCtx, global))
+    stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedLocalDef(_)(stageBodyCtx, global))
 
     val typedStates = stageDef.states.map(typedStateDef(_)(stageBodyCtx, global))
     val typedBodyElems = stageDef.blk.map {

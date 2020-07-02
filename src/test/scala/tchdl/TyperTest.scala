@@ -313,6 +313,11 @@ class TyperTest extends TchdlFunSuite {
     val s1 = st1.states.find(_.name == "s1").get
     val s2 = st1.states.find(_.name == "s2").get
 
+    val st1C = st1.blk.collectFirst{ case vdef: ValDef => vdef }.get
+    val cRootPath = st1C.symbol.path.rootPath.filterNot(_.forall(_.isDigit))
+    val cInnerPath = st1C.symbol.path.innerPath
+    assert(cRootPath == Vector("st1"))
+    assert(cInnerPath == Vector("c"))
 
     assert(s1.blk.elems.last.isInstanceOf[Goto])
     val s1Goto = s1.blk.elems.last.asInstanceOf[Goto]
