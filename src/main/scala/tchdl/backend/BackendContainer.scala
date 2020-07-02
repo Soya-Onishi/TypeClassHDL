@@ -37,20 +37,20 @@ object ModuleContainer {
 
 case class MethodContainer(
   label: MethodLabel,
-  hargs: ListMap[String, BackendType],
-  args: ListMap[String, BackendType],
+  hparams: ListMap[String, BackendType],
+  params: ListMap[String, BackendType],
   code: Vector[ast.Stmt],
   ret: ast.Expr
 ) extends BackendContainer {
-  def activeName: String = label.toString + "$active"
-  def retName: String = label.toString + "$ret"
+  def activeName: String = label.toString + "$_active"
+  def retName: String = label.toString + "$_ret"
 
   lazy val toFirrtlString: String = label.toString
 }
 
 case class StageContainer(
   label: StageLabel,
-  args: ListMap[String, BackendType],
+  params: ListMap[String, BackendType],
   states: Vector[StateContainer],
   code: Vector[ast.Stmt]
 ) extends BackendContainer {

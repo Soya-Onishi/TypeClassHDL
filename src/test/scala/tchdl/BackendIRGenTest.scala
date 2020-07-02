@@ -216,10 +216,19 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(st2Finish.stage == st2.label)
     assert(st3Finish.stage == st3.label)
 
-    val (st1AName, _) = st1.args.head
-    val (st1BName, _) = st1.args.tail.head
+    val (st1AName, _) = st1.params.head
+    val (st1BName, _) = st1.params.tail.head
 
-    assert(st1AName == "st1$a")
-    assert(st1BName == "st1$b")
+    assert(st1AName.matches("st1_[0-9a-f]+\\$a"), s"actual[$st1AName]")
+    assert(st1BName.matches("st1_[0-9a-f]+\\$b"), s"actual[$st1BName]")
+  }
+
+  test("local variable also has hashcode") {
+    val (modules, _, _) = untilThisPhase(Vector("test"), "Top", "UseLocalVariable.tchdl")
+
+    val module = modules.head
+    val local = module.interfaces.head.code.collectFirst{ case Variable(name, _, _) => name }.get
+
+    assert(local.matches("func_[0-9a-f]+\\$0\\$local"))
   }
 }

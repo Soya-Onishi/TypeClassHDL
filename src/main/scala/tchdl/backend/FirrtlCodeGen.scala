@@ -118,6 +118,7 @@ object FirrtlCodeGen {
 
   case class FirrtlContext(
     interfaces: Map[BackendType, Vector[MethodContainer]],
+    stages: Map[BackendType, Vector[StageContainer]],
     methods: Map[BackendType, Vector[MethodContainer]],
   )
 
@@ -309,18 +310,24 @@ object FirrtlCodeGen {
 
   def exec(topModule: BackendType, modules: Vector[ModuleContainer], methods: Vector[MethodContainer])(implicit global: GlobalData): ir.Circuit = {
     val interfaceTable = modules.map(module => module.tpe -> module.interfaces).toMap
+    val stageTable = modules.map(module => module.tpe -> module.stages).toMap
     val methodTable = methods.groupBy(_.label.accessor)
 
-    val firrtlModules = modules.map(buildModule(_, interfaceTable, methodTable))
+    val firrtlModules = modules.map(buildModule(_, interfaceTable, stageTable, methodTable))
     val circuitName = topModule.toFirrtlString
 
     ir.Circuit(ir.NoInfo, firrtlModules, circuitName)
   }
 
-  def buildModule(module: ModuleContainer, interfaces: Map[BackendType, Vector[MethodContainer]], methods: Map[BackendType, Vector[MethodContainer]])(implicit global: GlobalData): ir.Module = {
+  def buildModule(
+    module: ModuleContainer,
+    interfaces: Map[BackendType, Vector[MethodContainer]],
+    stages: Map[BackendType, Vector[StageContainer]],
+    methods: Map[BackendType, Vector[MethodContainer]]
+  )(implicit global: GlobalData): ir.Module = {
     val instance = ModuleInstance(module.tpe)
 
-    val ctx = FirrtlContext(interfaces, methods)
+    val ctx = FirrtlContext(interfaces, stages, methods)
     val stack = StackFrame(instance)
 
     module.hps
@@ -444,8 +451,8 @@ object FirrtlCodeGen {
   }
 
   def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, global: GlobalData): Vector[ir.DefRegister] = {
-    stage.args.foreach { case (name, _) => stack.lock(name) }
-    val args = stage.args
+    stage.params.foreach { case (name, _) => stack.lock(name) }
+    val args = stage.params
       .map{ case (name, tpe) => stack.refer(name) -> tpe }
       .map{ case (name, tpe) => name -> HardInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
       .toVector
@@ -513,8 +520,8 @@ object FirrtlCodeGen {
   }
 
   def buildInterfaceSignature(interface: MethodContainer)(implicit stack: StackFrame, global: GlobalData): (Vector[ir.Port], Vector[ir.Statement]) = {
-    interface.args.foreach { case (name, _) => stack.lock(name) }
-    val args = interface.args
+    interface.params.foreach { case (name, _) => stack.lock(name) }
+    val args = interface.params
       .map{ case (name, tpe) => stack.refer(name) -> tpe }
       .map{ case (name, tpe) => name -> HardInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
       .toVector
@@ -730,8 +737,8 @@ object FirrtlCodeGen {
 
     val newStack = StackFrame(stack, accessor)
 
-    val hargNames = method.hargs.keys.map(newStack.next)
-    val argNames = method.args.keys.map(newStack.next)
+    val hargNames = method.hparams.keys.map(newStack.next)
+    val argNames = method.params.keys.map(newStack.next)
 
     (hargNames zip hargs).foreach { case (name, harg) => newStack.scope(name) = harg }
     (argNames zip args).foreach { case (name, arg) => newStack.scope(name) = arg }
@@ -746,7 +753,7 @@ object FirrtlCodeGen {
     def callInternal(tpe: BackendType): RunResult = {
       val candidates = ctx.interfaces(tpe)
       val interface = candidates.find(_.label == call.label).get
-      val params = interface.args
+      val params = interface.params
         .map{ case (name, _) => stack.refer(name) }
         .map{ name => ir.Reference(name.name, ir.UnknownType) }
 
@@ -779,7 +786,7 @@ object FirrtlCodeGen {
     def callExternal(module: ir.Reference, tpe: BackendType): RunResult = {
       val candidates = ctx.interfaces(tpe)
       val interface = candidates.find(_.label == call.label).get
-      val params = interface.args.map{ case (name, _) => ir.SubField(module, name, ir.UnknownType) }
+      val params = interface.params.map{ case (name, _) => ir.SubField(module, name, ir.UnknownType) }
 
       val argNames = call.args.map {
         case backend.Term.Temp(id, _) => stack.refer(id)
@@ -963,8 +970,8 @@ object FirrtlCodeGen {
     }
     val argRefs = argNames.map(name => ir.Reference(name.name, ir.UnknownType))
 
-    generate.stage
-    val paramNames = generate.stage.params.keys.toVector
+    val stageContainer = ctx.stages(stack.lookupThis.get.tpe).find(_.label == generate.stage).get
+    val paramNames = stageContainer.params.keys.toVector
     val paramRefs = paramNames.map(name => ir.Reference(name, ir.UnknownType))
 
     val activate = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(1))

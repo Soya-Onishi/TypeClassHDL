@@ -34,42 +34,21 @@ case class MethodLabel(
   override type SymbolType = Symbol.MethodSymbol
 
   override lazy val toString: String = {
-    def getPolyParamName[K <: Symbol, V <: ToFirrtlString](map: ListMap[K, V]): Vector[String] = {
-      map.map{ case (param, value) => param.path.rootPath.last -> value }
-        .filter{ case (ownerName, _) => ownerName == symbol.name }
-        .map{ case (_, value) => value.toString }
-        .toVector
-    }
-
-    val interface = this.interface.map(_.toFirrtlString + "__").getOrElse("")
+    val interface = this.interface.map(_.symbol.name + "__").getOrElse("")
     val name = symbol.name
-    val hargs = getPolyParamName(hps)
-    val targs = getPolyParamName(tps)
-    val args = {
-      val hargsStr =
-        if(hargs.isEmpty) ""
-        else "__" + hargs.mkString("_")
 
-      val targsStr =
-        if(targs.isEmpty) ""
-        else "__" + targs.mkString("_")
-
-      hargsStr + targsStr
-    }
-
-    interface + name + args
+    interface + name + "_" + hashCode().toHexString
   }
 }
 
 case class StageLabel(
   symbol: Symbol.StageSymbol,
   accessor: BackendType,
-  params: ListMap[String, BackendType],
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
   override type SymbolType = Symbol.StageSymbol
-  override lazy val toString: String = symbol.name
+  override lazy val toString: String = symbol.name + "_" + hashCode().toHexString
 }
 
 case class StateLabel(

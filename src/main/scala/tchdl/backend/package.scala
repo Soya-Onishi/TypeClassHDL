@@ -161,6 +161,21 @@ package object backend {
       .find(_.methods.exists(_.symbol == term))
   }
 
+  def findImplClassTreeFromState(state: Symbol.StateSymbol, global: GlobalData): Option[frontend.ImplementClass] = {
+    def hasState(impl: frontend.ImplementClass): Boolean =
+      impl.components.view
+        .collect { case stage: frontend.StageDef => stage }
+        .flatMap(_.states)
+        .exists(_.symbol == state)
+
+    global.compilationUnits
+      .filter(_.pkgName == state.path.pkgName)
+      .view
+      .flatMap(_.topDefs)
+      .collect { case impl: frontend.ImplementClass => impl }
+      .find(hasState)
+  }
+
   def findMethodTree(method: Symbol.MethodSymbol, global: GlobalData): Option[frontend.MethodDef] = {
     global.compilationUnits
       .filter(_.pkgName == method.path.pkgName)
