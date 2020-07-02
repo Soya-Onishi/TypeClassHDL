@@ -238,8 +238,11 @@ class ASTGenerator {
   }
 
   def submoduleDef(ctx: TP.Submodule_defContext): ValDef = {
-    val (name, tpe, expr) = componentBody(ctx.component_def_body)
-    ValDef(Modifier.Child | Modifier.Field, name, tpe, Some(expr))
+    val name = ctx.EXPR_ID.getText
+    val tpe = typeTree(ctx.`type`)
+    val construct = constructModule(ctx.construct_module)
+
+    ValDef(Modifier.Child | Modifier.Field, name, Some(tpe), Some(construct))
   }
 
   def regDef(ctx: TP.Reg_defContext): ValDef = {

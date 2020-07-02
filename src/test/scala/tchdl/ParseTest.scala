@@ -184,7 +184,7 @@ class ParseTest extends TchdlFunSuite {
     assert(register.flag == (Modifier.Register | Modifier.Field))
 
     assert(sub.expr.isDefined)
-    assert(sub.expr.get.isInstanceOf[ConstructClass])
+    assert(sub.expr.get.isInstanceOf[ConstructModule])
 
     assert(method.length == 1)
     assert(stage.length == 1)
@@ -210,7 +210,13 @@ class ParseTest extends TchdlFunSuite {
     val s0 = vdefs.find(_.name == "s0").get
     val s1 = vdefs.find(_.name == "s1").get
 
-    assert(s0.expr.get.isInstanceOf[ConstructClass])
+    assert(s0.expr.get.isInstanceOf[ConstructModule])
     assert(s1.expr.get.isInstanceOf[ConstructModule])
+  }
+
+  test("constructing module with struct construct format causes an error") {
+    val filename = buildName(rootDir, filePath, "construct2.tchdl")
+
+    assertThrows[AssertionError](parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit])
   }
 }

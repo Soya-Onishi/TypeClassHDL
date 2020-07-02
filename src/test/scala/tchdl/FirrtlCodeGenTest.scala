@@ -69,34 +69,10 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     (circuit, newGlobal)
   }
 
-  def transform(circuit: ir.Circuit): ir.Circuit = {
-    val state = CircuitState(circuit, Seq.empty)
-
-    // Designate a series of transforms to be run in this order
-    val transforms = Seq(
-      ToWorkingIR,
-      ResolveKinds,
-      InferTypes,
-      ResolveFlows,
-      InferWidths(),
-      new ConstantPropagation,
-      CheckInitialization
-    )
-
-    // Run transforms and capture final state
-    val finalState = transforms.foldLeft(state) {
-      (c: CircuitState, t: Transform) => t.runTransform(c)
-    }
-
-    finalState.circuit
-  }
-
   def runFirrtl(circuit: ir.Circuit): Unit = {
     val file = Files.createTempFile(null, ".fir")
     Files.write(file, circuit.serialize.getBytes)
     val circuitString = Files.readString(file)
-
-    println(circuitString)
 
     val command = Array("-i", file.toString)
     firrtl.stage.FirrtlMain.main(command)
@@ -144,7 +120,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(conseqRet.matches("function_[0-9a-f]+\\$_ret"))
     assert(conseqIn.matches("function_[0-9a-f]+\\$in"))
 
-    transform(circuit)
+    runFirrtl(circuit)
   }
 
   test("input interface with Unit return type") {
@@ -158,7 +134,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(condition.conseq == ir.Block(Seq.empty))
     assert(condition.alt == ir.EmptyStmt)
 
-    transform(circuit)
+    runFirrtl(circuit)
   }
 
   test("module that has internal interface and call it") {
@@ -196,7 +172,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     ))
     assert(internalFunc.alt == ir.EmptyStmt)
 
-    transform(circuit)
+    runFirrtl(circuit)
   }
 
   test("refer to local variable") {
@@ -232,19 +208,19 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
       ir.Reference(localName, ir.UnknownType)
     ))
 
-    transform(circuit)
+    runFirrtl(circuit)
   }
 
   test("compile ALU circuit") {
     val (circuit, _) = untilThisPhase(Vector("test", "alu"), "Top", "ALU.tchdl")
 
-    transform(circuit)
+    runFirrtl(circuit)
   }
 
   test("compile sequential circuit") {
     val (circuit, _) = untilThisPhase(Vector("test"), "M", "validSequenceCircuit.tchdl")
 
-    transform(circuit)
+    runFirrtl(circuit)
   }
 
   test("compile ALU without always statement") {

@@ -26,7 +26,8 @@ object Typer {
           case methodDef: MethodDef => typedMethodDef(methodDef)(implBodyCtx, global)
           case stageDef:  StageDef => typedStageDef(stageDef)(implBodyCtx, global)
           case alwaysDef: AlwaysDef => typedAlwaysDef(alwaysDef)(implBodyCtx, global)
-          case valDef: ValDef => typedValDef(valDef)(implBodyCtx, global)
+          case valDef: ValDef if valDef.flag.hasNoFlag(Modifier.Child) => typedValDef(valDef)(implBodyCtx, global)
+          case valDef: ValDef => typedModDef(valDef)(implBodyCtx, global)
         }
 
         val typedImpl = impl.copy(components = typedComponents).setSymbol(impl.symbol).setID(impl.id)
@@ -106,6 +107,31 @@ object Typer {
     vdef.copy(tpeTree = typedTpeTree, expr = typedExpression)
       .setSymbol(vdef.symbol)
       .setID(vdef.id)
+  }
+
+  def typedModDef(valDef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
+    val ValDef(_, name, tpe, Some(construct)) = valDef
+    val typedTpeTree = tpe.map(typedTypeTree)
+
+    val typedConstruct = construct match {
+      case construct: ConstructClass => typedConstructClass(construct)
+      case construct: ConstructModule => typedConstructModule(construct)
+    }
+
+    typedTpeTree.map(_.tpe)
+      .filterNot(tpe => tpe.isErrorType)
+      .filterNot(_ => typedConstruct.tpe.isErrorType)
+      .filterNot(_ =:= typedConstruct.tpe.asRefType)
+      .map(tpe => Error.TypeMismatch(tpe, typedConstruct.tpe.asRefType))
+      .foreach(global.repo.error.append)
+
+    val typedValDef = ValDef(valDef.flag, name, typedTpeTree, Some(typedConstruct))
+      .setSymbol(valDef.symbol)
+      .setID(valDef.id)
+
+    global.cache.set(typedValDef)
+
+    typedValDef
   }
 
   def typedExprValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
@@ -400,7 +426,7 @@ object Typer {
     }
   }
 
-  def typedPair(
+  def typedFieldPair(
     targetTpe: Type.RefType,
     pair: ConstructPair,
     hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
@@ -424,6 +450,49 @@ object Typer {
     (err, typedPair)
   }
 
+  def typedModulePair(
+    targetTpe: Type.RefType,
+    pair: ConstructPair,
+    hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
+    tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
+  )(implicit ctx: Context.NodeContext, global: GlobalData): (Option[Error], ConstructPair) = {
+    val (err, typedInit) = pair.init match {
+      case ths: This => (None, typedThis(ths))
+      case select @ Select(This(), _) => (None, typedExprSelect(select))
+      case construct: ConstructClass => (None, typedConstructClass(construct))
+      case construct: ConstructModule => (None, typedConstructModule(construct))
+      case expr =>
+        val err = Error.InvalidFormatForModuleConstruct(expr)
+        val typedExpr = expr match {
+          case e: Expression with HasSymbol => e.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+          case e => e.setTpe(Type.ErrorType)
+        }
+
+        (Some(err), typedExpr)
+    }
+
+    val typedPair = ConstructPair(pair.name, typedInit).setID(pair.id)
+
+    val pairErr = targetTpe.lookupField(pair.name, ctx.hpBounds, ctx.tpBounds) match {
+      case LookupResult.LookupFailure(err) => Some(err)
+      case LookupResult.LookupSuccess(symbol) => (symbol.tpe, typedInit.tpe) match {
+        case (Type.ErrorType, _) => Some(Error.DummyError)
+        case (_, Type.ErrorType) => Some(Error.DummyError)
+        case (fieldTpe: Type.RefType, exprTpe: Type.RefType) =>
+          val replacedFieldTpe = fieldTpe.replaceWithMap(hpTable, tpTable)
+          if(replacedFieldTpe =:= exprTpe) None
+          else Some(Error.TypeMismatch(fieldTpe, exprTpe))
+      }
+    }
+
+    val errs = Vector(err, pairErr).flatten
+    val combinedErr =
+      if(errs.isEmpty) None
+      else Some(Error.MultipleErrors(errs: _*))
+
+    (combinedErr, typedPair)
+  }
+
   def typedConstructClass(construct: ConstructClass)(implicit ctx: Context.NodeContext, global: GlobalData): Construct = {
     val typedTarget = typedTypeTree(construct.target)
 
@@ -432,7 +501,7 @@ object Typer {
       case tpe: Type.RefType =>
         val hpTable = (tpe.origin.hps zip tpe.hardwareParam).toMap
         val tpTable = (tpe.origin.tps zip tpe.typeParam).toMap
-        val (errOpts, typedPairs) = construct.fields.map(typedPair(tpe, _, hpTable, tpTable)).unzip
+        val (errOpts, typedPairs) = construct.fields.map(typedFieldPair(tpe, _, hpTable, tpTable)).unzip
         val errs = errOpts.flatten
 
         errs.foreach(global.repo.error.append)
@@ -460,8 +529,8 @@ object Typer {
       case tpe: Type.RefType =>
         val hpTable = (tpe.origin.hps zip tpe.hardwareParam).toMap
         val tpTable = (tpe.origin.tps zip tpe.typeParam).toMap
-        val (errOpts0, typedParents) = construct.parents.map(typedPair(tpe, _, hpTable, tpTable)).unzip
-        val (errOpts1, typedSiblings) = construct.siblings.map(typedPair(tpe, _, hpTable, tpTable)).unzip
+        val (errOpts0, typedParents) = construct.parents.map(typedFieldPair(tpe, _, hpTable, tpTable)).unzip
+        val (errOpts1, typedSiblings) = construct.siblings.map(typedFieldPair(tpe, _, hpTable, tpTable)).unzip
 
         (errOpts0 ++ errOpts1).flatten.foreach(global.repo.error.append)
 

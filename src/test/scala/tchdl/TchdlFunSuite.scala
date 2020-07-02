@@ -32,7 +32,6 @@ class TchdlFunSuite extends AnyFunSuite {
     val tree = parsing(parser)
     val errors = parser.getNumberOfSyntaxErrors
 
-
     if(errors > 0) throw new AssertionError("parse error occured")
     else ast(new ASTGenerator, tree)
   }

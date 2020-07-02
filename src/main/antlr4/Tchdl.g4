@@ -95,7 +95,7 @@ field_def
     ;
 
 submodule_def
-    : MOD component_def_body
+    : MOD EXPR_ID ':' type '=' construct_module
     ;
 
 always_def
