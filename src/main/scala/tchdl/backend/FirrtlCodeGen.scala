@@ -1038,7 +1038,7 @@ object FirrtlCodeGen {
         else Some(targetBuilder(interface.retName))
 
       val targetParams = interface.params.keys.map{ param => targetBuilder(param) }.toVector
-      val targets = (targetActive +: targetParams) ++ targetRet
+      val targets = (targetActive +: targetParams)
 
       def fromRef(name: String): ir.SubField = ir.SubField(moduleRef, fromName + "$" + name, ir.UnknownType)
       val fromActive = fromRef(interface.activeName)
@@ -1050,10 +1050,17 @@ object FirrtlCodeGen {
       val retInvalid = fromRet.map(ret => ir.IsInvalid(ir.NoInfo, ret))
 
       val fromParams = interface.params.map { case (param, _) => fromRef(param) }.toVector
-      val froms = (fromActive +: fromParams) ++ fromRet
+      val froms = (fromActive +: fromParams)
 
       val connects = (targets zip froms).map { case (target, from) => ir.Connect(ir.NoInfo, target, from) }
-      val cond = ir.Conditionally(ir.NoInfo, fromActive, ir.Block(connects), ir.EmptyStmt)
+      val retConnect = (fromRet zip targetRet).map{ case (from, target) => ir.Connect(ir.NoInfo, from, target) }
+
+      val cond = ir.Conditionally(
+        ir.NoInfo,
+        fromActive,
+        ir.Block(connects ++ retConnect),
+        ir.EmptyStmt
+      )
 
       (retInvalid, cond)
     }

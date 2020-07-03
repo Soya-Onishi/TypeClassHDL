@@ -1,0 +1,29 @@
+package test
+
+module Top
+impl Top {
+  parent def callParent() -> Unit {}
+}
+
+module Sub0 {
+  parent:
+    top: Top
+}
+
+impl Sub0 {
+  mod sub1: Sub1 = Sub1 {
+    parent:
+      top: this.top
+  }
+}
+
+module Sub1 {
+  parent:
+    top: Top
+}
+
+impl Sub1 {
+  always caller {
+    this.top.callParent()
+  }
+}

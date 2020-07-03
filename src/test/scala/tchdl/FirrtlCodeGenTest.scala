@@ -245,4 +245,13 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     runFirrtl(circuit)
   }
 
+  test("module that call indirect sibling modules") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "callSiblingInterface0.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("module that call indirect parent module") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "callParentInterface1.tchdl")
+    runFirrtl(circuit)
+  }
 }

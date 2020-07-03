@@ -48,7 +48,7 @@ object BuildGeneratedModuleList {
 
   def constructModule(module: BackendType, parentModules: Vector[BackendType], builtModules: Vector[BuiltModule])(implicit global: GlobalData): Either[Error, Vector[BuiltModule]] = {
     def verifyCyclic: Either[Error, Unit] = {
-      if(parentModules.drop(1).forall(_ == module)) Right(())
+      if(!parentModules.drop(1).contains(module)) Right(())
       else {
         def buildRoute(parents: Vector[BackendType]): Vector[BackendType] =
           parents.headOption match {

@@ -1,0 +1,41 @@
+package test
+
+module Top
+impl Top {
+  mod s0: Sub0 = Sub0 {
+    sibling:
+      sub0sub2: this.s2
+  }
+
+  mod s2: Sub2 = Sub2 {}
+}
+
+
+module Sub0 {
+  sibling:
+    sub0sub2: Sub2
+}
+impl Sub0 {
+  mod s1: Sub1 = Sub1 {
+    sibling:
+      sub1sub2: this.sub0sub2
+  }
+}
+
+module Sub1 {
+  sibling:
+    sub1sub2: Sub2
+}
+
+impl Sub1 {
+  always caller {
+    val a = this.sub1sub2.callSibling(0b01)
+  }
+}
+
+module Sub2
+impl Sub2 {
+  sibling def callSibling(x: Bit[2]) -> Bit[2] {
+    x + 0b10
+  }
+}
