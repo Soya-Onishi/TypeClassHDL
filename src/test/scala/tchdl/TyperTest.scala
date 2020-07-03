@@ -332,4 +332,15 @@ class TyperTest extends TchdlFunSuite {
     val (_, global) = untilTyper("useSiblingInterface.tchdl")
     expectNoError(global)
   }
+
+  test("input interface with Bit[8] return type calls sub module's input interface has unit return type causes an type mismatch error") {
+    val (_, global) = untilTyper("inputInterfaceCallUnitInterface.tchdl")
+    expectError(1)(global)
+
+    val error = global.repo.error.elems.head
+    assert(error.isInstanceOf[Error.TypeMismatch])
+    val Error.TypeMismatch(expect, actual) = error
+    assert(expect =:= Type.unitTpe(global))
+    assert(actual =:= Type.bitTpe(IntLiteral(8))(global))
+  }
 }

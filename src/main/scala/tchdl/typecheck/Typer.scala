@@ -51,6 +51,7 @@ object Typer {
 
   def typedMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
     val method = methodDef.symbol.asMethodSymbol
+    val methodTpe = method.tpe.asMethodType
     val methodSigCtx = Context(ctx, method)
     methodSigCtx.reAppend(method.hps ++ method.tps ++ methodDef.params.map(_.symbol.asVariableSymbol): _*)
 
@@ -58,6 +59,10 @@ object Typer {
       .getOrElse(throw new ImplementationErrorException("methods in impl should have their body"))
 
     val typedBody = typedBlock(body)(methodSigCtx, global)
+
+    if(!typedBody.tpe.isErrorType && typedBody.tpe.asRefType =!= methodTpe.returnType) {
+      global.repo.error.append(Error.TypeMismatch(methodTpe.returnType, typedBody.tpe.asRefType))
+    }
 
     methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
   }
