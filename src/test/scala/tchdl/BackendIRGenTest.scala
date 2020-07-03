@@ -79,7 +79,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(subDef.ret.isDefined)
 
     val Some(construct) = subDef.ret
-    assert(construct == backend.ast.ConstructModule(subTpe, Map.empty, Map.empty))
+    assert(construct == backend.ast.ConstructModule(Term.Variable("sub", subTpe), subTpe, Map.empty, Map.empty))
   }
 
   test("modules that have hardware parameters make two module containers with concrete hp values") {

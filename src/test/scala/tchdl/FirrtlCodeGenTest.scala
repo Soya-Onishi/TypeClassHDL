@@ -5,11 +5,10 @@ import tchdl.backend._
 import tchdl.util._
 import tchdl.typecheck._
 import firrtl._
-import firrtl.transforms._
-import firrtl.passes._
 
-import java.io.{File, FileWriter}
 import java.nio.file.Files
+import sys.process._
+import scala.language.postfixOps
 
 class FirrtlCodeGenTest extends TchdlFunSuite {
   def extractHashCode(regex: String, from: String): String = {
@@ -74,8 +73,13 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     Files.write(file, circuit.serialize.getBytes)
     val circuitString = Files.readString(file)
 
-    val command = Array("-i", file.toString)
-    firrtl.stage.FirrtlMain.main(command)
+    val command = Array("/home/soya/opt/firrtl/utils/bin/firrtl", "-i", file.toString).mkString(" ")
+    val exit = command !
+
+    if(exit != 0) {
+      println(circuitString)
+      fail()
+    }
   }
 
   test("build most simple code") {
@@ -230,4 +234,15 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+
+  test("module that calls sibling modules") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useSiblingInterface.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("module that call parent modules") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "callParentInterface0.tchdl")
+    runFirrtl(circuit)
+  }
+
 }

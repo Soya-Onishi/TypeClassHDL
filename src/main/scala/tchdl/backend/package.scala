@@ -32,7 +32,7 @@ package object backend {
   }
 
   case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType], fields: Map[String, BackendType]) extends ToFirrtlString {
-    override def hashCode(): Int = symbol.hashCode + hargs.hashCode + hargs.hashCode
+    override def hashCode(): Int = symbol.hashCode + hargs.hashCode + targs.hashCode
     override def toString: String = {
       val head = symbol.name
       val args = hargs.map(_.toString) ++ targs.map(_.toString)
@@ -78,23 +78,37 @@ package object backend {
       }
   }
 
+  def convertToBackendType(tpe: Type.RefType): BackendType = convertToBackendType(tpe, Map.empty, Map.empty)
   def convertToBackendType(
     tpe: Type.RefType,
     hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
     tpTable: Map[Symbol.TypeParamSymbol, BackendType]
   ): BackendType = {
     def replace(tpe: Type.RefType): BackendType = tpe.origin match {
-      case _: Symbol.EntityTypeSymbol =>
+      case origin: Symbol.EntityTypeSymbol =>
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
 
         val fieldHPTable = (tpe.origin.hps zip hargs).toMap
         val fieldTPTable = (tpe.origin.tps zip targs).toMap
 
-        val fieldTpes = tpe.declares.toMap.collect {
-          case (fieldName, field) if field.hasFlag(Modifier.Field) =>
-            val tpe = convertToBackendType(field.tpe.asRefType, fieldHPTable, fieldTPTable)
-            fieldName -> tpe
+        val fieldTpes = origin match {
+          case _: Symbol.ModuleSymbol =>
+            tpe.declares.toMap.collect {
+              case (fieldName, field) if field.hasFlag(Modifier.Field) =>
+                val tpe = field.tpe.asRefType
+                val fieldHArgs = tpe.hardwareParam.map(evalHPExpr(_, fieldHPTable))
+                val fieldTArgs = tpe.typeParam.map(replace)
+
+                val backendType = BackendType(tpe.origin, fieldHArgs, fieldTArgs, Map.empty)
+                fieldName -> backendType
+            }
+          case _ =>
+            tpe.declares.toMap.collect {
+              case (fieldName, field) if field.hasFlag(Modifier.Field) =>
+                val tpe = convertToBackendType(field.tpe.asRefType, fieldHPTable, fieldTPTable)
+                fieldName -> tpe
+            }
         }
 
         BackendType(tpe.origin, hargs, targs, fieldTpes)

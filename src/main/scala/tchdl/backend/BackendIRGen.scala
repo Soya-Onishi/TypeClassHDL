@@ -150,9 +150,16 @@ object BackendIRGen {
           case vdef: frontend.ValDef =>
             val label = FieldLabel(vdef.symbol.asVariableSymbol, module, hpTable, tpTable)
             val context = BackendContext(label, tpBound)
-            val exprResult= vdef.expr
-              .map(buildExpr(_)(context, global))
-              .getOrElse(BuildResult(Vector.empty, None, Set.empty))
+
+            val exprResult =
+              if(vdef.flag.hasNoFlag(Modifier.Child)) {
+                vdef.expr
+                  .map(buildExpr(_)(context, global))
+                  .getOrElse(BuildResult(Vector.empty, None, Set.empty))
+              } else {
+                val Some(construct: frontend.ConstructModule) = vdef.expr
+                buildConstructModule(construct, Some(vdef.name))(context, global)
+              }
 
             val tpe = convertToBackendType(vdef.symbol.tpe.asRefType, hpTable, tpTable)
 
@@ -247,7 +254,7 @@ object BackendIRGen {
       case binop: frontend.StdBinOp => buildBinOp(binop)
       case blk: frontend.Block => buildBlk(blk)
       case construct: frontend.ConstructClass => buildConstructClass(construct)
-      case construct: frontend.ConstructModule => buildConstructModule(construct)
+      case construct: frontend.ConstructModule => buildConstructModule(construct, None)
       case ifexpr: frontend.IfExpr => buildIfExpr(ifexpr)
       case ths: frontend.This => buildThis(ths)
       case _: frontend.Finish => buildFinish
@@ -506,7 +513,7 @@ object BackendIRGen {
     BuildResult(nodes, Some(expr), labels)
   }
 
-  def buildConstructModule(construct: frontend.ConstructModule)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+  def buildConstructModule(construct: frontend.ConstructModule, instanceName: Option[String])(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
     case class Summary(nodes: Vector[backend.Stmt], inits: Map[String, backend.Expr], labels: Set[BackendLabel])
 
     def buildInitSection(pairs: Vector[frontend.ConstructPair]): Summary = {
@@ -529,7 +536,11 @@ object BackendIRGen {
     val sibling = buildInitSection(construct.siblings)
 
     val nodes = parent.nodes ++ sibling.nodes
-    val expr = backend.ConstructModule(tpe, parent.inits, sibling.inits)
+    val name = instanceName
+      .map(backend.Term.Variable(_, tpe))
+      .getOrElse(backend.Term.Temp(ctx.temp.get(), tpe))
+
+    val expr = backend.ConstructModule(name, tpe, parent.inits, sibling.inits)
     val labels = parent.labels ++ sibling.labels
 
     BuildResult(nodes, Some(expr), labels)

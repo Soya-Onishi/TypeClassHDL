@@ -17,7 +17,7 @@ case class Abandon(expr: Expr) extends Stmt
 case class Assign(target: Term.Variable, expr: Expr) extends Stmt
 case class Return(expr: Expr) extends Stmt
 
-case class ConstructModule(target: BackendType, parents: Map[String, Expr], siblings: Map[String, Expr]) extends Expr {
+case class ConstructModule(name: Term, target: BackendType, parents: Map[String, Expr], siblings: Map[String, Expr]) extends Expr {
   val tpe = target
 }
 

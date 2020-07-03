@@ -1,0 +1,26 @@
+package test
+
+module Top
+impl Top {
+  mod sub: Sub = Sub {
+    parent:
+      top: this
+  }
+
+  input def callSub() -> Bit[4] {
+    this.sub.callParent()
+  }
+
+  parent def calledFromSub() -> Bit[4] { 0b0101 }
+}
+
+module Sub {
+  parent:
+    top: Top
+}
+
+impl Sub {
+  input def callParent() -> Bit[4] {
+    this.top.calledFromSub()
+  }
+}

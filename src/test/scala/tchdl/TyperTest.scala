@@ -327,4 +327,9 @@ class TyperTest extends TchdlFunSuite {
     assert(s2Generate.tpe.asRefType.origin == unitSymbol)
     assert(s2Generate.params.head.tpe =:= bit8)
   }
+
+  test("modules that call sibling module interfaces cause no errors") {
+    val (_, global) = untilTyper("useSiblingInterface.tchdl")
+    expectNoError(global)
+  }
 }

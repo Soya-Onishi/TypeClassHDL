@@ -38,7 +38,14 @@ object FirrtlCodeGen {
 
   abstract class ModuleInstance extends Instance {
     val tpe: BackendType
-    val refer: Option[ir.Reference]
+    val refer: ModuleLocation
+  }
+
+  trait ModuleLocation
+  object ModuleLocation {
+    case class Sub(refer: ir.Reference) extends ModuleLocation
+    case class Upper(refer: String) extends ModuleLocation
+    case object This extends ModuleLocation
   }
 
 
@@ -65,27 +72,18 @@ object FirrtlCodeGen {
   }
 
   object ModuleInstance {
-    def apply(module: BackendType)(implicit global: GlobalData): ModuleInstance = {
-      new ModuleInstance {
-        val refer = None
-        val tpe = module
-
-        override def isHardware: Boolean = false
-      }
-    }
-
-    def apply(module: BackendType, refer: ir.Reference): ModuleInstance = {
+    def apply(module: BackendType, refer: ModuleLocation): ModuleInstance = {
       val _refer = refer
 
       new ModuleInstance {
-        val refer = Some(_refer)
+        val refer = _refer
         val tpe = module
 
         override def isHardware: Boolean = false
       }
     }
 
-    def unapply(obj: Any): Option[(BackendType, Option[ir.Reference])] =
+    def unapply(obj: Any): Option[(BackendType, ModuleLocation)] =
       obj match {
         case inst: ModuleInstance => Some(inst.tpe, inst.refer)
         case _ => None
@@ -325,7 +323,7 @@ object FirrtlCodeGen {
     stages: Map[BackendType, Vector[StageContainer]],
     methods: Map[BackendType, Vector[MethodContainer]]
   )(implicit global: GlobalData): ir.Module = {
-    val instance = ModuleInstance(module.tpe)
+    val instance = ModuleInstance(module.tpe, ModuleLocation.This)
 
     val ctx = FirrtlContext(interfaces, stages, methods)
     val stack = StackFrame(instance)
@@ -374,12 +372,13 @@ object FirrtlCodeGen {
     val interfaceConds = module.interfaces.map(runInterface(_)(stack, ctx, global))
     val stageStmts = module.stages.flatMap(buildStageSignature(_)(stack, global))
     val stageConds = module.stages.map(runStage(_)(stack, ctx, global))
+    val (upperPorts, upperPortInits) = module.tpe.fields.map{ case (name, tpe) => buildUpperModule(name, tpe)(ctx, global) }.toVector.unzip
 
     ir.Module(
       ir.NoInfo,
       module.tpe.toFirrtlString,
-      ports ++ interfacePorts.flatten,
-      ir.Block(fieldStmts ++ interfaceStmts.flatten ++ stageStmts ++ alwaysStmts ++ interfaceConds ++ stageConds)
+      ports ++ interfacePorts.flatten ++ upperPorts.flatten,
+      ir.Block(interfaceStmts.flatten ++ upperPortInits.flatten ++ fieldStmts ++ stageStmts ++ alwaysStmts ++ interfaceConds ++ stageConds)
     )
   }
 
@@ -440,38 +439,11 @@ object FirrtlCodeGen {
       .map(runExpr)
       .map{ case RunResult(stmts, _) => stmts }
       .getOrElse(throw new ImplementationErrorException("sub module instance expression must be there"))
+
     val tpeString = field.tpe.toFirrtlString
     val module = ir.DefInstance(ir.NoInfo, field.toFirrtlString, tpeString)
 
-    val submodName = field.toFirrtlString
-    def subField(name: String): ir.SubField = ir.SubField(ir.Reference(submodName, ir.UnknownType), name, ir.UnknownType)
-    val connectClock = ir.Connect(ir.NoInfo, subField(clockName), clockRef)
-    val connectReset = ir.Connect(ir.NoInfo, subField(resetName), resetRef)
-    val interfaces = ctx.interfaces(field.tpe)
-      .filter {
-        interface =>
-          val flag = interface.label.symbol.flag
-          flag.hasFlag(Modifier.Input) || flag.hasFlag(Modifier.Sibling)
-      }
-
-    val interfaceInits = interfaces.flatMap {
-      interface =>
-        val active = subField(interface.activeName)
-        val ret = Some(interface.ret.tpe)
-          .filter(tpe => convertToRefType(tpe) =:= Type.unitTpe)
-          .map(_ => interface.retName)
-          .map(subField)
-        val params = interface.params.keys.map(subField)
-
-        val turnOff = ir.Connect(ir.NoInfo, active, ir.UIntLiteral(0))
-        val invalids = (params ++ ret).map(ir.IsInvalid(ir.NoInfo, _)).toVector
-
-        turnOff +: invalids
-    }
-
-    val initModule = Vector(connectClock, connectReset) ++ interfaceInits
-
-    (stmts ++ retStmts ++ initModule, module)
+    (stmts ++ retStmts, module)
   }
 
   def runAlways(always: AlwaysContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[ir.Statement] = {
@@ -621,6 +593,50 @@ object FirrtlCodeGen {
     )
   }
 
+  def buildUpperModule(moduleName: String, tpe: BackendType)(implicit ctx: FirrtlContext, global: GlobalData): (Vector[ir.Port], Vector[ir.Statement]) = {
+    // This is same of ctx.interfaces.get(tpe).getOrElse(Vector.empty).
+    // However, it does not work in expect.
+    // That's why, for now, I get specific module's interface by below manner.
+    val allInterfaces = ctx.interfaces
+      .find { case (key, _) => key.hashCode == tpe.hashCode }
+      .map{ case (_, value) => value }
+      .getOrElse(Vector.empty)
+
+    val interfaces = allInterfaces.filter {
+      interface =>
+        val isSibling = interface.label.symbol.hasFlag(Modifier.Sibling)
+        val isParent = interface.label.symbol.hasFlag(Modifier.Parent)
+
+        isSibling || isParent
+    }
+
+    val pairs = interfaces.map {
+      interface =>
+        def buildName(name: String): String = moduleName + "$" + name
+        val activeName = buildName(interface.activeName)
+        val retName = buildName(interface.retName)
+
+        val activePort = ir.Port(ir.NoInfo, activeName, ir.Output, ir.UIntType(ir.IntWidth(1)))
+        val retPort =
+          if(interface.ret.tpe == convertToBackendType(Type.unitTpe)) None
+          else Some(ir.Port(ir.NoInfo, retName, ir.Input, convertToFirrtlType(interface.ret.tpe)))
+        val paramPorts = interface.params.map {
+          case (name, tpe) => ir.Port(ir.NoInfo, buildName(name), ir.Output, convertToFirrtlType(tpe))
+        }.toVector
+
+        val activeInit = ir.Connect(ir.NoInfo, ir.Reference(activeName, ir.UnknownType), ir.UIntLiteral(0))
+        val paramInits = interface.params.keys
+          .map(name => ir.IsInvalid(ir.NoInfo, ir.Reference(buildName(name), ir.UnknownType)))
+          .toVector
+
+        ((activePort +: paramPorts) ++ retPort, activeInit +: paramInits)
+    }
+
+    val (ports, inits) = pairs.unzip
+
+    (ports.flatten, inits.flatten)
+  }
+
   def runStmt(stmt: backend.Stmt)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[ir.Statement] = {
     def buildConnect(name: Name, expr: backend.Expr)(connect: ir.Expression => Vector[ir.Statement]): (Instance, Vector[ir.Statement]) = {
       val RunResult(stmts, instance) = runExpr(expr)
@@ -719,7 +735,7 @@ object FirrtlCodeGen {
       case HardInstance(_, refer) =>
         val subField = ir.SubField(refer, referField.field.toString, convertToFirrtlType(referField.tpe))
         UserHardInstance(referField.tpe, subField)
-      case ModuleInstance(_, Some(refer)) =>
+      case ModuleInstance(_, ModuleLocation.Sub(refer)) =>
         val subField = ir.SubField(refer, referField.field.toString, ir.UnknownType)
         val tpe = referField.tpe
 
@@ -727,14 +743,23 @@ object FirrtlCodeGen {
           case _: Symbol.ModuleSymbol => throw new ImplementationErrorException("module instance must be referred directly")
           case _ => UserHardInstance(tpe, subField)
         }
-      case ModuleInstance(_, None) =>
-        val reference = ir.Reference(referField.field.toString, ir.UnknownType)
+      case ModuleInstance(_, ModuleLocation.This) =>
         val tpe = referField.tpe
-
-        referField.field.symbol.tpe.asRefType.origin match {
-          case _: Symbol.ModuleSymbol => ModuleInstance(tpe, reference)
-          case _ => UserHardInstance(tpe, reference)
+        val fieldSymbol = referField.field.symbol
+        fieldSymbol.tpe.asRefType.origin match {
+          case _: Symbol.ModuleSymbol if fieldSymbol.hasFlag(Modifier.Parent) =>
+            ModuleInstance(tpe, ModuleLocation.Upper(referField.field.toString))
+          case _: Symbol.ModuleSymbol if fieldSymbol.hasFlag(Modifier.Sibling) =>
+            ModuleInstance(tpe, ModuleLocation.Upper(referField.field.toString))
+          case _: Symbol.ModuleSymbol =>
+            val reference = ir.Reference(referField.field.toString, ir.UnknownType)
+            ModuleInstance(tpe, ModuleLocation.Sub(reference))
+          case _ =>
+            val reference = ir.Reference(referField.field.toString, ir.UnknownType)
+            UserHardInstance(tpe, reference)
         }
+      case ModuleInstance(_, ModuleLocation.Upper(_)) =>
+        throw new ImplementationErrorException("compiler does not support to refer upper module's field")
     }
 
     RunResult(Vector.empty, instance)
@@ -811,7 +836,7 @@ object FirrtlCodeGen {
       RunResult(activate +: connects, instance)
     }
 
-    def callExternal(module: ir.Reference, tpe: BackendType): RunResult = {
+    def callToSubModule(module: ir.Reference, tpe: BackendType): RunResult = {
       val candidates = ctx.interfaces(tpe)
       val interface = candidates.find(_.label == call.label).get
       val params = interface.params.map{ case (name, _) => ir.SubField(module, name, ir.UnknownType) }
@@ -842,14 +867,46 @@ object FirrtlCodeGen {
       RunResult(activate +: connects, instance)
     }
 
+    def callToUpperModule(module: String, tpe: BackendType): RunResult = {
+      val candidates = ctx.interfaces(tpe)
+      val interface = candidates.find(_.label == call.label).get
+      val params = interface.params.map{ case (name, _) => ir.Reference(module + "$" + name, ir.UnknownType) }
+
+      val argNames = call.args.map {
+        case backend.Term.Temp(id, _) => stack.refer(id)
+        case backend.Term.Variable(name, _) => stack.refer(name)
+      }
+      val args = argNames.map(stack.scope).map{ case HardInstance(_, refer) => refer }
+
+      val activate: ir.Statement = {
+        val activeRef = ir.Reference(module + "$" + interface.activeName, ir.UnknownType)
+        ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(1))
+      }
+
+      val referReturn = interface.ret match {
+        case backend.UnitLiteral() => None
+        case _ => Some(ir.Reference(module+ "$" + interface.retName, ir.UnknownType))
+      }
+
+      val connects = (params zip args).map{ case (p, a) => ir.Connect(ir.NoInfo, p, a) }.toVector
+
+      val instance = referReturn match {
+        case None => UnitInstance()
+        case Some(refer) => HardInstance(call.tpe, refer)
+      }
+
+      RunResult(activate +: connects, instance)
+    }
+
     val referName = call.accessor match {
       case backend.Term.Temp(id, _) => stack.refer(id)
       case backend.Term.Variable(name, _) => stack.refer(name)
     }
 
     stack.scope(referName) match {
-      case ModuleInstance(tpe, Some(refer)) => callExternal(refer, tpe)
-      case ModuleInstance(tpe, None) => callInternal(tpe)
+      case ModuleInstance(tpe, ModuleLocation.This) => callInternal(tpe)
+      case ModuleInstance(tpe, ModuleLocation.Sub(refer)) => callToSubModule(refer, tpe)
+      case ModuleInstance(tpe, ModuleLocation.Upper(refer)) => callToUpperModule(refer, tpe)
     }
   }
 
@@ -965,10 +1022,96 @@ object FirrtlCodeGen {
   }
 
   def runConstructModule(construct: backend.ConstructModule)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    construct.parents.map { _ => throw new ImplementationErrorException("module's parent feature does not support yet")}
-    construct.siblings.map { _ => throw new ImplementationErrorException("module's sibling feature does not support yet")}
+    val moduleName = construct.name match {
+      case backend.Term.Variable(name, _) => Name(name)
+      case backend.Term.Temp(id, _) => stack.next(id)
+    }
 
-    RunResult(Vector.empty, ModuleInstance(construct.tpe))
+    val moduleRef = ir.Reference(moduleName.name, ir.UnknownType)
+
+    def buildIndirectAccessCond(interface: MethodContainer, fromName: String)(targetBuilder: String => ir.Expression): (Option[ir.IsInvalid], ir.Conditionally) = {
+      val isUnitRet = interface.ret.tpe == convertToBackendType(Type.unitTpe)
+      val targetActive = targetBuilder(interface.activeName)
+
+      val targetRet =
+        if(isUnitRet) None
+        else Some(targetBuilder(interface.retName))
+
+      val targetParams = interface.params.keys.map{ param => targetBuilder(param) }.toVector
+      val targets = (targetActive +: targetParams) ++ targetRet
+
+      def fromRef(name: String): ir.SubField = ir.SubField(moduleRef, fromName + "$" + name, ir.UnknownType)
+      val fromActive = fromRef(interface.activeName)
+
+      val fromRet =
+        if(isUnitRet) None
+        else Some(fromRef(interface.retName))
+
+      val retInvalid = fromRet.map(ret => ir.IsInvalid(ir.NoInfo, ret))
+
+      val fromParams = interface.params.map { case (param, _) => fromRef(param) }.toVector
+      val froms = (fromActive +: fromParams) ++ fromRet
+
+      val connects = (targets zip froms).map { case (target, from) => ir.Connect(ir.NoInfo, target, from) }
+      val cond = ir.Conditionally(ir.NoInfo, fromActive, ir.Block(connects), ir.EmptyStmt)
+
+      (retInvalid, cond)
+    }
+
+    val parentStmtsIter = construct.parents.flatMap {
+      case (fromName, expr) =>
+        val RunResult(stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
+        val parents = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Parent))
+
+        val targetName: String => ir.Expression = refer match {
+          case ModuleLocation.This => (name: String) => ir.Reference(name, ir.UnknownType)
+          case ModuleLocation.Upper(target) => name: String => ir.Reference(target + "$" + name, ir.UnknownType)
+          case _: ModuleLocation.Sub => throw new ImplementationErrorException("refer a sub module as a parent module")
+        }
+
+        val (invalids, conds) = parents.map(buildIndirectAccessCond(_, fromName)(targetName)).unzip
+
+        stmts ++ invalids.flatten ++ conds
+    }
+
+    val siblingStmtsIter = construct.siblings.flatMap {
+      case (fromName, expr) =>
+        val RunResult(stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
+        val siblings = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Sibling))
+
+        val target: String => ir.Expression = refer match {
+          case ModuleLocation.This => throw new ImplementationErrorException("refer this module as sibling module")
+          case ModuleLocation.Sub(refer) => (name: String) => ir.SubField(refer, name, ir.UnknownType)
+          case ModuleLocation.Upper(refer) => (name: String) => ir.Reference(refer + "$" + name, ir.UnknownType)
+        }
+
+        val (invalid, conds) = siblings.map(buildIndirectAccessCond(_, fromName)(target)).unzip
+
+        stmts ++ invalid.flatten ++ conds
+    }
+
+    val inputInits = ctx.interfaces(construct.tpe)
+      .filter(interface => interface.label.symbol.hasFlag(Modifier.Input) || interface.label.symbol.hasFlag(Modifier.Sibling))
+      .flatMap {
+        interface =>
+          def buildRef(name: String): ir.SubField = ir.SubField(moduleRef, name, ir.UnknownType)
+          val activeRef = buildRef(interface.activeName)
+          val paramRefs = interface.params.keys.map(buildRef)
+
+          val activeOff = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(0))
+          val paramInvalid = paramRefs.map(ir.IsInvalid(ir.NoInfo, _)).toVector
+
+          activeOff +: paramInvalid
+      }
+
+    val connectClock = ir.Connect(ir.NoInfo, ir.SubField(moduleRef, clockName, ir.UnknownType), clockRef)
+    val connectReset = ir.Connect(ir.NoInfo, ir.SubField(moduleRef, resetName, ir.UnknownType), resetRef)
+    val parentStmts = parentStmtsIter.toVector
+    val siblingStmts = siblingStmtsIter.toVector
+
+    val stmts = Vector(connectClock, connectReset) ++ inputInits ++ parentStmts ++ siblingStmts
+
+    RunResult(stmts, ModuleInstance(construct.tpe, ModuleLocation.Sub(ir.Reference(moduleName.name, ir.UnknownType))))
   }
 
   def runFinish(finish: backend.Finish)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
