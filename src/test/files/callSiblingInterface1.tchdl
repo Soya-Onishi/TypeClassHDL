@@ -1,0 +1,45 @@
+package test
+
+module Top
+module Sub0
+module Sub1 {
+  sibling:
+    sub0: Sub0
+}
+
+module Sub2 {
+  sibling:
+    sub0: Sub0
+}
+
+impl Top {
+  mod sub0: Sub0 = Sub0 {}
+  mod sub1: Sub1 = Sub1 { sibling: sub0: this.sub0 }
+  mod sub2: Sub2 = Sub2 { sibling: sub0: this.sub0 }
+
+  input def callFromSub1(a: Bit[8], b: Bit[8]) -> Bit[8] {
+    this.sub1.callSibling(a, b)
+  }
+
+  input def callFromSub2(a: Bit[8], b: Bit[8]) -> Bit[8] {
+    this.sub2.callSibling(a, b)
+  }
+}
+
+impl Sub0 {
+  sibling def call(a: Bit[8], b: Bit[8]) -> Bit[8] {
+    a + b
+  }
+}
+
+impl Sub1 {
+  input def callSibling(a: Bit[8], b: Bit[8]) -> Bit[8] {
+    this.sub0.call(a, b)
+  }
+}
+
+impl Sub2 {
+  input def callSibling(a: Bit[8], b: Bit[8]) -> Bit[8] {
+    this.sub0.call(a, b)
+  }
+}
