@@ -69,11 +69,20 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
   }
 
   def runFirrtl(circuit: ir.Circuit): Unit = {
-    val file = Files.createTempFile(null, ".fir")
-    Files.write(file, circuit.serialize.getBytes)
-    val circuitString = Files.readString(file)
+    val firrtlFile = Files.createTempFile(null, ".fir")
+    val verilogFile = Files.createTempFile(null, ".v")
+    Files.write(firrtlFile, circuit.serialize.getBytes)
+    val circuitString = Files.readString(firrtlFile)
 
-    val command = Array("/home/soya/opt/firrtl/utils/bin/firrtl", "-i", file.toString).mkString(" ")
+    val commandArray = Array(
+      "/home/soya/opt/firrtl/utils/bin/firrtl",
+      "-i",
+      firrtlFile.toString,
+      "-o",
+      verilogFile.toString,
+    )
+
+    val command = commandArray.mkString(" ")
     val exit = command !
 
     if(exit != 0) {
