@@ -1,0 +1,13 @@
+package test
+
+enum Option[T] {
+  None
+  Some(T)
+}
+
+module Top
+impl Top {
+  input def f(opt: Option[Bit[8]]) -> Option[Bit[8]] {
+    opt
+  }
+}

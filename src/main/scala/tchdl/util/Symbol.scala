@@ -1,7 +1,5 @@
 package tchdl.util
 
-import java.beans.Visibility
-
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.reflect.ClassTag
@@ -172,6 +170,20 @@ object Symbol {
       new EnumSymbol(path.appendComponentName(name), accessibility, flags, tpe)
   }
 
+  class EnumMemberSymbol(
+    val path: NameSpace,
+    tpe: Type
+  ) extends TypeSymbol(tpe, Modifier.NoModifier) {
+    override val accessibility: Accessibility = Accessibility.Public
+  }
+
+  object EnumMemberSymbol {
+    def apply(name: String, path: NameSpace, tpe: Type): EnumMemberSymbol = {
+      new EnumMemberSymbol(path.appendComponentName(name), tpe)
+    }
+  }
+
+
   class InterfaceSymbol(
     val path: NameSpace,
     val accessibility: Accessibility,
@@ -251,19 +263,6 @@ object Symbol {
       tpe: Type
     ): MethodSymbol =
       new MethodSymbol(path.appendComponentName(name), visibility, flags, tpe)
-  }
-
-  class EnumMemberSymbol(
-    val path: NameSpace,
-    tpe: Type
-  ) extends TermSymbol(tpe, Modifier.NoModifier) {
-    override val accessibility: Accessibility = Accessibility.Public
-  }
-
-  object EnumMemberSymbol {
-    def apply(name: String, path: NameSpace, tpe: Type): EnumMemberSymbol = {
-      new EnumMemberSymbol(path.appendComponentName(name), tpe)
-    }
   }
 
   class AlwaysSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier) {

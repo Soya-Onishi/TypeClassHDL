@@ -66,8 +66,9 @@ object TopDefTyper {
       val validModifiers =
         if(isTrait) Vector(Modifier.NoModifier)
         else Vector(
-          Modifier.Sibling | Modifier.Internal,
+          Modifier.Sibling | Modifier.Input,
           Modifier.Input,
+          Modifier.Internal,
           Modifier.Sibling,
           Modifier.Parent
         )
@@ -104,6 +105,33 @@ object TopDefTyper {
     result.left.foreach(global.repo.error.append)
 
     interfaceDef
+  }
+
+  def typedEnumDef(enumDef: EnumDef)(implicit ctx: Context.RootContext, global: GlobalData): EnumDef = {
+    def verifyMembers(members: Vector[EnumMemberDef]): Either[Error, Unit] = {
+      val errors = members.map(_.symbol.tpe).filter(_.isErrorType)
+
+      if(errors.isEmpty) Right(())
+      else Left(Error.DummyError)
+    }
+
+    enumDef.symbol.tpe
+
+    val signatureCtx = Context(ctx, enumDef.symbol)
+    val enum = enumDef.symbol.asEnumSymbol
+
+    signatureCtx.reAppend(enum.hps ++ enum.tps: _*)
+
+    val bodyCtx = Context(signatureCtx)
+
+    val result = for {
+      _ <- TyperUtil.verifyTPBoundType(enum)(bodyCtx, global)
+      _ <- verifyMembers(enumDef.members)
+      _ <- verifyHavingErrorType(enumDef.hp)
+    } yield ()
+
+    result.left.foreach(global.repo.error.append)
+    enumDef
   }
 
   def typedImplClassSignature(impl: ImplementClass)(implicit ctx: Context.RootContext, global: GlobalData): ImplementClass = {
@@ -157,6 +185,7 @@ object TopDefTyper {
       case struct: StructDef => typedStructDef(struct)
       case module: ModuleDef => typedModuleDef(module)
       case interface: InterfaceDef => typedInterfaceDef(interface)
+      case enum: EnumDef => typedEnumDef(enum)
       case impl: ImplementClass => typedImplClassSignature(impl)
       case impl: ImplementInterface => typedImplInterfaceSignature(impl)
     }

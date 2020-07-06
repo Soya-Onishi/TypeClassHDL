@@ -233,7 +233,7 @@ class ParseTest extends TchdlFunSuite {
     assert(option.tp.length == 1)
     assert(option.tp.head.name == "T")
 
-    val fields = option.fields
+    val fields = option.members
     assert(fields.length == 2)
 
     val none = fields.head

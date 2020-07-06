@@ -210,4 +210,36 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val (_, global) = untilThisPhase("InputCallInternal.tchdl")
     expectNoError(global)
   }
+
+  test("enum that has members have no fields used as interface parameter cause no error") {
+    val (_, global) = untilThisPhase("enumWithInterfaceParam0.tchdl")
+    expectNoError(global)
+  }
+
+  test("enum that has a member has software tpe causes an error when it is used as interface parameter") {
+    val (_, global) = untilThisPhase("enumWithInterfaceParam1.tchdl")
+    expectError(2)(global)
+
+    val err0 = global.repo.error.elems.head
+    assert(err0.isInstanceOf[Error.RequireHardwareType])
+
+    val err1 = global.repo.error.elems.tail.head
+    assert(err1.isInstanceOf[Error.RequireHardwareType])
+  }
+
+  test("enum Option[Int] causes an error when it is used as interface parameter type") {
+    val (_, global) = untilThisPhase("enumWithInterfaceParam2.tchdl")
+    expectError(2)(global)
+
+    val err0 = global.repo.error.elems.head
+    assert(err0.isInstanceOf[Error.RequireHardwareType])
+
+    val err1 = global.repo.error.elems.tail.head
+    assert(err1.isInstanceOf[Error.RequireHardwareType])
+  }
+
+  test("enum Option[Bit[8]] causes no error") {
+    val (_, global) = untilThisPhase("enumWithInterfaceParam3.tchdl")
+    expectNoError(global)
+  }
 }

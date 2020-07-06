@@ -1,0 +1,11 @@
+package test
+
+trait Id {}
+
+struct Container[T] where T: Id {
+  a: T
+}
+
+enum Opcode {
+  Add(Container[Int])
+}

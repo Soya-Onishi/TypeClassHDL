@@ -1,0 +1,13 @@
+package test
+
+enum Opcode {
+  Add(Int)
+  Sub
+}
+
+module Top
+impl Top {
+  input def run(op: Opcode) -> Opcode {
+    op
+  }
+}

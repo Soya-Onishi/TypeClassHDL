@@ -16,6 +16,7 @@ trait Type {
   def asEntityType: Type.EntityType = this.asInstanceOf[Type.EntityType]
   def asParameterType: Type.TypeParamType = this.asInstanceOf[Type.TypeParamType]
   def asMethodType: Type.MethodType = this.asInstanceOf[Type.MethodType]
+  def asEnumMemberType: Type.EnumMemberType = this.asInstanceOf[Type.EnumMemberType]
 
   def isErrorType: Boolean = this.isInstanceOf[Type.ErrorType.type]
 
@@ -101,7 +102,7 @@ object Type {
       sigCtx.reAppend(structSymbol.hps ++ structSymbol.tps: _*)(global)
 
       val fieldCtx = Context(sigCtx)
-      enum.fields.map(Namer.nodeLevelNamed(_)(fieldCtx, global))
+      enum.members.map(Namer.nodeLevelNamed(_)(fieldCtx, global))
       EntityType(enum.name, ctx.path, fieldCtx.scope)
     }
   }
@@ -826,6 +827,17 @@ object Type {
           val fields = struct.tpe.declares.toMap.values.toVector
           val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
           fieldTpes.forall(_.isHardwareType)
+        case enum: Symbol.EnumSymbol =>
+          val hpTable = (enum.hps zip this.hardwareParam).toMap
+          val tpTable = (enum.tps zip this.typeParam).toMap
+          val memberFieldTpes = enum.tpe.declares.toMap
+            .values
+            .toVector
+            .map(_.tpe.asEnumMemberType)
+            .flatMap(_.fieldTypes)
+            .map(_.replaceWithMap(hpTable, tpTable))
+
+          memberFieldTpes.forall(_.isHardwareType)
       }
     }
 

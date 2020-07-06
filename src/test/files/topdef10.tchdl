@@ -1,0 +1,11 @@
+package test
+
+interface Id {}
+
+struct ST {
+  a: Field[Int]
+}
+
+struct Field[T] where T: Id {
+  a: T
+}

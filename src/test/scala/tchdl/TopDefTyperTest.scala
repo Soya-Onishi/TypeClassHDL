@@ -210,4 +210,20 @@ class TopDefTyperTest extends TchdlFunSuite {
     assert(sub.hasFlag(Modifier.Field))
     assert(sub.flag == (Modifier.Child | Modifier.Field))
   }
+
+  test("invalid type of field that has type parameter mismatch bounds") {
+    val (_, global) = untilTopDefTyper("topdef10.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotMeetPartialTPBound])
+  }
+
+  test("passed type in enum member violates type bounds cause an error") {
+    val (_, global) = untilTopDefTyper("enumDef6.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotMeetPartialTPBound])
+  }
 }
