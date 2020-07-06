@@ -1,0 +1,11 @@
+package test
+
+enum Option[T] {
+  None
+  Some(T)
+}
+
+impl[T] Option[T] {
+  def unit() -> Option[T] { this }
+}
+

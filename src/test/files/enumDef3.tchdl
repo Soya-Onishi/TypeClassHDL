@@ -1,0 +1,14 @@
+package test
+
+enum Option[T] {
+  None
+  Some(T)
+}
+
+impl Option[Int] {
+  def identity() -> Option[Int] { this }
+}
+
+impl Option[String] {
+  def identity() -> Option[String] { this }
+}

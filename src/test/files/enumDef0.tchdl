@@ -1,0 +1,6 @@
+package test
+
+enum Test[m: Num] where m : min 1 {
+  A(Int)
+  B(Bit[m])
+}

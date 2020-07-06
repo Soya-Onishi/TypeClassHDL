@@ -42,4 +42,42 @@ class NamerTest extends TchdlFunSuite {
 
     types.foreach(lookupStruct(_, ctx))
   }
+
+  test("named enum") {
+    val global = GlobalData()
+    val filename = buildName(rootDir, filePath, "enumOption.tchdl")
+    val tree = parser(filename).asInstanceOf[CompilationUnit]
+    Namer.exec(tree)(global)
+
+    val enum = tree.topDefs.collectFirst{ case enum: EnumDef => enum }.get
+    assert(enum.symbol.isInstanceOf[Symbol.EnumSymbol])
+
+    val symbol = enum.symbol.asEnumSymbol
+    assert(symbol.name == "Option")
+
+    val tps = symbol.tps
+    assert(tps.length == 1)
+    assert(tps.head.name == "T")
+
+    assert(symbol.hps.isEmpty)
+  }
+
+  test("named enum that has hardware parameter") {
+    val global = GlobalData()
+    val filename = buildName(rootDir, filePath, "enumDef0.tchdl")
+    val tree = parser(filename).asInstanceOf[CompilationUnit]
+    Namer.exec(tree)(global)
+
+    val enum = tree.topDefs.collectFirst{ case enum: EnumDef => enum }.get
+    assert(enum.symbol.isInstanceOf[Symbol.EnumSymbol])
+
+    val symbol = enum.symbol.asEnumSymbol
+    assert(symbol.name == "Test")
+
+    val tps = symbol.tps
+    assert(tps.isEmpty)
+
+    assert(symbol.hps.length == 1)
+    assert(symbol.hps.head.name == "m")
+  }
 }

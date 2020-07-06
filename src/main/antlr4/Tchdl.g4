@@ -18,7 +18,7 @@ top_definition
     | interface_def
     | implement_class
     | implement_interface
-//    | enum_def
+    | enum_def
     ;
 
 module_def
@@ -27,6 +27,14 @@ module_def
 
 trait_def
     : TRAIT TYPE_ID type_param? bounds? '{' (signature_def)* '}'
+    ;
+
+enum_def
+    : ENUM TYPE_ID type_param? bounds? '{' enum_field_def+ '}'
+    ;
+
+enum_field_def
+    : TYPE_ID ('(' type+ ')')?
     ;
 
 interface_def
@@ -247,17 +255,6 @@ unit_lit
 type: TYPE_ID apply_typeparam? # NormalType
     | THISTYPE                 # SelfType
     ;
-
-/*
-
-enum_def
-    : ENUM ID type_param? bounds? '{' enum_field_def+ '}'
-    ;
-
-enum_field_def
-    : ID ('(' type+ ')')?
-    ;
-*/
 
 PACKAGE: 'package';
 IMPORT: 'import';

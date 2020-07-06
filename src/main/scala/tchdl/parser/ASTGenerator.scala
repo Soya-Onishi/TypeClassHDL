@@ -28,6 +28,7 @@ class ASTGenerator {
       case ctx: TP.Method_defContext => methodDef(ctx)
       case ctx: TP.Struct_defContext => structDef(ctx)
       case ctx: TP.Trait_defContext => traitDef(ctx)
+      case ctx: TP.Enum_defContext => enumDef(ctx)
       case ctx: TP.Interface_defContext => interfaceDef(ctx)
       case ctx: TP.Implement_classContext => implementClass(ctx)
       case ctx: TP.Implement_interfaceContext => implementInterface(ctx)
@@ -83,6 +84,21 @@ class ASTGenerator {
       .toVector
 
     InterfaceDef(Modifier.Trait, name, hp, tp, bound, methods)
+  }
+
+  def enumDef(ctx: TP.Enum_defContext): EnumDef = {
+    def enumFieldDef(ctx: TP.Enum_field_defContext): EnumMemberDef = {
+      val fieldName = ctx.TYPE_ID.getText
+      val fields = ctx.`type`.asScala.map(typeTree).toVector
+
+      EnumMemberDef(fieldName, fields)
+    }
+
+    val enumName = ctx.TYPE_ID.getText
+    val (hps, tps, bounds) = definitionHeader(ctx.type_param, ctx.bounds)
+    val fields = ctx.enum_field_def.asScala.map(enumFieldDef).toVector
+
+    EnumDef(enumName, hps, tps, bounds, fields)
   }
 
   def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {

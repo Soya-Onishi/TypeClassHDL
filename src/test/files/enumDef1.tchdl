@@ -1,0 +1,14 @@
+package test
+
+enum Opcode {
+  Add
+  Sub
+}
+
+trait Id {
+  def identity() -> Opcode
+}
+
+impl Id for Opcode {
+  def identity() -> Opcode { this }
+}

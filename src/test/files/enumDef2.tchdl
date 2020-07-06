@@ -1,0 +1,19 @@
+package test
+
+enum Option[T] {
+  None
+  Some(T)
+}
+
+trait NoRet {
+  def unit() -> Unit
+}
+
+impl NoRet for Option[Int] {
+  def unit() -> Unit {}
+}
+
+impl NoRet for Option[String] {
+  def unit() -> Unit {}
+}
+

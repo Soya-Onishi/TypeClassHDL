@@ -299,12 +299,11 @@ object ImplementClassContainer {
         val verified = table.collect { case (tp, tpe) if tpe.origin.isEntityTypeSymbol => tp -> tpe }
         val verifiedBounds = verified.toVector.map {
           case (tp, tpe) =>
-            val bounds = combinedTPBounds.find(_.target.origin == tp).get.bounds
+            val bounds = combinedTPBounds.find(_.target.origin == tp).map(_.bounds).getOrElse(Vector.empty)
             val swappedBounds = bounds.map(_.replaceWithMap(Map.empty, verified))
 
             TPBound(tpe, swappedBounds)
         }
-
 
         verifiedBounds.forall {
           TPBound.verifyMeetBound(_, hpBounds, combinedTPBounds).isRight
@@ -315,8 +314,9 @@ object ImplementClassContainer {
       val table1 = table.collect{ case (key, value) if impl1.typeParam.contains(key) => key -> value }
 
       val combinedTPBounds = impl0.symbol.tpBound ++ impl1.symbol.tpBound
+
       verifyTPBound(impl0.symbol.hpBound, combinedTPBounds, table0) &&
-        verifyTPBound(impl1.symbol.hpBound, combinedTPBounds, table1)
+      verifyTPBound(impl1.symbol.hpBound, combinedTPBounds, table1)
     }
 
     val table = unwrapTable(buildTable(

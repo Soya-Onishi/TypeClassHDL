@@ -1,6 +1,9 @@
 package tchdl.util
 
+import java.beans.Visibility
+
 import tchdl.util.TchdlException.ImplementationErrorException
+
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 
@@ -55,6 +58,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asEntityTypeSymbol: Symbol.EntityTypeSymbol = this.asInstanceOf[Symbol.EntityTypeSymbol]
   def asClassTypeSymbol: Symbol.ClassTypeSymbol = this.asInstanceOf[Symbol.ClassTypeSymbol]
   def asStructSymbol: Symbol.StructSymbol = this.asInstanceOf[Symbol.StructSymbol]
+  def asEnumSymbol: Symbol.EnumSymbol = this.asInstanceOf[Symbol.EnumSymbol]
   def asModuleSymbol: Symbol.ModuleSymbol = this.asInstanceOf[Symbol.ModuleSymbol]
   def asInterfaceSymbol: Symbol.InterfaceSymbol = this.asInstanceOf[Symbol.InterfaceSymbol]
   def asTypeParamSymbol: Symbol.TypeParamSymbol = this.asInstanceOf[Symbol.TypeParamSymbol]
@@ -150,6 +154,24 @@ object Symbol {
       new ModuleSymbol(path.appendComponentName(name), visibility, flags, tpe)
   }
 
+  class EnumSymbol (
+    val path: NameSpace,
+    val accessibility: Accessibility,
+    flags: Modifier,
+    tpe: Type
+  ) extends ClassTypeSymbol(tpe, flags)
+
+  object EnumSymbol {
+    def apply(
+      name: String,
+      path: NameSpace,
+      accessibility: Accessibility,
+      flags: Modifier,
+      tpe: Type
+    ): EnumSymbol =
+      new EnumSymbol(path.appendComponentName(name), accessibility, flags, tpe)
+  }
+
   class InterfaceSymbol(
     val path: NameSpace,
     val accessibility: Accessibility,
@@ -229,6 +251,19 @@ object Symbol {
       tpe: Type
     ): MethodSymbol =
       new MethodSymbol(path.appendComponentName(name), visibility, flags, tpe)
+  }
+
+  class EnumMemberSymbol(
+    val path: NameSpace,
+    tpe: Type
+  ) extends TermSymbol(tpe, Modifier.NoModifier) {
+    override val accessibility: Accessibility = Accessibility.Public
+  }
+
+  object EnumMemberSymbol {
+    def apply(name: String, path: NameSpace, tpe: Type): EnumMemberSymbol = {
+      new EnumMemberSymbol(path.appendComponentName(name), tpe)
+    }
   }
 
   class AlwaysSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier) {

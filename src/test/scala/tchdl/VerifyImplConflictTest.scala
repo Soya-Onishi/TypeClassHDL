@@ -122,4 +122,56 @@ class VerifyImplConflictTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.ImplementInterfaceConflict], showErrors(global))
   }
+
+  test("impl for enum must not be conflict between two same trait target impl") {
+    val (trees, global) = untilImplVerify("enumDef2.tchdl")
+    expectNoError(global)
+
+    val filename = buildName(rootDir, filePath, "enumDef2.tchdl")
+    val tree = trees.find(_.filename.get == filename).get
+
+    val enumDef = tree.topDefs.collectFirst{ case enum: EnumDef => enum }.get
+    val traitDef = tree.topDefs.collectFirst{ case traitDef: InterfaceDef => traitDef }.get
+    val impls = tree.topDefs.collect{ case impl: ImplementInterface => impl }
+
+    assert(impls.length == 2)
+
+    assert(impls.head.interface.symbol == traitDef.symbol)
+    assert(impls.tail.head.interface.symbol == traitDef.symbol)
+
+    assert(impls.head.target.symbol == enumDef.symbol)
+    assert(impls.tail.head.target.symbol == enumDef.symbol)
+  }
+
+  test("implement enum must not conflict between two different type parameter type") {
+    val (trees, global) = untilImplVerify("enumDef3.tchdl")
+    expectNoError(global)
+
+    val filename = buildName(rootDir, filePath, "enumDef3.tchdl")
+    val tree = trees.find(_.filename.get == filename).get
+
+    val enumDef = tree.topDefs.collectFirst{ case enum: EnumDef => enum }.get
+    val impls = tree.topDefs.collect{ case impl: ImplementClass => impl }
+
+    assert(impls.length == 2)
+
+    assert(impls.head.target.symbol == enumDef.symbol)
+    assert(impls.tail.head.target.symbol == enumDef.symbol)
+  }
+
+  test("implement enum conflict between Option[T] and Option[Int]") {
+    val (_, global) = untilImplVerify("enumDef4.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ImplementClassConflict])
+  }
+
+  test("implement enum conflict between Option[T] and Option[T]") {
+    val (_, global) = untilImplVerify("enumDef5.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ImplementClassConflict])
+  }
 }

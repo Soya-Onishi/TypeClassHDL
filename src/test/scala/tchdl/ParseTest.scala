@@ -219,4 +219,30 @@ class ParseTest extends TchdlFunSuite {
 
     assertThrows[AssertionError](parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit])
   }
+
+  test("enum Option definition parsed correctly") {
+    val filename = buildName(rootDir, filePath, "enumOption.tchdl")
+    val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+
+    val topDefs = tree.topDefs
+    val enums = topDefs.collect{ case enum: EnumDef => enum }
+    assert(enums.length == 1)
+    val option = enums.head
+    assert(option.name == "Option")
+    assert(option.hp.isEmpty)
+    assert(option.tp.length == 1)
+    assert(option.tp.head.name == "T")
+
+    val fields = option.fields
+    assert(fields.length == 2)
+
+    val none = fields.head
+    assert(none.name == "None")
+    assert(none.fields.isEmpty)
+
+    val some = fields.tail.head
+    assert(some.name == "Some")
+    assert(some.fields.length == 1)
+    assert(some.fields.head.expr == Ident("T"))
+  }
 }

@@ -74,6 +74,14 @@ object Namer {
     vdef.setSymbol(symbol)
   }
 
+  def namedEnumField(member: EnumMemberDef)(implicit ctx: Context.NodeContext, global: GlobalData): EnumMemberDef = {
+    val generator = Type.EnumMemberTypeGenerator(member, ctx, global)
+    val symbol = Symbol.EnumMemberSymbol(member.name, ctx.path, generator)
+
+    ctx.append(symbol)
+    member.setSymbol(symbol)
+  }
+
   def namedHPDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
     val symbol = Symbol.HardwareParamSymbol(
       vdef.name,
@@ -187,6 +195,26 @@ object Namer {
     interface.setSymbol(interfaceSymbol)
   }
 
+  def namedEnum(enum: EnumDef)(implicit ctx: Context.RootContext, global: GlobalData): EnumDef = {
+    val generator = Type.EnumTypeGenerator(enum, ctx, global)
+    val symbol = Symbol.EnumSymbol(
+      enum.name,
+      ctx.path,
+      Accessibility.Public,
+      Modifier.NoModifier,
+      generator
+    )
+
+    val signatureCtx = Context(ctx, symbol)
+    val hps = enum.hp.map(namedHPDef(_)(signatureCtx, global))
+    val tps = enum.tp.map(namedTPDef(_)(signatureCtx, global))
+    symbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
+    symbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
+
+    ctx.append(symbol)
+    enum.setSymbol(symbol)
+  }
+
   def namedImplInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): ImplementInterface = {
     val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
     val signatureCtx = Context(ctx, implSymbol)
@@ -213,6 +241,7 @@ object Namer {
     val namedTree = ast match {
       case always: AlwaysDef => namedAlways(always)
       case method: MethodDef => namedMethod(method)
+      case enum: EnumMemberDef => namedEnumField(enum)
       case vdef: ValDef if vdef.flag.hasFlag(Modifier.Field) => namedFieldDef(vdef)
       case vdef: ValDef => namedLocalDef(vdef)
       case stage: StageDef => namedStageDef(stage)
@@ -228,6 +257,7 @@ object Namer {
     val namedAST = ast match {
       case module: ModuleDef => namedModule(module)
       case struct: StructDef=> namedStruct(struct)
+      case enum: EnumDef => namedEnum(enum)
       case interface: InterfaceDef => namedInterface(interface)
       case impl: ImplementInterface => namedImplInterface(impl)
       case impl: ImplementClass => namedImplClass(impl)

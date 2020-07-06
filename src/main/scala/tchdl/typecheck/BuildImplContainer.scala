@@ -119,8 +119,10 @@ object BuildImplContainer {
       (interface.origin.flag, target.origin) match {
         case (flag, _: Symbol.ModuleSymbol) if flag.hasFlag(Modifier.Interface) => Right(())
         case (flag, _: Symbol.StructSymbol) if flag.hasFlag(Modifier.Trait) => Right(())
+        case (flag, _: Symbol.EnumSymbol) if flag.hasFlag(Modifier.Trait) => Right(())
         case (_, _: Symbol.ModuleSymbol) => Left(Error.TryImplTraitByModule(impl))
         case (_, _: Symbol.StructSymbol) => Left(Error.TryImplInterfaceByStruct(impl))
+        case (_, _: Symbol.EnumSymbol) => Left(Error.TryImplInterfaceByStruct(impl))
         case (flag, tp: Symbol.TypeParamSymbol) =>
           val bounds = ctx.tpBounds.find(_.target.origin == tp).map(_.bounds).getOrElse(Vector.empty)
 
@@ -234,6 +236,7 @@ object BuildImplContainer {
       case module: ModuleDef => setBoundsForTopDefinition(module)
       case struct: StructDef => setBoundsForTopDefinition(struct)
       case interface: InterfaceDef => setBoundsForTopDefinition(interface)
+      case enum: EnumDef => setBoundsForTopDefinition(enum)
       case impl: ImplementInterface => implementInterface(impl)
       case impl: ImplementClass => implementClass(impl)
       case _ =>

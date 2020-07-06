@@ -94,6 +94,18 @@ object Type {
     }
   }
 
+  case class EnumTypeGenerator(enum: EnumDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
+    override def generate: Type.EntityType = {
+      val sigCtx = Context(ctx, enum.symbol)
+      val structSymbol = enum.symbol.asEntityTypeSymbol
+      sigCtx.reAppend(structSymbol.hps ++ structSymbol.tps: _*)(global)
+
+      val fieldCtx = Context(sigCtx)
+      enum.fields.map(Namer.nodeLevelNamed(_)(fieldCtx, global))
+      EntityType(enum.name, ctx.path, fieldCtx.scope)
+    }
+  }
+
   case class InterfaceTypeGenerator(interface: InterfaceDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type.EntityType = {
       val interfaceCtx = Context(ctx, interface.symbol)
@@ -173,6 +185,18 @@ object Type {
           global.cache.set(typedTpe)
           typedTpe.tpe
       }
+    }
+  }
+
+  case class EnumMemberTypeGenerator(member: EnumMemberDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+    override def generate: Type = {
+      val name = member.name
+      val fields = member.fields.map(Typer.typedTypeTree(_)(ctx, global))
+      val hasError = fields.exists(_.tpe.isErrorType)
+      val parent = ctx.owner.tpe.asEntityType
+
+      if(hasError) Type.ErrorType
+      else EnumMemberType(name, ctx.path, parent, fields.map(_.tpe.asRefType))
     }
   }
 
@@ -311,6 +335,26 @@ object Type {
 
   object MethodType {
     def apply(args: Vector[Type.RefType], retTpe: RefType): MethodType = new MethodType(args, retTpe)
+  }
+
+  class EnumMemberType(
+    val name: String,
+    val namespace: NameSpace,
+    val parent: EntityType,
+    val fieldTypes: Vector[Type.RefType]
+  ) extends Type {
+    override val declares: Scope = Scope.empty
+
+    override def =:=(tpe: Type): Boolean = tpe match {
+      case that: EnumMemberType => this.name == that.name && this.namespace == that.namespace
+      case _ => false
+    }
+  }
+
+  object EnumMemberType {
+    def apply(name: String, namespace: NameSpace, parent: EntityType, fieldTypes: Vector[Type.RefType]): EnumMemberType = {
+      new EnumMemberType(name, namespace, parent, fieldTypes)
+    }
   }
 
   class RefType(
