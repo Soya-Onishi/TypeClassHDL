@@ -27,7 +27,6 @@ object Error {
   case class TypeMismatch(expect: Type, actual: Type) extends Error
   case class SymbolNotFound(name: String) extends Error
   case class OperationNotFound(op: Operation) extends Error
-  case class PackageNotFound(name: String) extends Error
   case class ParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
@@ -59,6 +58,7 @@ object Error {
 
   case class InvalidFormatForType(expr: Expression) extends Error
   case class InvalidFormatForModuleConstruct(expr: Expression) extends Error
+  case class CannotUseStaticSelect(tree: StaticSelect) extends Error
 
   case object FinishOutsideStage extends Error
   case object GotoOutsideState extends Error

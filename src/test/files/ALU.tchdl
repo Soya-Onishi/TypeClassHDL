@@ -1,9 +1,9 @@
 package test::alu
 
-import std::traits::Add
-import std::traits::Sub
-import std::traits::HW
-import std::interfaces::Module
+import std::traits:::Add
+import std::traits:::Sub
+import std::traits:::HW
+import std::interfaces:::Module
 
 struct Complex[T] {
   real: T,

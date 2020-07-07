@@ -1,6 +1,6 @@
 package test::import0
 
-import test::import1::Type1
+import test::import1:::Type1
 
 struct Type0 { n: Int }
 

@@ -370,7 +370,7 @@ object Symbol {
           symbol.lookup[Symbol.PackageSymbol](name)
             .toEither
             .map(Right.apply)
-            .getOrElse(Left(Error.PackageNotFound(searchedName)))
+            .getOrElse(Left(Error.SymbolNotFound(searchedName)))
       }
     }
   }

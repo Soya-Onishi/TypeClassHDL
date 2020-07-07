@@ -457,7 +457,7 @@ case class HPBinOp(
 }
 
 case class Select(prefix: Expression, name: String) extends Expression with HasSymbol
-case class StaticSelect(suffix: TypeTree, name: String) extends Expression with TypeAST
+case class StaticSelect(prefix: TypeTree, name: String) extends Expression with TypeAST
 case class SelectPackage(packages: Vector[String], name: String) extends AST with TypeAST with Expression
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
 case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) extends Construct

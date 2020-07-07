@@ -778,6 +778,7 @@ object Type {
 
         def isSameHp = {
           def isSameLength = this.hardwareParam.length == that.hardwareParam.length
+
           def isSameExpr = this.hardwareParam
             .zip(that.hardwareParam)
             .forall { case (t, o) => t.isSameExpr(o) }
@@ -787,6 +788,7 @@ object Type {
 
         def isSameTP = {
           def isSameLength = this.typeParam.length == that.typeParam.length
+
           def isSameTypes = (this.typeParam zip that.typeParam).forall { case (t, o) => t =:= o }
 
           isSameLength && isSameTypes
@@ -847,7 +849,7 @@ object Type {
             memberFieldTpes.forall(loop(_, types + verified))
         }
 
-        if(types(verified)) false
+        if (types(verified)) false
         else verify
       }
 
@@ -1165,35 +1167,75 @@ object Type {
   }
 
   def buildType[T <: Symbol.TypeSymbol](typeTree: TypeTree)(implicit ctx: Context.NodeContext, global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): (Option[Error], TypeTree) = {
-    val TypeTree(ident: Ident, hps, tps) = typeTree
+    def typeCheckHardArgs(symbol: Symbol.TypeSymbol, hargs: Vector[HPExpr]): Either[Error, Unit] = {
+      val errs = (symbol.hps.map(_.tpe) zip hargs.map(_.tpe))
+        .filterNot { case (e, a) => e == a }
+        .map { case (e, a) => Error.TypeMismatch(e, a) }
 
-    ctx.lookup[T](ident.name) match {
-      case LookupResult.LookupFailure(err) => (Some(err), typeTree.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
-      case LookupResult.LookupSuccess(symbol) =>
-        buildParams(symbol, hps, tps) match {
-          case Left(err) => (Some(err), typeTree.setSymbol(symbol).setTpe(Type.ErrorType))
-          case Right((hps, tps)) =>
-            val errs = (symbol.hps.map(_.tpe) zip hps.map(_.tpe))
-              .filterNot { case (e, a) => e == a }
-              .map { case (e, a) => Error.TypeMismatch(e, a) }
+      if(errs.isEmpty) Right(())
+      else Left(Error.MultipleErrors(errs: _*))
+    }
 
+    def buildForIdent(ident: Ident, hargs: Vector[HPExpr], targs: Vector[TypeTree]): (Option[Error], TypeTree) = {
+      val result = for {
+        symbol <- ctx.lookup[T](ident.name).toEither
+        polyArgs <- buildParams(symbol, hargs, targs)
+        (typedHArgs, typedTArgs) = polyArgs
+        _ <- typeCheckHardArgs(symbol, typedHArgs)
+      } yield {
+        TypeTree(ident, typedHArgs, typedTArgs)
+          .setSymbol(symbol)
+          .setTpe(Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType)))
+          .setID(typeTree.id)
+      }
 
-            if (errs.isEmpty) {
-              val tpe = TypeTree(ident, hps, tps)
-                .setSymbol(symbol)
-                .setTpe(Type.RefType(symbol, hps, tps.map(_.tpe.asRefType)))
-                .setID(typeTree.id)
+      result match {
+        case Left(err) => (Some(err), typeTree.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
+        case Right(tree) => (None, tree)
+      }
+    }
 
-              (None, tpe)
-            } else {
-              val tpe = TypeTree(ident, hps, tps)
-                .setSymbol(symbol)
-                .setTpe(Type.ErrorType)
-                .setID(typeTree.id)
+    def buildForSelectPackage(select: SelectPackage, hargs: Vector[HPExpr], targs: Vector[TypeTree]): (Option[Error], TypeTree) = {
+      lazy val packageLookupFromCtx = ctx.lookup[Symbol.PackageSymbol](select.packages.head).toEither
+      lazy val packageLookupFromRoot = global.rootPackage.search(Vector(select.packages.head))
+      val packageLookup = packageLookupFromCtx.left.flatMap(_ => packageLookupFromRoot)
 
-              (Some(Error.MultipleErrors(errs: _*)), tpe)
-            }
-        }
+      val pkgResult = select.packages.tail.foldLeft(packageLookup) {
+        case (Left(err), _) => Left(err)
+        case (Right(symbol), name) => symbol.lookup[Symbol.PackageSymbol](name).toEither
+      }
+
+      val result = for {
+        pkgSymbol <- pkgResult
+        typeSymbol <- pkgSymbol.lookup[Symbol.TypeSymbol](select.name).toEither
+        args <- buildParams(typeSymbol, hargs, targs)
+        (typedHArgs, typedTArgs) = args
+        _ <- typeCheckHardArgs(typeSymbol, typedHArgs)
+      } yield {
+        val targTpes = typedTArgs.map(_.tpe.asRefType)
+        val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes)
+        val typedSelect = select.setSymbol(typeSymbol).setTpe(tpe)
+
+        TypeTree(typedSelect, typedHArgs, typedTArgs)
+          .setSymbol(typeSymbol)
+          .setTpe(tpe)
+          .setID(typeTree.id)
+      }
+
+      result match {
+        case Right(tree) => (None, tree)
+        case Left(err) => (Some(err), typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol))
+      }
+    }
+
+    typeTree.expr match {
+      case ident: Ident => buildForIdent(ident, typeTree.hp, typeTree.tp)
+      case select: SelectPackage => buildForSelectPackage(select, typeTree.hp, typeTree.tp)
+      case select: StaticSelect =>
+        val err = Some(Error.CannotUseStaticSelect(select))
+        val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+
+        (err, tree)
     }
   }
 

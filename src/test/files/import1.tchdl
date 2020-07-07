@@ -1,5 +1,5 @@
 package test::import1
 
-import test::import0::Type0
+import test::import0:::Type0
 
 struct Type1 { b: Bit[4] }
