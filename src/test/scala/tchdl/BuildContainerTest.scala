@@ -98,4 +98,20 @@ class BuildContainerTest extends TchdlFunSuite {
     assert(implDef.interface.symbol == traitDef.symbol)
     assert(implDef.target.symbol == enumDef.symbol)
   }
+
+  test("use another package type") {
+    val (trees, global) = untilThisPhase("UseAnotherPackageType.tchdl", "TypeSource.tchdl")
+    expectNoError(global)
+
+    val cu = trees.find(_.filename.get.contains("UseAnotherPackageType.tchdl")).get
+    val impl = cu.topDefs
+      .collectFirst{ case impl: ImplementClass if impl.target.expr.isInstanceOf[SelectPackage] => impl }
+      .get
+
+    val source = trees.find(_.filename.get.contains("TypeSource.tchdl")).get
+    val ST1 = source.topDefs.collectFirst{ case struct: StructDef => struct }.get
+
+    assert(impl.target.tpe.isInstanceOf[Type.RefType])
+    assert(impl.target.tpe.asRefType.origin == ST1.symbol)
+  }
 }

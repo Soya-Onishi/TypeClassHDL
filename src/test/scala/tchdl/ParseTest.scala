@@ -259,7 +259,7 @@ class ParseTest extends TchdlFunSuite {
     assert(structA.tpeTree.get == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
 
     val method = topDefs
-      .collectFirst{ case impl: ImplementClass => impl }.get
+      .collectFirst{ case impl: ImplementClass if impl.target.expr.isInstanceOf[Ident] => impl }.get
       .components
       .collectFirst{ case method: MethodDef => method }.get
 

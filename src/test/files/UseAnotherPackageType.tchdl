@@ -9,3 +9,7 @@ impl ST0 {
     test1:::ST1 {}
   }
 }
+
+impl test1:::ST1 {
+  def no() -> Unit {}
+}
