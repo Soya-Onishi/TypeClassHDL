@@ -676,11 +676,14 @@ object Typer {
           for {
             _ <- verifyHP(symbol, hargs)
             _ <- verifyTP(symbol, hargs, targs)
-          } yield TypeTree(
-            ident.setTpe(symbol.tpe).setSymbol(symbol),
-            hargs,
-            targs
-          )
+          } yield {
+            val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType))
+
+            TypeTree(ident.setTpe(symbol.tpe).setSymbol(symbol), hargs, targs)
+              .setTpe(tpe)
+              .setSymbol(symbol)
+              .setID(typeTree.id)
+          }
       }
     }
 
