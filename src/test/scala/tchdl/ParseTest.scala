@@ -245,4 +245,27 @@ class ParseTest extends TchdlFunSuite {
     assert(some.fields.length == 1)
     assert(some.fields.head.expr == Ident("T"))
   }
+
+  test("access Type from another package") {
+    val filename = buildName(rootDir, filePath, "UseAnotherPackageType.tchdl")
+    val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+
+    val topDefs = tree.topDefs
+    val structA = topDefs
+      .collectFirst{ case structDef: StructDef => structDef }.get
+      .fields
+      .find(_.name == "a").get
+
+    assert(structA.tpeTree.get == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
+
+    val method = topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method }.get
+
+    assert(method.retTpe == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
+
+    val construct = method.blk.get.last.asInstanceOf[ConstructClass]
+    assert(construct.target == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
+  }
 }

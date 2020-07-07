@@ -1,0 +1,11 @@
+package test0
+
+struct ST0 {
+  a: test1:::ST1
+}
+
+impl ST0 {
+  def construct() -> test1:::ST1 {
+    test1:::ST1 {}
+  }
+}

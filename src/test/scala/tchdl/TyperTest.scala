@@ -79,11 +79,10 @@ class TyperTest extends TchdlFunSuite {
     val (trees, global) = untilTyper("structImpl3.tchdl")
     assert(global.repo.error.counts == 0, showErrors(global))
 
-    val impls = trees.head.topDefs
-      .collect { case impl: ImplementClass => impl }
+    val impls = trees.head.topDefs.collect { case impl: ImplementClass => impl }
 
-    val implForSTInt = impls.filter(_.target.tp.head.expr.name == "Int").head
-    val implForSTString = impls.filter(_.target.tp.head.expr.name == "String").head
+    val implForSTInt = impls.filter(_.target.tp.head.expr.asInstanceOf[Ident].name == "Int").head
+    val implForSTString = impls.filter(_.target.tp.head.expr.asInstanceOf[Ident].name == "String").head
     val forInt = implForSTInt.components.collect { case m: MethodDef => m }.filter(_.name == "forInt").head
     val forString = implForSTString.components.collect { case m: MethodDef => m }.filter(_.name == "forString").head
     val Apply(select: Select, _, _, _) = forInt.blk.get.last
