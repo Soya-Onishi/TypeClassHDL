@@ -31,8 +31,16 @@ package object backend {
     }
   }
 
-  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType], fields: Map[String, BackendType]) extends ToFirrtlString {
+  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType]) extends ToFirrtlString {
     override def hashCode(): Int = symbol.hashCode + hargs.hashCode + targs.hashCode
+    override def equals(obj: Any): Boolean = obj match {
+      case that: BackendType =>
+        this.symbol == that.symbol &&
+        this.hargs == that.hargs &&
+        this.targs == that.targs
+      case _ => false
+    }
+
     override def toString: String = {
       val head = symbol.name
       val args = hargs.map(_.toString) ++ targs.map(_.toString)
@@ -69,49 +77,65 @@ package object backend {
       head + args
     }
 
-    def isHardware(implicit global: GlobalData): Boolean =
-      symbol match {
-        case bit if bit == global.builtin.types.lookup("Bit") => true
-        case symbol if global.builtin.types.symbols.contains(symbol) => false
-        case _ if fields.isEmpty => false
-        case _ => fields.values.forall(_.isHardware)
+    def isHardware(implicit global: GlobalData): Boolean = {
+      def loop(verified: BackendType, types: Set[BackendType]): Boolean = {
+        verified.symbol match {
+          case bit if bit == global.builtin.types.lookup("Bit") => true
+          case symbol if global.builtin.types.symbols.contains(symbol) => false
+          case symbol: Symbol.EnumSymbol =>
+            val memberFieldTypes = symbol.tpe.declares.toMap
+              .values.toVector
+              .map(_.tpe.asEnumMemberType)
+              .flatMap(_.fieldTypes)
+            val hpTable = (symbol.hps zip verified.hargs).toMap
+            val tpTable = (symbol.tps zip verified.targs).toMap
+
+            memberFieldTypes
+              .map(toBackendType(_, hpTable, tpTable))
+              .forall(loop(_, types + verified))
+          case _ if global.lookupFields(verified).isEmpty => false
+          case _ if types(verified) => false
+          case _ => global.lookupFields(verified).values.forall(loop(_, types + verified))
+        }
       }
+
+      loop(this, Set.empty)
+    }
   }
 
-  def convertToBackendType(tpe: Type.RefType): BackendType = convertToBackendType(tpe, Map.empty, Map.empty)
-  def convertToBackendType(
+  def toBackendType(tpe: Type.RefType)(implicit global: GlobalData): BackendType = toBackendType(tpe, Map.empty, Map.empty)
+  def toBackendType(
     tpe: Type.RefType,
     hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
     tpTable: Map[Symbol.TypeParamSymbol, BackendType]
-  ): BackendType = {
+  )(implicit global: GlobalData): BackendType = {
+    def buildFieldTypes(
+      signature: BackendType,
+      hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
+      tpTable: Map[Symbol.TypeParamSymbol, BackendType]
+    ): Map[String, BackendType] = {
+      signature.symbol.tpe.declares.toMap.collect {
+        case (fieldName, field) if field.hasFlag(Modifier.Field) =>
+          val tpe = field.tpe.asRefType
+          val fieldHArgs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
+          val fieldTArgs = tpe.typeParam.map(toBackendType(_, hpTable, tpTable))
+          val signature = BackendType(tpe.origin, fieldHArgs, fieldTArgs)
+
+          fieldName -> signature
+      }
+    }
+
     def replace(tpe: Type.RefType): BackendType = tpe.origin match {
-      case origin: Symbol.EntityTypeSymbol =>
+      case _: Symbol.EntityTypeSymbol =>
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
 
         val fieldHPTable = (tpe.origin.hps zip hargs).toMap
         val fieldTPTable = (tpe.origin.tps zip targs).toMap
 
-        val fieldTpes = origin match {
-          case _: Symbol.ModuleSymbol =>
-            tpe.declares.toMap.collect {
-              case (fieldName, field) if field.hasFlag(Modifier.Field) =>
-                val tpe = field.tpe.asRefType
-                val fieldHArgs = tpe.hardwareParam.map(evalHPExpr(_, fieldHPTable))
-                val fieldTArgs = tpe.typeParam.map(replace)
+        val backendType = BackendType(tpe.origin, hargs, targs)
 
-                val backendType = BackendType(tpe.origin, fieldHArgs, fieldTArgs, Map.empty)
-                fieldName -> backendType
-            }
-          case _ =>
-            tpe.declares.toMap.collect {
-              case (fieldName, field) if field.hasFlag(Modifier.Field) =>
-                val tpe = convertToBackendType(field.tpe.asRefType, fieldHPTable, fieldTPTable)
-                fieldName -> tpe
-            }
-        }
-
-        BackendType(tpe.origin, hargs, targs, fieldTpes)
+        backendType
       case tp: Symbol.TypeParamSymbol =>
         tpTable.getOrElse(tp, throw new ImplementationErrorException(s"$tp should be found in tpTable"))
     }
@@ -119,16 +143,16 @@ package object backend {
     replace(tpe)
   }
 
-  def convertToRefType(tpe: BackendType): Type.RefType = {
+  def toRefType(sig: BackendType): Type.RefType = {
     def intoLiteral(elem: HPElem): frontend.HPExpr = elem match {
       case HPElem.Num(value) => frontend.IntLiteral(value)
       case HPElem.Str(value) => frontend.StringLiteral(value)
     }
 
-    val hargs = tpe.hargs.map(intoLiteral)
-    val targs = tpe.targs.map(convertToRefType)
+    val hargs = sig.hargs.map(intoLiteral)
+    val targs = sig.targs.map(toRefType)
 
-    Type.RefType(tpe.symbol, hargs, targs)
+    Type.RefType(sig.symbol, hargs, targs)
   }
 
   def evalHPExpr(hpExpr: frontend.HPExpr, hpTable: Map[Symbol.HardwareParamSymbol, HPElem]): HPElem =

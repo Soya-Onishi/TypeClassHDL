@@ -2,6 +2,9 @@ package tchdl.util
 
 import tchdl.ast._
 import tchdl.util.TchdlException._
+import tchdl.backend._
+
+import scala.collection.mutable
 
 abstract class GlobalData {
   val repo: Reporter = new Reporter
@@ -17,6 +20,26 @@ abstract class GlobalData {
     val traits: SymbolBuffer[Symbol.InterfaceSymbol] = new SymbolBuffer[Symbol.InterfaceSymbol] {}
     val clazz: SymbolBuffer[Symbol.ClassTypeSymbol] = new SymbolBuffer[Symbol.ClassTypeSymbol] {}
   }
+
+  protected val backendFields: mutable.Map[BackendType, Map[String, BackendType]] = mutable.Map()
+
+  def appendFields(tpe: BackendType, fields: Map[String, BackendType]): Unit = {
+    backendFields(tpe) = fields
+  }
+
+  def lookupFields(tpe: BackendType)(implicit global: GlobalData): Map[String, BackendType] =
+    backendFields.get(tpe) match {
+      case Some(field) => field
+      case None =>
+        val hpTable = (tpe.symbol.hps zip tpe.hargs).toMap
+        val tpTable = (tpe.symbol.tps zip tpe.targs).toMap
+        val fields = tpe.symbol.tpe.declares.toMap.map {
+          case (name, symbol) => name -> toBackendType(symbol.tpe.asRefType, hpTable, tpTable)
+        }
+
+        this.appendFields(tpe, fields)
+        fields
+    }
 
   val command: Command
   def compilationUnits: Vector[CompilationUnit] = throw new ImplementationErrorException("Compilation Units not assigned yet")
@@ -39,7 +62,6 @@ abstract class GlobalData {
       override val compilationUnits = cus
     }
   }
-
 }
 
 object GlobalData {

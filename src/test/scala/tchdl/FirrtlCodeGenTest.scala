@@ -68,7 +68,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     (circuit, newGlobal)
   }
 
-  def runFirrtl(circuit: ir.Circuit): Unit = {
+  def runFirrtl(circuit: ir.Circuit, print: Boolean = false): Unit = {
     val firrtlFile = Files.createTempFile(null, ".fir")
     val verilogFile = Files.createTempFile(null, ".v")
     Files.write(firrtlFile, circuit.serialize.getBytes)
@@ -85,10 +85,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val command = commandArray.mkString(" ")
     val exit = command !
 
-    if(exit != 0) {
+    if(exit != 0 || print)
       println(circuitString)
+
+    if(exit != 0)
       fail()
-    }
   }
 
   test("build most simple code") {
@@ -266,6 +267,25 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("module that is called from two indirect sibling modules") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "callSiblingInterface1.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("use enum type as interface's parameter type") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "enumWithInterfaceParam3.tchdl")
+
+    val inputOpt = circuit.modules.head.ports.find(_.name.contains("opt")).get
+    val outputRet = circuit.modules.head.ports.find(_.name.contains("_ret")).get
+
+    assert(inputOpt.tpe == ir.BundleType(Seq(
+      ir.Field("_member", ir.Default, ir.UIntType(ir.IntWidth(1))),
+      ir.Field("_data", ir.Default, ir.UIntType(ir.IntWidth(8)))
+    )))
+
+    assert(outputRet.tpe == ir.BundleType(Seq(
+      ir.Field("_member", ir.Default, ir.UIntType(ir.IntWidth(1))),
+      ir.Field("_data", ir.Default, ir.UIntType(ir.IntWidth(8)))
+    )))
+
     runFirrtl(circuit)
   }
 }

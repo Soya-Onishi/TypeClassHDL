@@ -93,22 +93,22 @@ object FirrtlCodeGen {
   case class UserSoftInstance(tpe: BackendType, field: Map[String, Instance]) extends SoftInstance
   case class IntInstance(value: Int)(implicit global: GlobalData) extends SoftInstance {
     val field = Map.empty
-    val tpe = convertToBackendType(Type.intTpe, Map.empty, Map.empty)
+    val tpe = toBackendType(Type.intTpe, Map.empty, Map.empty)
   }
 
   case class StringInstance(value: String)(implicit global: GlobalData) extends SoftInstance {
     val field = Map.empty
-    val tpe = convertToBackendType(Type.stringTpe, Map.empty, Map.empty)
+    val tpe = toBackendType(Type.stringTpe, Map.empty, Map.empty)
   }
 
   case class BoolInstance(value: Boolean)(implicit global: GlobalData) extends SoftInstance {
     val field = Map.empty
-    val tpe = convertToBackendType(Type.boolTpe, Map.empty, Map.empty)
+    val tpe = toBackendType(Type.boolTpe, Map.empty, Map.empty)
   }
 
   case class UnitInstance()(implicit global: GlobalData) extends SoftInstance {
     val field = Map.empty
-    val tpe = convertToBackendType(Type.unitTpe, Map.empty, Map.empty)
+    val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
   }
 
   case class UserHardInstance(tpe: BackendType, reference: ir.Expression) extends HardInstance
@@ -372,7 +372,8 @@ object FirrtlCodeGen {
     val interfaceConds = module.interfaces.map(runInterface(_)(stack, ctx, global))
     val stageStmts = module.stages.flatMap(buildStageSignature(_)(stack, global))
     val stageConds = module.stages.map(runStage(_)(stack, ctx, global))
-    val (upperPorts, upperPortInits) = module.tpe.fields.map{ case (name, tpe) => buildUpperModule(name, tpe)(ctx, global) }.toVector.unzip
+    val moduleField = global.lookupFields(module.tpe)
+    val (upperPorts, upperPortInits) = moduleField.map{ case (name, tpe) => buildUpperModule(name, tpe)(ctx, global) }.toVector.unzip
 
     ir.Module(
       ir.NoInfo,
@@ -385,7 +386,7 @@ object FirrtlCodeGen {
   def runInput(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.Statement], ir.Port) = {
     val stmts = field.code.flatMap(runStmt)
     val retExpr = field.ret.map(throw new ImplementationErrorException("input wire with init expression is not supported yet"))
-    val firrtlType = convertToFirrtlType(field.tpe)
+    val firrtlType = toFirrtlType(field.tpe)
 
     val port = ir.Port(ir.NoInfo, field.toFirrtlString, ir.Input, firrtlType)
 
@@ -400,7 +401,7 @@ object FirrtlCodeGen {
       .map{ case RunResult(stmts, HardInstance(_, refer)) => (stmts, refer) }
       .map{ case (stmts, refer) => stmts :+ ir.Connect(ir.NoInfo, fieldRef, refer) }
       .getOrElse(Vector(ir.IsInvalid(ir.NoInfo, fieldRef)))
-    val tpe = convertToFirrtlType(field.tpe)
+    val tpe = toFirrtlType(field.tpe)
     val port = ir.Port(ir.NoInfo, field.toFirrtlString, ir.Output, tpe)
 
     (stmts ++ retStmt, port)
@@ -414,7 +415,7 @@ object FirrtlCodeGen {
       .map{ case RunResult(stmts, HardInstance(_, refer)) => (stmts, refer) }
       .map{ case (stmts, refer) => stmts :+ ir.Connect(ir.NoInfo, fieldRef, refer) }
       .getOrElse(Vector(ir.IsInvalid(ir.NoInfo, fieldRef)))
-    val tpe = convertToFirrtlType(field.tpe)
+    val tpe = toFirrtlType(field.tpe)
     val wire = ir.DefWire(ir.NoInfo, field.toFirrtlString, tpe)
 
     (stmts ++ retStmt, wire)
@@ -427,7 +428,7 @@ object FirrtlCodeGen {
       .map(runExpr)
       .map{ case RunResult(stmts, HardInstance(_, refer)) => (stmts, refer) }
       .getOrElse((Vector.empty, fieldRef))
-    val tpe = convertToFirrtlType(field.tpe)
+    val tpe = toFirrtlType(field.tpe)
     val reg = ir.DefRegister(ir.NoInfo, field.toFirrtlString, tpe, clockRef, resetRef, retExpr)
 
     (stmts ++ retStmts, reg)
@@ -487,7 +488,7 @@ object FirrtlCodeGen {
         ir.DefRegister(
           ir.NoInfo,
           name.name,
-          convertToFirrtlType(instance.tpe),
+          toFirrtlType(instance.tpe),
           clockRef,
           resetRef,
           ir.Reference(name.name, ir.UnknownType)
@@ -533,8 +534,8 @@ object FirrtlCodeGen {
       interface.label.symbol.hasFlag(Modifier.Sibling)
 
     val paramWires =
-      if(isInputInterface) args.map{ case (name, inst) => ir.Port(ir.NoInfo, name.name, ir.Input, convertToFirrtlType(inst.tpe))}
-      else args.map{ case (name, inst) => ir.DefWire(ir.NoInfo, name.name, convertToFirrtlType(inst.tpe)) }
+      if(isInputInterface) args.map{ case (name, inst) => ir.Port(ir.NoInfo, name.name, ir.Input, toFirrtlType(inst.tpe))}
+      else args.map{ case (name, inst) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(inst.tpe)) }
 
     val paramInvalids =
       if(isInputInterface) Vector.empty
@@ -551,8 +552,8 @@ object FirrtlCodeGen {
     val isUnitRet = interface.label.symbol.tpe.asMethodType.returnType =:= Type.unitTpe
     val ret =
       if (isUnitRet) None
-      else if(isInputInterface) Some(ir.Port(ir.NoInfo, interface.retName, ir.Output, convertToFirrtlType(interface.ret.tpe)))
-      else Some(ir.DefWire(ir.NoInfo, interface.retName, convertToFirrtlType(interface.ret.tpe)))
+      else if(isInputInterface) Some(ir.Port(ir.NoInfo, interface.retName, ir.Output, toFirrtlType(interface.ret.tpe)))
+      else Some(ir.DefWire(ir.NoInfo, interface.retName, toFirrtlType(interface.ret.tpe)))
 
     val retInvalid =
       if(isUnitRet) None
@@ -618,10 +619,10 @@ object FirrtlCodeGen {
 
         val activePort = ir.Port(ir.NoInfo, activeName, ir.Output, ir.UIntType(ir.IntWidth(1)))
         val retPort =
-          if(interface.ret.tpe == convertToBackendType(Type.unitTpe)) None
-          else Some(ir.Port(ir.NoInfo, retName, ir.Input, convertToFirrtlType(interface.ret.tpe)))
+          if(interface.ret.tpe == toBackendType(Type.unitTpe)) None
+          else Some(ir.Port(ir.NoInfo, retName, ir.Input, toFirrtlType(interface.ret.tpe)))
         val paramPorts = interface.params.map {
-          case (name, tpe) => ir.Port(ir.NoInfo, buildName(name), ir.Output, convertToFirrtlType(tpe))
+          case (name, tpe) => ir.Port(ir.NoInfo, buildName(name), ir.Output, toFirrtlType(tpe))
         }.toVector
 
         val activeInit = ir.Connect(ir.NoInfo, ir.Reference(activeName, ir.UnknownType), ir.UIntLiteral(0))
@@ -659,7 +660,7 @@ object FirrtlCodeGen {
 
         val (inst, stmts) = buildConnect(varName, expr){
           expr =>
-            val firrtlType = convertToFirrtlType(tpe)
+            val firrtlType = toFirrtlType(tpe)
             val varDef = ir.DefWire(ir.NoInfo, varName.name, firrtlType)
             val connect = ir.Connect(ir.NoInfo, ir.Reference(varName.name, ir.UnknownType), expr)
 
@@ -733,7 +734,7 @@ object FirrtlCodeGen {
     val instance = accessor match {
       case SoftInstance(_, fieldMap) => fieldMap(referField.field.toString)
       case HardInstance(_, refer) =>
-        val subField = ir.SubField(refer, referField.field.toString, convertToFirrtlType(referField.tpe))
+        val subField = ir.SubField(refer, referField.field.toString, toFirrtlType(referField.tpe))
         UserHardInstance(referField.tpe, subField)
       case ModuleInstance(_, ModuleLocation.Sub(refer)) =>
         val subField = ir.SubField(refer, referField.field.toString, ir.UnknownType)
@@ -845,7 +846,9 @@ object FirrtlCodeGen {
         case backend.Term.Temp(id, _) => stack.refer(id)
         case backend.Term.Variable(name, _) => stack.refer(name)
       }
-      val args = argNames.map(stack.scope).map{ case HardInstance(_, refer) => refer }
+      val args = argNames.map(stack.scope).map{ instance => instance match {
+        case HardInstance(_, refer) => refer
+      }}
 
       val activate: ir.Statement = {
         val subField = ir.SubField(module, interface.activeName, ir.UnknownType)
@@ -959,8 +962,8 @@ object FirrtlCodeGen {
         lazy val retName = stack.next("_IFRET")
 
         val retWire =
-          if(ifExpr.tpe == convertToBackendType(Type.unitTpe, Map.empty, Map.empty)) None
-          else Some(ir.DefWire(ir.NoInfo, retName.name, convertToFirrtlType(ifExpr.tpe)))
+          if(ifExpr.tpe == toBackendType(Type.unitTpe, Map.empty, Map.empty)) None
+          else Some(ir.DefWire(ir.NoInfo, retName.name, toFirrtlType(ifExpr.tpe)))
 
         val wireRef = retWire.map(wire => ir.Reference(wire.name, ir.UnknownType))
 
@@ -987,7 +990,7 @@ object FirrtlCodeGen {
 
   def runConstructStruct(construct: backend.ConstructStruct)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def constructHard(preStmts: Vector[ir.Statement], results: Map[String, RunResult]): RunResult = {
-      val bundleType = convertToFirrtlType(construct.tpe)
+      val bundleType = toFirrtlType(construct.tpe)
       val bundleName = stack.next("_BUNDLE")
       val bundleRef = ir.Reference(bundleName.name, bundleType)
       val varDef = ir.DefWire(ir.NoInfo, bundleName.name, bundleType)
@@ -1030,7 +1033,7 @@ object FirrtlCodeGen {
     val moduleRef = ir.Reference(moduleName.name, ir.UnknownType)
 
     def buildIndirectAccessCond(interface: MethodContainer, fromName: String)(targetBuilder: String => ir.Expression): (Option[ir.IsInvalid], ir.Conditionally) = {
-      val isUnitRet = interface.ret.tpe == convertToBackendType(Type.unitTpe)
+      val isUnitRet = interface.ret.tpe == toBackendType(Type.unitTpe)
       val targetActive = targetBuilder(interface.activeName)
 
       val targetRet =
@@ -1158,21 +1161,78 @@ object FirrtlCodeGen {
     RunResult(activate +: params, UnitInstance())
   }
 
-  def convertToFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {
+  def toFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {
+    def toBitType: ir.UIntType = {
+      val HPElem.Num(width) = tpe.hargs.head
+      ir.UIntType(ir.IntWidth(width))
+    }
+
+    def toEnumType(symbol: Symbol.EnumSymbol): ir.BundleType = {
+      def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
+      def flagWidth(x: Double): Double = (math.ceil _ compose log2)(x)
+
+      def makeBitLength(
+        member: Type.EnumMemberType,
+        hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
+        tpTable: Map[Symbol.TypeParamSymbol, BackendType]
+      ): BigInt = {
+        def loop(tpe: ir.Type): BigInt = tpe match {
+          case ir.BundleType(fields) => fields.map(_.tpe).map(loop).sum
+          case ir.UIntType(ir.IntWidth(width)) => width
+        }
+
+        val fieldTypes = member.fieldTypes
+          .map(toBackendType(_, hpTable, tpTable))
+          .map(toFirrtlType)
+
+        fieldTypes.map(loop).sum
+      }
+
+      val members = symbol.tpe.declares
+        .toMap
+        .toVector
+        .sortWith{ case ((left, _), (right, _)) => left < right }
+        .map{ case (_, symbol) => symbol }
+
+      val kind =
+        if(members.length <= 1) None
+        else Some(ir.Field(
+          "_member",
+          ir.Default,
+          ir.UIntType(ir.IntWidth(flagWidth(members.length).toInt))
+        ))
+
+      val hpTable = (symbol.hps zip tpe.hargs).toMap
+      val tpTable = (symbol.tps zip tpe.targs).toMap
+
+      val maxLength = members
+        .map(_.tpe.asEnumMemberType)
+        .map(makeBitLength(_, hpTable, tpTable))
+        .max
+
+      val dataStorage = Some(ir.Field("_data", ir.Default, ir.UIntType(ir.IntWidth(maxLength))))
+
+      val field = Seq(kind, dataStorage).flatten
+      ir.BundleType(field)
+    }
+
+    def toOtherType: ir.BundleType = {
+      val typeFields = global.lookupFields(tpe)
+
+      val fields = typeFields.map{ case (name, tpe) => name -> toFirrtlType(tpe) }
+        .toVector
+        .sortWith{ case ((left, _), (right, _)) => left < right }
+        .map{ case (name, tpe) => ir.Field(name, ir.Default, tpe) }
+
+      ir.BundleType(fields)
+    }
+
     val types = global.builtin.types
 
     tpe.symbol match {
-      case symbol if symbol == types.lookup("Bit") =>
-        val HPElem.Num(width) = tpe.hargs.head
-        ir.UIntType(ir.IntWidth(width))
-      case _ =>
-        val fields = tpe.fields
-          .map{ case (name, tpe) => name -> convertToFirrtlType(tpe) }
-          .toVector
-          .sortWith{ case ((left, _), (right, _)) => left < right }
-          .map{ case (name, tpe) => ir.Field(name, ir.Default, tpe) }
-
-        ir.BundleType(fields)
+      case symbol if symbol == types.lookup("Bit") => toBitType
+      case symbol: Symbol.EnumSymbol => toEnumType(symbol)
+      case _ => toOtherType
     }
   }
 }

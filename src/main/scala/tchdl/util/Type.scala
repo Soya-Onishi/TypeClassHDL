@@ -196,7 +196,7 @@ object Type {
       val hasError = fields.exists(_.tpe.isErrorType)
       val parent = ctx.owner.tpe.asEntityType
 
-      if(hasError) Type.ErrorType
+      if (hasError) Type.ErrorType
       else EnumMemberType(name, ctx.path, parent, fields.map(_.tpe.asRefType))
     }
   }
@@ -447,7 +447,7 @@ object Type {
             callerHPBound,
             callerTPBound
           ) match {
-            case success@Right(_) => success
+            case success @ Right(_) => success
             case Left(_) if ctx.interfaceTable.isEmpty => Left(Error.SymbolNotFound(methodName))
             case Left(_) =>
               val (errs, methods) = ctx.interfaceTable
@@ -468,7 +468,7 @@ object Type {
             case None => Left(Error.SymbolNotFound(methodName))
             case Some(bound) =>
               bound.bounds.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
-                case (success@Right(_), _) => success
+                case (success @ Right(_), _) => success
                 case (Left(errs), interface) =>
                   val result = lookupFromTypeParam(
                     interface.origin.asInterfaceSymbol,
@@ -484,7 +484,7 @@ object Type {
 
                   result match {
                     case Left(err) => Left(Error.MultipleErrors(err, errs))
-                    case success@Right(_) => success
+                    case success @ Right(_) => success
                   }
               }
           }
@@ -593,7 +593,7 @@ object Type {
       callerTPBound: Vector[TPBound]
     )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val result = impls.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
-        case (right@Right(_), _) => right
+        case (right @ Right(_), _) => right
         case (Left(errs), impl) =>
           lookupFromEntity(
             impl,
@@ -605,15 +605,15 @@ object Type {
             callerHPBound,
             callerTPBound
           ) match {
-            case right@Right(_) => right
+            case right @ Right(_) => right
             case Left(err) => Left(Error.MultipleErrors(err, errs))
           }
       }
 
       result match {
-        case right@Right(_) => right
+        case right @ Right(_) => right
         case Left(Error.DummyError) => Left(Error.SymbolNotFound(methodName))
-        case other@Left(_) => other
+        case other @ Left(_) => other
       }
     }
 
@@ -627,7 +627,7 @@ object Type {
         val paramLength = stage.tpe.asMethodType.params.length
         val argLength = args.length
 
-        if(paramLength == argLength) Right(())
+        if (paramLength == argLength) Right(())
         else Left(Error.ParameterLengthMismatch(paramLength, argLength))
       }
 
@@ -772,27 +772,32 @@ object Type {
         )
       }
 
-    override def =:=(other: Type): Boolean = other match {
-      case other: RefType =>
-        def isSameOrigin = this.origin == other.origin
+    override def equals(obj: Any): Boolean = obj match {
+      case that: Type.RefType =>
+        def isSameOrigin = this.origin == that.origin
 
         def isSameHp = {
-          def isSameLength = this.hardwareParam.length == other.hardwareParam.length
+          def isSameLength = this.hardwareParam.length == that.hardwareParam.length
           def isSameExpr = this.hardwareParam
-            .zip(other.hardwareParam)
+            .zip(that.hardwareParam)
             .forall { case (t, o) => t.isSameExpr(o) }
 
           isSameLength && isSameExpr
         }
 
         def isSameTP = {
-          def isSameLength = this.typeParam.length == other.typeParam.length
-          def isSameTypes = (this.typeParam zip other.typeParam).forall { case (t, o) => t =:= o }
+          def isSameLength = this.typeParam.length == that.typeParam.length
+          def isSameTypes = (this.typeParam zip that.typeParam).forall { case (t, o) => t =:= o }
 
           isSameLength && isSameTypes
         }
 
         isSameOrigin && isSameHp && isSameTP
+      case _ => false
+    }
+
+    override def =:=(other: Type): Boolean = other match {
+      case that: RefType => this == that
       case _ => false
     }
 
@@ -809,43 +814,44 @@ object Type {
 
     def isHardwareType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = {
       val builtinSymbols = global.builtin.types.symbols
-      this.origin match {
-        case _: Symbol.ModuleSymbol => false
-        case _: Symbol.InterfaceSymbol => false
-        case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
-          case None => false
-          case Some(tpBound) =>
-            val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
-            tpBound.bounds.exists(_ =:= hardwareInterface)
+
+      def loop(verified: Type.RefType, types: Set[Type.RefType]): Boolean = {
+        def verify: Boolean = verified.origin match {
+          case _: Symbol.ModuleSymbol => false
+          case _: Symbol.InterfaceSymbol => false
+          case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
+            case None => false
+            case Some(tpBound) =>
+              val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
+              tpBound.bounds.exists(_ =:= hardwareInterface)
+          }
+          case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
+          case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
+          case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
+          case struct: Symbol.StructSymbol =>
+            val hpTable = (struct.hps zip verified.hardwareParam).toMap
+            val tpTable = (struct.tps zip verified.typeParam).toMap
+            val fields = struct.tpe.declares.toMap.values.toVector
+            val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
+            fieldTpes.forall(loop(_, types + verified))
+          case enum: Symbol.EnumSymbol =>
+            val hpTable = (enum.hps zip verified.hardwareParam).toMap
+            val tpTable = (enum.tps zip verified.typeParam).toMap
+            val memberFieldTpes = enum.tpe.declares.toMap
+              .values
+              .toVector
+              .map(_.tpe.asEnumMemberType)
+              .flatMap(_.fieldTypes)
+              .map(_.replaceWithMap(hpTable, tpTable))
+
+            memberFieldTpes.forall(loop(_, types + verified))
         }
-        case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
-        case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
-        case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
-        case struct: Symbol.StructSymbol =>
-          val hpTable = (struct.hps zip this.hardwareParam).toMap
-          val tpTable = (struct.tps zip this.typeParam).toMap
-          val fields = struct.tpe.declares.toMap.values.toVector
-          val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
-          fieldTpes.forall(_.isHardwareType)
-        case enum: Symbol.EnumSymbol =>
-          val hpTable = (enum.hps zip this.hardwareParam).toMap
-          val tpTable = (enum.tps zip this.typeParam).toMap
-          val memberFieldTpes = enum.tpe.declares.toMap
-            .values
-            .toVector
-            .map(_.tpe.asEnumMemberType)
-            .flatMap(_.fieldTypes)
-            .map(_.replaceWithMap(hpTable, tpTable))
 
-          memberFieldTpes.forall(_.isHardwareType)
+        if(types(verified)) false
+        else verify
       }
-    }
 
-    override def equals(obj: Any): Boolean = obj match {
-      case other: RefType =>
-        def isSameHP = this.hardwareParam == other.hardwareParam
-
-        this =:= other && isSameHP
+      loop(this, Set.empty)
     }
 
     override def toString: String = {
@@ -1195,7 +1201,7 @@ object Type {
     hp match {
       case lit: IntLiteral => (None, lit.setTpe(Type.numTpe))
       case lit: StringLiteral => (None, lit.setTpe(Type.strTpe))
-      case ident@Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
+      case ident @ Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
         case LookupResult.LookupFailure(err) => (Some(err), ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
         case LookupResult.LookupSuccess(symbol) => (None, ident.setSymbol(symbol).setTpe(symbol.tpe))
       }

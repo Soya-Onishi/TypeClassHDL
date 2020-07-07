@@ -38,7 +38,7 @@ object BuildGeneratedModuleList {
       typeTree <- buildTypeTree(topModuleTree, pkg)
       refTpe = typeTree.tpe.asRefType
       _ <- verifyType(refTpe)
-      topModuleTpe = convertToBackendType(refTpe, Map.empty, Map.empty)
+      topModuleTpe = toBackendType(refTpe, Map.empty, Map.empty)
       moduleList <- constructModule(topModuleTpe, Vector.empty, Vector.empty)
     } yield moduleList
 
@@ -70,7 +70,7 @@ object BuildGeneratedModuleList {
     }
 
     def findImplementClass: Option[ImplementClassContainer] = {
-      val refTpe = convertToRefType(module)
+      val refTpe = toRefType(module)
       module.symbol.asModuleSymbol.impls.find {
         impl =>
           val (initHPTable, initTPTable) = Type.RefType.buildTable(impl)
@@ -98,7 +98,7 @@ object BuildGeneratedModuleList {
 
       val subModuleTpes = subModules.view
         .map(_.symbol.tpe.asRefType)
-        .map(convertToBackendType(_, hpTable, tpTable))
+        .map(toBackendType(_, hpTable, tpTable))
         .toVector
 
       val result = subModuleTpes.foldLeft[Either[Error, Vector[BuiltModule]]](Right(builtModules)) {
