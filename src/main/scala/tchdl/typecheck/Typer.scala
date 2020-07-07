@@ -630,19 +630,11 @@ object Typer {
   }
 
   def typedTypeTree(typeTree: TypeTree)(implicit ctx: Context.NodeContext, global: GlobalData): TypeTree = {
-    val TypeTree(Ident(name), hps, tps) = typeTree
-
-    def error(hps: Vector[HPExpr], tps: Vector[TypeTree]) =
-      TypeTree(Ident(name), hps, tps)
-        .setTpe(Type.ErrorType)
-        .setSymbol(Symbol.ErrorSymbol)
-        .setID(typeTree.id)
-
     def verifyHP(symbol: Symbol.TypeSymbol, typedHPs: Vector[HPExpr]): Either[Error, Unit] = {
       val invalidHPLength = symbol.hps.length != typedHPs.length
       val hasError = typedHPs.exists(_.tpe.isErrorType)
 
-      if(invalidHPLength) Left(Error.HardParameterLengthMismatch(symbol.hps.length, hps.length))
+      if(invalidHPLength) Left(Error.HardParameterLengthMismatch(symbol.hps.length, typeTree.hp.length))
       else if(hasError) Left(Error.DummyError)
       else {
         val table = (symbol.hps zip typedHPs).toMap
@@ -677,29 +669,96 @@ object Typer {
       }
     }
 
-    ctx.lookup[Symbol.TypeSymbol](name) match {
-      case LookupResult.LookupFailure(err) =>
-        global.repo.error.append(err)
-        error(hps, tps)
-      case LookupResult.LookupSuccess(symbol) =>
-        val typedHPs = hps.map(typedHPExpr)
-        val typedTPs = tps.map(typedTypeTree)
+    def typedForIdent(ident: Ident, hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
+      ctx.lookup[Symbol.TypeSymbol](ident.name) match {
+        case LookupResult.LookupFailure(err) => Left(err)
+        case LookupResult.LookupSuccess(symbol) =>
+          for {
+            _ <- verifyHP(symbol, hargs)
+            _ <- verifyTP(symbol, hargs, targs)
+          } yield TypeTree(
+            ident.setTpe(symbol.tpe).setSymbol(symbol),
+            hargs,
+            targs
+          )
+      }
+    }
 
-        val result = for {
-          _ <- verifyHP(symbol, typedHPs)
-          _ <- verifyTP(symbol, typedHPs, typedTPs)
-        } yield ()
+    def typedForStaticSelect(select: StaticSelect, hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
+      def typedPrefix: Either[Error, TypeTree] = {
+        val tree = typedTypeTree(select.prefix)
 
-        result match {
-          case Left(err) =>
-            global.repo.error.append(err)
-            error(typedHPs, typedTPs)
-          case Right(()) =>
-            TypeTree(Ident(name), typedHPs, typedTPs)
-              .setTpe(Type.RefType(symbol, typedHPs, typedTPs.map(_.tpe.asRefType)))
-              .setSymbol(symbol)
-              .setID(typeTree.id)
+        tree.tpe match {
+          case Type.ErrorType => Left(Error.DummyError)
+          case _ => Right(tree)
         }
+      }
+
+      for {
+        prefix <- typedPrefix
+        symbol <- prefix.tpe.asRefType.lookupType(select.name).toEither
+        _ <- verifyHP(symbol, hargs)
+        _ <- verifyTP(symbol, hargs, targs)
+      } yield {
+        val typedSelect = StaticSelect(prefix, select.name)
+          .setSymbol(symbol)
+          .setTpe(symbol.tpe)
+          .setID(select.id)
+
+        val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType))
+
+        TypeTree(typedSelect, hargs, targs).setTpe(tpe).setSymbol(symbol).setID(typeTree.id)
+      }
+    }
+
+    def typedForSelectPackage(select: SelectPackage, hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
+      def lookupPackageFromCtx: Either[Error, Symbol.PackageSymbol] = {
+        val head = ctx.lookup[Symbol.PackageSymbol](select.packages.head).toEither
+
+        select.packages.tail.foldLeft(head){
+          case (Left(err), _) => Left(err)
+          case (Right(symbol), name) => symbol.lookup[Symbol.PackageSymbol](name).toEither
+        }
+      }
+
+      def lookupPackageFromRoot: Either[Error, Symbol.PackageSymbol] = global.rootPackage.search(select.packages)
+
+      for {
+        packageSymbol <- lookupPackageFromCtx.flatMap(_ => lookupPackageFromRoot)
+        typeSymbol <- packageSymbol.lookup[Symbol.TypeSymbol](select.name).toEither
+        _ <- verifyHP(typeSymbol, hargs)
+        _ <- verifyTP(typeSymbol, hargs, targs)
+      } yield {
+        val typedSelect = select.setSymbol(typeSymbol).setTpe(typeSymbol.tpe)
+        val tpe = Type.RefType(typeSymbol, hargs, targs.map(_.tpe.asRefType))
+
+        TypeTree(typedSelect, hargs, targs)
+          .setSymbol(typeSymbol)
+          .setTpe(tpe)
+          .setID(typeTree.id)
+      }
+    }
+
+    def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] =
+      typeTree.expr match {
+        case ident: Ident => typedForIdent(ident, hargs, targs)
+        case select: StaticSelect => typedForStaticSelect(select, hargs, targs)
+        case select: SelectPackage => typedForSelectPackage(select, hargs, targs)
+      }
+
+    val typedHArgs = typeTree.hp.map(typedHPExpr)
+    val typedTArgs = typeTree.tp.map(typedTypeTree)
+
+    execTyped(typedHArgs, typedTArgs) match {
+      case Right(tree) => tree
+      case Left(err) =>
+        global.repo.error.append(err)
+        val prefix = typeTree.expr.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+
+        TypeTree(prefix, typedHArgs, typedTArgs)
+          .setTpe(Type.ErrorType)
+          .setSymbol(Symbol.ErrorSymbol)
+          .setID(typeTree.id)
     }
   }
 

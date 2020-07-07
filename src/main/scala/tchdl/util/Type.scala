@@ -754,11 +754,17 @@ object Type {
 
     // TODO: lookup type that is defined at implementation
     def lookupType(name: String): LookupResult[Symbol.TypeSymbol] = {
-      def lookupToTypeParam(tp: Symbol.TypeParamSymbol): LookupResult[Symbol.TypeSymbol] = ???
+      def lookupFromEnum(symbol: Symbol.EnumSymbol): LookupResult[Symbol.TypeSymbol] = {
+        symbol.tpe.declares.lookup(name) match {
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+          case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
+        }
+      }
 
       this.origin match {
-        case origin: Symbol.TypeParamSymbol => lookupToTypeParam(origin)
-        case origin: Symbol.EntityTypeSymbol => LookupResult.LookupFailure(Error.RejectEntityTypeFromLookup(origin))
+        case symbol: Symbol.EnumSymbol => lookupFromEnum(symbol)
+        case _ => throw new ImplementationErrorException("reference to field type except for enum does not support yet.")
       }
     }
 
