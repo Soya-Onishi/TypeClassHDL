@@ -8,9 +8,15 @@ pkg_name
     : PACKAGE EXPR_ID ('::' EXPR_ID)*
     ;
 
-import_clause
-    : IMPORT EXPR_ID ('::' EXPR_ID)* '::' TYPE_ID
+pkg_select
+    : EXPR_ID                 # PackageID
+    | pkg_select '::' EXPR_ID # PackageSelect
     ;
+
+import_clause
+    : IMPORT pkg_select ':::' TYPE_ID
+    ;
+
 top_definition
     : module_def
     | struct_def
@@ -161,6 +167,7 @@ expr: expr '.' (apply | EXPR_ID)    # SelectExpr
     | block                    # BlockExpr
     | construct_struct         # ConstructStructExpr
     | construct_module         # ConstructModuleExpr
+    | construct_enum           # ConstructEnumExpr
     | IF '(' expr ')' expr (ELSE expr)? # IfExpr
 //    | MATCH expr '{' case_def+ '}'               # MatchExpr
     | FINISH                   # Finish
@@ -182,7 +189,7 @@ hp_expr
     ;
 
 apply
-    : EXPR_ID apply_typeparam? '(' args ')'
+    : (type ':::')? EXPR_ID apply_typeparam? '(' args ')'
     ;
 
 apply_typeparam
@@ -216,6 +223,10 @@ construct_struct
 
 construct_module
     : type '{' (PARENT ':' parent_pair (',' parent_pair)*)? (SIBLING ':' sibling_pair (',' sibling_pair)*)? '}'
+    ;
+
+construct_enum
+    : type ('(' (expr (',' expr)*)? ')')?
     ;
 
 construct_pair
@@ -252,7 +263,11 @@ unit_lit
     : '(' ')'
     ;
 
-type: TYPE_ID apply_typeparam? # NormalType
+type: (pkg_select ':::')? type_elem (':::' type_elem)*
+    ;
+
+type_elem
+    : TYPE_ID apply_typeparam? # NormalType
     | THISTYPE                 # SelfType
     ;
 

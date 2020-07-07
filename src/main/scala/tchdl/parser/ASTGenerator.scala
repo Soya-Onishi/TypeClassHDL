@@ -14,12 +14,17 @@ class ASTGenerator {
 
     val imports = ctx.import_clause
       .asScala
-      .map(ctx => ctx.EXPR_ID.asScala.map(_.getText).toVector :+ ctx.TYPE_ID.getText)
+      .map(ctx => packageSelect(ctx.pkg_select) :+ ctx.TYPE_ID.getText)
       .toVector
 
     val defs = ctx.top_definition.asScala.map(topDefinition).toVector
 
     CompilationUnit(Some(filename), pkgName, imports, defs)
+  }
+
+  def packageSelect(ctx: TP.Pkg_selectContext): Vector[String] = ctx match {
+    case ctx: TP.PackageIDContext => Vector(ctx.EXPR_ID.getText)
+    case ctx: TP.PackageSelectContext => packageSelect(ctx.pkg_select) :+ ctx.EXPR_ID.getText
   }
 
   def topDefinition(ctx: TP.Top_definitionContext): Definition = {
@@ -350,6 +355,29 @@ class ASTGenerator {
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
+    val packageRoute = Option(ctx.pkg_select).map(packageSelect).getOrElse(Vector.empty)
+    def head(name: String): TypeAST = packageRoute match {
+      case Vector() => Ident(name)
+      case pkgs => SelectPackage(pkgs, name)
+    }
+
+    def constructHead(tree: TypeTree): TypeTree = tree.expr match {
+      case Ident(name) => TypeTree(head(name), tree.hp, tree.tp)
+      case StaticSelect(tree, name) =>
+        val select = StaticSelect(constructHead(tree), name)
+        TypeTree(select, tree.hp, tree.tp)
+    }
+
+    val types = ctx.type_elem.asScala.map(typeElem)
+    val folded = types.tail.foldLeft(types.head) {
+      case (TypeTree(Ident(name), hargs, targs), prefix) =>
+        TypeTree(StaticSelect(prefix, name), hargs, targs)
+    }
+
+    constructHead(folded)
+  }
+
+  def typeElem(ctx: TP.Type_elemContext): TypeTree = {
     ctx match {
       case ctx: TP.NormalTypeContext =>
         val id = Ident(ctx.TYPE_ID.getText)
@@ -503,5 +531,4 @@ class ASTGenerator {
     case ctx: TP.Stage_defContext  => stageDef(ctx)
     case ctx: TP.Always_defContext => alwaysDef(ctx)
   }
-
 }

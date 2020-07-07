@@ -412,199 +412,10 @@ object ImplicitHPRange {
 
 trait BoundTree extends AST
 case class TPBoundTree(target: TypeTree, bounds: Vector[TypeTree]) extends BoundTree
-case class HPBoundTree(target: HPExpr, bounds: Vector[RangeExpr]) extends BoundTree {
-  /*
-  /**
-   * `this` and `that` have bounds that are already sorted.
-   * if `this` or `that` is not sorted, this method may return inappropriate result
-   * @param that
-   * @return whether bound range is overlapped or not
-   */
-  def isOverlapped(that: HPBoundTree): Boolean = {
-    /**
-     * @param bounds target expr bounds
-     * @return None:           this is invalid range for example `m > 10 && m < 0`
-     *         Some(max, min): max and min are Some if it has value
-     */
-    def makeRange(bounds: Vector[RangeExpr]): Option[(Option[Int], Option[Int])] = {
-      val max = bounds.collectFirst {
-        case RangeExpr.LT(IntLiteral(value)) => value - 1
-        case RangeExpr.LE(IntLiteral(value)) => value
-      }
-
-      val min = bounds.collectFirst {
-        case RangeExpr.GT(IntLiteral(value)) => value + 1
-        case RangeExpr.GE(IntLiteral(value)) => value
-      }
-
-      (max, min) match {
-        case (Some(max), Some(min)) if max >= min => Some(Some(max), Some(min))
-        case (Some(_), Some(_))                   => None
-        case (None, None)                         => Some(None, None)
-        case (max, min)                           => Some(max, min)
-      }
-    }
-
-    val thisRange = makeRange(this.bounds)
-    val thatRange = makeRange(that.bounds)
-
-    (thisRange, thatRange) match {
-      case (None, _) => false
-      case (_, None) => false
-      case (Some((thisMax, thisMin)), Some((thatMax, thatMin))) =>
-        // less than equal
-        def le(left: Option[Int], right: Option[Int]): Boolean =
-          (left, right) match {
-            case (None, _) => true
-            case (_, None) => true
-            case (Some(left), Some(right)) => left <= right
-          }
-
-        le(thisMin, thatMax) && le(thatMin, thisMax)
-    }
-  }
-   */
-
-  /*
-  def compound(): HPBoundTree = {
-    def loop(bounds: Vector[RangeExpr]): Vector[RangeExpr] = {
-      bounds match {
-        case Vector() => Vector.empty
-        case bounds =>
-          val (restricted, remains) = bounds.tail.foldLeft((bounds.head, Vector.empty[RangeExpr])) {
-            case ((bound, others), subject) => bound.compound(subject) match {
-              case Some(newBound) => (newBound, others)
-              case None => (bound, others :+ subject)
-            }
-          }
-
-          restricted +: loop(remains)
-      }
-    }
-
-    HPBoundTree(this.target, loop(this.bounds))
-  }
- */
-}
-
-object HPBoundTree {
-  /**
-   * make implicit hardware parameter bounds in explicit
-   *
-   * E.g.
-   *   where m : gt n          ==> where m : gt n & gt 1
-   *         n : gt 0                    n : gt 0
-   *
-   *   where l : gt m + n      ==> where l : gt m + n & gt 7
-   *         m : gt 3                    m : gt 3
-   *         n : gt 2                    n : gt 2
-   *
-   *   where     l : gt m + n  ==> where     l : gt m + n & gt 11
-   *             m : gt 3                    m : gt 3
-   *             n : gt 2                    n : gt 2
-   *         m + n : gt 10               m + n : gt 10
-   *
-   * Note:
-   *   If there are cyclic references, this method raises ImplementationErrorException.
-   *
-   * param hpBounds
-   * return hardware parameter bounds that are made all implicit bounds in explicit
-   */
-    /*
-  def makeImplicitRestrictionExplicit(hpBounds: Vector[HPBoundTree]): Vector[HPBoundTree] = {
-    def sortByTarget: Vector[HPBoundTree] = {
-      def collectLeafHash(expr: HPExpr): Vector[Int] =
-        expr match {
-          case HPBinOp(_, left, right) => collectLeafHash(left) ++ collectLeafHash(right)
-          case leaf => Vector(leaf.hashCode)
-        }
-
-      val sortedByAsc = hpBounds.sortWith {
-        case (b0, b1) =>
-          val hashes0 = collectLeafHash(b0.target)
-          val hashes1 = collectLeafHash(b1.target)
-
-          if(hashes0.length != hashes1.length) hashes0.length < hashes1.length
-          else {
-            val diff = hashes0.zip(hashes1).find { case (h0, h1) => h0 != h1 }
-            diff match {
-              case Some((h0, h1)) => h0 < h1
-              case None => false
-            }
-          }
-      }
-
-      sortedByAsc.reverse
-    }
-
-    def initCacheTable: Vector[(HPExpr, ImplicitHPRange)] = {
-      hpBounds.flatMap {
-        case HPBoundTree(target: Ident, bounds) =>
-          val existsExprBound = bounds.exists(_.expr match {
-            case _: IntLiteral => false
-            case _ => true
-          })
-
-          if(existsExprBound) None
-          else {
-            val min = bounds.collectFirst {
-              case RangeExpr.GE(IntLiteral(value)) => value
-              case RangeExpr.GT(IntLiteral(value)) => value + 1
-            }
-
-            val max = bounds.collectFirst {
-              case RangeExpr.LE(IntLiteral(value)) => value
-              case RangeExpr.LT(IntLiteral(value)) => value + 1
-            }
-
-            val range = (max, min) match {
-              case (max @ Some(v0), min @ Some(v1)) =>
-                if(v0 >= v1)ImplicitHPRange.Range(max, min)
-                else ImplicitHPRange.Invalid
-              case (max, min) => ImplicitHPRange.Range(max, min)
-            }
-
-            Some(target, range)
-          }
-        case _ => None
-      }
-    }
-
-    val table = initCacheTable
-  }
-   */
-}
+case class HPBoundTree(target: HPExpr, bounds: Vector[RangeExpr]) extends BoundTree
 
 trait RangeExpr {
   val expr: HPExpr
-  /*
-  def isRestrictedThanEq(that: RangeExpr): Boolean = {
-    import RangeExpr._
-
-    (this, that) match {
-      case (LT(IntLiteral(left)), LT(IntLiteral(right))) => left <= right
-      case (LT(IntLiteral(left)), LE(IntLiteral(right))) => left < right
-      case (LE(IntLiteral(left)), LT(IntLiteral(right))) => left <= right
-      case (LE(IntLiteral(left)), LE(IntLiteral(right))) => left <= right
-      case (GT(IntLiteral(left)), GT(IntLiteral(right))) => left >= right
-      case (GT(IntLiteral(left)), GE(IntLiteral(right))) => left > right
-      case (GE(IntLiteral(left)), GT(IntLiteral(right))) => left >= right
-      case (GE(IntLiteral(left)), GE(IntLiteral(right))) => left >= right
-      case (LT(left), LE(right)) => left.isSameExpr(right)
-      case (LE(left), LE(right)) => left.isSameExpr(right)
-      case (GT(left), GE(right)) => left.isSameExpr(right)
-      case (GE(left), GE(right)) => left.isSameExpr(right)
-      case _ => false
-    }
-  }
-   */
-
-  /*
-  def compound(that: RangeExpr): Option[RangeExpr] =
-    if(this.isRestrictedThanEq(that)) Some(this)
-    else if(that.isRestrictedThanEq(this)) Some(that)
-    else None
-  */
 
   def map(f: HPExpr => HPExpr): RangeExpr = {
     this match {
@@ -647,6 +458,7 @@ case class HPBinOp(
 
 case class Select(prefix: Expression, name: String) extends Expression with HasSymbol
 case class StaticSelect(suffix: TypeTree, name: String) extends Expression with TypeAST
+case class SelectPackage(packages: Vector[String], name: String) extends AST with TypeAST with Expression
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
 case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) extends Construct
 case class ConstructModule(target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair]) extends Construct
@@ -668,8 +480,8 @@ case class Relay(target: String, params: Vector[Expression]) extends Expression 
 // However, hp's length + tp's length is correct if there is no compile error.
 // In Typer, hp and tp are adjust their length
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
-case class TypeTree(expr: Ident, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
-case class ThisType() extends TypeAST
+case class TypeTree(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
+case class ThisType() extends AST with HasType
 
 trait Operation {
   def toInterface: String
@@ -677,6 +489,7 @@ trait Operation {
   def toOperator: String
   def isCommutative: Boolean
 }
+
 object Operation {
   case object Add extends Operation {
     override def toInterface: String = "Add"
