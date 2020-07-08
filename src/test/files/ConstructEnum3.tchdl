@@ -1,0 +1,32 @@
+package test
+
+enum Patterns[A, B] {
+  Empty
+  Simple(A)
+  Struct(B)
+}
+
+struct Complex[T] {
+  real: T,
+  imag: T
+}
+
+module Top
+impl Top {
+  input def constructEmpty() -> Patterns[Bit[1], Complex[Bit[4]]] {
+       Patterns[Bit[1], Complex[Bit[4]]]:::Empty
+  }
+
+  input def constructSimple() -> Patterns[Bit[1], Complex[Bit[4]]] {
+       Patterns[Bit[1], Complex[Bit[4]]]:::Simple(0b1)
+  }
+
+  input def constructStruct() -> Patterns[Bit[1], Complex[Bit[4]]] {
+       val complex = Complex[Bit[4]] {
+         real: 0b0101,
+         imag: 0b1010
+       }
+
+       Patterns[Bit[1], Complex[Bit[4]]]:::Struct(complex)
+  }
+}

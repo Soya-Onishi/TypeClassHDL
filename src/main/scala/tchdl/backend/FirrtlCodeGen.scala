@@ -1129,16 +1129,28 @@ object FirrtlCodeGen {
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def constructHardEnum: RunResult = {
+      def splitValue(tpe: ir.Type, refer: ir.Expression): Vector[ir.Expression] = {
+        tpe match {
+          case ir.UIntType(_) => Vector(refer)
+          case ir.BundleType(fields) =>
+            val refers = fields.flatMap {
+              field =>
+                val underRefer = ir.SubField(refer, field.name, field.tpe)
+                splitValue(field.tpe, underRefer)
+            }
+
+            refers.toVector
+        }
+      }
+
       val tpe = toFirrtlType(enum.target)
       val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
 
-      val data = insts.headOption match {
-        case None => ir.UIntLiteral(0)
-        case Some(HardInstance(_, head)) =>
-          insts.tail.foldLeft(head) {
-            case (prefix, HardInstance(_, expr)) => ir.DoPrim(PrimOps.Cat, Seq(prefix, expr), Seq.empty, ir.UnknownType)
-          }
-      }
+      val value = insts
+        .map(_.asInstanceOf[HardInstance])
+        .flatMap(inst => splitValue(toFirrtlType(inst.tpe), inst.reference))
+        .reduceLeftOption[ir.Expression]{ case (prefix, refer) => ir.DoPrim(PrimOps.Cat, Seq(refer, prefix), Seq.empty, ir.UnknownType) }
+        .getOrElse(ir.UIntLiteral(0))
 
       val flagValue = enum.tpe.symbol.tpe.declares
         .toMap.toVector
@@ -1160,7 +1172,7 @@ object FirrtlCodeGen {
       val connectData = ir.Connect(
         ir.NoInfo,
         ir.SubField(enumRef, "_data", ir.UnknownType),
-        data
+        value
       )
 
       val runResultStmts = Vector(wireDef, connectFlag, connectData)

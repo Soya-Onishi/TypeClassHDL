@@ -343,4 +343,10 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+
+  test("construct hardware complex enum three patterns") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "ConstructEnum3.tchdl")
+
+    runFirrtl(circuit)
+  }
 }
