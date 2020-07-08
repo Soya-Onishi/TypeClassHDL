@@ -74,7 +74,7 @@ object Namer {
     vdef.setSymbol(symbol)
   }
 
-  def namedEnumField(member: EnumMemberDef)(implicit ctx: Context.NodeContext, global: GlobalData): EnumMemberDef = {
+  def namedEnumMember(member: EnumMemberDef)(implicit ctx: Context.NodeContext, global: GlobalData): EnumMemberDef = {
     val generator = Type.EnumMemberTypeGenerator(member, ctx, global)
     val symbol = Symbol.EnumMemberSymbol(member.name, ctx.path, generator)
 
@@ -241,7 +241,7 @@ object Namer {
     val namedTree = ast match {
       case always: AlwaysDef => namedAlways(always)
       case method: MethodDef => namedMethod(method)
-      case enum: EnumMemberDef => namedEnumField(enum)
+      case enum: EnumMemberDef => namedEnumMember(enum)
       case vdef: ValDef if vdef.flag.hasFlag(Modifier.Field) => namedFieldDef(vdef)
       case vdef: ValDef => namedLocalDef(vdef)
       case stage: StageDef => namedStageDef(stage)
