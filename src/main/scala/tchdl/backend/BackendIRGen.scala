@@ -255,6 +255,7 @@ object BackendIRGen {
       case blk: frontend.Block => buildBlk(blk)
       case construct: frontend.ConstructClass => buildConstructClass(construct)
       case construct: frontend.ConstructModule => buildConstructModule(construct, None)
+      case construct: frontend.ConstructEnum => buildConstructEnum(construct)
       case ifexpr: frontend.IfExpr => buildIfExpr(ifexpr)
       case ths: frontend.This => buildThis(ths)
       case _: frontend.Finish => buildFinish
@@ -544,6 +545,20 @@ object BackendIRGen {
     val labels = parent.labels ++ sibling.labels
 
     BuildResult(nodes, Some(expr), labels)
+  }
+
+  def buildConstructEnum(enum: frontend.ConstructEnum)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    val tpe = toBackendType(enum.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+    val fields = enum.fields.map(buildExpr)
+    val (nodess, terms, labelss) = fields.map{
+      case BuildResult(nodes, Some(expr), labels) =>
+        val temp = backend.Temp(ctx.temp.get(), expr)
+        (nodes :+ temp, backend.Term.Temp(temp.id, expr.tpe), labels)
+    }.unzip3
+
+    val construct = backend.ConstructEnum(tpe, enum.symbol.asEnumMemberSymbol, terms)
+
+    BuildResult(nodess.flatten, Some(construct), labelss.flatten.toSet)
   }
 
   def buildIfExpr(ifExpr: frontend.IfExpr)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {

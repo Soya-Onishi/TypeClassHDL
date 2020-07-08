@@ -86,7 +86,9 @@ package object backend {
             val memberFieldTypes = symbol.tpe.declares.toMap
               .values.toVector
               .map(_.tpe.asEnumMemberType)
-              .flatMap(_.fieldTypes)
+              .flatMap(_.fields)
+              .map(_.tpe.asRefType)
+
             val hpTable = (symbol.hps zip verified.hargs).toMap
             val tpTable = (symbol.tps zip verified.targs).toMap
 
@@ -109,29 +111,10 @@ package object backend {
     hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
     tpTable: Map[Symbol.TypeParamSymbol, BackendType]
   )(implicit global: GlobalData): BackendType = {
-    def buildFieldTypes(
-      signature: BackendType,
-      hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
-      tpTable: Map[Symbol.TypeParamSymbol, BackendType]
-    ): Map[String, BackendType] = {
-      signature.symbol.tpe.declares.toMap.collect {
-        case (fieldName, field) if field.hasFlag(Modifier.Field) =>
-          val tpe = field.tpe.asRefType
-          val fieldHArgs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
-          val fieldTArgs = tpe.typeParam.map(toBackendType(_, hpTable, tpTable))
-          val signature = BackendType(tpe.origin, fieldHArgs, fieldTArgs)
-
-          fieldName -> signature
-      }
-    }
-
     def replace(tpe: Type.RefType): BackendType = tpe.origin match {
       case _: Symbol.EntityTypeSymbol =>
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
-
-        val fieldHPTable = (tpe.origin.hps zip hargs).toMap
-        val fieldTPTable = (tpe.origin.tps zip targs).toMap
 
         val backendType = BackendType(tpe.origin, hargs, targs)
 
@@ -171,6 +154,41 @@ package object backend {
           case frontend.Operation.Div => HPElem.Num(leftValue / rightValue)
         }
     }
+
+  def calculateFieldLength(tpe: BackendType)(implicit global: GlobalData): BigInt = {
+    assert(!tpe.isHardware, s"calculated type must be hardware type but [${tpe.symbol}] is other kind of types")
+
+    val bit = global.builtin.types.lookup("Bit")
+
+    tpe.symbol match {
+      case symbol if symbol == bit =>
+        val HPElem.Num(width) = tpe.hargs.head
+        BigInt(width)
+      case enum: Symbol.EnumSymbol =>
+        val hpTable = (enum.hps zip tpe.hargs).toMap
+        val tpTable = (enum.tps zip tpe.targs).toMap
+
+        enum.tpe.declares.toMap
+          .map { case (_, symbol: Symbol.EnumMemberSymbol) => symbol.tpe }
+          .map {
+            _.declares.toMap.values.view
+              .map(_.tpe.asRefType)
+              .map(toBackendType(_, hpTable, tpTable))
+              .map(calculateFieldLength)
+              .sum
+          }
+          .max
+      case symbol =>
+        val hpTable = (symbol.hps zip tpe.hargs).toMap
+        val tpTable = (symbol.tps zip tpe.targs).toMap
+
+        symbol.tpe.declares.toMap.values.view
+          .map(_.tpe.asRefType)
+          .map(toBackendType(_, hpTable, tpTable))
+          .map(calculateFieldLength)
+          .sum
+    }
+  }
 
   def findImplClassTree(impl: Symbol.ImplementSymbol, global: GlobalData): Option[frontend.ImplementClass] = {
     global.compilationUnits

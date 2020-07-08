@@ -6,6 +6,7 @@ import tchdl.util.TchdlException._
 import firrtl.{PrimOps, ir}
 
 import scala.annotation.tailrec
+import scala.collection.immutable.ListMap
 import scala.collection.mutable
 import scala.math
 
@@ -91,6 +92,7 @@ object FirrtlCodeGen {
   }
 
   case class UserSoftInstance(tpe: BackendType, field: Map[String, Instance]) extends SoftInstance
+  case class EnumSoftInstance(tpe: BackendType, variant: Symbol.EnumMemberSymbol, field: ListMap[String, Instance]) extends SoftInstance
   case class IntInstance(value: Int)(implicit global: GlobalData) extends SoftInstance {
     val field = Map.empty
     val tpe = toBackendType(Type.intTpe, Map.empty, Map.empty)
@@ -706,6 +708,7 @@ object FirrtlCodeGen {
       case _: backend.This => runThis()
       case construct: backend.ConstructStruct => runConstructStruct(construct)
       case construct: backend.ConstructModule => runConstructModule(construct)
+      case construct: backend.ConstructEnum => runConstructEnum(construct)
       case call: backend.CallMethod => runCallMethod(call)
       case call: backend.CallInterface => runCallInterface(call)
       case call: backend.CallBuiltIn => runCallBuiltIn(call)
@@ -1124,6 +1127,62 @@ object FirrtlCodeGen {
     RunResult(stmts, ModuleInstance(construct.tpe, ModuleLocation.Sub(ir.Reference(moduleName.name, ir.UnknownType))))
   }
 
+  def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    def constructHardEnum: RunResult = {
+      val tpe = toFirrtlType(enum.target)
+      val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
+
+      val data = insts.headOption match {
+        case None => ir.UIntLiteral(0)
+        case Some(HardInstance(_, head)) =>
+          insts.tail.foldLeft(head) {
+            case (prefix, HardInstance(_, expr)) => ir.DoPrim(PrimOps.Cat, Seq(prefix, expr), Seq.empty, ir.UnknownType)
+          }
+      }
+
+      val flagValue = enum.tpe.symbol.tpe.declares
+        .toMap.toVector
+        .sortWith{ case ((left, _), (right, _)) => left < right }
+        .map{ case (_, symbol) => symbol }
+        .zipWithIndex
+        .find{ case (symbol, _) => symbol ==  enum.variant }
+        .map{ case (_, idx) => ir.UIntLiteral(idx) }
+        .getOrElse(throw new ImplementationErrorException(s"${enum.variant} was not found"))
+
+      val enumName = stack.next("_ENUM")
+      val enumRef = ir.Reference(enumName.name, ir.UnknownType)
+      val wireDef = ir.DefWire(ir.NoInfo, enumName.name, tpe)
+      val connectFlag = ir.Connect(
+        ir.NoInfo,
+        ir.SubField(enumRef, "_member", ir.UnknownType),
+        flagValue
+      )
+      val connectData = ir.Connect(
+        ir.NoInfo,
+        ir.SubField(enumRef, "_data", ir.UnknownType),
+        data
+      )
+
+      val runResultStmts = Vector(wireDef, connectFlag, connectData)
+      val instance = HardInstance(enum.tpe, enumRef)
+
+      RunResult(runResultStmts, instance)
+    }
+
+    def constructSoftEnum: RunResult = {
+      val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
+      val pairs = insts.zipWithIndex.map { case (inst, idx) => s"_$idx" -> inst }
+      val table = ListMap.from(pairs)
+
+      val instance = EnumSoftInstance(enum.target, enum.variant, table)
+
+      RunResult(Vector.empty, instance)
+    }
+
+    if(enum.target.isHardware) constructHardEnum
+    else constructSoftEnum
+  }
+
   def runFinish(finish: backend.Finish)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val stageName = finish.stage.toString
     val active = stageName + "$_active"
@@ -1181,7 +1240,8 @@ object FirrtlCodeGen {
           case ir.UIntType(ir.IntWidth(width)) => width
         }
 
-        val fieldTypes = member.fieldTypes
+        val fieldTypes = member.fields
+          .map(_.tpe.asRefType)
           .map(toBackendType(_, hpTable, tpTable))
           .map(toFirrtlType)
 

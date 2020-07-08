@@ -572,10 +572,13 @@ object Typer {
   def typedConstructEnum(construct: ConstructEnum)(implicit ctx: Context.NodeContext, global: GlobalData): ConstructEnum = {
     def verifyFields(parent: Type.RefType, target: Symbol.EnumMemberSymbol, fields: Vector[Expression]): Either[Error, Unit] = {
       val tpe = target.tpe.asEnumMemberType
+      val declares = tpe.declares.toMap.toVector.sortWith {
+        case ((left, _), (right, _)) => left < right
+      }
 
       def verifyLength =
-        if(tpe.fieldTypes.length == fields.length) Right(())
-        else Left(Error.ParameterLengthMismatch(tpe.fieldTypes.length, fields.length))
+        if(declares.length == fields.length) Right(())
+        else Left(Error.ParameterLengthMismatch(declares.length, fields.length))
 
       def verifyFieldExprType =
         if(fields.exists(_.tpe.isErrorType)) Left(Error.DummyError)
@@ -585,7 +588,10 @@ object Typer {
         hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
         tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
       ): Vector[Error.TypeMismatch] = {
-        val expectTpes = tpe.fieldTypes.map(_.replaceWithMap(hpTable, tpTable))
+        val expectTpes = declares
+          .map{ case (_, symbol) => symbol }
+          .map(_.tpe.asRefType)
+          .map(_.replaceWithMap(hpTable, tpTable))
 
         expectTpes
           .zip(fields.map(_.tpe.asRefType))

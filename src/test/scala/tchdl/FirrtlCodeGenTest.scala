@@ -288,4 +288,29 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+
+  test("construct hardware simple enum Option[Bit[2]]") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Mod", "ConstructEnum0.tchdl")
+
+    val conseq = circuit.modules.head.asInstanceOf[ir.Module]
+      .body.asInstanceOf[ir.Block]
+      .stmts
+      .collectFirst{ case cond: ir.Conditionally => cond }.get
+      .conseq.asInstanceOf[ir.Block].stmts
+
+    val initFieldName = conseq.collectFirst{ case node: ir.DefNode => node }.get
+    val wire = conseq.collectFirst{ case wire: ir.DefWire => wire }.get
+    val connects = conseq.collect{ case connect: ir.Connect => connect }
+
+    val temp = initFieldName.name
+    val enum = wire.name
+
+    assert(connects(0).loc == ir.SubField(ir.Reference(enum, ir.UnknownType), "_member", ir.UnknownType))
+    assert(connects(1).loc == ir.SubField(ir.Reference(enum, ir.UnknownType), "_data", ir.UnknownType))
+
+    assert(connects(0).expr == ir.UIntLiteral(1))
+    assert(connects(1).expr == ir.Reference(temp, ir.UnknownType))
+
+    runFirrtl(circuit)
+  }
 }

@@ -233,4 +233,12 @@ class BackendIRGenTest extends TchdlFunSuite {
 
     assert(local.matches("func_[0-9a-f]+\\$0\\$local"))
   }
+
+  test("construct enum value") {
+    val (modules, _, _) = untilThisPhase(Vector("test"), "Mod", "ConstructEnum0.tchdl")
+    val module = modules.head
+    val interface = module.interfaces.head
+
+    assert(interface.ret.isInstanceOf[ConstructEnum])
+  }
 }

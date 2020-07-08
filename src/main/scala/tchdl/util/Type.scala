@@ -192,12 +192,27 @@ object Type {
   case class EnumMemberTypeGenerator(member: EnumMemberDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
       val name = member.name
+
+      val scope = new Scope
       val fields = member.fields.map(Typer.typedTypeTree(_)(ctx, global))
+      val symbols = fields.zipWithIndex.map {
+        case (field, idx) =>
+          Symbol.VariableSymbol.field(
+            name = s"_$idx",
+            ctx.path.appendComponentName(member.name),
+            Accessibility.Private,
+            Modifier.Field,
+            field.tpe
+          )
+      }
+
+      symbols.foreach(scope.append)
+
       val hasError = fields.exists(_.tpe.isErrorType)
       val parent = ctx.owner.tpe.asEntityType
 
       if (hasError) Type.ErrorType
-      else EnumMemberType(name, ctx.path, parent, fields.map(_.tpe.asRefType))
+      else EnumMemberType(name, ctx.path, parent, scope)
     }
   }
 
@@ -342,19 +357,19 @@ object Type {
     val name: String,
     val namespace: NameSpace,
     val parent: EntityType,
-    val fieldTypes: Vector[Type.RefType]
+    val declares: Scope = Scope.empty
   ) extends Type {
-    override val declares: Scope = Scope.empty
-
     override def =:=(tpe: Type): Boolean = tpe match {
       case that: EnumMemberType => this.name == that.name && this.namespace == that.namespace
       case _ => false
     }
+
+    def fields: Vector[Symbol] = declares.toMap.toVector.map{ case (_, symbol) => symbol }
   }
 
   object EnumMemberType {
-    def apply(name: String, namespace: NameSpace, parent: EntityType, fieldTypes: Vector[Type.RefType]): EnumMemberType = {
-      new EnumMemberType(name, namespace, parent, fieldTypes)
+    def apply(name: String, namespace: NameSpace, parent: EntityType, declares: Scope): EnumMemberType = {
+      new EnumMemberType(name, namespace, parent, declares)
     }
   }
 
@@ -849,7 +864,8 @@ object Type {
               .values
               .toVector
               .map(_.tpe.asEnumMemberType)
-              .flatMap(_.fieldTypes)
+              .flatMap(_.declares.toMap.values)
+              .map(_.tpe.asRefType)
               .map(_.replaceWithMap(hpTable, tpTable))
 
             memberFieldTpes.forall(loop(_, types + verified))
