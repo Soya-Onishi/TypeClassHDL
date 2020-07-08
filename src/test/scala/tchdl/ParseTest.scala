@@ -268,4 +268,25 @@ class ParseTest extends TchdlFunSuite {
     val construct = method.blk.get.last.asInstanceOf[ConstructClass]
     assert(construct.target == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
   }
+
+  test("construct enum") {
+    val filename = buildName(rootDir, filePath, "ConstructEnum0.tchdl")
+    val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+
+    val expr = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method }.get
+      .blk.get
+      .last
+
+    assert(expr.isInstanceOf[ConstructEnum])
+    val construct = expr.asInstanceOf[ConstructEnum]
+
+    assert(construct.target.expr.isInstanceOf[StaticSelect])
+    val select = construct.target.expr.asInstanceOf[StaticSelect]
+
+    assert(select.prefix == TypeTree(Ident("Opt"), Vector.empty, Vector(TypeTree(Ident("Bit"), Vector(IntLiteral(2)), Vector.empty))))
+    assert(select.name == "Some")
+  }
 }

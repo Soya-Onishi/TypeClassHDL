@@ -287,6 +287,7 @@ class ASTGenerator {
     case ctx: TP.BlockExprContext => block(ctx.block)
     case ctx: TP.ConstructStructExprContext => constructStruct(ctx.construct_struct)
     case ctx: TP.ConstructModuleExprContext => constructModule(ctx.construct_module)
+    case ctx: TP.ConstructEnumExprContext => constructEnum(ctx.construct_enum)
     case ctx: TP.IfExprContext =>
       val cond = expr(ctx.expr(0))
       val conseq = expr(ctx.expr(1))
@@ -370,7 +371,7 @@ class ASTGenerator {
 
     val types = ctx.type_elem.asScala.map(typeElem)
     val folded = types.tail.foldLeft(types.head) {
-      case (TypeTree(Ident(name), hargs, targs), prefix) =>
+      case (prefix, TypeTree(Ident(name), hargs, targs)) =>
         TypeTree(StaticSelect(prefix, name), hargs, targs)
     }
 
@@ -484,6 +485,13 @@ class ASTGenerator {
       .toVector
 
     ConstructModule(tpe, parents, siblings)
+  }
+
+  def constructEnum(ctx: TP.Construct_enumContext): ConstructEnum = {
+    val target = typeTree(ctx.`type`)
+    val fields = ctx.expr.asScala.map(expr).toVector
+
+    ConstructEnum(target, fields)
   }
 
   def bound(ctx: TP.BoundContext): BoundTree = {
