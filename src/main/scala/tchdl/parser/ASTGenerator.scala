@@ -364,8 +364,8 @@ class ASTGenerator {
 
     def constructHead(tree: TypeTree): TypeTree = tree.expr match {
       case Ident(name) => TypeTree(head(name), tree.hp, tree.tp)
-      case StaticSelect(tree, name) =>
-        val select = StaticSelect(constructHead(tree), name)
+      case StaticSelect(prefix, name) =>
+        val select = StaticSelect(constructHead(prefix), name)
         TypeTree(select, tree.hp, tree.tp)
     }
 

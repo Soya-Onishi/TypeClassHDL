@@ -207,6 +207,7 @@ object Typer {
       case blk: Block => typedBlock(blk)
       case construct: ConstructClass => typedConstructClass(construct)
       case construct: ConstructModule => typedConstructModule(construct)
+      case construct: ConstructEnum => typedConstructEnum(construct)
       case int: IntLiteral => typedIntLiteral(int)
       case string: StringLiteral => typedStringLiteral(string)
       case unit: UnitLiteral => typedUnitLiteral(unit)
@@ -513,15 +514,27 @@ object Typer {
 
         tpe.origin match {
           case _: Symbol.StructSymbol =>
-            ConstructClass(typedTarget, typedPairs).setTpe(tpe).setID(construct.id)
+            ConstructClass(typedTarget, typedPairs)
+              .setSymbol(typedTarget.symbol)
+              .setTpe(tpe)
+              .setID(construct.id)
           case _: Symbol.ModuleSymbol if construct.fields.isEmpty =>
-            ConstructModule(typedTarget, Vector.empty, Vector.empty).setTpe(tpe).setID(construct.id)
+            ConstructModule(typedTarget, Vector.empty, Vector.empty)
+              .setSymbol(typedTarget.symbol)
+              .setTpe(tpe)
+              .setID(construct.id)
           case _: Symbol.ModuleSymbol =>
             global.repo.error.append(Error.RequireParentOrSiblingIndicator(construct))
-            ConstructClass(typedTarget, typedPairs).setTpe(Type.ErrorType).setID(construct.id)
+            ConstructClass(typedTarget, typedPairs)
+              .setSymbol(Symbol.ErrorSymbol)
+              .setTpe(Type.ErrorType)
+              .setID(construct.id)
           case _: Symbol.InterfaceSymbol =>
             global.repo.error.append(Error.TryToConstructInterface(construct))
-            ConstructClass(typedTarget, typedPairs).setTpe(Type.ErrorType).setID(construct.id)
+            ConstructClass(typedTarget, typedPairs)
+              .setSymbol(Symbol.ErrorSymbol)
+              .setTpe(Type.ErrorType)
+              .setID(construct.id)
         }
     }
   }
@@ -549,12 +562,15 @@ object Typer {
             Type.ErrorType
         }
 
-        ConstructModule(typedTarget, typedParents, typedSiblings).setTpe(returnType).setID(construct.id)
+        ConstructModule(typedTarget, typedParents, typedSiblings)
+          .setSymbol(typedTarget.symbol)
+          .setTpe(returnType)
+          .setID(construct.id)
     }
   }
 
   def typedConstructEnum(construct: ConstructEnum)(implicit ctx: Context.NodeContext, global: GlobalData): ConstructEnum = {
-    def verifyFields(target: Symbol.EnumMemberSymbol, fields: Vector[Expression]): Either[Error, Unit] = {
+    def verifyFields(parent: Type.RefType, target: Symbol.EnumMemberSymbol, fields: Vector[Expression]): Either[Error, Unit] = {
       val tpe = target.tpe.asEnumMemberType
 
       def verifyLength =
@@ -565,13 +581,23 @@ object Typer {
         if(fields.exists(_.tpe.isErrorType)) Left(Error.DummyError)
         else Right(())
 
-      def typeMismatches: Vector[Error.TypeMismatch] = tpe.fieldTypes
-        .zip(fields.map(_.tpe.asRefType))
-        .filter{ case (field, expr) => field != expr }
-        .map{ case (field, expr) => Error.TypeMismatch(field, expr) }
+      def typeMismatches(
+        hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
+        tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
+      ): Vector[Error.TypeMismatch] = {
+        val expectTpes = tpe.fieldTypes.map(_.replaceWithMap(hpTable, tpTable))
+
+        expectTpes
+          .zip(fields.map(_.tpe.asRefType))
+          .filter{ case (field, expr) => field != expr }
+          .map{ case (field, expr) => Error.TypeMismatch(field, expr) }
+      }
 
       def verifyTypeMatching: Either[Error, Unit] = {
-        val mismatches = typeMismatches
+        val hpTable = (parent.origin.hps zip parent.hardwareParam).toMap
+        val tpTable = (parent.origin.tps zip parent.typeParam).toMap
+
+        val mismatches = typeMismatches(hpTable, tpTable)
 
         if(mismatches.isEmpty) Right(())
         else Left(Error.MultipleErrors(mismatches: _*))
@@ -584,74 +610,13 @@ object Typer {
       } yield ()
     }
 
-    /*
-    def forStaticSelect(select: StaticSelect): StaticSelect = {
-      val StaticSelect(prefix, name) = select
-
-      val typedPrefix = typedTypeTree(prefix)
-
-      val selectSymbol = typedPrefix.tpe match {
-        case Type.ErrorType => Left(Error.DummyError)
-        case tpe: Type.RefType => tpe.lookupType[Symbol.EnumMemberSymbol](name).toEither
-      }
-
-      val (symbol, tpe) = selectSymbol match {
-        case Right(member) => (member, typedPrefix.tpe)
-        case Left(err) =>
-          global.repo.error.append(err)
-          (Symbol.ErrorSymbol, Type.ErrorType)
-      }
-
-      StaticSelect(typedPrefix, name)
-        .setSymbol(symbol)
-        .setTpe(tpe)
-        .setID(select.id)
-    }
-
-    def forSelectPackage(select: SelectPackage): SelectPackage = {
-
-      def searchFromCtx(packages: Vector[String]): Either[Error, Symbol.PackageSymbol] = {
-        val lookupResult = packages.tail.foldLeft(ctx.lookup[Symbol.PackageSymbol](packages.head)) {
-          case (LookupResult.LookupFailure(err), _) => LookupResult.LookupFailure(err)
-          case (LookupResult.LookupSuccess(pkg), name) => pkg.lookup[Symbol.PackageSymbol](name)
-        }
-
-        lookupResult.toEither
-      }
-
-      def searchFromRoot(packages: Vector[String]): Either[Error, Symbol.PackageSymbol] =
-        packages.foldLeft[Either[Error, Symbol.PackageSymbol]](Right(global.rootPackage)) {
-          case (Left(err), _) => Left(err)
-          case (Right(pkg), name) => pkg.lookup[Symbol.PackageSymbol](name).toEither
-        }
-
-      val SelectPackage(packages, name) = select
-
-      val pkgSymbolResult = searchFromCtx(packages).left.flatMap(_ => searchFromRoot(packages))
-
-      val result = for {
-        pkgSymbol <- pkgSymbolResult
-        member <- pkgSymbol.lookup[Symbol.EnumMemberSymbol](name).toEither
-      } yield member
-
-      result match {
-        case Right(_) => throw new ImplementationErrorException("enum member symbol should not be found at top level")
-        case Left(err) =>
-          global.repo.error.append(err)
-          SelectPackage(packages, name)
-            .setTpe(Type.ErrorType)
-            .setSymbol(Symbol.ErrorSymbol)
-            .setID(select.id)
-      }
-
-    }
-    */
-
     val typedTarget = typedTypeTree(construct.target)
     val typedFields = construct.fields.map(typedExpr)
 
     val result = typedTarget.symbol match {
-      case member: Symbol.EnumMemberSymbol => verifyFields(member, typedFields).map(_ => typedTarget.tpe.asRefType)
+      case member: Symbol.EnumMemberSymbol =>
+        verifyFields(typedTarget.tpe.asRefType, member, typedFields)
+          .map(_ => typedTarget.tpe.asRefType)
       case _ => typedTarget.tpe match {
         case tpe: Type.RefType => Left(Error.ConstructEnumForm(tpe))
         case Type.ErrorType => Left(Error.DummyError)
@@ -665,7 +630,10 @@ object Typer {
         Type.ErrorType
     }
 
-    ConstructEnum(typedTarget, typedFields).setTpe(tpe).setID(construct.id)
+    ConstructEnum(typedTarget, typedFields)
+      .setSymbol(typedTarget.symbol)
+      .setTpe(tpe)
+      .setID(construct.id)
   }
 
   def typedStdBinOp(binop: StdBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): BinOp = {

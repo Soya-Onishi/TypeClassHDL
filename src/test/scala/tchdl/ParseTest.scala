@@ -288,5 +288,7 @@ class ParseTest extends TchdlFunSuite {
 
     assert(select.prefix == TypeTree(Ident("Opt"), Vector.empty, Vector(TypeTree(Ident("Bit"), Vector(IntLiteral(2)), Vector.empty))))
     assert(select.name == "Some")
+    assert(construct.target.hp.isEmpty)
+    assert(construct.target.tp.isEmpty)
   }
 }

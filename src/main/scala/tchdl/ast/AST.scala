@@ -23,7 +23,7 @@ sealed trait Definition extends AST with HasSymbol
 sealed trait Statement extends AST
 sealed trait BlockElem extends AST
 sealed trait Expression extends AST with BlockElem with HasType
-sealed trait Construct extends Expression
+sealed trait Construct extends Expression with HasSymbol
 sealed trait TypeAST extends AST with HasType with HasSymbol
 sealed trait HPExpr extends Expression {
   protected var _sortedExpr: Option[HPExpr] = None

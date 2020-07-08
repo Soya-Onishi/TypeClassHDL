@@ -342,4 +342,21 @@ class TyperTest extends TchdlFunSuite {
     assert(expect =:= Type.unitTpe(global))
     assert(actual =:= Type.bitTpe(IntLiteral(8))(global))
   }
+
+  test("construct enum") {
+    val (Seq(tree), global) = untilTyper("ConstructEnum0.tchdl")
+    expectNoError(global)
+
+    val impl = tree.topDefs.collectFirst{ case impl: ImplementClass => impl }.get
+    val method = impl.components.collectFirst{ case m: MethodDef => m }.get
+    val construct = method.blk.get.last.asInstanceOf[ConstructEnum]
+    val opt = tree.topDefs.collectFirst{ case enum: EnumDef => enum }.get
+    val some = opt.members.find(_.name == "Some").get
+
+    assert(construct.symbol == some.symbol)
+    assert(construct.tpe.asRefType.origin == opt.symbol)
+    assert(construct.target.expr.tpe.asRefType.origin == opt.symbol)
+    assert(construct.tpe.asRefType.hardwareParam.isEmpty)
+    assert(construct.tpe.asRefType.typeParam == Vector(Type.bitTpe(IntLiteral(2))(global)))
+  }
 }
