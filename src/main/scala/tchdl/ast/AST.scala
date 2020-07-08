@@ -380,7 +380,7 @@ case class Generate(target: String, params: Vector[Expression]) extends Expressi
 case class Relay(target: String, params: Vector[Expression]) extends Expression with HasSymbol
 
 case class Match(expr: Expression, cases: Vector[Case]) extends Expression
-case class Case(pattern: EnumPattern, exprs: Vector[BlockElem]) extends AST
+case class Case(pattern: EnumPattern, exprs: Vector[BlockElem]) extends AST with HasType
 case class EnumPattern(target: TypeTree, exprs: Vector[PatternExpr]) extends AST
 
 // To make easier to implement parser,

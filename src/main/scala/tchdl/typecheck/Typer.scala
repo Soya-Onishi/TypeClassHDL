@@ -177,13 +177,12 @@ object Typer {
 
     val stageBodyCtx = Context(stageSigCtx)
     stageDef.states.foreach(Namer.namedStateDef(_)(stageBodyCtx, global))
-    stageDef.blk.collect{ case vdef: ValDef => vdef }.foreach(Namer.namedLocalDef(_)(stageBodyCtx, global))
 
-    val typedStates = stageDef.states.map(typedStateDef(_)(stageBodyCtx, global))
     val typedBodyElems = stageDef.blk.map {
       case vdef: ValDef => typedExprValDef(vdef)(stageBodyCtx, global)
       case expr: Expression => typedExpr(expr)(stageBodyCtx, global)
     }
+    val typedStates = stageDef.states.map(typedStateDef(_)(stageBodyCtx, global))
 
     stageDef.copy(states = typedStates, blk = typedBodyElems).setSymbol(stageDef.symbol.asStageSymbol).setID(stageDef.id)
   }
@@ -201,6 +200,7 @@ object Typer {
     expr match {
       case ident: Ident => typedExprIdent(ident)
       case select: Select => typedExprSelect(select)
+      case matchExpr: Match => typedMatch(matchExpr)
       case binop: StdBinOp => typedStdBinOp(binop)
       case ifExpr: IfExpr => typedIfExpr(ifExpr)
       case self: This => typedThis(self)
@@ -497,6 +497,144 @@ object Typer {
       else Some(Error.MultipleErrors(errs: _*))
 
     (combinedErr, typedPair)
+  }
+
+  def typedMatch(matchExpr: Match)(implicit ctx: Context.NodeContext, global: GlobalData): Match = {
+    def typedCase(caseDef: Case): Case = {
+      val caseCtx = Context(ctx)
+
+      typedEnumPattern(caseDef.pattern, caseCtx) match {
+        case Left(enum) => Case(enum, caseDef.exprs).setTpe(Type.ErrorType).setID(caseDef.id)
+        case Right(enum) =>
+          val blockElems = caseDef.exprs.map {
+            case expr: Expression => typedExpr(expr)(caseCtx, global)
+            case vdef: ValDef => typedValDef(vdef)(caseCtx, global)
+          }
+
+          val retTpe = blockElems.last.asInstanceOf[Expression].tpe
+          Case(enum, blockElems).setTpe(retTpe).setID(caseDef.id)
+      }
+    }
+
+    def verifyEnumPattern(symbol: Symbol.EnumMemberSymbol, target: Type.RefType, exprs: Vector[PatternExpr], ctx: Context.NodeContext): Either[Error, Unit] = {
+      def typeCheck(expect: Type.RefType, actual: Type.RefType): Either[Error, Unit] =
+        if (actual == expect) Right(())
+        else Left(Error.TypeMismatch(expect, actual))
+
+      val hpTable = (target.origin.hps zip target.hardwareParam).toMap
+      val tpTable = (target.origin.tps zip target.typeParam).toMap
+
+      val fieldTpes = symbol.tpe.asEnumMemberType.fields
+        .map(_.tpe.asRefType)
+        .map(_.replaceWithMap(hpTable, tpTable))
+
+      if(fieldTpes.length == exprs.length) Left(Error.ParameterLengthMismatch(fieldTpes.length, exprs.length))
+      else {
+        val results = (exprs zip fieldTpes).map {
+          case (_: IntLiteral, tpe) => typeCheck(Type.intTpe, tpe)
+          case (_: StringLiteral, tpe) => typeCheck(Type.stringTpe, tpe)
+          case (_: UnitLiteral, tpe) => typeCheck(Type.unitTpe, tpe)
+          case (BitLiteral(_, width), tpe) => typeCheck(Type.bitTpe(IntLiteral(width)), tpe)
+          case (ident @ Ident(name), tpe) =>
+            val symbol = Symbol.VariableSymbol.local(
+              name,
+              ctx.path,
+              Accessibility.Private,
+              Modifier.Local,
+              tpe
+            )
+
+            ident.setSymbol(symbol).setTpe(tpe)
+            ctx.append(symbol)
+        }
+
+        results.combine(errs => Error.MultipleErrors(errs: _*))
+      }
+    }
+
+    def typedEnumPattern(enum: EnumPattern, ctx: Context.NodeContext): Either[EnumPattern, EnumPattern] = {
+      val EnumPattern(target, exprs) = enum
+      val typedTarget = typedTypeTree(target)(ctx, global)
+
+      def typedEnum: EnumPattern = EnumPattern(typedTarget, exprs).setID(enum.id)
+
+      val result = typedTarget.symbol match {
+        case Symbol.ErrorSymbol => Left(Error.DummyError)
+        case symbol: Symbol.EnumMemberSymbol => verifyEnumPattern(symbol, typedTarget.tpe.asRefType, exprs, ctx)
+        case symbol => Left(Error.RequireSymbol[Symbol.EnumMemberSymbol](symbol))
+      }
+
+      result.left.foreach(global.repo.error.append)
+      result match {
+        case Right(_) => Right(typedEnum)
+        case Left(_) => Left(typedEnum)
+      }
+    }
+
+    val Match(matched, cases) = matchExpr
+    val typedMatched = typedExpr(matched)
+
+    typedMatched.tpe match {
+      case Type.ErrorType => Match(typedMatched, cases).setTpe(Type.ErrorType).setID(matchExpr.id)
+      case tpe: Type.RefType =>
+        val typedCases = cases.map(typedCase)
+
+        def hasError: Either[Error, Unit] =
+          if(typedCases.map(_.tpe).exists(_.isErrorType)) Left(Error.DummyError)
+          else Right(())
+
+        def typeMismatches: Either[Error, Unit] = {
+          val retTpes = typedCases.map(_.tpe.asRefType)
+          val errs = retTpes.filter(_ != retTpes.last).map(Error.TypeMismatch(retTpes.last, _))
+
+          if(errs.isEmpty) Right(())
+          else Left(Error.MultipleErrors(errs: _*))
+        }
+
+        def patternTypeMismatch: Either[Error, Unit] = {
+          val patternTypes = typedCases
+            .map{ case Case(pattern, _) => pattern }
+            .map{ _.target.tpe.asRefType }
+
+          val errs = patternTypes.filter(_ != tpe).map(Error.TypeMismatch(tpe, _))
+
+          if(errs.isEmpty) Right(())
+          else Left(Error.MultipleErrors(errs: _*))
+        }
+
+        def hasFullPatterns: Either[Error, Unit] = {
+          tpe.origin match {
+            case symbol: Symbol.EnumSymbol =>
+              val allMembers = symbol.tpe.declares.toMap.values.toVector.map(_.asEnumMemberSymbol).toSet
+              val caseMembers = typedCases.map(_.pattern.target.symbol.asEnumMemberSymbol)
+
+              val remains = caseMembers.foldLeft(allMembers) {
+                case (remains, member) => remains - member
+              }
+
+              if(remains.isEmpty) Right(())
+              else Left(Error.NotExhaustiveEnum(remains.toVector))
+          }
+        }
+
+        val result = for {
+          _ <- hasError
+          _ <- typeMismatches
+          _ <- patternTypeMismatch
+          _ <- hasFullPatterns
+        } yield Match(typedMatched, typedCases)
+          .setTpe(typedCases.head.tpe)
+          .setID(matchExpr.id)
+
+        result match {
+          case Right(matchExpr) => matchExpr
+          case Left(err) =>
+            global.repo.error.append(err)
+            Match(typedMatched, typedCases)
+              .setTpe(Type.ErrorType)
+              .setID(matchExpr.id)
+        }
+    }
   }
 
   def typedConstructClass(construct: ConstructClass)(implicit ctx: Context.NodeContext, global: GlobalData): Construct = {
