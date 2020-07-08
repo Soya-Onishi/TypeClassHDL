@@ -294,6 +294,7 @@ class ASTGenerator {
       val alt = Option(ctx.expr(2)).map(expr)
 
       IfExpr(cond, conseq, alt)
+    case ctx: TP.MatchExprContext => matchExpr(ctx)
     case _: TP.FinishContext => Finish()
     case ctx: TP.GotoContext => Goto(ctx.EXPR_ID.getText)
     case ctx: TP.RelayContext =>
@@ -331,6 +332,32 @@ class ASTGenerator {
       val prefix = expr(ctx.expr)
       val name = ctx.EXPR_ID.getText
       Select(prefix, name)
+  }
+
+  def matchExpr(ctx: TP.MatchExprContext): Match = {
+    def patternExpr(ctx: TP.Pattern_exprContext): PatternExpr = ctx match {
+      case ctx: TP.IdentPatternContext => Ident(ctx.EXPR_ID.getText)
+      case ctx: TP.LiteralPatternContext =>  literal(ctx.literal).asInstanceOf[PatternExpr]
+    }
+
+    def caseDef(ctx: TP.Case_defContext): Case = {
+      val enum = typeTree(ctx.`type`)
+      val patternExprs = ctx.pattern_expr.asScala.map(patternExpr).toVector
+      val blkElems = ctx.block_elem.asScala.map(blockElem).toVector
+
+      val body = blkElems.lastOption match {
+        case None => blkElems :+ UnitLiteral()
+        case Some(vdef: ValDef) => blkElems.init ++ Vector(vdef, UnitLiteral())
+        case Some(expr) => blkElems.init :+ expr
+      }
+
+      Case(EnumPattern(enum, patternExprs), body)
+    }
+
+    val matched = expr(ctx.expr)
+    val cases = ctx.case_def.asScala.map(caseDef).toVector
+
+    Match(matched, cases)
   }
 
   def stdBinOp(left: TP.ExprContext, right: TP.ExprContext, op: String): StdBinOp = {
@@ -439,7 +466,6 @@ class ASTGenerator {
 
   def typeParams(ctx: TP.Type_paramsContext): Vector[TypeTree] =
     ctx.`type`.asScala.map(typeTree).toVector
-
 
 
   def block(ctx: TP.BlockContext): Block = {

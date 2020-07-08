@@ -243,7 +243,12 @@ sibling_pair
 
 
 case_def
-    : CASE literal '=>' block_elem*
+    : CASE type ('(' pattern_expr* ')')? '=>' block_elem*
+    ;
+
+pattern_expr
+    : EXPR_ID # IdentPattern
+    | literal # LiteralPattern
     ;
 
 literal

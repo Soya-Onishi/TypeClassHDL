@@ -25,6 +25,7 @@ sealed trait BlockElem extends AST
 sealed trait Expression extends AST with BlockElem with HasType
 sealed trait Construct extends Expression with HasSymbol
 sealed trait TypeAST extends AST with HasType with HasSymbol
+sealed trait PatternExpr extends AST with HasType
 sealed trait HPExpr extends Expression {
   protected var _sortedExpr: Option[HPExpr] = None
 
@@ -273,105 +274,6 @@ sealed trait HPExpr extends Expression {
   }
 }
 
-object HPExpr {
-  /*
-  def verifyHPBound(
-    calledBounds: Vector[HPBoundTree],
-    callerBounds: Vector[HPBoundTree],
-    table: Map[Symbol.HardwareParamSymbol, HPExpr]
-  ): Either[Error, Unit] = {
-    def replaceExpr(expr: HPExpr, table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
-      def loop(expr: HPExpr): HPExpr = {
-        expr match {
-          case binop @ HPBinOp(op, left, right) =>
-            HPBinOp(op, loop(left), loop(right))
-              .setTpe(binop.tpe)
-              .setID(binop.id)
-          case ident: Ident =>
-            table.getOrElse(
-              ident.symbol.asHardwareParamSymbol,
-              throw new ImplementationErrorException(s"try to lookup ${ident.name} but not found")
-            )
-          case lit => lit
-        }
-      }
-
-      loop(expr).sort
-    }
-
-    def compoundBounds(bounds: Vector[HPBoundTree]): Vector[HPBoundTree] = {
-      def removeFirst[T](vec: Vector[T])(f: T => Boolean): (Vector[T], Option[T]) = {
-        vec.foldLeft((Vector.empty[T], Option.empty[T])) {
-          case ((returnedVec, Some(first)), elem) => (returnedVec :+ elem, Some(first))
-          case ((returnedVec, None), elem) if f(elem) => (returnedVec, Some(elem))
-          case ((returnedVec, None), elem) => (returnedVec :+ elem, None)
-        }
-      }
-
-      bounds.foldLeft(Vector.empty[HPBoundTree]) {
-        case (bounds, compoundedBound) =>
-          val (remainBounds, foundBound) = removeFirst(bounds) {
-            case HPBoundTree(expr, _) => expr.isSameExpr(compoundedBound.target)
-          }
-
-          foundBound match {
-            case None => remainBounds :+ compoundedBound
-            case Some(bound) =>
-              def isRejected(c: RangeExpr): Boolean = bound.bounds.exists(_.isRestrictedThanEq(c))
-
-              val constraints = compoundedBound.bounds.filterNot(isRejected)
-              val restrictedBound = constraints.foldLeft(bound) {
-                case (bound, constraint) =>
-                  val (remain, _) = removeFirst(bound.bounds)(constraint.isRestrictedThanEq)
-                  val newConstraints = remain :+ constraint
-
-                  HPBoundTree(bound.target, newConstraints)
-              }
-
-              remainBounds :+ restrictedBound
-          }
-      }
-    }
-
-    def findBound(target: HPExpr, bounds: Vector[HPBoundTree]): Option[HPBoundTree] =
-      bounds.find {
-        bound => bound.target.isSameExpr(target)
-      }
-
-    def verifyBound(pairs: Vector[(HPBoundTree, Option[HPBoundTree])]): Either[Error, Unit] = {
-      val results = pairs.map {
-        case (calledBound, None) => Left(???) // Error represents caller argument bound does not meet called bound
-        case (calledBound, Some(callerBound)) =>
-          val isMeetAllBounds = calledBound.bounds.forall {
-            calledConstraint => callerBound
-              .bounds
-              .exists(_.isRestrictedThanEq(calledConstraint))
-          }
-
-          if(isMeetAllBounds) Right(())
-          else Left(???)
-      }
-
-      val (errs, _) = results.partitionMap(identity)
-
-      if(errs.isEmpty) Right(())
-      else Left(Error.MultipleErrors(errs))
-    }
-
-    val replacedCalledBounds = compoundBounds(calledBounds.map {
-      case HPBoundTree(target, constraints) =>
-        val replacedTarget = replaceExpr(target, table)
-        val replacedConstraints = constraints.map(_.map(replaceExpr(_, table)))
-
-        HPBoundTree(replacedTarget, replacedConstraints)
-    })
-
-    val pairs = replacedCalledBounds.map { bound => (bound, findBound(bound.target, callerBounds)) }
-    verifyBound(pairs)
-  }
-  */
-}
-
 trait HasType {
   private var _tpe: Option[Type] = None
   def tpe: Type = _tpe.get
@@ -433,7 +335,7 @@ object RangeExpr {
   case class Max(expr: HPExpr) extends RangeExpr
 }
 
-case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr
+case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr with PatternExpr
 case class Apply(prefix: Expression, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
 
 abstract class BinOp extends Expression with HasSymbol {
@@ -464,17 +366,22 @@ case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) exten
 case class ConstructModule(target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair]) extends Construct
 case class ConstructEnum(target: TypeTree, fields: Vector[Expression]) extends Construct
 case class ConstructPair(name: String, init: Expression) extends AST
+
 case class This() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
-case class BitLiteral(value: BigInt, length: Int) extends Expression
-case class IntLiteral(value: Int) extends Expression with HPExpr
-case class UnitLiteral() extends Expression
-case class StringLiteral(str: String) extends Expression with HPExpr
+case class BitLiteral(value: BigInt, length: Int) extends Expression with PatternExpr
+case class IntLiteral(value: Int) extends Expression with HPExpr with PatternExpr
+case class UnitLiteral() extends Expression with PatternExpr
+case class StringLiteral(str: String) extends Expression with HPExpr with PatternExpr
 
 case class Finish() extends Expression
 case class Goto(target: String) extends Expression with HasSymbol
 case class Generate(target: String, params: Vector[Expression]) extends Expression with HasSymbol
 case class Relay(target: String, params: Vector[Expression]) extends Expression with HasSymbol
+
+case class Match(expr: Expression, cases: Vector[Case]) extends Expression
+case class Case(pattern: EnumPattern, exprs: Vector[BlockElem]) extends AST
+case class EnumPattern(target: TypeTree, exprs: Vector[PatternExpr]) extends AST
 
 // To make easier to implement parser,
 // hp's length and tp's length maybe incorrect before Typer.
