@@ -1,0 +1,6 @@
+package test
+
+struct ST {
+  a: Int,
+  a: Bit[8]
+}

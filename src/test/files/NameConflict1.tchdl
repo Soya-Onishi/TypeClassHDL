@@ -1,0 +1,11 @@
+package test
+
+module Top {
+  parent:
+    a: Parent
+  sibling:
+    a: Sibling
+}
+
+module Parent
+module Sibling

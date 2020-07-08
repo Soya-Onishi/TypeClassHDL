@@ -23,7 +23,7 @@ object Namer {
   def namedAlways(always: AlwaysDef)(implicit ctx: Context.NodeContext, global: GlobalData): AlwaysDef = {
     val symbol = Symbol.AlwaysSymbol(always.name, ctx.path)
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     always.setSymbol(symbol)
   }
 
@@ -44,7 +44,7 @@ object Namer {
     methodSymbol.setHPs(namedHPs.map(_.symbol.asHardwareParamSymbol))
     methodSymbol.setTPs(namedTPs.map(_.symbol.asTypeParamSymbol))
 
-    ctx.append(methodSymbol)
+    ctx.append(methodSymbol).left.foreach(global.repo.error.append)
     method.setSymbol(methodSymbol)
   }
 
@@ -57,7 +57,7 @@ object Namer {
       Type.VariableTypeGenerator(vdef, ctx, global)
     )
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     vdef.setSymbol(symbol)
   }
 
@@ -70,7 +70,7 @@ object Namer {
       Type.VariableTypeGenerator(vdef, ctx, global)
     )
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     vdef.setSymbol(symbol)
   }
 
@@ -78,7 +78,7 @@ object Namer {
     val generator = Type.EnumMemberTypeGenerator(member, ctx, global)
     val symbol = Symbol.EnumMemberSymbol(member.name, ctx.path, generator)
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     member.setSymbol(symbol)
   }
 
@@ -89,7 +89,7 @@ object Namer {
       Type.HPTypeGenerator(vdef, ctx, global)
     )
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     vdef.setSymbol(symbol)
   }
 
@@ -100,14 +100,14 @@ object Namer {
       Type.StageTypeGenerator(stage, ctx, global)
     )
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     stage.setSymbol(symbol)
   }
 
   def namedStateDef(state: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): StateDef = {
     val symbol = Symbol.StateSymbol(state.name, ctx.path)
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     state.setSymbol(symbol)
   }
 
@@ -115,7 +115,7 @@ object Namer {
     val tpe = Type.TypeParamType(typeDef.name, ctx.path)
     val symbol: Symbol = Symbol.TypeParamSymbol(typeDef.name, ctx.path, tpe)
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     typeDef.setSymbol(symbol)
   }
 
@@ -135,7 +135,7 @@ object Namer {
     moduleSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     moduleSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
-    ctx.append(moduleSymbol)
+    ctx.append(moduleSymbol).left.foreach(global.repo.error.append)
     module.setSymbol(moduleSymbol)
   }
 
@@ -161,7 +161,7 @@ object Namer {
     structSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
     tryAppendBuiltIn(structSymbol)
-    ctx.append(structSymbol)
+    ctx.append(structSymbol).left.foreach(global.repo.error.append)
     struct.setSymbol(structSymbol)
   }
 
@@ -191,7 +191,7 @@ object Namer {
     interfaceSymbol.setTPs(tps)
 
     tryAppendBuiltIn(interfaceSymbol)
-    ctx.append(interfaceSymbol)
+    ctx.append(interfaceSymbol).left.foreach(global.repo.error.append)
     interface.setSymbol(interfaceSymbol)
   }
 
@@ -211,7 +211,7 @@ object Namer {
     symbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     symbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
-    ctx.append(symbol)
+    ctx.append(symbol).left.foreach(global.repo.error.append)
     enum.setSymbol(symbol)
   }
 

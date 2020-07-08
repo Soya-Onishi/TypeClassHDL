@@ -114,4 +114,28 @@ class BuildContainerTest extends TchdlFunSuite {
     assert(impl.target.tpe.isInstanceOf[Type.RefType])
     assert(impl.target.tpe.asRefType.origin == ST1.symbol)
   }
+
+  test("name conflict for struct's field") {
+    val (_, global) = untilThisPhase("NameConflict0.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.DefinitionNameConflict])
+  }
+
+  test("name conflict for module's field") {
+    val (_, global) = untilThisPhase("NameConflict1.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.DefinitionNameConflict])
+  }
+
+  test("name conflict of interfaces") {
+    val (_, global) = untilThisPhase("NameConflict2.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.DefinitionNameConflict])
+  }
 }

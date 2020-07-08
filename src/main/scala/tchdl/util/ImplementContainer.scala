@@ -27,7 +27,6 @@ abstract class ImplementContainer {
   }
 }
 
-
 abstract class ImplementInterfaceContainer(
   val ctx: Context.RootContext,
   val targetInterface: Type.RefType,
