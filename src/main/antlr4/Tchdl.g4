@@ -243,7 +243,7 @@ sibling_pair
 
 
 case_def
-    : CASE type ('(' pattern_expr* ')')? '=>' block_elem*
+    : CASE type ('(' (pattern_expr (',' pattern_expr)*)? ')')? '=>' block_elem*
     ;
 
 pattern_expr

@@ -552,7 +552,7 @@ class ASTGenerator {
         case None => ???
       }
     case ctx: TP.StringLitContext =>
-      StringLiteral(ctx.STRING().getText)
+      StringLiteral(ctx.STRING().getText.dropRight(1).tail)
     case _: TP.UnitLitContext =>
       UnitLiteral()
   }

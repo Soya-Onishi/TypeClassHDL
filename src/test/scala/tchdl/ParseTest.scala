@@ -291,4 +291,31 @@ class ParseTest extends TchdlFunSuite {
     assert(construct.target.hp.isEmpty)
     assert(construct.target.tp.isEmpty)
   }
+
+  test("pattern matching test") {
+    val Match(expr, cases) = parseString(_.expr)((gen, tree) => gen.expr(tree))(
+      """
+        |match expr {
+        |  case Pattern:::A(a, b) =>
+        |  case Pattern:::B(0, 0b00) =>
+        |  case Pattern:::C("abc", ()) =>
+        |}
+        |""".stripMargin
+    )
+
+    def pattern(name: String, expr: PatternExpr*): EnumPattern = {
+      val typeTree = TypeTree(
+        StaticSelect(TypeTree(Ident("Pattern"), Vector.empty, Vector.empty), name),
+        Vector.empty,
+        Vector.empty
+      )
+
+      EnumPattern(typeTree, expr.toVector)
+    }
+
+    assert(expr == Ident("expr"))
+    assert(cases(0).pattern == pattern("A", Ident("a"), Ident("b")))
+    assert(cases(1).pattern == pattern("B", IntLiteral(0), BitLiteral(0, 2)))
+    assert(cases(2).pattern == pattern("C", StringLiteral("abc"), UnitLiteral()))
+  }
 }
