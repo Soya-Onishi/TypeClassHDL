@@ -462,6 +462,7 @@ case class SelectPackage(packages: Vector[String], name: String) extends AST wit
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
 case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) extends Construct
 case class ConstructModule(target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair]) extends Construct
+case class ConstructEnum(target: TypeTree, fields: Vector[Expression]) extends Construct
 case class ConstructPair(name: String, init: Expression) extends AST
 case class This() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression

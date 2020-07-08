@@ -553,6 +553,121 @@ object Typer {
     }
   }
 
+  def typedConstructEnum(construct: ConstructEnum)(implicit ctx: Context.NodeContext, global: GlobalData): ConstructEnum = {
+    def verifyFields(target: Symbol.EnumMemberSymbol, fields: Vector[Expression]): Either[Error, Unit] = {
+      val tpe = target.tpe.asEnumMemberType
+
+      def verifyLength =
+        if(tpe.fieldTypes.length == fields.length) Right(())
+        else Left(Error.ParameterLengthMismatch(tpe.fieldTypes.length, fields.length))
+
+      def verifyFieldExprType =
+        if(fields.exists(_.tpe.isErrorType)) Left(Error.DummyError)
+        else Right(())
+
+      def typeMismatches: Vector[Error.TypeMismatch] = tpe.fieldTypes
+        .zip(fields.map(_.tpe.asRefType))
+        .filter{ case (field, expr) => field != expr }
+        .map{ case (field, expr) => Error.TypeMismatch(field, expr) }
+
+      def verifyTypeMatching: Either[Error, Unit] = {
+        val mismatches = typeMismatches
+
+        if(mismatches.isEmpty) Right(())
+        else Left(Error.MultipleErrors(mismatches: _*))
+      }
+
+      for {
+        _ <- verifyLength
+        _ <- verifyFieldExprType
+        _ <- verifyTypeMatching
+      } yield ()
+    }
+
+    /*
+    def forStaticSelect(select: StaticSelect): StaticSelect = {
+      val StaticSelect(prefix, name) = select
+
+      val typedPrefix = typedTypeTree(prefix)
+
+      val selectSymbol = typedPrefix.tpe match {
+        case Type.ErrorType => Left(Error.DummyError)
+        case tpe: Type.RefType => tpe.lookupType[Symbol.EnumMemberSymbol](name).toEither
+      }
+
+      val (symbol, tpe) = selectSymbol match {
+        case Right(member) => (member, typedPrefix.tpe)
+        case Left(err) =>
+          global.repo.error.append(err)
+          (Symbol.ErrorSymbol, Type.ErrorType)
+      }
+
+      StaticSelect(typedPrefix, name)
+        .setSymbol(symbol)
+        .setTpe(tpe)
+        .setID(select.id)
+    }
+
+    def forSelectPackage(select: SelectPackage): SelectPackage = {
+
+      def searchFromCtx(packages: Vector[String]): Either[Error, Symbol.PackageSymbol] = {
+        val lookupResult = packages.tail.foldLeft(ctx.lookup[Symbol.PackageSymbol](packages.head)) {
+          case (LookupResult.LookupFailure(err), _) => LookupResult.LookupFailure(err)
+          case (LookupResult.LookupSuccess(pkg), name) => pkg.lookup[Symbol.PackageSymbol](name)
+        }
+
+        lookupResult.toEither
+      }
+
+      def searchFromRoot(packages: Vector[String]): Either[Error, Symbol.PackageSymbol] =
+        packages.foldLeft[Either[Error, Symbol.PackageSymbol]](Right(global.rootPackage)) {
+          case (Left(err), _) => Left(err)
+          case (Right(pkg), name) => pkg.lookup[Symbol.PackageSymbol](name).toEither
+        }
+
+      val SelectPackage(packages, name) = select
+
+      val pkgSymbolResult = searchFromCtx(packages).left.flatMap(_ => searchFromRoot(packages))
+
+      val result = for {
+        pkgSymbol <- pkgSymbolResult
+        member <- pkgSymbol.lookup[Symbol.EnumMemberSymbol](name).toEither
+      } yield member
+
+      result match {
+        case Right(_) => throw new ImplementationErrorException("enum member symbol should not be found at top level")
+        case Left(err) =>
+          global.repo.error.append(err)
+          SelectPackage(packages, name)
+            .setTpe(Type.ErrorType)
+            .setSymbol(Symbol.ErrorSymbol)
+            .setID(select.id)
+      }
+
+    }
+    */
+
+    val typedTarget = typedTypeTree(construct.target)
+    val typedFields = construct.fields.map(typedExpr)
+
+    val result = typedTarget.symbol match {
+      case member: Symbol.EnumMemberSymbol => verifyFields(member, typedFields).map(_ => typedTarget.tpe.asRefType)
+      case _ => typedTarget.tpe match {
+        case tpe: Type.RefType => Left(Error.ConstructEnumForm(tpe))
+        case Type.ErrorType => Left(Error.DummyError)
+      }
+    }
+
+    val tpe = result match {
+      case Right(tpe) => tpe
+      case Left(err) =>
+        global.repo.error.append(err)
+        Type.ErrorType
+    }
+
+    ConstructEnum(typedTarget, typedFields).setTpe(tpe).setID(construct.id)
+  }
+
   def typedStdBinOp(binop: StdBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): BinOp = {
     val typedLeft = typedExpr(binop.left)
     val typedRight = typedExpr(binop.right)
@@ -669,9 +784,11 @@ object Typer {
       }
     }
 
-    def typedForIdent(ident: Ident, hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
+    def typedForIdent(ident: Ident, hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] =
       ctx.lookup[Symbol.TypeSymbol](ident.name) match {
         case LookupResult.LookupFailure(err) => Left(err)
+        case LookupResult.LookupSuccess(_: Symbol.EnumMemberSymbol) =>
+          throw new ImplementationErrorException("using enum member name directly to construct enum value is not supported yet")
         case LookupResult.LookupSuccess(symbol) =>
           for {
             _ <- verifyHP(symbol, hargs)
@@ -685,7 +802,6 @@ object Typer {
               .setID(typeTree.id)
           }
       }
-    }
 
     def typedForStaticSelect(select: StaticSelect, hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
       def typedPrefix: Either[Error, TypeTree] = {
@@ -697,20 +813,29 @@ object Typer {
         }
       }
 
-      for {
+      val result = for {
         prefix <- typedPrefix
-        symbol <- prefix.tpe.asRefType.lookupType(select.name).toEither
+        symbol <- prefix.tpe.asRefType.lookupType[Symbol.TypeSymbol](select.name).toEither
         _ <- verifyHP(symbol, hargs)
         _ <- verifyTP(symbol, hargs, targs)
-      } yield {
-        val typedSelect = StaticSelect(prefix, select.name)
-          .setSymbol(symbol)
-          .setTpe(symbol.tpe)
-          .setID(select.id)
+      } yield (prefix, symbol)
 
-        val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType))
+      result match {
+        case Left(err) => Left(err)
+        case Right(pair) =>
+          val (symbol, tpe) = pair match {
+            case (prefix, symbol: Symbol.EnumMemberSymbol) => (symbol, prefix.tpe)
+            case (_, symbol) => (symbol, symbol.tpe)
+          }
 
-        TypeTree(typedSelect, hargs, targs).setTpe(tpe).setSymbol(symbol).setID(typeTree.id)
+          val (prefix, _) = pair
+
+          val typedSelect = StaticSelect(prefix, select.name)
+            .setSymbol(symbol)
+            .setTpe(tpe)
+            .setID(select.id)
+
+          Right(TypeTree(typedSelect, hargs, targs).setTpe(tpe).setSymbol(symbol).setID(typeTree.id))
       }
     }
 

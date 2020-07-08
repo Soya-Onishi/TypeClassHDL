@@ -361,7 +361,7 @@ object Type {
   class RefType(
     val origin: Symbol.TypeSymbol,
     val hardwareParam: Vector[HPExpr],
-    val typeParam: Vector[Type.RefType]
+    val typeParam: Vector[Type.RefType],
   ) extends Type {
     val name: String = origin.name
     val namespace: NameSpace = origin.path
@@ -753,11 +753,11 @@ object Type {
     }
 
     // TODO: lookup type that is defined at implementation
-    def lookupType(name: String): LookupResult[Symbol.TypeSymbol] = {
-      def lookupFromEnum(symbol: Symbol.EnumSymbol): LookupResult[Symbol.TypeSymbol] = {
+    def lookupType[T <: Symbol.TypeSymbol : ClassTag : TypeTag](name: String): LookupResult[T] = {
+      def lookupFromEnum(symbol: Symbol.EnumSymbol): LookupResult[T] = {
         symbol.tpe.declares.lookup(name) match {
           case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
-          case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
+          case Some(symbol: T) => LookupResult.LookupSuccess(symbol)
           case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
         }
       }
@@ -877,14 +877,15 @@ object Type {
   }
 
   object RefType {
-    def apply(origin: Symbol.TypeSymbol, hp: Vector[HPExpr], tp: Vector[RefType]): RefType =
+    def apply(origin: Symbol.TypeSymbol, hp: Vector[HPExpr], tp: Vector[Type.RefType]): Type.RefType =
       new RefType(origin, hp, tp)
 
     def apply(origin: Symbol.TypeSymbol): RefType =
       new RefType(origin, Vector.empty, Vector.empty)
 
-    def unapply(arg: Type.RefType): Option[(Symbol.TypeSymbol, Vector[HPExpr], Vector[RefType])] = {
-      Some((arg.origin, arg.hardwareParam, arg.typeParam))
+    def unapply(obj: Any): Option[(Symbol.TypeSymbol, Vector[HPExpr], Vector[RefType])] = obj match {
+      case tpe: Type.RefType => Some((tpe.origin, tpe.hardwareParam, tpe.typeParam))
+      case _ => None
     }
 
     def buildTable(impl: ImplementContainer): (Map[Symbol.HardwareParamSymbol, Option[HPExpr]], Map[Symbol.TypeParamSymbol, Option[Type.RefType]]) = {

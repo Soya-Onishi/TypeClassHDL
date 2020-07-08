@@ -86,6 +86,8 @@ object Error {
   case class TypeParameterMustHasConsistency(bounds: Vector[Type.RefType]) extends Error
   case class ModifierMismatch(expect: Modifier, actual: Modifier) extends Error
 
+  case class ConstructEnumForm(tpe: Type.RefType) extends Error
+
   case class CallInterfaceFromInternal(method: Symbol.MethodSymbol) extends Error
   case class CallPrivate(method: Symbol.MethodSymbol) extends Error
   case class CallInvalid(method: Symbol.MethodSymbol) extends Error
