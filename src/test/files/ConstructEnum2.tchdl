@@ -1,0 +1,13 @@
+package test
+
+enum Opt[T] {
+  None
+  Some(T)
+}
+
+module Mod
+impl Mod {
+  input def call() -> Opt[Bit[2]] {
+    Opt[Bit[2]]:::None
+  }
+}

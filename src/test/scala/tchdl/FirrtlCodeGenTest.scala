@@ -313,4 +313,34 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+
+  test("construct software simple enum Option[Int]") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Mod", "ConstructEnum1.tchdl")
+
+    val conseq = circuit.modules
+      .head.asInstanceOf[ir.Module]
+      .body.asInstanceOf[ir.Block]
+      .stmts
+      .collectFirst{ case cond: ir.Conditionally => cond }.get
+      .conseq
+
+    assert(conseq == ir.Block(Seq.empty))
+
+    runFirrtl(circuit)
+  }
+
+  test("construct hardware simple enum Option[Bit[2]]] however None") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Mod", "ConstructEnum2.tchdl")
+
+    val conseq = circuit.modules.head.asInstanceOf[ir.Module]
+      .body.asInstanceOf[ir.Block]
+      .stmts
+      .collectFirst{ case cond: ir.Conditionally => cond }.get
+      .conseq.asInstanceOf[ir.Block].stmts
+
+    val connects = conseq.collect{ case connect: ir.Connect => connect }
+    assert(connects(1).expr == ir.UIntLiteral(0))
+
+    runFirrtl(circuit)
+  }
 }

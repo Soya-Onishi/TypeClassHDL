@@ -1,0 +1,14 @@
+package test
+
+enum Opt[T] {
+  None
+  Some(T)
+}
+
+module Mod
+impl Mod {
+  input def call() -> Unit {
+    Opt[Int]:::Some(1)
+    ()
+  }
+}
