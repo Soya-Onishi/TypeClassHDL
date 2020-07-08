@@ -160,24 +160,24 @@ component_def_body
     : EXPR_ID (':' type)? '=' expr
     ;
 
-expr: expr '.' (apply | EXPR_ID)    # SelectExpr
-    | expr op=('*' | '/') expr # MulDivExpr
-    | expr op=('+' | '-') expr # AddSubExpr
-    | apply                    # ApplyExpr
-    | block                    # BlockExpr
-    | construct_struct         # ConstructStructExpr
-    | construct_module         # ConstructModuleExpr
-    | construct_enum           # ConstructEnumExpr
+expr: expr '.' (apply | EXPR_ID)        # SelectExpr
+    | expr op=('*' | '/') expr          # MulDivExpr
+    | expr op=('+' | '-') expr          # AddSubExpr
+    | apply                             # ApplyExpr
+    | block                             # BlockExpr
+    | construct_struct                  # ConstructStructExpr
+    | construct_module                  # ConstructModuleExpr
+    | construct_enum                    # ConstructEnumExpr
     | IF '(' expr ')' expr (ELSE expr)? # IfExpr
-//    | MATCH expr '{' case_def+ '}'               # MatchExpr
-    | FINISH                   # Finish
-    | GOTO EXPR_ID                  # Goto
-    | RELAY EXPR_ID '(' args ')'    # Relay
-    | GENERATE EXPR_ID '(' args ')' # Generate
-    | literal                  # LitExpr
-    | '(' expr ')'             # ParenthesesExpr
-    | THIS                     # SelfExpr
-    | EXPR_ID                  # ExprID
+    | MATCH expr '{' case_def+ '}'      # MatchExpr
+    | FINISH                            # Finish
+    | GOTO EXPR_ID                      # Goto
+    | RELAY EXPR_ID '(' args ')'        # Relay
+    | GENERATE EXPR_ID '(' args ')'     # Generate
+    | literal                           # LitExpr
+    | '(' expr ')'                      # ParenthesesExpr
+    | THIS                              # SelfExpr
+    | EXPR_ID                           # ExprID
     ;
 
 hp_expr
@@ -241,11 +241,10 @@ sibling_pair
     : EXPR_ID ':' expr
     ;
 
-/*
+
 case_def
     : CASE literal '=>' block_elem*
     ;
-*/
 
 literal
     : BIT      # BitLit
