@@ -1,0 +1,21 @@
+package test
+
+enum Opt[T] {
+  None
+  Some(T)
+}
+
+enum Pattern {
+  A(Bit[2])
+  B(Bit[2])
+}
+
+module Top
+impl Top {
+  input def f(opt: Opt[Bit[2]]) -> Bit[2] {
+    match opt {
+      case Pattern:::A(bit) => bit
+      case Pattern:::B(bit) => bit
+    }
+  }
+}

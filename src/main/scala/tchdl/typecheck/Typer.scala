@@ -528,7 +528,7 @@ object Typer {
         .map(_.tpe.asRefType)
         .map(_.replaceWithMap(hpTable, tpTable))
 
-      if(fieldTpes.length == exprs.length) Left(Error.ParameterLengthMismatch(fieldTpes.length, exprs.length))
+      if(fieldTpes.length != exprs.length) Left(Error.ParameterLengthMismatch(fieldTpes.length, exprs.length))
       else {
         val results = (exprs zip fieldTpes).map {
           case (_: IntLiteral, tpe) => typeCheck(Type.intTpe, tpe)

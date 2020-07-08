@@ -359,4 +359,57 @@ class TyperTest extends TchdlFunSuite {
     assert(construct.tpe.asRefType.hardwareParam.isEmpty)
     assert(construct.tpe.asRefType.typeParam == Vector(Type.bitTpe(IntLiteral(2))(global)))
   }
+
+  test("simple pattern match") {
+    val (Seq(tree), global) = untilTyper("PatternMatch0.tchdl")
+    expectNoError(global)
+
+    val matchExpr = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method}.get
+      .blk.get
+      .last
+
+    assert(matchExpr.tpe == Type.bitTpe(IntLiteral(2))(global))
+    val Match(_, Vector(some, _)) = matchExpr
+    assert(some.exprs.last == Ident("bit"))
+    assert(some.exprs.last.asInstanceOf[Ident].tpe == Type.bitTpe(IntLiteral(2))(global))
+
+    val bitSymbol = some.pattern.exprs.head.asInstanceOf[Ident].symbol
+    assert(some.exprs.last.asInstanceOf[Ident].symbol == bitSymbol)
+  }
+
+  test("simple pattern match not exhaustive") {
+    val (_, global) = untilTyper("PatternMatch1.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotExhaustiveEnum])
+  }
+
+  test("pattern match but enum type mismatch") {
+    val (_, global) = untilTyper("PatternMatch2.tchdl")
+    expectError(2)(global)
+
+    val errs = global.repo.error.elems
+    assert(errs(0).isInstanceOf[Error.TypeMismatch])
+    assert(errs(1).isInstanceOf[Error.TypeMismatch])
+  }
+
+  test("pattern match literal type mismatch") {
+    val (_, global) = untilTyper("PatternMatch3.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
+  }
+
+  test("each case of type in pattern match does not meet") {
+    val (_, global) = untilTyper("PatternMatch4.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
+  }
 }
