@@ -8,8 +8,6 @@ import firrtl.{PrimOps, ir}
 import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
 import scala.collection.mutable
-import scala.math
-
 
 object FirrtlCodeGen {
   val clockName = "_CLK"
@@ -125,8 +123,8 @@ object FirrtlCodeGen {
   abstract class StackFrame {
     protected def parent: StackFrame
 
-    val scope: mutable.Map[Name, Instance] = mutable.Map.empty
-    val namer: FirrtlNamer
+    private val scope: mutable.Map[Name, Instance] = mutable.Map.empty
+    protected val namer: FirrtlNamer
     val lookupThis: Option[Instance]
 
     def next(name: String): Name = {
@@ -171,7 +169,7 @@ object FirrtlCodeGen {
       case None => throw new ImplementationErrorException("instance must be there")
     }
 
-    def assert(name: Name, instance: Instance): Unit = {
+    def append(name: Name, instance: Instance): Unit = {
       scope(name) = instance
     }
   }
@@ -333,8 +331,8 @@ object FirrtlCodeGen {
     module.hps
       .map { case (name, elem) => stack.next(name) -> elem }
       .foreach {
-        case (name, HPElem.Num(num)) => stack.scope(name) = IntInstance(num)
-        case (name, HPElem.Str(str)) => stack.scope(name) = StringInstance(str)
+        case (name, HPElem.Num(num)) => stack.append(name, IntInstance(num))
+        case (name, HPElem.Str(str)) => stack.append(name, StringInstance(str))
       }
 
     val (inputStmts, inputs) = module.fields
@@ -460,7 +458,7 @@ object FirrtlCodeGen {
       .map{ case (name, tpe) => name -> HardInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
       .toVector
 
-    args.foreach { case (name, instance) => stack.scope(name) = instance}
+    args.foreach { case (name, instance) => stack.append(name, instance) }
 
     val active = ir.DefRegister(
       ir.NoInfo,
@@ -529,7 +527,7 @@ object FirrtlCodeGen {
       .map{ case (name, tpe) => name -> HardInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
       .toVector
 
-    args.foreach { case (name, instance) => stack.scope(name) = instance }
+    args.foreach { case (name, instance) => stack.append(name, instance) }
 
     val isInputInterface =
       interface.label.symbol.hasFlag(Modifier.Input) ||
@@ -669,7 +667,7 @@ object FirrtlCodeGen {
             Vector(varDef, connect)
         }
 
-        stack.scope(varName) = inst
+        stack.append(varName, inst)
         stmts
       case backend.Temp(id, expr) =>
         val tempName = stack.next(id)
@@ -683,11 +681,11 @@ object FirrtlCodeGen {
             ))
         }
 
-        stack.scope(tempName) = inst
+        stack.append(tempName, inst)
         stmts
       case backend.Assign(target, expr) =>
         val targetName = stack.refer(target.name)
-        val HardInstance(_, rightRefer) = stack.scope(targetName)
+        val HardInstance(_, rightRefer) = stack.lookup(targetName)
 
         val RunResult(stmts, HardInstance(_, leftRefer)) = runExpr(expr)
         val connect = ir.Connect(ir.NoInfo, rightRefer, leftRefer)
@@ -713,6 +711,7 @@ object FirrtlCodeGen {
       case call: backend.CallInterface => runCallInterface(call)
       case call: backend.CallBuiltIn => runCallBuiltIn(call)
       case ifExpr: backend.IfExpr => runIfExpr(ifExpr)
+      case matchExpr: backend.Match => runMatch(matchExpr)
       case finish: backend.Finish => runFinish(finish)
       case goto: backend.Goto => runGoto(goto)
       case generate: backend.Generate => runGenerate(generate)
@@ -725,13 +724,13 @@ object FirrtlCodeGen {
 
   def runIdent(ident: backend.Ident)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val name = stack.refer(ident.id.name)
-    RunResult(Vector.empty, stack.scope(name))
+    RunResult(Vector.empty, stack.lookup(name))
   }
 
   def runReferField(referField: backend.ReferField)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val accessor = referField.accessor match {
-      case backend.Term.Temp(id, _) => stack.scope(stack.refer(id))
-      case backend.Term.Variable(name, _) => stack.scope(stack.refer(name))
+      case backend.Term.Temp(id, _) => stack.lookup(stack.refer(id))
+      case backend.Term.Variable(name, _) => stack.lookup(stack.refer(name))
     }
 
     val instance = accessor match {
@@ -776,7 +775,7 @@ object FirrtlCodeGen {
         case backend.Term.Variable(name, _) => stack.refer(name)
       }
 
-      stack.scope(name)
+      stack.lookup(name)
     }
 
     val accessorTpe = call.accessor match {
@@ -797,8 +796,8 @@ object FirrtlCodeGen {
     val hargNames = method.hparams.keys.map(newStack.next)
     val argNames = method.params.keys.map(newStack.next)
 
-    (hargNames zip hargs).foreach { case (name, harg) => newStack.scope(name) = harg }
-    (argNames zip args).foreach { case (name, arg) => newStack.scope(name) = arg }
+    (hargNames zip hargs).foreach { case (name, harg) => newStack.append(name, harg) }
+    (argNames zip args).foreach { case (name, arg) => newStack.append(name, arg) }
 
     val stmts = method.code.flatMap(stmt => runStmt(stmt)(newStack, ctx, global))
     val RunResult(retStmts, instance) = runExpr(method.ret)(newStack, ctx, global)
@@ -818,7 +817,7 @@ object FirrtlCodeGen {
         case backend.Term.Temp(id, _) => stack.refer(id)
         case backend.Term.Variable(name, _) => stack.refer(name)
       }
-      val argInstances = argNames.map(stack.scope)
+      val argInstances = argNames.map(stack.lookup)
       val args = argInstances.map(_.asInstanceOf[HardInstance]).map(inst => inst.reference)
 
       val activate: ir.Statement = {
@@ -849,9 +848,9 @@ object FirrtlCodeGen {
         case backend.Term.Temp(id, _) => stack.refer(id)
         case backend.Term.Variable(name, _) => stack.refer(name)
       }
-      val args = argNames.map(stack.scope).map{ instance => instance match {
-        case HardInstance(_, refer) => refer
-      }}
+      val args = argNames.map(stack.lookup)
+        .map(_.asInstanceOf[HardInstance])
+        .map(_.reference)
 
       val activate: ir.Statement = {
         val subField = ir.SubField(module, interface.activeName, ir.UnknownType)
@@ -882,7 +881,7 @@ object FirrtlCodeGen {
         case backend.Term.Temp(id, _) => stack.refer(id)
         case backend.Term.Variable(name, _) => stack.refer(name)
       }
-      val args = argNames.map(stack.scope).map{ case HardInstance(_, refer) => refer }
+      val args = argNames.map(stack.lookup).map{ case HardInstance(_, refer) => refer }
 
       val activate: ir.Statement = {
         val activeRef = ir.Reference(module + "$" + interface.activeName, ir.UnknownType)
@@ -909,7 +908,7 @@ object FirrtlCodeGen {
       case backend.Term.Variable(name, _) => stack.refer(name)
     }
 
-    stack.scope(referName) match {
+    stack.lookup(referName) match {
       case ModuleInstance(tpe, ModuleLocation.This) => callInternal(tpe)
       case ModuleInstance(tpe, ModuleLocation.Sub(refer)) => callToSubModule(refer, tpe)
       case ModuleInstance(tpe, ModuleLocation.Upper(refer)) => callToUpperModule(refer, tpe)
@@ -919,8 +918,8 @@ object FirrtlCodeGen {
   def runCallBuiltIn(call: backend.CallBuiltIn)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def getInstance(term: backend.Term): Instance =
       term match {
-        case backend.Term.Temp(id, _) => stack.scope(stack.refer(id))
-        case backend.Term.Variable(name, _) => stack.scope(stack.refer(name))
+        case backend.Term.Temp(id, _) => stack.lookup(stack.refer(id))
+        case backend.Term.Variable(name, _) => stack.lookup(stack.refer(name))
       }
 
     val left = getInstance(call.args.head)
@@ -958,7 +957,7 @@ object FirrtlCodeGen {
       }}
 
     val condName = stack.refer(ifExpr.cond.id)
-    stack.scope(condName) match {
+    stack.lookup(condName) match {
       case BoolInstance(true) => runInner(ifExpr.conseq, ifExpr.conseqLast)
       case BoolInstance(false) => runInner(ifExpr.alt, ifExpr.altLast)
       case BitInstance(_, condRef) =>
@@ -988,6 +987,195 @@ object FirrtlCodeGen {
         }
 
         RunResult(retWire.toVector :+ whenStmt, retInstance)
+    }
+  }
+
+  def runMatch(matchExpr: backend.Match)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    def extractFieldData(source: ir.SubField, tpe: ir.Type, bitIdx: BigInt): (Vector[ir.Statement], Name, BigInt) =
+      tpe match {
+        case ir.UIntType(ir.IntWidth(width)) =>
+          val name = stack.next("_EXTRACT")
+          val expr = ir.DoPrim(PrimOps.Bits, Seq(source), Seq(bitIdx + width - 1, bitIdx), ir.UnknownType)
+          val node = ir.DefNode(ir.NoInfo, name.name, expr)
+
+          (Vector(node), name, bitIdx + width)
+        case ir.BundleType(fields) =>
+          val bundleName = stack.next("_EXTRACT")
+          val wire = ir.DefWire(ir.NoInfo, bundleName.name, tpe)
+
+          def subField(name: String): ir.SubField =
+            ir.SubField(
+              ir.Reference(bundleName.name, tpe),
+              name,
+              ir.UnknownType
+            )
+
+          val (stmts, nextIdx) = fields.foldLeft((Vector.empty[ir.Statement], bitIdx)) {
+            case ((stmts, idx), field) =>
+              val (leafStmts, name, nextIdx) = extractFieldData(source, field.tpe, idx)
+              val connect = ir.Connect(ir.NoInfo, subField(field.name), ir.Reference(name.name, ir.UnknownType))
+
+              (stmts ++ leafStmts :+ connect, nextIdx)
+          }
+
+          (wire +: stmts, bundleName, nextIdx)
+      }
+
+    def uniqueVariantCases(cases: Vector[backend.Case]): Vector[backend.Case] = {
+      cases.foldLeft(Vector.empty[backend.Case]) {
+        case (stacked, caseElem) =>
+          val hasSameVariant = stacked.exists(_.cond.variant == caseElem.cond.variant)
+
+          if(hasSameVariant) stacked
+          else stacked :+ caseElem
+      }
+    }
+
+    def extractForEachVariant(source: ir.SubField, cond: backend.CaseCond): (Vector[ir.Statement], Vector[Name]) = {
+      val terms = cond.variables
+      val tpes = terms.map(_.tpe).map(toFirrtlType)
+
+      val (stmts, names, _) = tpes.foldLeft(Vector.empty[ir.Statement], Vector.empty[Name], BigInt(0)) {
+        case ((stmts, names, idx), tpe) =>
+          val locName = stack.next("_EXTRACT")
+
+          val (leafStmts, name, nextIdx) = extractFieldData(source, tpe, idx)
+          val connect = ir.DefNode(ir.NoInfo, locName.name, ir.Reference(name.name, ir.UnknownType))
+
+          (stmts ++ leafStmts :+ connect, names :+ locName, nextIdx)
+      }
+
+      (stmts, names)
+    }
+
+    def constructCase(
+      caseStmt: backend.Case,
+      member: ir.SubField,
+      variants: Vector[Symbol.EnumMemberSymbol],
+      table: Map[Symbol.EnumMemberSymbol, Vector[Name]],
+      retWire: Option[String]
+    ): (Vector[ir.Statement], ir.Block, Name) = {
+      val patternIdx = variants.zipWithIndex
+        .find { case (variant, _) => caseStmt.cond.variant == variant }
+        .map { case (_, idx) => idx }
+        .map(ir.UIntLiteral(_))
+        .get
+
+      val sources = table(caseStmt.cond.variant)
+      val sinks = caseStmt.cond.variables.map {
+        case backend.Term.Variable(name, _) => stack.next(name)
+        case backend.Term.Temp(id, _) => stack.next(id)
+      }
+
+      caseStmt.cond.variables.map {
+        case backend.Term.Variable(name, tpe) => stack.refer(name) -> tpe
+        case backend.Term.Temp(id, tpe) => stack.refer(id) -> tpe
+      }.foreach {
+        case (sink, tpe) =>
+          val instance = HardInstance(tpe, ir.Reference(sink.name, ir.UnknownType))
+          stack.append(sink, instance)
+      }
+
+      val nodes = (sinks zip sources).map{
+        case (sink, source) =>
+          ir.DefNode(
+            ir.NoInfo,
+            sink.name,
+            ir.Reference(source.name, ir.UnknownType)
+          )
+      }
+
+      val (caseCondStmtss, caseCondExpr) = caseStmt.cond.conds
+        .map {
+          case (backend.Term.Variable(name, _), expr) => stack.refer(name).name -> expr
+          case (backend.Term.Temp(id, _), expr) => stack.refer(id).name -> expr
+        }
+        .map {
+          case (source, expr) =>
+            val RunResult(stmts, HardInstance(_, refer)) = runExpr(expr)
+            val eqn = ir.DoPrim(
+              PrimOps.Eq,
+              Seq(ir.Reference(source, ir.UnknownType), refer),
+              Seq.empty,
+              ir.UnknownType
+            )
+
+            (stmts, eqn)
+        }
+        .unzip
+
+      val caseName = stack.next("_MATCH")
+      val patternCond = ir.DoPrim(PrimOps.Eq, Seq(member, patternIdx), Seq.empty, ir.UnknownType)
+      val condNode = caseCondExpr
+        .reduceLeftOption[ir.Expression]{ case (conds, cond) => ir.DoPrim(PrimOps.And, Seq(conds, cond), Seq.empty, ir.UnknownType) }
+        .map { cond => ir.DoPrim(PrimOps.And, Seq(cond, patternCond), Seq.empty, ir.UnknownType)}
+        .map { cond => ir.DefNode(ir.NoInfo, caseName.name, cond) }
+        .getOrElse(ir.DefNode(ir.NoInfo, caseName.name, patternCond))
+
+      val condStmts = nodes ++ caseCondStmtss.flatten :+ condNode
+
+      val bodyStmts = caseStmt.stmts.flatMap(runStmt)
+      val RunResult(retStmts, instance) = runExpr(caseStmt.ret)
+
+      val retConnect = retWire
+        .map(name => ir.Reference(name, ir.UnknownType))
+        .map(loc => ir.Connect(ir.NoInfo, loc, instance.asInstanceOf[HardInstance].reference))
+
+      val caseBody = ir.Block(bodyStmts ++ retStmts ++ retConnect)
+
+      (condStmts, caseBody, caseName)
+    }
+
+    def runHardMatch(instance: HardInstance, cases: Vector[backend.Case], retTpe: BackendType): RunResult = {
+      val enum = instance.tpe.symbol.asEnumSymbol
+      val dataRef = ir.SubField(instance.reference, "_data", ir.UnknownType)
+      val allVariants = enum.tpe.declares
+        .toMap.values.toVector
+        .sortWith{ case (left, right) => left.name < right.name }
+        .map(_.asEnumMemberSymbol)
+
+      val conds = uniqueVariantCases(cases).map(_.cond)
+      val (variants, pairs) = conds.map(cond => cond.variant -> extractForEachVariant(dataRef, cond)).unzip
+      val (stmtss, namess) = pairs.unzip
+      val fieldSourceTable = (variants zip namess).toMap
+
+      val retWireInfo =
+        if(retTpe == toBackendType(Type.unitTpe)) None
+        else Some(stack.next("_MATCH_RET"), toFirrtlType(retTpe))
+
+      val retWire = retWireInfo.map{ case (name, tpe) => ir.DefWire(ir.NoInfo, name.name, tpe) }
+
+      val memberRef = ir.SubField(instance.reference, "_member", ir.UnknownType)
+      val (caseStmtss, caseBodies, caseNames) = cases
+        .map(constructCase(_, memberRef, allVariants, fieldSourceTable, retWire.map(_.name)))
+        .unzip3
+
+      val stopStmt = ir.Stop(ir.NoInfo, 1, clockRef, ir.UIntLiteral(1))
+      val caseConds = (caseNames zip caseBodies).foldRight[ir.Statement](stopStmt) {
+        case ((name, conseq), alt) =>
+          val refer = ir.Reference(name.name, ir.UnknownType)
+          ir.Conditionally(ir.NoInfo, refer, conseq, alt)
+      }
+
+      val retInvalid = retWire.map(wire => ir.IsInvalid(ir.NoInfo, ir.Reference(wire.name, ir.UnknownType)))
+      val matchStmts = Vector(retWire, retInvalid).flatten ++ stmtss.flatten ++ caseStmtss.flatten :+ caseConds
+      val retInstance = retWire
+        .map(wire => HardInstance(retTpe, ir.Reference(wire.name, ir.UnknownType)))
+        .getOrElse(UnitInstance())
+
+      RunResult(matchStmts, retInstance)
+    }
+
+    def runSoftMatch(instance: SoftInstance, cases: Vector[backend.Case]): RunResult = {
+      ???
+    }
+
+    val backend.Match(matched, cases, tpe) = matchExpr
+    val instance = stack.lookup(stack.refer(matched.id))
+
+    instance match {
+      case soft: SoftInstance => runSoftMatch(soft, cases)
+      case hard: HardInstance => runHardMatch(hard, cases, tpe)
     }
   }
 

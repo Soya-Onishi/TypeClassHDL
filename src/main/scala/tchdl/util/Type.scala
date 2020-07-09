@@ -364,7 +364,10 @@ object Type {
       case _ => false
     }
 
-    def fields: Vector[Symbol] = declares.toMap.toVector.map{ case (_, symbol) => symbol }
+    def fields: Vector[Symbol] = declares
+      .toMap.toVector
+      .sortWith{ case ((left, _), (right, _)) => left < right }
+      .map{ case (_, symbol) => symbol }
   }
 
   object EnumMemberType {

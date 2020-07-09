@@ -39,7 +39,7 @@ case class ReferField(accessor: Term, field: FieldLabel, tpe: BackendType) exten
 case class Ident(id: Term.Variable, tpe: BackendType) extends Expr
 case class IfExpr(cond: Term.Temp, conseq: Vector[Stmt], conseqLast: Expr, alt: Vector[Stmt], altLast: Expr, tpe: BackendType) extends Expr
 
-case class Match(matched: Term, cases: Vector[Case], tpe: BackendType) extends Expr
+case class Match(matched: Term.Temp, cases: Vector[Case], tpe: BackendType) extends Expr
 case class Case(cond: CaseCond, stmts: Vector[Stmt], ret: Expr) extends BackendIR
 case class CaseCond(variant: Symbol.EnumMemberSymbol, variables: Vector[Term], conds: Vector[(Term, Expr)]) extends BackendIR
 
@@ -85,7 +85,7 @@ case class StringLiteral(value: String)(implicit global: GlobalData) extends Exp
   )
 }
 
-sealed trait Term
+sealed trait Term { val tpe: BackendType }
 object Term {
   case class Variable(name: String, tpe: BackendType) extends Term
   case class Temp(id: Int, tpe: BackendType) extends Term

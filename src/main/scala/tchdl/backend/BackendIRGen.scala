@@ -646,7 +646,7 @@ object BackendIRGen {
 
     val backendMatch = backend.Match(term, cases, retTpe)
 
-    BuildResult(exprStmts, Some(backendMatch), labelss.flatten.toSet ++ labels)
+    BuildResult(exprStmts :+ matchedTerm, Some(backendMatch), labelss.flatten.toSet ++ labels)
   }
 
   def buildThis(ths: frontend.This)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
