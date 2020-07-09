@@ -420,4 +420,12 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.NotExhaustiveEnum])
   }
+
+  test("pattern match of software type with bit literal causes an error") {
+    val (_, global) = untilTyper("PatternMatch8.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.CannotUseBitLitForSWPattern])
+  }
 }

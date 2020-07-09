@@ -1,0 +1,17 @@
+package test
+
+enum Pattern {
+  A(Int)
+  B(Bit[2])
+}
+
+struct ST
+impl ST {
+  def method(pat: Pattern) -> Bit[1] {
+    match pat {
+      case Pattern:::A(0) => 0b0
+      case Pattern:::B(0b00) => 0b1
+      case Pattern:::B(bit) => 0b0
+    }
+  }
+}

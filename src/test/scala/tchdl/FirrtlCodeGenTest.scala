@@ -362,6 +362,6 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("pattern match Option[Int]") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch7.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 }

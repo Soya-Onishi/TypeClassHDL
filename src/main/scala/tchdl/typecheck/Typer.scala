@@ -500,10 +500,10 @@ object Typer {
   }
 
   def typedMatch(matchExpr: Match)(implicit ctx: Context.NodeContext, global: GlobalData): Match = {
-    def typedCase(caseDef: Case): Case = {
+    def typedCase(caseDef: Case, isHardwareMatch: Boolean): Case = {
       val caseCtx = Context(ctx)
 
-      typedEnumPattern(caseDef.pattern, caseCtx) match {
+      typedEnumPattern(caseDef.pattern, caseCtx, isHardwareMatch) match {
         case Left(enum) => Case(enum, caseDef.exprs).setTpe(Type.ErrorType).setID(caseDef.id)
         case Right(enum) =>
           val blockElems = caseDef.exprs.map {
@@ -552,11 +552,15 @@ object Typer {
       }
     }
 
-    def typedEnumPattern(enum: EnumPattern, ctx: Context.NodeContext): Either[EnumPattern, EnumPattern] = {
+    def typedEnumPattern(enum: EnumPattern, ctx: Context.NodeContext, isHardwareMatch: Boolean): Either[EnumPattern, EnumPattern] = {
       val EnumPattern(target, exprs) = enum
       val typedTarget = typedTypeTree(target)(ctx, global)
 
       def typedEnum: EnumPattern = EnumPattern(typedTarget, exprs).setID(enum.id)
+
+      val usageErrors = exprs
+        .collect{ case _: BitLiteral if !isHardwareMatch => Some(Error.CannotUseBitLitForSWPattern(typedTarget.tpe))}
+        .flatten
 
       val result = typedTarget.symbol match {
         case Symbol.ErrorSymbol => Left(Error.DummyError)
@@ -565,9 +569,10 @@ object Typer {
       }
 
       result.left.foreach(global.repo.error.append)
+      usageErrors.foreach(global.repo.error.append)
       result match {
-        case Right(_) => Right(typedEnum)
-        case Left(_) => Left(typedEnum)
+        case Right(_) if usageErrors.isEmpty => Right(typedEnum)
+        case _ => Left(typedEnum)
       }
     }
 
@@ -577,7 +582,8 @@ object Typer {
     typedMatched.tpe match {
       case Type.ErrorType => Match(typedMatched, cases).setTpe(Type.ErrorType).setID(matchExpr.id)
       case tpe: Type.RefType =>
-        val typedCases = cases.map(typedCase)
+        val isHardwareMatch = tpe.isHardwareType
+        val typedCases = cases.map(typedCase(_, isHardwareMatch))
 
         def hasError: Either[Error, Unit] =
           if(typedCases.map(_.tpe).exists(_.isErrorType)) Left(Error.DummyError)

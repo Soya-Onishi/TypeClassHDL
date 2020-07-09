@@ -97,6 +97,7 @@ object Error {
   case class CyclicModuleInstantiation(module: BackendType, route: Vector[BackendType]) extends Error
 
   case class NotExhaustiveEnum(remains: Vector[Symbol.EnumMemberSymbol]) extends Error
+  case class CannotUseBitLitForSWPattern(tpe: Type) extends Error
 
   case class RequireLiteral(actual: AST) extends Error
 
