@@ -352,6 +352,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("pattern match Option[Bit[2]] generates firrtl correctly") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch0.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("pattern match Option[Bit[2]] but two Some pattern generates firrtl correctly") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch6.tchdl")
     runFirrtl(circuit, print = true)
   }
 }
