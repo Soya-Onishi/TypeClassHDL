@@ -1,0 +1,32 @@
+package test
+
+enum Opt[T] {
+  Some(T)
+  None
+}
+
+module Top
+impl Top {
+  input def function0() -> Bit[2] {
+    val opt = Opt[Int]:::Some(0)
+    this.pattern(opt)
+  }
+
+  input def function1() -> Bit[2] {
+    val opt = Opt[Int]:::Some(1)
+    this.pattern(opt)
+  }
+
+  input def function2() -> Bit[2] {
+    val opt = Opt[Int]:::None
+    this.pattern(opt)
+  }
+
+  def pattern(opt: Opt[Int]) -> Bit[2] {
+     match opt {
+       case Opt[Int]:::Some(0)     => 0b11
+       case Opt[Int]:::Some(other) => 0b00
+       case Opt[Int]:::None        => 0b01
+     }
+  }
+}

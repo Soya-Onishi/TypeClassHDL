@@ -87,8 +87,19 @@ case class StringLiteral(value: String)(implicit global: GlobalData) extends Exp
 
 sealed trait Term { val tpe: BackendType }
 object Term {
-  case class Variable(name: String, tpe: BackendType) extends Term
-  case class Temp(id: Int, tpe: BackendType) extends Term
+  case class Variable(name: String, tpe: BackendType) extends Term {
+    override def equals(obj: Any): Boolean = obj match {
+      case that: Variable => this.name == that.name && this.tpe == that.tpe
+      case _ => false
+    }
+  }
+
+  case class Temp(id: Int, tpe: BackendType) extends Term {
+    override def equals(obj: Any): Boolean = obj match {
+      case that: Temp => this.id == that.id && this.tpe == that.tpe
+      case _ => false
+    }
+  }
 }
 
 

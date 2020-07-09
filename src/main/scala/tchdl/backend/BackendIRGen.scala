@@ -13,22 +13,22 @@ object BackendIRGen {
   case class Summary(modules: Vector[ModuleContainer], methods: Vector[MethodContainer], labels: Set[BackendLabel])
 
   def exec(modules: Vector[BuiltModule])(implicit global: GlobalData): (Vector[ModuleContainer], Vector[MethodContainer]) = {
-    val (moduleContainers, labels) = modules.map(buildModule).unzip
+    val (moduleContainers, moduleMethodss, labels) = modules.map(buildModule).unzip3
     val labelSet = labels.flatten.toSet
 
-    val initSummary = Summary(moduleContainers, Vector.empty, labelSet)
+    val initSummary = Summary(moduleContainers, moduleMethodss.flatten, labelSet)
     val summary = build(initSummary)
 
     (summary.modules, summary.methods)
   }
 
-  @tailrec def build(summary: Summary)(implicit global: GlobalData): Summary = {
-    def isInterface(symbol: Symbol.MethodSymbol): Boolean =
-      symbol.hasFlag(Modifier.Input) ||
-        symbol.hasFlag(Modifier.Internal) ||
-        symbol.hasFlag(Modifier.Parent) ||
-        symbol.hasFlag(Modifier.Sibling)
+  private def isInterface(symbol: Symbol.MethodSymbol): Boolean =
+    symbol.hasFlag(Modifier.Input) ||
+    symbol.hasFlag(Modifier.Internal) ||
+    symbol.hasFlag(Modifier.Parent) ||
+    symbol.hasFlag(Modifier.Sibling)
 
+  @tailrec def build(summary: Summary)(implicit global: GlobalData): Summary = {
     def makeContext(label: BackendLabel, impl: Symbol.ImplementSymbol, method: Option[Symbol.MethodSymbol]): BackendContext = {
       def makeTPBound(symbol: Symbol with HasParams): Map[Type.RefType, Vector[BackendType]] = {
         val tpBounds = symbol.tpBound.map {
@@ -101,11 +101,11 @@ object BackendIRGen {
     else build(renewedSummary)
   }
 
-  def buildModule(builtModule: BuiltModule)(implicit global: GlobalData): (ModuleContainer, Set[BackendLabel]) = {
+  def buildModule(builtModule: BuiltModule)(implicit global: GlobalData): (ModuleContainer, Vector[MethodContainer], Set[BackendLabel]) = {
     builtModule.impl match {
       case None =>
         val moduleContainer = ModuleContainer.empty(builtModule.module, Map.empty)
-        (moduleContainer, Set.empty)
+        (moduleContainer, Vector.empty, Set.empty)
       case Some(impl) =>
         val hpTable = buildHPTable(impl.symbol.hps, builtModule.module, impl.targetType)
         val tpTable = buildTPTable(impl.symbol.tps, builtModule.module, impl.targetType)
@@ -176,14 +176,15 @@ object BackendIRGen {
 
         val (containers, labels) = pairs.unzip
         val labelSet = labels.flatten.toSet
-        val assignedModule = containers.foldLeft(moduleContainer) {
-          case (module, c: MethodContainer) => module.addInterface(c)
-          case (module, c: StageContainer) => module.addStage(c)
-          case (module, c: AlwaysContainer) => module.addAlways(c)
-          case (module, c: FieldContainer) => module.addField(c)
+        val (assignedModule, moduleMethods) = containers.foldLeft((moduleContainer, Vector.empty[MethodContainer])) {
+          case ((module, methods), c: MethodContainer) if isInterface(c.label.symbol) => (module.addInterface(c), methods)
+          case ((module, methods), c: MethodContainer) => (module, methods :+ c)
+          case ((module, methods), c: StageContainer) => (module.addStage(c), methods)
+          case ((module, methods), c: AlwaysContainer) => (module.addAlways(c), methods)
+          case ((module, methods), c: FieldContainer) => (module.addField(c), methods)
         }
 
-        (assignedModule, labelSet)
+        (assignedModule, moduleMethods, labelSet)
     }
   }
 

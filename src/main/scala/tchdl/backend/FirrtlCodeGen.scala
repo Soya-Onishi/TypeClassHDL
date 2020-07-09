@@ -1167,7 +1167,61 @@ object FirrtlCodeGen {
     }
 
     def runSoftMatch(instance: SoftInstance, cases: Vector[backend.Case]): RunResult = {
-      ???
+      def runCaseBody(caseStmt: backend.Case): RunResult = {
+        val stmts = caseStmt.stmts.flatMap(runStmt)
+        val RunResult(retStmts, retInstance) = runExpr(caseStmt.ret)
+
+        RunResult(stmts ++ retStmts, retInstance)
+      }
+
+      def verifyCondition(caseStmt: backend.Case, cond: backend.CaseCond, enum: EnumSoftInstance): Option[RunResult] = {
+        val instances = enum.field.values.toVector
+        val names = cond.variables.map {
+          case backend.Term.Variable(name, _) => stack.next(name)
+          case backend.Term.Temp(id, _) => stack.next(id)
+        }
+
+        (names zip instances).foreach { case (name, inst) => stack.append(name, inst) }
+
+        val condPairs = cond.conds.map {
+          case (backend.Term.Variable(name, _), expr) => stack.lookup(stack.refer(name)) -> expr
+          case (backend.Term.Temp(id, _), expr) => stack.lookup(stack.refer(id)) -> expr
+        }
+
+        val (condStmts, condResult) = condPairs
+          .map{ case (inst, expr) => inst -> runExpr(expr) }
+          .foldLeft(Vector.empty[ir.Statement], true){
+            case ((stmts, false), _) => (stmts, false)
+            case ((stmts, true), (inst, RunResult(runStmts, runInst))) =>
+              val cond = (inst, runInst) match {
+                case (IntInstance(left), IntInstance(right)) => left == right
+                case (UnitInstance(), UnitInstance()) => true
+                case (StringInstance(left), StringInstance(right)) => left == right
+                case _ => throw new ImplementationErrorException("other pattern must be rejected by compile error in front end")
+              }
+
+              (stmts ++ runStmts, cond)
+          }
+
+        if(!condResult) None
+        else {
+          val RunResult(bodyStmts, instance) = runCaseBody(caseStmt)
+          Some(RunResult(condStmts ++ bodyStmts, instance))
+        }
+      }
+
+      def matchPattern(caseStmt: backend.Case, enum: EnumSoftInstance): Option[RunResult] =
+        if(caseStmt.cond.variant != enum.variant) None
+        else verifyCondition(caseStmt, caseStmt.cond, enum)
+
+      instance match {
+        case enum: EnumSoftInstance =>
+          cases.foldLeft(Option.empty[RunResult]) {
+            case (Some(result), _) => Some(result)
+            case (None, caseStmt) => matchPattern(caseStmt, enum)
+          }.get
+        case _ => throw new ImplementationErrorException("pattern match except for enum is not supported yet")
+      }
     }
 
     val backend.Match(matched, cases, tpe) = matchExpr
