@@ -37,7 +37,8 @@ class NamerTest extends TchdlFunSuite {
       "Bit",
       "Unit",
       "Num",
-      "Str"
+      "Str",
+      "Future"
     )
 
     types.foreach(lookupStruct(_, ctx))

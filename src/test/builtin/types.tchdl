@@ -1,5 +1,7 @@
 package std::types
 
+import std::traits:::HW
+
 struct Int {}
 struct Bit[m: Num] where m: min 1 {}
 struct String {}
@@ -7,3 +9,8 @@ struct Unit {}
 struct Num {}
 struct Str {}
 struct Bool {}
+
+enum Future[T] where T: HW {
+  Ready(T)
+  NotReady
+}

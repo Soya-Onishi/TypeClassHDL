@@ -196,6 +196,11 @@ object Namer {
   }
 
   def namedEnum(enum: EnumDef)(implicit ctx: Context.RootContext, global: GlobalData): EnumDef = {
+    def tryAppendBuiltIn(symbol: Symbol.EnumSymbol): Unit = {
+      if(ctx.path.pkgName == Vector("std", "types") && global.builtin.types.names.contains(enum.name))
+        global.builtin.types.append(symbol)
+    }
+
     val generator = Type.EnumTypeGenerator(enum, ctx, global)
     val symbol = Symbol.EnumSymbol(
       enum.name,
@@ -211,6 +216,7 @@ object Namer {
     symbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     symbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
+    tryAppendBuiltIn(symbol)
     ctx.append(symbol).left.foreach(global.repo.error.append)
     enum.setSymbol(symbol)
   }

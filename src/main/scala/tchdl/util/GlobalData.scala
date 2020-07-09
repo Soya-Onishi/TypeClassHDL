@@ -106,13 +106,13 @@ trait BuiltInSymbols[T <: Symbol] {
   }
 }
 
-class BuiltInTypes extends BuiltInSymbols[Symbol.EntityTypeSymbol] {
+class BuiltInTypes extends BuiltInSymbols[Symbol.ClassTypeSymbol] {
   import scala.collection.mutable
 
   // There is null. However, this null will never go to outside of this builtin table.
   // because appendBuiltin and lookupBuiltin see whether Map's value is null or not, and
   // if it is null, methods address that case.
-  protected val builtin: mutable.Map[String, Symbol.EntityTypeSymbol] = mutable.Map[String, Symbol.EntityTypeSymbol](
+  protected val builtin: mutable.Map[String, Symbol.ClassTypeSymbol] = mutable.Map[String, Symbol.ClassTypeSymbol](
     "Int" -> null,
     "String" -> null,
     "Unit" -> null,
@@ -120,6 +120,7 @@ class BuiltInTypes extends BuiltInSymbols[Symbol.EntityTypeSymbol] {
     "Num" -> null,
     "Str" -> null,
     "Bool" -> null,
+    "Future" -> null,
   )
 }
 
