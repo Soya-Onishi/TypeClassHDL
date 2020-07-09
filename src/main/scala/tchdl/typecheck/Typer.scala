@@ -606,9 +606,12 @@ object Typer {
           tpe.origin match {
             case symbol: Symbol.EnumSymbol =>
               val allMembers = symbol.tpe.declares.toMap.values.toVector.map(_.asEnumMemberSymbol).toSet
-              val caseMembers = typedCases.map(_.pattern.target.symbol.asEnumMemberSymbol)
+              val exhaustiveCaseMembers = typedCases
+                .map(_.pattern)
+                .filter(_.exprs.forall(_.isInstanceOf[Ident]))
+                .map(_.target.symbol.asEnumMemberSymbol)
 
-              val remains = caseMembers.foldLeft(allMembers) {
+              val remains = exhaustiveCaseMembers.foldLeft(allMembers) {
                 case (remains, member) => remains - member
               }
 

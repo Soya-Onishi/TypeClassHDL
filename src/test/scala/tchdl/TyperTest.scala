@@ -412,4 +412,12 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.TypeMismatch])
   }
+
+  test("not exhaustive error occurred because of Some does not have identity pattern") {
+    val (_, global) = untilTyper("PatternMatch5.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.NotExhaustiveEnum])
+  }
 }
