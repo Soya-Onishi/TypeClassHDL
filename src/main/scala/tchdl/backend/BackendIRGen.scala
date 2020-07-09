@@ -253,6 +253,7 @@ object BackendIRGen {
       case apply: frontend.Apply => buildApply(apply)
       case binop: frontend.StdBinOp => buildBinOp(binop)
       case blk: frontend.Block => buildBlk(blk)
+      case matchExpr: frontend.Match => buildMatch(matchExpr)
       case construct: frontend.ConstructClass => buildConstructClass(construct)
       case construct: frontend.ConstructModule => buildConstructModule(construct, None)
       case construct: frontend.ConstructEnum => buildConstructEnum(construct)
@@ -582,6 +583,70 @@ object BackendIRGen {
     )
 
     BuildResult(condNodes, Some(expr), condLabels ++ conseqLabels ++ altLabels)
+  }
+
+  def buildMatch(matchExpr: frontend.Match)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    def makeTemp(tpe: Type.RefType): backend.Term.Temp =
+      backend.Term.Temp(ctx.temp.get(), toBackendType(tpe, ctx.hpTable, ctx.tpTable))
+
+    def buildCase(caseDef: frontend.Case): (backend.Case, Set[BackendLabel]) = {
+      val frontend.Case(pattern, exprs) = caseDef
+
+      val variant = pattern.target.symbol.asEnumMemberSymbol
+      val expectPairs = pattern.exprs.map {
+        case ident: frontend.Ident =>
+          val name = ctx.label.toString + "$" + ident.symbol.path.innerPath.mkString("$")
+          ctx.append(ident.symbol.asTermSymbol, name)
+
+          val variable = backend.Term.Variable(name, toBackendType(ident.tpe.asRefType, ctx.hpTable, ctx.tpTable))
+          variable -> None
+        case frontend.IntLiteral(value) =>
+          val temp = makeTemp(Type.intTpe)
+          temp -> Some(backend.IntLiteral(value))
+        case frontend.StringLiteral(value) =>
+          val temp = makeTemp(Type.stringTpe)
+          temp -> Some(backend.StringLiteral(value))
+        case frontend.BitLiteral(value, width) =>
+          val temp = makeTemp(Type.bitTpe(frontend.IntLiteral(width)))
+          temp -> Some(backend.BitLiteral(value, HPElem.Num(width)))
+        case frontend.UnitLiteral() =>
+          val temp = makeTemp(Type.unitTpe)
+          temp -> Some(backend.UnitLiteral())
+      }
+
+      val variables = expectPairs.map(_._1)
+      val conds = expectPairs.collect{ case (temp, Some(literal)) => temp -> literal }
+
+      val initResults = exprs.init.map(buildBlockElem).map{
+        case BuildResult(stmts, Some(expr), labels) => (stmts :+ backend.Abandon(expr), labels)
+        case BuildResult(stmts, None, labels) => (stmts, labels)
+      }
+      val (initStmtss, initLabelss) = initResults.unzip
+
+      val BuildResult(lastStmts, Some(lastExpr), lastLabels) = exprs.last match {
+        case expr: frontend.Expression => buildExpr(expr)
+        case _ => throw new ImplementationErrorException("blockElem's last element must be expression")
+      }
+
+      val exprStmts = initStmtss.flatten ++ lastStmts
+      val labels = initLabelss.flatten.toSet ++ lastLabels
+
+      val caseCond = backend.CaseCond(variant, variables, conds)
+      val caseTree = backend.Case(caseCond, exprStmts, lastExpr)
+
+      (caseTree, labels)
+    }
+
+    val BuildResult(exprStmts, Some(expr), labels) = buildExpr(matchExpr.expr)
+    val retTpe = toBackendType(matchExpr.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+    val matchedTerm = backend.Temp(ctx.temp.get(), expr)
+    val term = backend.Term.Temp(matchedTerm.id, matchedTerm.expr.tpe)
+
+    val (cases, labelss) = matchExpr.cases.map(buildCase).unzip
+
+    val backendMatch = backend.Match(term, cases, retTpe)
+
+    BuildResult(exprStmts, Some(backendMatch), labelss.flatten.toSet ++ labels)
   }
 
   def buildThis(ths: frontend.This)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {

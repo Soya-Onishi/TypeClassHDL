@@ -1,0 +1,17 @@
+package test
+
+enum Opt[T] {
+  None
+  Some(T)
+}
+
+module Top
+impl Top {
+  input def f(opt: Opt[Bit[2]]) -> Bit[2] {
+    match opt {
+      case Opt[Bit[2]]:::Some(0b00) => 0b10
+      case Opt[Bit[2]]:::Some(bit)  => bit
+      case Opt[Bit[2]]:::None       => 0b00
+    }
+  }
+}

@@ -39,6 +39,10 @@ case class ReferField(accessor: Term, field: FieldLabel, tpe: BackendType) exten
 case class Ident(id: Term.Variable, tpe: BackendType) extends Expr
 case class IfExpr(cond: Term.Temp, conseq: Vector[Stmt], conseqLast: Expr, alt: Vector[Stmt], altLast: Expr, tpe: BackendType) extends Expr
 
+case class Match(matched: Term, cases: Vector[Case], tpe: BackendType) extends Expr
+case class Case(cond: CaseCond, stmts: Vector[Stmt], ret: Expr) extends BackendIR
+case class CaseCond(variant: Symbol.EnumMemberSymbol, variables: Vector[Term], conds: Vector[(Term, Expr)]) extends BackendIR
+
 case class Finish(stage: StageLabel)(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
 }
