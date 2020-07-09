@@ -378,6 +378,7 @@ case class Finish() extends Expression
 case class Goto(target: String) extends Expression with HasSymbol
 case class Generate(target: String, params: Vector[Expression]) extends Expression with HasSymbol
 case class Relay(target: String, params: Vector[Expression]) extends Expression with HasSymbol
+case class Return(expr: Expression) extends Expression
 
 case class Match(expr: Expression, cases: Vector[Case]) extends Expression
 case class Case(pattern: EnumPattern, exprs: Vector[BlockElem]) extends AST with HasType

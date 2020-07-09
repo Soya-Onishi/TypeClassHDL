@@ -174,6 +174,7 @@ expr: expr '.' (apply | EXPR_ID)        # SelectExpr
     | GOTO EXPR_ID                      # Goto
     | RELAY EXPR_ID '(' args ')'        # Relay
     | GENERATE EXPR_ID '(' args ')'     # Generate
+    | RETURN expr                       # Return
     | literal                           # LitExpr
     | '(' expr ')'                      # ParenthesesExpr
     | THIS                              # SelfExpr
@@ -310,6 +311,7 @@ FINISH: 'finish';
 GOTO: 'goto';
 GENERATE: 'generate';
 RELAY: 'relay';
+RETURN: 'return';
 
 THISTYPE: 'This';
 

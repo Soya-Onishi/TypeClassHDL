@@ -242,4 +242,16 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val (_, global) = untilThisPhase("enumWithInterfaceParam3.tchdl")
     expectNoError(global)
   }
+
+  test("use Future[Bit[_]] as stage return type") {
+    val (Seq(tree), global) = untilThisPhase("stageWithFuture.tchdl")
+    expectNoError(global)
+
+    val stage = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case stage: StageDef => stage }.get
+
+    assert(stage.symbol.tpe.asMethodType.returnType == Type.futureTpe(Type.bitTpe(IntLiteral(8))(global))(global))
+  }
 }

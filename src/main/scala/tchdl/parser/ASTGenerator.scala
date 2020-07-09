@@ -303,6 +303,7 @@ class ASTGenerator {
     case ctx: TP.GenerateContext =>
       val args = ctx.args.expr.asScala.map(expr).toVector
       Generate(ctx.EXPR_ID.getText, args)
+    case ctx: TP.ReturnContext => Return(expr(ctx.expr))
     case ctx: TP.LitExprContext => literal(ctx.literal)
     case ctx: TP.ParenthesesExprContext => expr(ctx.expr)
     case _: TP.SelfExprContext => This()

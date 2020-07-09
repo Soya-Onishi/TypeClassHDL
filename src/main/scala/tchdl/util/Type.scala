@@ -1182,6 +1182,11 @@ object Type {
     else throw new ImplementationErrorException(s"Bit's width[${value}] must be natural number")
   }
 
+  def futureTpe(targ: Type.RefType)(implicit global: GlobalData): Type.RefType = {
+    val symbol = global.builtin.types.lookup("Future")
+    Type.RefType(symbol, Vector.empty, Vector(targ))
+  }
+
   def numTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Num")
     Type.RefType(symbol, Vector.empty, Vector.empty)

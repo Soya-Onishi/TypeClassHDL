@@ -217,6 +217,7 @@ object Typer {
       case goto: Goto => typedGoto(goto)
       case finish: Finish => typedFinish(finish)
       case relay: Relay => typedRelay(relay)
+      case ret: Return => ???
       case select: StaticSelect => throw new ImplementationErrorException("StaticSelect must not appear here")
     }
 

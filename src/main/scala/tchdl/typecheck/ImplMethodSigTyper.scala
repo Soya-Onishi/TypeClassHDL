@@ -336,7 +336,8 @@ object ImplMethodSigTyper {
     def verifySignature(stage: Type.MethodType): Either[Error, Unit] = {
       val errs = stage.params.filterNot(_.isHardwareType).map(Error.RequireHardwareType.apply).map(Left.apply[Error, Unit])
       val err =
-        if(stage.returnType =:= Type.unitTpe) Right(())
+        if(stage.returnType == Type.unitTpe) Right(())
+        else if(stage.returnType.origin == global.builtin.types.lookup("Future")) Right(())
         else Left(Error.RequireSpecificType(stage.returnType, Type.unitTpe))
 
       (errs :+ err).combine(errs => Error.MultipleErrors(errs: _*))

@@ -1,0 +1,9 @@
+package test
+
+module Top
+impl Top {
+  stage st0(bit: Bit[8]) -> Future[Bit[8]] {
+    return Future[Bit[8]]:::Ready(bit)
+    finish
+  }
+}
