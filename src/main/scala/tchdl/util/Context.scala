@@ -166,6 +166,18 @@ object Context {
       }
     }
 
+    def owners: Vector[Symbol] = {
+      def loop(ctx: Context, owner: Symbol): Vector[Symbol] = {
+        ctx match {
+          case _: Context.RootContext => Vector.empty
+          case ctx: Context.NodeContext if ctx.owner == owner => loop(ctx.parent, owner)
+          case ctx: Context.NodeContext => ctx.owner +: loop(ctx.parent, ctx.owner)
+        }
+      }
+
+      this.owner +: loop(this, this.owner)
+    }
+
     override def interfaceTable: Map[String, Symbol.InterfaceSymbol] = parent.interfaceTable
   }
 }

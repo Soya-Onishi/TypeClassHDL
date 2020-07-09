@@ -428,4 +428,9 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.CannotUseBitLitForSWPattern])
   }
+
+  test("return Future value in stage does not cause any errors") {
+    val (_, global) = untilTyper("stageWithFuture.tchdl")
+    expectNoError(global)
+  }
 }

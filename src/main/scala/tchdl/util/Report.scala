@@ -63,6 +63,8 @@ object Error {
   case object FinishOutsideStage extends Error
   case object GotoOutsideState extends Error
   case object RelayOutsideStage extends Error
+  case object ReturnOutsideStage extends Error
+
   case class DefinitionNameConflict(name: String) extends Error
   case class ImplementInterfaceConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer) extends Error
   case class ImplementClassConflict(impl0: ImplementClassContainer, impl1: ImplementClassContainer) extends Error

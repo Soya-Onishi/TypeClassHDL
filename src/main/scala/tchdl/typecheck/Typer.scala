@@ -217,7 +217,7 @@ object Typer {
       case goto: Goto => typedGoto(goto)
       case finish: Finish => typedFinish(finish)
       case relay: Relay => typedRelay(relay)
-      case ret: Return => ???
+      case ret: Return => typedReturn(ret)
       case select: StaticSelect => throw new ImplementationErrorException("StaticSelect must not appear here")
     }
 
@@ -1104,6 +1104,34 @@ object Typer {
         global.repo.error.append(Error.RelayOutsideStage)
         relay.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
     }
+  }
+
+  def typedReturn(ret: Return)(implicit ctx: Context.NodeContext, global: GlobalData): Return = {
+    def typecheck(stage: Symbol.StageSymbol, expr: Expression): Either[Error, Unit] = {
+      val retTpe = stage.tpe.asMethodType.returnType
+
+      expr.tpe match {
+        case Type.ErrorType => Left(Error.DummyError)
+        case tpe: Type.RefType =>
+          if(tpe == retTpe) Right(())
+          else Left(Error.TypeMismatch(tpe, retTpe))
+      }
+    }
+
+    val typedRetExpr = typedExpr(ret.expr)
+
+    val result = ctx.owner match {
+      case stage: Symbol.StageSymbol =>
+        typecheck(stage, typedRetExpr)
+      case _: Symbol.StateSymbol =>
+        val stage = ctx.owners(1).asInstanceOf[Symbol.StageSymbol]
+        typecheck(stage, typedRetExpr)
+      case _ =>
+        Left(Error.ReturnOutsideStage)
+    }
+
+    result.left.foreach(global.repo.error.append)
+    Return(typedRetExpr).setTpe(Type.unitTpe).setID(ret.id)
   }
 
   def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): HPExpr = expr match {
