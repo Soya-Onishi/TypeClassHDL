@@ -72,6 +72,27 @@ package object util {
     }
   }
 
+  implicit class Unzip4Traversable[A, B, C, D, F[T] <: Traversable[T]](iter: F[(A, B, C, D)]) {
+    type T = (A, B, C, D)
+
+    def unzip4(implicit cbfa: CanBuildFrom[F[T], A, F[A]], cbfb: CanBuildFrom[F[T], B, F[B]], cbfc: CanBuildFrom[F[T], C, F[C]], cbfd: CanBuildFrom[F[T], D, F[D]]): (F[A], F[B], F[C], F[D]) = {
+      val builderA = cbfa()
+      val builderB = cbfb()
+      val builderC = cbfc()
+      val builderD = cbfd()
+
+      iter.foreach {
+        case (a, b, c, d) =>
+          builderA += a
+          builderB += b
+          builderC += c
+          builderD += d
+      }
+
+      (builderA.result, builderB.result, builderC.result, builderD.result)
+    }
+  }
+
   implicit class MapFactoryUtil[CC[X, Y] <: Map[X, Y] with scala.collection.MapLike[X, Y, CC[X, Y]], A, B](factory: MapFactory[CC]) {
     def from(iter: Seq[(A, B)]): CC[A, B] = {
       factory(iter: _*)

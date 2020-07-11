@@ -78,23 +78,27 @@ package object backend {
     }
 
     def isHardware(implicit global: GlobalData): Boolean = {
+      def verifyEnum(symbol: Symbol.EnumSymbol, verified: BackendType, types: Set[BackendType]) = {
+        val memberFieldTypes = symbol.tpe.declares.toMap
+          .values.toVector
+          .map(_.tpe.asEnumMemberType)
+          .flatMap(_.fields)
+          .map(_.tpe.asRefType)
+
+        val hpTable = (symbol.hps zip verified.hargs).toMap
+        val tpTable = (symbol.tps zip verified.targs).toMap
+
+        memberFieldTypes
+          .map(toBackendType(_, hpTable, tpTable))
+          .forall(loop(_, types + verified))
+      }
+
       def loop(verified: BackendType, types: Set[BackendType]): Boolean = {
         verified.symbol match {
-          case bit if bit == global.builtin.types.lookup("Bit") => true
+          case bit if bit == Symbol.bit => true
+          case future if future == Symbol.future => verifyEnum(future.asEnumSymbol, verified, types)
           case symbol if global.builtin.types.symbols.contains(symbol) => false
-          case symbol: Symbol.EnumSymbol =>
-            val memberFieldTypes = symbol.tpe.declares.toMap
-              .values.toVector
-              .map(_.tpe.asEnumMemberType)
-              .flatMap(_.fields)
-              .map(_.tpe.asRefType)
-
-            val hpTable = (symbol.hps zip verified.hargs).toMap
-            val tpTable = (symbol.tps zip verified.targs).toMap
-
-            memberFieldTypes
-              .map(toBackendType(_, hpTable, tpTable))
-              .forall(loop(_, types + verified))
+          case symbol: Symbol.EnumSymbol => verifyEnum(symbol, verified, types)
           case _ if global.lookupFields(verified).isEmpty => false
           case _ if types(verified) => false
           case _ => global.lookupFields(verified).values.forall(loop(_, types + verified))

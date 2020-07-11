@@ -206,7 +206,9 @@ object BackendIRGen {
     val blk = methodDef.blk.getOrElse(throw new ImplementationErrorException("impl's method should have body"))
     val BuildResult(nodes, Some(expr), labels) = buildExpr(blk)
 
-    (MethodContainer(label, hparams, params, nodes, expr), labels)
+    val retTpe = toBackendType(methodDef.symbol.tpe.asMethodType.returnType, ctx.hpTable, ctx.tpTable)
+
+    (MethodContainer(label, hparams, params, nodes, expr, retTpe), labels)
   }
 
   def buildStage(stageDef: frontend.StageDef, stageLabel: StageLabel)(implicit ctx: BackendContext, global: GlobalData): (StageContainer, Set[BackendLabel]) = {
@@ -236,7 +238,10 @@ object BackendIRGen {
         buildState(state, label)(context, global)
     }.unzip
 
-    (StageContainer(stageLabel, params, states, blkNodes), blkLabels ++ labelsFromState.flatten)
+    val retTpe = stageDef.symbol.tpe.asMethodType.returnType
+    val backendTpe = toBackendType(retTpe, ctx.hpTable, ctx.tpTable)
+
+    (StageContainer(stageLabel, params, states, blkNodes, backendTpe), blkLabels ++ labelsFromState.flatten)
   }
 
   def buildState(stateDef: frontend.StateDef, label: StateLabel)(implicit ctx: BackendContext, global: GlobalData): (StateContainer, Set[BackendLabel]) = {
@@ -264,6 +269,7 @@ object BackendIRGen {
       case goto: frontend.Goto => buildGoto(goto)
       case generate: frontend.Generate => buildGenerate(generate)
       case relay: frontend.Relay => buildRelay(relay)
+      case ret: frontend.Return => buildReturn(ret)
       case frontend.IntLiteral(value) => BuildResult(backend.IntLiteral(value))
       case frontend.BitLiteral(value, length) => BuildResult(backend.BitLiteral(value, HPElem.Num(length)))
       case frontend.UnitLiteral() => BuildResult(backend.UnitLiteral())
@@ -691,6 +697,18 @@ object BackendIRGen {
     val abandonFinish = backend.Abandon(finish)
 
     BuildResult(stmts :+ abandonFinish, generate, labels)
+  }
+
+  def buildReturn(ret: frontend.Return)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    val stageLabel = ctx.label match {
+      case stage: StageLabel => stage
+      case state: StateLabel => state.stage
+    }
+
+    val BuildResult(stmts, Some(expr), labels) = buildExpr(ret.expr)
+    val retStmt = backend.Abandon(backend.Return(stageLabel, expr))
+
+    BuildResult(stmts :+ retStmt, Some(backend.UnitLiteral()), labels)
   }
 
   def finishPart(implicit ctx: BackendContext, global: GlobalData): BuildResult = {

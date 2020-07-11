@@ -40,10 +40,11 @@ case class MethodContainer(
   hparams: ListMap[String, BackendType],
   params: ListMap[String, BackendType],
   code: Vector[ast.Stmt],
-  ret: ast.Expr
+  ret: ast.Expr,
+  retTpe: BackendType
 ) extends BackendContainer {
-  def activeName: String = label.toString + "$_active"
-  def retName: String = label.toString + "$_ret"
+  def activeName: String = label.activeName
+  def retName: String = label.retName
 
   lazy val toFirrtlString: String = label.toString
 }
@@ -52,11 +53,12 @@ case class StageContainer(
   label: StageLabel,
   params: ListMap[String, BackendType],
   states: Vector[StateContainer],
-  code: Vector[ast.Stmt]
+  code: Vector[ast.Stmt],
+  ret: BackendType
 ) extends BackendContainer {
-  def activeName: String = label.toString + "$_active"
-  def retName: String = label.toString + "$_ret"
-  def stateName: String = label.toString + "$_state"
+  def activeName: String = label.activeName
+  def retName: String = label.retName
+  def stateName: String = label.stateName
 
   lazy val toFirrtlString: String = label.toString
 }

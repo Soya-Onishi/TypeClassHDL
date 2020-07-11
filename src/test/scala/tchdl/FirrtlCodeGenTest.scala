@@ -364,4 +364,14 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch7.tchdl")
     runFirrtl(circuit)
   }
+
+  test("stage with Future[Bit[_]] as return type must generate correct firrtl code") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "stageWithFuture.tchdl")
+    runFirrtl(circuit, print = true)
+  }
+
+  test("stage with Future[Bit[2]] parameter") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "stageFutureParam.tchdl")
+    runFirrtl(circuit, print = true)
+  }
 }

@@ -31,6 +31,9 @@ case class MethodLabel(
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
+  def activeName: String = toString + "$_active"
+  def retName: String = toString + "$_ret"
+
   override type SymbolType = Symbol.MethodSymbol
 
   override lazy val toString: String = {
@@ -47,6 +50,10 @@ case class StageLabel(
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
+  def activeName: String = toString + "$_active"
+  def retName: String = toString + "$_ret"
+  def stateName: String = toString + "$_state"
+
   override type SymbolType = Symbol.StageSymbol
   override lazy val toString: String = symbol.name + "_" + hashCode().toHexString
 }

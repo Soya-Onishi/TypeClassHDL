@@ -11,9 +11,8 @@ class NamerPostTest extends TchdlFunSuite {
   test("verify imports") {
     implicit val global: GlobalData = GlobalData()
 
-    val builtin = Vector(rootDir, builtinPath, "types.tchdl").mkString("/")
     val imports = Vector("import0", "import1")
-    val files = imports.map(imp => Vector(rootDir, filePath, imp + ".tchdl").mkString("/")) :+ builtin
+    val files = imports.map(imp => Vector(rootDir, filePath, imp + ".tchdl").mkString("/")) ++ builtInFiles
     val trees = files.map(parse)
     trees.foreach(Namer.exec)
     trees.foreach(NamerPost.exec)

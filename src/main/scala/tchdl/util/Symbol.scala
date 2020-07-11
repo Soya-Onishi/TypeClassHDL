@@ -370,8 +370,7 @@ object Symbol {
           val searchedName = (symbol.path.pkgName :+ name).mkString("::")
           symbol.lookup[Symbol.PackageSymbol](name)
             .toEither
-            .map(Right.apply)
-            .getOrElse(Left(Error.SymbolNotFound(searchedName)))
+            .left.map(_ => Error.SymbolNotFound(searchedName))
       }
     }
   }
@@ -381,5 +380,14 @@ object Symbol {
     override val path: NameSpace = NameSpace.empty
     override val accessibility: Accessibility = Accessibility.Public
   }
+
+  def future(implicit global: GlobalData): Symbol.EnumSymbol =
+    global.builtin.types.lookup("Future").asEnumSymbol
+
+  def bit(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Bit")
+
+  def unit(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Unit")
 }
 

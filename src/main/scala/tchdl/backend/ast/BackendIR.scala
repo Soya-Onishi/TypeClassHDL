@@ -15,7 +15,6 @@ case class Variable(name: String, tpe: BackendType, expr: Expr) extends Stmt
 case class Temp(id: Int, expr: Expr) extends Stmt
 case class Abandon(expr: Expr) extends Stmt
 case class Assign(target: Term.Variable, expr: Expr) extends Stmt
-case class Return(expr: Expr) extends Stmt
 
 case class ConstructModule(name: Term, target: BackendType, parents: Map[String, Expr], siblings: Map[String, Expr]) extends Expr {
   val tpe = target
@@ -52,6 +51,9 @@ case class Goto(state: StateLabel)(implicit global: GlobalData) extends Expr {
 }
 
 case class Generate(stage: StageLabel, args: Vector[Term], tpe: BackendType) extends Expr
+case class Return(stage: StageLabel, expr: Expr)(implicit global: GlobalData) extends Expr {
+  val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
+}
 
 case class IntLiteral(value: Int)(implicit global: GlobalData) extends Expr {
   val tpe: BackendType = BackendType (
