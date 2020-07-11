@@ -1,0 +1,48 @@
+package test
+
+module Top
+impl Top {
+  mod s0: Sub0 = Sub0 {
+    sibling:
+      s1: this.s1
+  }
+  mod s1: Sub1 = Sub1 {}
+
+  input def call(a: Bit[2], b: Bit[2]) -> Future[Bit[2]] {
+    this.s0.call(a, b)
+  }
+}
+
+module Sub0 {
+  sibling:
+    s1: Sub1
+}
+
+impl Sub0 {
+  input def call(a: Bit[2], b: Bit[2]) -> Future[Bit[2]] {
+    val x = generate st(a, b)
+    this.s1.call(x)
+  }
+
+  stage st(a: Bit[2], b: Bit[2]) -> Future[Bit[2]] {
+    return Future[Bit[2]]:::Ready(a + b)
+    finish
+  }
+}
+
+module Sub1
+impl Sub1 {
+  sibling def call(x: Future[Bit[2]]) -> Future[Bit[2]] {
+    generate st(x)
+  }
+
+  stage st(x: Future[Bit[2]]) -> Future[Bit[2]] {
+    match x {
+      case Future[Bit[2]]:::NotReady =>
+        return Future[Bit[2]]:::NotReady
+      case Future[Bit[2]]:::Ready(bit) =>
+        return Future[Bit[2]]:::Ready(bit + 0b01)
+        finish
+    }
+  }
+}

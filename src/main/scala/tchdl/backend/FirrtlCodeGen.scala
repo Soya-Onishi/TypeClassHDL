@@ -250,17 +250,16 @@ object FirrtlCodeGen {
       .map(runRegister(_)(stack, ctx, global))
       .unzip3
 
-    val (moduleStmts, modules) = module.fields
+    val (moduleFutures, moduleStmts, moduleConds, modules) = module.fields
       .filter(_.flag.hasFlag(Modifier.Child))
       .map(runSubModule(_)(stack, ctx, global))
-      .unzip
+      .unzip4
 
     val clk = ir.Port(ir.NoInfo, clockName, ir.Input, ir.ClockType)
     val reset = ir.Port(ir.NoInfo, resetName, ir.Input, ir.UIntType(ir.IntWidth(1)))
     val ports = Vector(clk, reset) ++ inputs ++ outputs
-    val initStmts = (inputStmts ++ outputStmts ++ internalStmts ++ regStmts ++ moduleStmts).flatten
+    val initStmts = (inputStmts ++ outputStmts ++ internalStmts ++ regStmts ++ moduleStmts ++ moduleConds).flatten
     val components = internals ++ registers ++ modules
-    val fieldStmts = components ++ initStmts
 
     val (alwaysStmtss, alwaysFutures) = module.always.map(runAlways(_)(stack, ctx, global)).unzip
     val alwaysStmts = alwaysStmtss.flatten
@@ -282,6 +281,7 @@ object FirrtlCodeGen {
     val futureSigs = futureSigss.flatten
 
     val futures =
+      moduleFutures ++
       upperFutures ++
       inputFutures ++
       outputFutures ++
@@ -299,7 +299,7 @@ object FirrtlCodeGen {
       ir.NoInfo,
       module.tpe.toFirrtlString,
       ports ++ futureInterfacePorts ++ interfacePorts.flatten ++ upperPorts.flatten,
-      ir.Block(interfaceStmts.flatten ++ upperPortInits.flatten ++ futureInterfaceWires ++ futureSigs ++ futureStmts ++ fieldStmts ++ stageStmts ++ alwaysStmts ++ interfaceConds ++ stageConds)
+      ir.Block(interfaceStmts.flatten ++ upperPortInits.flatten ++ futureInterfaceWires ++ components ++ initStmts ++ futureSigs ++ futureStmts ++ stageStmts ++ alwaysStmts ++ interfaceConds ++ stageConds)
     )
   }
 
@@ -361,17 +361,20 @@ object FirrtlCodeGen {
     (stmtss.flatten ++ retStmts, reg, future)
   }
 
-  def runSubModule(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.Statement], ir.DefInstance) = {
+  def runSubModule(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Future, Vector[ir.Statement], Vector[ir.Conditionally], ir.DefInstance) = {
     val (stmtss, _) = field.code.map(runStmt).unzip
-    val retStmts = field.ret
+    val (future, retStmts) = field.ret
       .map(runExpr)
-      .map{ case RunResult(_, stmts, _) => stmts }
+      .map{ case RunResult(future, stmts, _) => (future, stmts) }
       .getOrElse(throw new ImplementationErrorException("sub module instance expression must be there"))
 
     val tpeString = field.tpe.toFirrtlString
     val module = ir.DefInstance(ir.NoInfo, field.toFirrtlString, tpeString)
 
-    (stmtss.flatten ++ retStmts, module)
+    val subModuleStmts = stmtss.flatten ++ retStmts
+    val (conds, others) = subModuleStmts.collectPartition{ case cond: ir.Conditionally => cond }
+
+    (future, others, conds, module)
   }
 
   def runAlways(always: AlwaysContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.Statement], Future) = {
@@ -1427,11 +1430,12 @@ object FirrtlCodeGen {
     val moduleRef = ir.Reference(moduleName.name, ir.UnknownType)
 
     def buildIndirectAccessCond(interface: MethodContainer, fromName: String)(targetBuilder: String => ir.Expression): (Future, Option[ir.IsInvalid], ir.Conditionally) = {
-      val isUnitRet = interface.ret.tpe == toBackendType(Type.unitTpe)
+      val isUnitRet = interface.ret.tpe.symbol == Symbol.unit
+      val isFutureRet = interface.ret.tpe.symbol == Symbol.future
       val targetActive = targetBuilder(interface.activeName)
 
       val targetRet =
-        if(isUnitRet) None
+        if(isUnitRet || isFutureRet) None
         else Some(targetBuilder(interface.retName))
 
       val (targetFutureParams, targetNormalParams) = interface.params
@@ -1439,28 +1443,37 @@ object FirrtlCodeGen {
         .toVector
         .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
 
-      val targets = targetActive +: targetNormalParams.map(_._1)
+      val normalTargets = targetActive +: targetNormalParams.map(_._1)
 
       def fromRef(name: String): ir.SubField = ir.SubField(moduleRef, fromName + "$" + name, ir.UnknownType)
       val fromActive = fromRef(interface.activeName)
 
       val fromRet =
-        if(isUnitRet) None
+        if(isUnitRet || isFutureRet) None
         else Some(fromRef(interface.retName))
 
       val retInvalid = fromRet.map(ret => ir.IsInvalid(ir.NoInfo, ret))
+      val futureRet =
+        if(!isFutureRet) Map.empty[ir.Expression, FormKind]
+        else Map[ir.Expression, FormKind](fromRef(interface.retName) -> FormKind.Field)
 
       val (futureFromArgs, normalFromArgs) = interface.params.toVector
         .map { case (param, tpe) => fromRef(param) -> tpe }
         .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
 
-      val froms = fromActive +: normalFromArgs.map(_._1)
+      val normalFroms = fromActive +: normalFromArgs.map(_._1)
 
-      val connects = (targets zip froms).map { case (target, from) => ir.Connect(ir.NoInfo, target, from) }
+      val connects = (normalTargets zip normalFroms).map { case (target, from) => ir.Connect(ir.NoInfo, target, from) }
       val retConnect = (fromRet zip targetRet).map{ case (from, target) => ir.Connect(ir.NoInfo, from, target) }
 
-      val accesses = (targetFutureParams.map(_._1) zip futureFromArgs.map(_._1)).map{ case (target, from) => target -> Vector(from) }.toMap
-      val future = Future(accesses, Map.empty[ir.Expression, FormKind])
+      val retAccess =
+        if(!isFutureRet) Map.empty
+        else Map[ir.Expression, Vector[ir.Expression]](fromRef(interface.retName) -> Vector(targetBuilder(interface.retName)))
+
+      val futureTargets = targetFutureParams.map(_._1)
+      val futureElems = futureTargets.map(_ -> FormKind.Field).toMap[ir.Expression, FormKind]
+      val accesses = (futureTargets zip futureFromArgs.map(_._1)).map{ case (target, from) => target -> Vector(from) }.toMap ++ retAccess
+      val future = Future(accesses, futureRet ++ futureElems)
 
       val cond = ir.Conditionally(
         ir.NoInfo,
@@ -1472,7 +1485,7 @@ object FirrtlCodeGen {
       (future, retInvalid, cond)
     }
 
-    val (parentFutures, parentStmtss) = construct.parents.map {
+    val (parentFutures, parentStmtss, parentCondss) = construct.parents.map {
       case (fromName, expr) =>
         val RunResult(_, stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
         val parents = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Parent))
@@ -1486,10 +1499,10 @@ object FirrtlCodeGen {
         val (futures, invalids, conds) = parents.map(buildIndirectAccessCond(_, fromName)(targetName)).unzip3
         val future = futures.foldLeft(Future.empty)(_ + _)
 
-        (future, stmts ++ invalids.flatten ++ conds)
-    }.unzip
+        (future, stmts ++ invalids.flatten, conds)
+    }.unzip3
 
-    val (siblingFutures, siblingStmtss) = construct.siblings.map {
+    val (siblingFutures, siblingStmtss, siblingCondss) = construct.siblings.map {
       case (fromName, expr) =>
         val RunResult(_, stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
         val siblings = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Sibling))
@@ -1503,35 +1516,48 @@ object FirrtlCodeGen {
         val (futures, invalid, conds) = siblings.map(buildIndirectAccessCond(_, fromName)(target)).unzip3
         val future = futures.foldLeft(Future.empty)(_ + _)
 
-        (future, stmts ++ invalid.flatten ++ conds)
-    }.unzip
+        (future, stmts ++ invalid.flatten, conds)
+    }.unzip3
 
-    val inputInits = ctx.interfaces(construct.tpe)
+    val (inputFutures, inputInitss) = ctx.interfaces(construct.tpe)
       .filter(interface => interface.label.symbol.hasFlag(Modifier.Input) || interface.label.symbol.hasFlag(Modifier.Sibling))
-      .flatMap {
+      .map {
         interface =>
           def buildRef(name: String): ir.SubField = ir.SubField(moduleRef, name, ir.UnknownType)
           val activeRef = buildRef(interface.activeName)
-          val paramRefs = interface.params
-            .filter{ case (_, tpe) => tpe.symbol != Symbol.future }
-            .map{ case (name, _) => name }
-            .map(buildRef)
+          val (futureParams, normalParams) = interface.params
+            .toVector
+            .map{ case (name, tpe) => buildRef(name) -> tpe }
+            .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
 
           val activeOff = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(0))
-          val paramInvalid = paramRefs.map(ir.IsInvalid(ir.NoInfo, _)).toVector
+          val paramInvalid = normalParams
+            .map(_._1)
+            .map(ir.IsInvalid(ir.NoInfo, _))
 
-          activeOff +: paramInvalid
+          val futureElems = futureParams
+              .map(_._1)
+              .map(_ -> FormKind.Field)
+              .toMap[ir.Expression, FormKind]
+
+          val future = Future(Map.empty, futureElems)
+
+          (future, activeOff +: paramInvalid)
       }
+      .unzip
 
     val connectClock = ir.Connect(ir.NoInfo, ir.SubField(moduleRef, clockName, ir.UnknownType), clockRef)
     val connectReset = ir.Connect(ir.NoInfo, ir.SubField(moduleRef, resetName, ir.UnknownType), resetRef)
     val parentStmts = parentStmtss.toVector.flatten
     val siblingStmts = siblingStmtss.toVector.flatten
+    val inputStmts = inputInitss.flatten
+    val conds = (siblingCondss.toVector ++ parentCondss.toVector).flatten
+    val future = (parentFutures ++ siblingFutures ++ inputFutures).foldLeft(Future.empty)(_ + _)
 
-    val stmts = Vector(connectClock, connectReset) ++ inputInits ++ parentStmts ++ siblingStmts
+    val stmts = Vector(connectClock, connectReset) ++ inputStmts ++ parentStmts ++ siblingStmts ++ conds
 
     val instance = ModuleInstance(construct.tpe, ModuleLocation.Sub(ir.Reference(moduleName.name, ir.UnknownType)))
-    RunResult(Future.empty, stmts, instance)
+    RunResult(future, stmts, instance)
   }
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {

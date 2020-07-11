@@ -426,6 +426,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(s2Ret.expr == or(enum.loc))
     assert(enum.expr == ir.UIntLiteral(0))
 
+    runFirrtl(circuit)
+  }
+
+  test("call sibling interface with Future[_] parameter") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "CallSiblingFuture.tchdl")
     runFirrtl(circuit, print = true)
   }
 }
