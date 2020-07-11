@@ -733,8 +733,9 @@ object BackendIRGen {
     }
 
     val targetLabel = StageLabel(target, ctx.label.accessor, ctx.label.hps, ctx.label.tps)
-    val unitTpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
-    val generate = backend.Generate(targetLabel, argPassedTerms, unitTpe)
+    val retRefTpe = target.tpe.asMethodType.returnType
+    val retTpe = toBackendType(retRefTpe, ctx.hpTable, ctx.tpTable)
+    val generate = backend.Generate(targetLabel, argPassedTerms, retTpe)
 
     BuildResult(argStmts ++ argPassedTemps, Some(generate), argLabels + targetLabel)
   }
