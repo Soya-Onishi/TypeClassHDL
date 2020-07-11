@@ -1,0 +1,41 @@
+package test
+
+module Top
+impl Top {
+  mod sub0: Sub0 = Sub0 {
+    parent:
+      top: this
+  }
+
+  parent def fromChild(x: Future[Bit[2]]) -> Future[Bit[2]] {
+    x
+  }
+}
+
+module Sub0 {
+  parent:
+    top: Top
+}
+
+impl Sub0 {
+  mod sub1: Sub1 = Sub1 {
+    parent:
+      top: this.top
+  }
+}
+
+module Sub1 {
+  parent:
+    top: Top
+}
+
+impl Sub1 {
+  input def callParent() -> Future[Bit[2]] {
+    val x = generate st()
+    this.top.fromChild(x)
+  }
+
+  stage st() -> Future[Bit[2]] {
+    return Future[Bit[2]]:::Ready(0b00)
+  }
+}
