@@ -2,7 +2,7 @@ package tchdl.backend
 
 import firrtl.ir
 
-case class Future(accesses: Map[Name, Vector[ir.Expression]], futures: Map[Name, FormKind]) {
+case class Future(accesses: Map[ir.Expression, Vector[ir.Expression]], futures: Map[ir.Expression, FormKind]) {
   def + (that: Future): Future = {
     val newAccesses = that.accesses.foldLeft(this.accesses) {
       case (accesses, (loc, froms)) => accesses.get(loc) match {
@@ -16,7 +16,7 @@ case class Future(accesses: Map[Name, Vector[ir.Expression]], futures: Map[Name,
 }
 
 object Future {
-  def empty: Future = Future(Map.empty, Map.empty)
+  def empty: Future = Future(Map.empty[ir.Expression, Vector[ir.Expression]], Map.empty[ir.Expression, FormKind])
 }
 
 trait FormKind
