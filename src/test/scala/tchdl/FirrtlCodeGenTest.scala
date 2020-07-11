@@ -367,11 +367,65 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("stage with Future[Bit[_]] as return type must generate correct firrtl code") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "stageWithFuture.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 
   test("stage with Future[Bit[2]] parameter") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "stageFutureParam.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("stage with future pattern match causes no error") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "stageUseFuture.tchdl")
+
+    val stmts = circuit.modules
+      .head.asInstanceOf[ir.Module]
+      .body.asInstanceOf[ir.Block]
+      .stmts
+      .toVector
+
+    val connects = stmts
+      .collect{ case connect: ir.Connect => connect }
+      .collect{ case c @ ir.Connect(_, ir.SubField(ir.Reference(head, _), _, _), _) if head.matches("s3_[0-9a-f]+\\$_ret") => c }
+
+    val member = connects.find{ case ir.Connect(_, ir.SubField(_, field, _), _) => field == "_member" }.get
+    val data = connects.find{ case ir.Connect(_, ir.SubField(_, field, _), _) => field == "_data" }.get
+
+    assert(member.expr.isInstanceOf[ir.DoPrim])
+    assert(data.expr.isInstanceOf[ir.DoPrim])
+
+    runFirrtl(circuit)
+  }
+
+  test("chained stage returns does not cause an error") {
+    def findConnect(connects: Vector[ir.Connect], matches: String): Option[ir.Connect] =
+      connects.collectFirst{
+        case c @ ir.Connect(_, ir.SubField(ir.Reference(head, _), tail, _), _) if head.matches(matches) && tail == "_member" => c
+      }
+
+    def or(expr: ir.Expression): ir.DoPrim =
+      ir.DoPrim(PrimOps.Or, Seq(ir.UIntLiteral(0), expr), Seq.empty, ir.UnknownType)
+
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "chainedStageFuture.tchdl")
+
+    val stmts = circuit.modules
+      .head.asInstanceOf[ir.Module]
+      .body.asInstanceOf[ir.Block]
+      .stmts
+      .toVector
+
+    val connects = stmts.collect{ case connect: ir.Connect => connect }
+
+    val fRet = findConnect(connects, "function_[0-9a-f]+\\$_ret").get
+    val s1Ret = findConnect(connects, "s1_[0-9a-f]+\\$_ret").get
+    val s2Ret = findConnect(connects, "s2_[0-9a-f]+\\$_ret").get
+    val enum = findConnect(connects, "_ENUM_[0-9]+").get
+
+    assert(fRet.expr == or(s1Ret.loc))
+    assert(s1Ret.expr == or(s2Ret.loc))
+    assert(s2Ret.expr == or(enum.loc))
+    assert(enum.expr == ir.UIntLiteral(0))
+
     runFirrtl(circuit, print = true)
   }
 }

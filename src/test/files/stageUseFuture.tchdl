@@ -1,0 +1,49 @@
+package test
+
+module Top
+impl Top {
+  input def function() -> Future[Bit[2]] {
+    val a = generate s1()
+    val b = generate s2()
+
+    generate s3(a, b)
+  }
+
+  stage s1() -> Future[Bit[2]] {
+    state st1 {
+      return Future[Bit[2]]:::NotReady
+      goto st2
+    }
+
+    state st2 {
+      return Future[Bit[2]]:::Ready(0b10)
+      finish
+    }
+  }
+
+  stage s2() -> Future[Bit[2]] {
+    state st1 {
+      return Future[Bit[2]]:::NotReady
+      goto st2
+    }
+
+    state st2 {
+      return Future[Bit[2]]:::Ready(0b10)
+      finish
+    }
+  }
+
+  stage s3(a: Future[Bit[2]], b: Future[Bit[2]]) -> Future[Bit[2]] {
+    val x = match a {
+      case Future[Bit[2]]:::NotReady => 0b00
+      case Future[Bit[2]]:::Ready(bit) => bit
+    }
+
+    val y = match b {
+      case Future[Bit[2]]:::NotReady => 0b00
+      case Future[Bit[2]]:::Ready(bit) => bit
+    }
+
+    return Future[Bit[2]]:::Ready(x + y)
+  }
+}
