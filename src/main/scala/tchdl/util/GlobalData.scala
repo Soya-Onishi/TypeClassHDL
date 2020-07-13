@@ -65,14 +65,22 @@ abstract class GlobalData {
 }
 
 object GlobalData {
-  def apply(pkgName: Vector[String], module: TypeTree) =
+  def apply(com: Command) =
     new GlobalData {
-      override val command = Command(pkgName, Some(module))
+      override val command = com
     }
+
+  def apply(pkgName: Vector[String], module: TypeTree): GlobalData = {
+    val com = Command(Vector.empty, pkgName, Some(module))
+
+    new GlobalData {
+      override val command = com
+    }
+  }
 
   def apply() =
     new GlobalData {
-      override val command = Command(Vector.empty, None)
+      override val command = Command.empty
     }
 }
 
@@ -186,6 +194,11 @@ trait SymbolBuffer[T] {
 }
 
 case class Command(
+  filenames: Vector[String],
   topModulePkg: Vector[String],
   topModule: Option[TypeTree]
 )
+
+object Command {
+  def empty: Command = Command(Vector.empty, Vector.empty, Option.empty)
+}
