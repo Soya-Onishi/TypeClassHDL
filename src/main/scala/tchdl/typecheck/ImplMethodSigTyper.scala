@@ -187,14 +187,21 @@ object ImplMethodSigTyper {
         } yield ()
       }
 
+      def replaceThisType(interfaceType: Type.RefType, implThisType: Type.RefType): Type.RefType = {
+        if(interfaceType.origin.isInterfaceSymbol) implThisType
+        else interfaceType
+      }
+
       def compareMethodSignature(
         implMethod: Type.MethodType,
         interfaceMethod: Type.MethodType
       ): Either[Error, Unit] = {
+        val implThisType = ctx.self.getOrElse(throw new ImplementationErrorException("impl should have self type"))
+
         val implTpes = implMethod.params :+ implMethod.returnType
-        val interfaceTpes = interfaceMethod.params :+ interfaceMethod.returnType
+        val interfaceTpes = (interfaceMethod.params :+ interfaceMethod.returnType).map(replaceThisType(_, implThisType))
         val results = (implTpes zip interfaceTpes).map {
-          case (impl, interface) if impl =:= interface => Right(())
+          case (impl, interface) if impl == interface => Right(())
           case (impl, interface) => Left(Error.TypeMismatch(interface, impl))
         }
 

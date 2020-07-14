@@ -391,6 +391,7 @@ class ASTGenerator {
     }
 
     def constructHead(tree: TypeTree): TypeTree = tree.expr match {
+      case ThisType() => TypeTree(ThisType(), Vector.empty, Vector.empty)
       case Ident(name) => TypeTree(head(name), tree.hp, tree.tp)
       case StaticSelect(prefix, name) =>
         val select = StaticSelect(constructHead(prefix), name)
@@ -414,6 +415,8 @@ class ASTGenerator {
           case Some((hps, tps)) => TypeTree(id, hps, tps)
           case None => TypeTree(id, Vector.empty, Vector.empty)
         }
+      case _: TP.ThisTypeContext =>
+        TypeTree(ThisType(), Vector.empty, Vector.empty)
     }
   }
 

@@ -390,7 +390,7 @@ case class EnumPattern(target: TypeTree, exprs: Vector[PatternExpr]) extends AST
 // In Typer, hp and tp are adjust their length
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
 case class TypeTree(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
-case class ThisType() extends AST with HasType
+case class ThisType() extends TypeAST with HasType
 
 trait Operation {
   def toInterface: String

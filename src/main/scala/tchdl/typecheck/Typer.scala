@@ -989,11 +989,26 @@ object Typer {
       }
     }
 
+    def typedForThisType(thisTree: ThisType): Either[Error, TypeTree] =
+      ctx.self match {
+        case None => Left(Error.SelfTypeNotFound)
+        case Some(tpe) =>
+          val tree = ThisType().setSymbol(tpe.origin).setTpe(tpe).setID(thisTree.id)
+          val tpeTree = TypeTree(tree, Vector.empty, Vector.empty)
+            .setSymbol(tree.symbol)
+            .setTpe(tree.tpe)
+
+          Right(tpeTree)
+      }
+
+
+
     def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] =
       typeTree.expr match {
         case ident: Ident => typedForIdent(ident, hargs, targs)
         case select: StaticSelect => typedForStaticSelect(select, hargs, targs)
         case select: SelectPackage => typedForSelectPackage(select, hargs, targs)
+        case tree: ThisType => typedForThisType(tree)
       }
 
     val typedHArgs = typeTree.hp.map(typedHPExpr)

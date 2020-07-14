@@ -34,12 +34,10 @@ trait Type {
 }
 
 object Type {
-
   abstract class TypeGenerator extends Type {
     val name = "<?>"
 
     def declares = throw new TchdlException.ImplementationErrorException("TypeGenerator prohibits an access of 'declares'")
-
     def namespace = throw new TchdlException.ImplementationErrorException("TypeGenerator prohibits an access of 'namespace'")
 
     /* ModuleDef and StructDef only need to name its header and components.
@@ -108,14 +106,20 @@ object Type {
   }
 
   case class InterfaceTypeGenerator(interface: InterfaceDef, ctx: Context.RootContext, global: GlobalData) extends TypeGenerator {
-    override def generate: Type.EntityType = {
-      val interfaceCtx = Context(ctx, interface.symbol)
+    override def generate: Type = {
+      val signatureCtx = Context(ctx, interface.symbol)
       val symbol = interface.symbol.asInterfaceSymbol
-      interfaceCtx.reAppend(symbol.hps ++ symbol.tps: _*)(global)
+      signatureCtx.reAppend(symbol.hps ++ symbol.tps: _*)(global)
 
-      interface.methods.map(Namer.namedMethod(_)(interfaceCtx, global))
+      buildThisType(symbol, interface.hp, interface.tp)(signatureCtx, global) match {
+        case None => Type.ErrorType
+        case Some(thisType) =>
+          val bodyCtx = Context(signatureCtx, thisType)
 
-      EntityType(interface.name, ctx.path, interfaceCtx.scope)
+          interface.methods.map(Namer.namedMethod(_)(bodyCtx, global))
+
+          EntityType(interface.name, ctx.path, bodyCtx.scope)
+      }
     }
   }
 
@@ -339,14 +343,15 @@ object Type {
       MethodType(replacedArgs, replacedRetTpe)
     }
 
-    def =:=(other: Type): Boolean = other match {
-      case other: MethodType =>
-        def isSameParam: Boolean = this.params == other.params
-
-        def isSameRet: Boolean = this.returnType == other.returnType
+    override def equals(obj: Any): Boolean = obj match {
+      case that: MethodType =>
+        def isSameParam: Boolean = this.params == that.params
+        def isSameRet: Boolean = this.returnType == that.returnType
 
         isSameParam && isSameRet
     }
+
+    def =:=(that: Type): Boolean = this == that
   }
 
   object MethodType {
@@ -1319,5 +1324,22 @@ object Type {
         if (allErrs.isEmpty) Right(builtHPs.map(_.sort), builtTPs)
         else Left(Error.MultipleErrors(allErrs: _*))
     }
+  }
+
+  def buildThisType(symbol: Symbol.TypeSymbol, hps: Vector[ValDef], tps: Vector[TypeDef])(implicit ctx: Context.NodeContext, global: GlobalData): Option[Type.RefType] = {
+    val typedHPs = hps.map(Typer.typedValDef)
+    val typedTPs = tps.map(Typer.typedTypeParam)
+
+    val hasError = typedHPs.exists(_.symbol.tpe.isErrorType)
+
+    val typedHargs = typedHPs.map(hp => Ident(hp.name).setSymbol(hp.symbol).setTpe(hp.symbol.tpe))
+    val typedTargs = typedTPs.map{
+      tp =>
+        val tpSymbol = tp.symbol.asTypeParamSymbol
+        Type.RefType(tpSymbol, Vector.empty, Vector.empty)
+    }
+
+    if(hasError) None
+    else Some(Type.RefType(symbol, typedHargs, typedTargs))
   }
 }

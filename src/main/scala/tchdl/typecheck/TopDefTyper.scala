@@ -95,16 +95,21 @@ object TopDefTyper {
 
     val signatureCtx = Context(ctx, interfaceDef.symbol)
     val interface = interfaceDef.symbol.asInterfaceSymbol
+    Type.buildThisType(interface, interfaceDef.hp, interfaceDef.tp)(signatureCtx, global) match {
+      case None => interfaceDef
+      case Some(tpe) =>
+        val bodyCtx = Context(signatureCtx, tpe)
 
-    val result = for {
-      _ <- TyperUtil.verifyTPBoundType(interface)(signatureCtx, global)
-      _ <- verifyModifierValidity
-      _ <- verifyMethodValidity
-    } yield ()
+        val result = for {
+          _ <- TyperUtil.verifyTPBoundType(interface)(bodyCtx, global)
+          _ <- verifyModifierValidity
+          _ <- verifyMethodValidity
+        } yield ()
 
-    result.left.foreach(global.repo.error.append)
+        result.left.foreach(global.repo.error.append)
 
-    interfaceDef
+        interfaceDef
+    }
   }
 
   def typedEnumDef(enumDef: EnumDef)(implicit ctx: Context.RootContext, global: GlobalData): EnumDef = {

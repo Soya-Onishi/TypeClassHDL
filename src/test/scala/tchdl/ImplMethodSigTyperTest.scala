@@ -254,4 +254,27 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
 
     assert(stage.symbol.tpe.asMethodType.returnType == Type.futureTpe(Type.bitTpe(IntLiteral(8))(global))(global))
   }
+
+  test("use This type as signature") {
+    val (Seq(tree), global) = untilThisPhase("useThisTypeInTrait.tchdl")
+    expectNoError(global)
+
+    val traits = tree.topDefs.collectFirst{ case traits: InterfaceDef => traits }.get
+    val impl = tree.topDefs.collectFirst{ case impl: ImplementInterface => impl }.get
+
+    val signatureDef = traits.methods.head
+    val methodDef = impl.methods.head
+
+    val signatureTpe = signatureDef.symbol.asMethodSymbol.tpe
+    val methodTpe = methodDef.symbol.asMethodSymbol.tpe
+
+    val traitTpe = Type.RefType(traits.symbol.asInterfaceSymbol, Vector.empty, Vector.empty)
+    val implTpe = impl.target.tpe.asRefType
+
+    val expectSignatureTpe = Type.MethodType(Vector(traitTpe), traitTpe)
+    val expectMethodTpe = Type.MethodType(Vector(implTpe), implTpe)
+
+    assert(expectSignatureTpe == signatureTpe)
+    assert(expectMethodTpe == methodTpe)
+  }
 }

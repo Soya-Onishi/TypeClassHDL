@@ -1,0 +1,11 @@
+package test
+
+trait Id {
+  def identity(n: This) -> This
+}
+
+impl Id for Int {
+  def identity(n: Int) -> Int {
+    n
+  }
+}

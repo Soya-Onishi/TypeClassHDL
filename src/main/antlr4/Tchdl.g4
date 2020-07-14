@@ -273,7 +273,7 @@ type: (pkg_select ':::')? type_elem (':::' type_elem)*
 
 type_elem
     : TYPE_ID apply_typeparam? # NormalType
-    | THISTYPE                 # SelfType
+    | THISTYPE                 # ThisType
     ;
 
 PACKAGE: 'package';

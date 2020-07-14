@@ -26,6 +26,7 @@ sealed trait Info extends Report
 object Error {
   case class TypeMismatch(expect: Type, actual: Type) extends Error
   case class SymbolNotFound(name: String) extends Error
+  case object SelfTypeNotFound extends Error
   case class OperationNotFound(op: Operation) extends Error
   case class ParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
