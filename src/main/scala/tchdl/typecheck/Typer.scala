@@ -45,11 +45,12 @@ object Typer {
         val typedImpl = impl.copy(methods = typedMethods).setSymbol(impl.symbol).setID(impl.id)
         global.cache.set(typedImpl)
         typedImpl
+      case method: MethodDef => typedMethodDef(method)
       case others => others
     }
   }
 
-  def typedMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
+  def typedMethodDef(methodDef: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
     val method = methodDef.symbol.asMethodSymbol
     val methodTpe = method.tpe.asMethodType
     val isStatic = methodDef.symbol.hasFlag(Modifier.Static)
@@ -304,7 +305,7 @@ object Typer {
         else Left(Error.MultipleErrors(errs: _*))
       }
 
-      ctx.lookupLocal[Symbol.MethodSymbol](ident.name) match {
+      ctx.root.lookup[Symbol.MethodSymbol](ident.name) match {
         case LookupResult.LookupFailure(err) => Left(err)
         case LookupResult.LookupSuccess(methodSymbol) => for {
           _ <- verifyMethodValidity(methodSymbol)

@@ -123,7 +123,7 @@ object Type {
     }
   }
 
-  case class MethodTypeGenerator(methodDef: MethodDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+  case class MethodTypeGenerator(methodDef: MethodDef, ctx: Context, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
       def verifyHPTpes(hps: Vector[ValDef]): Either[Error, Unit] =
         hps.map(_.symbol.tpe).map {
@@ -857,7 +857,7 @@ object Type {
       }
     }
 
-    def isHardwareType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = {
+    def isHardwareType(implicit ctx: Context, global: GlobalData): Boolean = {
       val builtinSymbols = global.builtin.types.symbols
 
       def loop(verified: Type.RefType, types: Set[Type.RefType]): Boolean = {

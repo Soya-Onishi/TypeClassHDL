@@ -10,6 +10,7 @@ abstract class Context {
   val scope: Scope = new Scope
   val isStatic: Boolean
   def path: NameSpace
+  def root: Context.RootContext
 
   def self: Option[Type.RefType]
 
@@ -54,7 +55,8 @@ object Context {
   class RootContext(pkgName: Vector[String]) extends Context {
     override val path: NameSpace = NameSpace(pkgName, Vector.empty, Vector.empty)
     override val self: Option[Type.RefType] = None
-    override val isStatic = false
+    override val isStatic: Boolean = false
+    override def root: Context.RootContext = this
 
     override def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
       case Some(elem: T) => LookupResult.LookupSuccess(elem)
@@ -111,6 +113,8 @@ object Context {
     val path: NameSpace,
     val isStatic: Boolean
   ) extends Context {
+    override def root: Context.RootContext = parent.root
+
     def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit] = scope.append(symbol)
     def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] =
       lookingUp[T](name){ parent.lookup(name) }

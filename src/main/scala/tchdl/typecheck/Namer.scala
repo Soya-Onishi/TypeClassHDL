@@ -27,7 +27,7 @@ object Namer {
     always.setSymbol(symbol)
   }
 
-  def namedMethod(method: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
+  def namedMethod(method: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
     val methodTpe = Type.MethodTypeGenerator(method, ctx, global)
     val methodSymbol = Symbol.MethodSymbol(
       method.name,
@@ -253,7 +253,6 @@ object Namer {
       case stage: StageDef => namedStageDef(stage)
       case state: StateDef => namedStateDef(state)
       case typeDef: TypeDef => namedTPDef(typeDef)
-      case ast => ast
     }
 
     namedTree.asInstanceOf[T]
@@ -267,7 +266,7 @@ object Namer {
       case interface: InterfaceDef => namedInterface(interface)
       case impl: ImplementInterface => namedImplInterface(impl)
       case impl: ImplementClass => namedImplClass(impl)
-      case ast => ast
+      case method: MethodDef => namedMethod(method)
     }
 
     namedAST.asInstanceOf[T]

@@ -194,6 +194,7 @@ object TopDefTyper {
       case enum: EnumDef => typedEnumDef(enum)
       case impl: ImplementClass => typedImplClassSignature(impl)
       case impl: ImplementInterface => typedImplInterfaceSignature(impl)
+      case method: MethodDef => method
     }
 
   private def verifyType(typeTree: TypeTree, ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {

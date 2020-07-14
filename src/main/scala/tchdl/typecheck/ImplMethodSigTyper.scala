@@ -13,6 +13,7 @@ object ImplMethodSigTyper {
     cu.topDefs.collect{
       case impl: ImplementClass => verifyImplClass(impl)(ctx, global)
       case impl: ImplementInterface => verifyImplInterface(impl)(ctx, global)
+      case method: MethodDef => verifyMethodDef(method)(ctx, global)
     }
   }
 
@@ -270,7 +271,7 @@ object ImplMethodSigTyper {
       .foreach(global.repo.error.append)
   }
 
-  def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
+  def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
     def verifyModifierValidity: Either[Error, Unit] = {
       val self = ctx.self.getOrElse(throw new ImplementationErrorException("This type should be there"))
       val validModifiers = self.origin match {
