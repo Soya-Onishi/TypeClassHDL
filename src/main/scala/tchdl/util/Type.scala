@@ -458,6 +458,7 @@ object Type {
       args: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound],
+      requireStatic: Boolean
     )(implicit ctx: Context.NodeContext, globalData: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
       val result = this.origin match {
         case entity: Symbol.EntityTypeSymbol =>
@@ -468,7 +469,8 @@ object Type {
             callerHP,
             callerTP,
             callerHPBound,
-            callerTPBound
+            callerTPBound,
+            requireStatic
           ) match {
             case success @ Right(_) => success
             case Left(_) if ctx.interfaceTable.isEmpty => Left(Error.SymbolNotFound(methodName))
@@ -476,7 +478,7 @@ object Type {
               val (errs, methods) = ctx.interfaceTable
                 .values.view
                 .map(_.impls)
-                .map(lookupFromImpls(_, methodName, args, callerHP, callerTP, callerHPBound, callerTPBound))
+                .map(lookupFromImpls(_, methodName, args, callerHP, callerTP, callerHPBound, callerTPBound, requireStatic))
                 .toVector
                 .partitionMap(identity)
 
@@ -502,7 +504,8 @@ object Type {
                     callerHP,
                     callerTP,
                     callerHPBound,
-                    callerTPBound
+                    callerTPBound,
+                    requireStatic
                   )
 
                   result match {
@@ -568,10 +571,14 @@ object Type {
       callerHP: Vector[HPExpr],
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
-      callerTPBound: Vector[TPBound]
+      callerTPBound: Vector[TPBound],
+      requireStatic: Boolean
     )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val (initHpTable, initTpTable) = RefType.buildSymbolTable(interface, interfaceHPs, interfaceTPs)
-      val lookupResult = interface.tpe.declares.lookup(methodName) match {
+      val lookupResult: Either[Error, Symbol.MethodSymbol] = interface.tpe.declares.lookup(methodName) match {
+        case Some(symbol: Symbol.MethodSymbol) if requireStatic && symbol.hasFlag(Modifier.Static)=> Right(symbol)
+        case Some(symbol: Symbol.MethodSymbol) if symbol.hasFlag(Modifier.Static) => Left(Error.ReferMethodAsNormal(symbol))
+        case Some(symbol: Symbol.MethodSymbol) if requireStatic => Left(Error.ReferMethodAsStatic(symbol))
         case Some(symbol: Symbol.MethodSymbol) => Right(symbol)
         case Some(_) => Left(Error.SymbolNotFound(methodName))
         case None => Left(Error.SymbolNotFound(methodName))
@@ -613,7 +620,8 @@ object Type {
       callerHP: Vector[HPExpr],
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
-      callerTPBound: Vector[TPBound]
+      callerTPBound: Vector[TPBound],
+      requireStatic: Boolean
     )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val result = impls.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
         case (right @ Right(_), _) => right
@@ -628,7 +636,10 @@ object Type {
             callerHPBound,
             callerTPBound
           ) match {
-            case right @ Right(_) => right
+            case Right((symbol, tpe)) if requireStatic && symbol.hasFlag(Modifier.Static)=> Right(symbol, tpe)
+            case Right((symbol, _)) if requireStatic => Left(Error.ReferMethodAsStatic(symbol))
+            case Right((symbol, _)) if symbol.hasFlag(Modifier.Static) => Left(Error.ReferMethodAsNormal(symbol))
+            case Right((symbol, tpe)) => Right(symbol, tpe)
             case Left(err) => Left(Error.MultipleErrors(err, errs))
           }
       }
@@ -739,7 +750,8 @@ object Type {
                   Vector.empty,
                   Vector.empty,
                   callerHPBounds,
-                  callerTPBounds
+                  callerTPBounds,
+                  requireStatic = false
                 )
 
                 result match {
@@ -756,7 +768,8 @@ object Type {
       callerHP: Vector[HPExpr],
       callerTP: Vector[Type.RefType],
       bounds: Vector[Type.RefType],
-      methodName: String
+      methodName: String,
+      requireStatic: Boolean
     )(implicit global: GlobalData): (Symbol.MethodSymbol, Type.MethodType) = {
       val impls = bounds.view
         .map(_.origin.asInterfaceSymbol)
@@ -769,7 +782,8 @@ object Type {
         callerHP,
         callerTP,
         Vector.empty,
-        Vector.empty
+        Vector.empty,
+        requireStatic
       )
 
       lookupResult.getOrElse(throw new ImplementationErrorException("method should be found"))

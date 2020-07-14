@@ -33,6 +33,8 @@ object Error {
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class LiteralOnTarget(lit: HPExpr) extends Error
   case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
+  case class ReferMethodAsNormal(symbol: Symbol.MethodSymbol) extends Error
+  case class ReferMethodAsStatic(symbol: Symbol.MethodSymbol) extends Error
   case object RequireTypeTree extends Error
   case class RequireSpecificType(actual: Type.RefType, candidates: Type.RefType*) extends Error
   case class RequireModuleType(actual: Type.RefType) extends Error

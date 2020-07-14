@@ -306,6 +306,7 @@ object BackendIRGen {
       targs: Vector[BackendType],
       args: Vector[BackendType],
       methodName: String,
+      requireStatic: Boolean
     ): Symbol.MethodSymbol = {
       val bounds = ctx.tpBound.getOrElse(accessor, Vector.empty).map(toRefType)
 
@@ -322,7 +323,8 @@ object BackendIRGen {
           callerHP,
           callerTP,
           bounds,
-          methodName
+          methodName,
+          requireStatic
         )
 
       methodSymbol
@@ -365,7 +367,7 @@ object BackendIRGen {
           case (None, None) =>
             val prefixTPType = prefix.tpe.asRefType
             val replacedType = toRefType(accessor.tpe)
-            lookupImplMethod(prefixTPType, replacedType, hargs, targs, argSummary.passeds.map(_.tpe), methodName)
+            lookupImplMethod(prefixTPType, replacedType, hargs, targs, argSummary.passeds.map(_.tpe), methodName, requireStatic = false)
         }
 
         val label = makeLabel(referredMethodSymbol, accessor.tpe, argSummary.passeds.map(_.tpe), hargs, targs)

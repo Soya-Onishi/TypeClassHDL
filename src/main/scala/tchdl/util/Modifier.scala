@@ -29,6 +29,7 @@ object Modifier {
     case "public" => Public
     case "sibling" => Sibling
     case "parent" => Parent
+    case "static" => Static
   }
 
   def apply(names: Iterable[String]): Modifier =
@@ -51,6 +52,7 @@ object Modifier {
     Public -> "Public",
     Sibling -> "Sibling",
     Parent -> "Parent",
+    Static -> "Static",
     Child -> "Child",
 
     Interface -> "Interface",
@@ -68,6 +70,7 @@ object Modifier {
   case object Public extends Modifier
   case object Sibling extends Modifier
   case object Parent extends Modifier
+  case object Static extends Modifier
   case object Child extends Modifier
 
   case object Interface extends Modifier

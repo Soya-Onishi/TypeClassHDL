@@ -81,7 +81,7 @@ signature_def
     ;
 
 signature_accessor
-    : INPUT | SIBLING | PARENT
+    : INPUT | SIBLING | PARENT | STATIC
     ;
 
 method_def
@@ -89,7 +89,7 @@ method_def
     ;
 
 method_accessor
-    : INPUT | INTERNAL | SIBLING | PARENT
+    : INPUT | INTERNAL | SIBLING | PARENT | STATIC
     ;
 
 param_defs
@@ -298,6 +298,7 @@ MOD: 'mod';
 SIBLING: 'sibling';
 PARENT: 'parent';
 PUBLIC: 'public';
+STATIC: 'static';
 WHERE: 'where';
 
 IF: 'if';

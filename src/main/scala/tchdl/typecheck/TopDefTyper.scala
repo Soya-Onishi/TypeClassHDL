@@ -70,7 +70,8 @@ object TopDefTyper {
           Modifier.Input,
           Modifier.Internal,
           Modifier.Sibling,
-          Modifier.Parent
+          Modifier.Parent,
+          Modifier.Static,
         )
 
       interfaceDef.methods

@@ -129,9 +129,8 @@ class ASTGenerator {
     val modifier = ctx.method_accessor.asScala
       .map(_.getText)
       .map(Modifier.apply)
-      .foldLeft[Modifier](Modifier.NoModifier) {
-        case (acc, modifier) => acc | modifier
-      }
+      .foldLeft[Modifier](Modifier.NoModifier){ case (acc, modifier) => acc | modifier }
+
     val name = ctx.EXPR_ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param(), ctx.bounds())
     val params = Option(ctx.param_defs())

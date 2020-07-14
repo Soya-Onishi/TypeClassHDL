@@ -340,7 +340,8 @@ object Typer {
           typedTPs.map(_.tpe.asRefType),
           typedArgs.map(_.tpe.asRefType),
           ctx.hpBounds,
-          ctx.tpBounds
+          ctx.tpBounds,
+          requireStatic = false
         )
 
         method.toEither
