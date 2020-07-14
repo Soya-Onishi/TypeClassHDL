@@ -1,7 +1,5 @@
 package tchdl.util
 
-import tchdl.ast._
-import tchdl.util.Symbol.RootPackageSymbol
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.reflect.ClassTag
@@ -10,6 +8,7 @@ import scala.reflect.runtime.universe.TypeTag
 
 abstract class Context {
   val scope: Scope = new Scope
+  val isStatic: Boolean
   def path: NameSpace
 
   def self: Option[Type.RefType]
@@ -38,23 +37,24 @@ abstract class Context {
 }
 
 object Context {
-  def apply(owner: Context, symbol: Symbol): NodeContext =
-    new NodeContext(owner, symbol, owner.self, symbol.path)
+  def apply(owner: Context, symbol: Symbol, isStatic: Boolean = false): NodeContext =
+    new NodeContext(owner, symbol, owner.self, symbol.path, isStatic)
 
   def apply(owner: NodeContext, self: Type.RefType): NodeContext =
-    new NodeContext(owner, owner.owner, Some(self), owner.path)
+    new NodeContext(owner, owner.owner, Some(self), owner.path, owner.isStatic)
 
   def apply(owner: NodeContext): NodeContext =
-    new NodeContext(owner, owner.owner, owner.self, owner.path)
+    new NodeContext(owner, owner.owner, owner.self, owner.path, owner.isStatic)
 
   def blk(owner: NodeContext): NodeContext =
-    new NodeContext(owner, owner.owner, owner.self, owner.path.appendInnerName(owner.getBlkID.toString))
+    new NodeContext(owner, owner.owner, owner.self, owner.path.appendInnerName(owner.getBlkID.toString), owner.isStatic)
 
   def root(pkgName: Vector[String]): RootContext = new RootContext(pkgName)
 
   class RootContext(pkgName: Vector[String]) extends Context {
     override val path: NameSpace = NameSpace(pkgName, Vector.empty, Vector.empty)
     override val self: Option[Type.RefType] = None
+    override val isStatic = false
 
     override def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
       case Some(elem: T) => LookupResult.LookupSuccess(elem)
@@ -108,10 +108,10 @@ object Context {
     val parent: Context,
     val owner: Symbol,
     val self: Option[Type.RefType],
-    val path: NameSpace
+    val path: NameSpace,
+    val isStatic: Boolean
   ) extends Context {
     def append(symbol: Symbol)(implicit global: GlobalData): Either[Error, Unit] = scope.append(symbol)
-
     def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] =
       lookingUp[T](name){ parent.lookup(name) }
 

@@ -1,0 +1,15 @@
+package test
+
+struct ST
+impl ST {
+  static def retBit() -> Bit[2] {
+    0b00
+  }
+}
+
+module Mod
+impl Mod {
+  input def method() -> Bit[2] {
+    ST:::retBit()
+  }
+}

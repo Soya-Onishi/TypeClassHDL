@@ -433,4 +433,26 @@ class TyperTest extends TchdlFunSuite {
     val (_, global) = untilTyper("stageWithFuture.tchdl")
     expectNoError(global)
   }
+
+  test("static method definition does not cause any error") {
+    val (_, global) = untilTyper("defineStaticMethod.tchdl")
+    expectNoError(global)
+  }
+
+  test("static method call with appropriate form does not cause an error") {
+    val (Seq(tree), global) = untilTyper("callStaticMethod.tchdl")
+    expectNoError(global)
+
+    val st = TypeTree(Ident("ST"), Vector.empty, Vector.empty)
+    val mod = TypeTree(Ident("Mod"), Vector.empty, Vector.empty)
+
+    val stImpl = tree.topDefs.collectFirst{ case impl: ImplementClass if impl.target == st => impl }.get
+    val modImpl = tree.topDefs.collectFirst{ case impl: ImplementClass if impl.target == mod => impl }.get
+
+    val methodSymbol = stImpl.components.head.symbol.asMethodSymbol
+    val apply @ Apply(select: StaticSelect, _, _, _) = modImpl.components.head.asInstanceOf[MethodDef].blk.get.last
+
+    assert(select.symbol == methodSymbol)
+    assert(apply.tpe == methodSymbol.tpe.asMethodType.returnType)
+  }
 }

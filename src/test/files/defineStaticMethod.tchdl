@@ -1,0 +1,36 @@
+package test
+
+trait StaticData {
+  static def integer() -> Int
+}
+
+interface StaticModule {
+  static def integer() -> Int
+}
+
+struct ST
+module Mod
+
+impl ST {
+  static def method() -> Int {
+    1
+  }
+}
+
+impl Mod {
+  static def method() -> Bit[2] {
+    0b00
+  }
+}
+
+impl StaticData for ST {
+  static def integer() -> Int {
+    1
+  }
+}
+
+impl StaticModule for Mod {
+  static def integer() -> Int {
+    1
+  }
+}

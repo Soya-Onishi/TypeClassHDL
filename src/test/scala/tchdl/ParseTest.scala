@@ -318,4 +318,41 @@ class ParseTest extends TchdlFunSuite {
     assert(cases(1).pattern == pattern("B", IntLiteral(0), BitLiteral(0, 2)))
     assert(cases(2).pattern == pattern("C", StringLiteral("abc"), UnitLiteral()))
   }
+
+  test("parse static method definition") {
+    val filename = buildName(rootDir, filePath, "defineStaticMethod.tchdl")
+    val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+
+    val traits = tree.topDefs.collectFirst{ case traits: InterfaceDef if traits.flag.hasFlag(Modifier.Trait) => traits }.get
+    val interface = tree.topDefs.collectFirst{ case traits: InterfaceDef if traits.flag.hasFlag(Modifier.Interface) => traits }.get
+
+    val st = TypeTree(Ident("ST"), Vector.empty, Vector.empty)
+    val mod = TypeTree(Ident("Mod"), Vector.empty, Vector.empty)
+
+    val traitImpl = tree.topDefs.collectFirst{ case impl: ImplementInterface if impl.target == st => impl }.get
+    val interfaceImpl = tree.topDefs.collectFirst { case impl: ImplementInterface if impl.target == mod => impl }.get
+
+    val stImpl = tree.topDefs.collectFirst { case impl: ImplementClass if impl.target == st => impl }.get
+    val modImpl = tree.topDefs.collectFirst { case impl: ImplementClass if impl.target == mod => impl }.get
+
+    assert(traits.methods.head.flag == Modifier.Static)
+    assert(interface.methods.head.flag == Modifier.Static)
+    assert(traitImpl.methods.head.flag == Modifier.Static)
+    assert(interfaceImpl.methods.head.flag == Modifier.Static)
+    assert(stImpl.components.head.asInstanceOf[MethodDef].flag == Modifier.Static)
+    assert(modImpl.components.head.asInstanceOf[MethodDef].flag == Modifier.Static)
+  }
+
+  test("parse static method call") {
+    val Apply(prefix, hargs, targs, args) = parseString(_.expr)((gen, tree) => gen.expr(tree)) {
+      """Int:::from("1")"""
+    }
+
+    val int = TypeTree(Ident("Int"), Vector.empty, Vector.empty)
+
+    assert(hargs == Vector.empty)
+    assert(targs == Vector.empty)
+    assert(args == Vector(StringLiteral("1")))
+    assert(prefix == StaticSelect(int, "from"))
+  }
 }

@@ -420,13 +420,20 @@ class ASTGenerator {
   }
 
   def applyCall(ctx: TP.ApplyContext): Apply = {
+    val head = Option(ctx.`type`).map(typeTree)
+
     val name = ctx.EXPR_ID.getText
     val tpsOpt = Option(ctx.apply_typeparam).map(applyTypeParam)
     val args = ctx.args.expr.asScala.map(expr).toVector
 
+    val prefix = head match {
+      case Some(tree) => StaticSelect(tree, name)
+      case None => Ident(name)
+    }
+
     tpsOpt match {
-      case Some((hps, tps)) => Apply(Ident(name), hps, tps, args)
-      case None => Apply(Ident(name), Vector.empty, Vector.empty, args)
+      case Some((hps, tps)) => Apply(prefix, hps, tps, args)
+      case None => Apply(prefix, Vector.empty, Vector.empty, args)
     }
   }
 

@@ -327,31 +327,31 @@ object Typer {
       }
     }
 
+    def lookup(prefixTpe: Type.RefType, name: String, requireStatic: Boolean): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+      val method = prefixTpe.lookupMethod(
+        name,
+        typedHPs,
+        typedTPs.map(_.tpe.asRefType),
+        typedArgs.map(_.tpe.asRefType),
+        ctx.hpBounds,
+        ctx.tpBounds,
+        requireStatic
+      )
+
+      method.toEither
+    }
+
     def lookupMethodForSelect(select: Select): Either[Error, Apply] = {
       def verifyPrefixType(tpe: Type): Either[Error, Type.RefType] = tpe match {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType => Right(tpe)
       }
 
-      def lookup(prefixTpe: Type.RefType): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
-        val method = prefixTpe.lookupMethod(
-          select.name,
-          typedHPs,
-          typedTPs.map(_.tpe.asRefType),
-          typedArgs.map(_.tpe.asRefType),
-          ctx.hpBounds,
-          ctx.tpBounds,
-          requireStatic = false
-        )
-
-        method.toEither
-      }
-
       val typedPrefix = typedExpr(select.prefix)
 
       for {
         prefixTpe <- verifyPrefixType(typedPrefix.tpe)
-        result <- lookup(prefixTpe)
+        result <- lookup(prefixTpe, select.name, requireStatic = false)
         typedApply = {
           val (symbol, tpe) = result
           val typedSelect =
@@ -367,11 +367,38 @@ object Typer {
       } yield typedApply
     }
 
+    def lookupMethodForStaticSelect(select: StaticSelect): Either[Error, Apply] = {
+      def verifyPrefixType(tpe: Type): Either[Error, Type.RefType] =
+        tpe match {
+          case Type.ErrorType => Left(Error.DummyError)
+          case tpe: Type.RefType => Right(tpe)
+        }
+
+      val prefixTree = typedTypeTree(select.prefix)
+
+      for {
+        prefixTpe <- verifyPrefixType(prefixTree.tpe)
+        result <- lookup(prefixTpe, select.name, requireStatic = true)
+      } yield {
+        val (symbol, tpe) = result
+        val typedSelect =
+          StaticSelect(prefixTree, select.name)
+            .setTpe(tpe)
+            .setSymbol(symbol)
+            .setID(select.id)
+
+        Apply(typedSelect, typedHPs, typedTPs, typedArgs)
+          .setTpe(tpe.returnType)
+          .setID(apply.id)
+      }
+    }
+
     if(hasError) errorApply
     else {
       val result = apply.prefix match {
         case ident: Ident => lookupMethodForIdent(ident)
         case select: Select => lookupMethodForSelect(select)
+        case select: StaticSelect => lookupMethodForStaticSelect(select)
       }
 
       result match {

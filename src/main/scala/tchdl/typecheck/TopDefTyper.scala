@@ -64,7 +64,7 @@ object TopDefTyper {
       val isTrait = interfaceDef.flag.hasFlag(Modifier.Trait)
 
       val validModifiers =
-        if(isTrait) Vector(Modifier.NoModifier)
+        if(isTrait) Vector(Modifier.NoModifier, Modifier.Static)
         else Vector(
           Modifier.Sibling | Modifier.Input,
           Modifier.Input,

@@ -274,13 +274,14 @@ object ImplMethodSigTyper {
     def verifyModifierValidity: Either[Error, Unit] = {
       val self = ctx.self.getOrElse(throw new ImplementationErrorException("This type should be there"))
       val validModifiers = self.origin match {
-        case _: Symbol.StructSymbol => Vector(Modifier.NoModifier)
+        case _: Symbol.StructSymbol => Vector(Modifier.NoModifier, Modifier.Static)
         case _: Symbol.ModuleSymbol => Vector(
           Modifier.Input | Modifier.Sibling,
           Modifier.Input,
           Modifier.Sibling,
           Modifier.Parent,
           Modifier.Internal,
+          Modifier.Static,
           Modifier.NoModifier
         )
       }
@@ -290,14 +291,14 @@ object ImplMethodSigTyper {
     }
 
     def verifyMethodTpe: Either[Error, Unit] = {
-      val modMethodModifier = Vector (
+      val moduleInterfaceModifier = Vector (
         Modifier.Input | Modifier.Sibling,
         Modifier.Input,
         Modifier.Sibling,
         Modifier.Parent,
       )
 
-      val isInterfaceMethod = modMethodModifier.contains(methodDef.flag)
+      val isInterfaceMethod = moduleInterfaceModifier.contains(methodDef.flag)
       val paramTpes = methodDef.params.map(_.symbol.tpe)
       val retTpe = methodDef.retTpe.tpe
 
