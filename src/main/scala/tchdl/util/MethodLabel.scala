@@ -8,7 +8,7 @@ trait BackendLabel {
   type SymbolType <: Symbol.TermSymbol
 
   val symbol: SymbolType
-  val accessor: BackendType
+  val accessor: Option[BackendType]
   val hps: ListMap[Symbol.HardwareParamSymbol, HPElem]
   val tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 
@@ -26,7 +26,7 @@ trait BackendLabel {
 
 case class MethodLabel(
   symbol: Symbol.MethodSymbol,
-  accessor: BackendType,
+  accessor: Option[BackendType],
   interface: Option[BackendType],
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
@@ -46,7 +46,7 @@ case class MethodLabel(
 
 case class StageLabel(
   symbol: Symbol.StageSymbol,
-  accessor: BackendType,
+  accessor: Option[BackendType],
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
@@ -60,7 +60,7 @@ case class StageLabel(
 
 case class StateLabel(
   symbol: Symbol.StateSymbol,
-  accessor: BackendType,
+  accessor: Option[BackendType],
   stage: StageLabel,
   index: Int,
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
@@ -72,7 +72,7 @@ case class StateLabel(
 
 case class AlwaysLabel(
   symbol: Symbol.AlwaysSymbol,
-  accessor: BackendType,
+  accessor: Option[BackendType],
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
@@ -82,7 +82,7 @@ case class AlwaysLabel(
 
 case class FieldLabel(
   symbol: Symbol.VariableSymbol,
-  accessor: BackendType,
+  accessor: Option[BackendType],
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {

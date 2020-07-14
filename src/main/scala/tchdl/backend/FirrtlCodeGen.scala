@@ -19,6 +19,7 @@ object FirrtlCodeGen {
     interfaces: Map[BackendType, Vector[MethodContainer]],
     stages: Map[BackendType, Vector[StageContainer]],
     methods: Map[BackendType, Vector[MethodContainer]],
+    functions: Vector[MethodContainer]
   )
 
   abstract class StackFrame {
@@ -204,9 +205,12 @@ object FirrtlCodeGen {
   def exec(topModule: BackendType, modules: Vector[ModuleContainer], methods: Vector[MethodContainer])(implicit global: GlobalData): ir.Circuit = {
     val interfaceTable = modules.map(module => module.tpe -> module.interfaces).toMap
     val stageTable = modules.map(module => module.tpe -> module.stages).toMap
-    val methodTable = methods.groupBy(_.label.accessor)
+    val methodTable = methods
+      .collect{ case method if method.label.accessor.isDefined => method }
+      .groupBy(_.label.accessor.get)
+    val functionTable = methods.collect{ case method if method.label.accessor.isEmpty => method }
 
-    val firrtlModules = modules.map(buildModule(_, interfaceTable, stageTable, methodTable))
+    val firrtlModules = modules.map(buildModule(_, interfaceTable, stageTable, methodTable, functionTable))
     val circuitName = topModule.toFirrtlString
 
     ir.Circuit(ir.NoInfo, firrtlModules, circuitName)
@@ -216,11 +220,12 @@ object FirrtlCodeGen {
     module: ModuleContainer,
     interfaces: Map[BackendType, Vector[MethodContainer]],
     stages: Map[BackendType, Vector[StageContainer]],
-    methods: Map[BackendType, Vector[MethodContainer]]
+    methods: Map[BackendType, Vector[MethodContainer]],
+    functions: Vector[MethodContainer]
   )(implicit global: GlobalData): ir.Module = {
     val instance = ModuleInstance(module.tpe, ModuleLocation.This)
 
-    val ctx = FirrtlContext(interfaces, stages, methods)
+    val ctx = FirrtlContext(interfaces, stages, methods, functions)
     val stack = StackFrame(instance)
 
     module.hps
@@ -857,12 +862,12 @@ object FirrtlCodeGen {
       stack.lookup(name)
     }
 
-    val accessorTpe = call.accessor match {
-      case Some(backend.Term.Temp(_, tpe)) => tpe
-      case Some(backend.Term.Variable(_, tpe)) => tpe
+    val method = call.accessor match {
+      case Some(backend.Term.Temp(_, tpe)) => ctx.methods(tpe).find(_.label == call.label).get
+      case Some(backend.Term.Variable(_, tpe)) => ctx.methods(tpe).find(_.label == call.label).get
+      case None => ctx.functions.find(_.label == call.label).get
     }
 
-    val method = ctx.methods(accessorTpe).find(_.label == call.label).get
     val accessor = call.accessor.map(getInstance)
     val args = call.args.map(getInstance)
     val hargs = call.hargs.map {
