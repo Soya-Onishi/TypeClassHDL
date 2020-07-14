@@ -58,6 +58,7 @@ object Error {
   case class NotEnoughTPBound(remains: TPBound) extends Error
   case class ExcessiveTPBound(remains: Vector[TPBound]) extends Error
   case object UsingSelfOutsideClass extends Error
+  case object UsingSelfInsideStatic extends Error
 
   case class InvalidFormatForType(expr: Expression) extends Error
   case class InvalidFormatForModuleConstruct(expr: Expression) extends Error

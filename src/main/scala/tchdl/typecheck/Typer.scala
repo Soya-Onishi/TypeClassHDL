@@ -52,7 +52,8 @@ object Typer {
   def typedMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
     val method = methodDef.symbol.asMethodSymbol
     val methodTpe = method.tpe.asMethodType
-    val methodSigCtx = Context(ctx, method)
+    val isStatic = methodDef.symbol.hasFlag(Modifier.Static)
+    val methodSigCtx = Context(ctx, method, isStatic = isStatic)
     methodSigCtx.reAppend(method.hps ++ method.tps ++ methodDef.params.map(_.symbol.asVariableSymbol): _*)
 
     val body = methodDef.blk
@@ -856,13 +857,18 @@ object Typer {
   }
 
   def typedThis(self: This)(implicit ctx: Context.NodeContext, global: GlobalData): This = {
-    ctx.self match {
+    val tpe = ctx.self match {
       case None =>
         global.repo.error.append(Error.UsingSelfOutsideClass)
-        This().setTpe(Type.ErrorType).setID(self.id)
+        Type.ErrorType
+      case Some(_) if ctx.isStatic =>
+        global.repo.error.append(Error.UsingSelfInsideStatic)
+        Type.ErrorType
       case Some(tpe) =>
-        This().setTpe(tpe).setID(self.id)
+        tpe
     }
+
+    This().setTpe(tpe).setID(self.id)
   }
 
   def typedIfExpr(ifexpr: IfExpr)(implicit ctx: Context.NodeContext, global: GlobalData): IfExpr = {

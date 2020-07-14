@@ -348,6 +348,29 @@ object BackendIRGen {
       .toVector
 
     apply.prefix match {
+      case select @ frontend.StaticSelect(prefix, methodName) =>
+        val prefixTpe = prefix.tpe.asRefType
+        val prefixBackendTpe = toBackendType(prefixTpe, ctx.hpTable, ctx.tpTable)
+        val selectMethodSymbol = select.symbol.asMethodSymbol
+
+        val referredMethodSymbol = (findImplClassTree(selectMethodSymbol, global), findImplInterfaceTree(selectMethodSymbol, global)) match {
+          case (Some(_), _) => selectMethodSymbol
+          case (None, Some(_)) => selectMethodSymbol
+          case (None, None) =>
+            val replacedType = toRefType(prefixBackendTpe)
+
+            lookupImplMethod(prefixTpe, replacedType, hargs, targs, argSummary.passeds.map(_.tpe), methodName, requireStatic = true)
+        }
+
+        val retTpe = toBackendType(apply.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+        val label = makeLabel(referredMethodSymbol, prefixBackendTpe, argSummary.passeds.map(_.tpe), hargs, targs)
+        val call = backend.CallMethod(label, None, hargs, argSummary.passeds, retTpe)
+
+        BuildResult(
+          argSummary.nodes,
+          Some(call),
+          argSummary.labels + label
+        )
       case select @ frontend.Select(prefix, methodName) =>
         val BuildResult(nodes, Some(last), labels) = buildExpr(prefix)
         val accessorNode = backend.Temp(ctx.temp.get(), last)

@@ -13,7 +13,7 @@ object BuildGeneratedModuleList {
     def buildTypeTree(moduleTree: TypeTree, pkg: Symbol.PackageSymbol): Either[Error, TypeTree] = {
       val rootCtx = pkg.context.values.head
       val dummySymbol = Symbol.StructSymbol("dummy", pkg.path, Accessibility.Private, Modifier.NoModifier, Type.NoType)
-      val nodeCtx = new Context.NodeContext(rootCtx, dummySymbol, None, dummySymbol.path)
+      val nodeCtx = new Context.NodeContext(rootCtx, dummySymbol, None, dummySymbol.path, isStatic = false)
       val moduleTypeTree = Typer.typedTypeTree(moduleTree)(nodeCtx, global)
 
       if(global.repo.error.elems.isEmpty) Right(moduleTypeTree)

@@ -176,7 +176,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.InvalidModifier])
 
     val invalid = err.asInstanceOf[Error.InvalidModifier]
-    assert(invalid.expect == Vector(Modifier.NoModifier))
+    assert(invalid.expect == Vector(Modifier.NoModifier, Modifier.Static))
     assert(invalid.actual == Modifier.Input)
   }
 

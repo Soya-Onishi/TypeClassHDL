@@ -455,4 +455,24 @@ class TyperTest extends TchdlFunSuite {
     assert(select.symbol == methodSymbol)
     assert(apply.tpe == methodSymbol.tpe.asMethodType.returnType)
   }
+
+  test("use `this` in static method causes an error") {
+    val (_, global) = untilTyper("useThisInStatic.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err == Error.UsingSelfInsideStatic)
+  }
+
+  test("use This as accessor of static method") {
+    val (Seq(tree), global) = untilTyper("useThisToCallStatic.tchdl")
+    expectNoError(global)
+
+    val impl = tree.topDefs.collectFirst { case impl: ImplementClass => impl }.get
+    val called = impl.components.collectFirst { case method: MethodDef if method.name == "called" => method }.get
+    val caller = impl.components.collectFirst { case method: MethodDef if method.name == "caller" => method }.get
+    val Apply(select: StaticSelect, _, _, _) = caller.blk.get.last
+
+    assert(select.symbol == called.symbol)
+  }
 }

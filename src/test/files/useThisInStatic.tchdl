@@ -1,0 +1,12 @@
+package test
+
+struct ST
+impl ST {
+  static def invalid() -> Int {
+    this.call()
+  }
+
+  def call() -> Int {
+    0
+  }
+}

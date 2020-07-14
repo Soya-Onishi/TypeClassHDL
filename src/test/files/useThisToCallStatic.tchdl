@@ -1,0 +1,12 @@
+package test
+
+struct ST
+impl ST {
+  static def called() -> Int {
+    0
+  }
+
+  def caller() -> Int {
+    This:::called()
+  }
+}
