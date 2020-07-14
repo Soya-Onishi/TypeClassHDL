@@ -243,7 +243,7 @@ object Namer {
     impl.setSymbol(implSymbol)
   }
 
-  def nodeLevelNamed[T](ast: T)(implicit ctx: Context.NodeContext, global: GlobalData): T = {
+  def nodeLevelNamed[T <: Definition](ast: T)(implicit ctx: Context.NodeContext, global: GlobalData): T = {
     val namedTree = ast match {
       case always: AlwaysDef => namedAlways(always)
       case method: MethodDef => namedMethod(method)
@@ -258,7 +258,7 @@ object Namer {
     namedTree.asInstanceOf[T]
   }
 
-  def topLevelNamed[T](ast: T)(implicit ctx: Context.RootContext, global: GlobalData): T = {
+  def topLevelNamed[T <: Definition](ast: T)(implicit ctx: Context.RootContext, global: GlobalData): T = {
     val namedAST = ast match {
       case module: ModuleDef => namedModule(module)
       case struct: StructDef=> namedStruct(struct)

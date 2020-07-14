@@ -6,7 +6,7 @@ import tchdl.util._
 
 object Typer {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
-    implicit val ctx = getContext(cu.pkgName, cu.filename.get)
+    implicit val ctx: Context.RootContext = getContext(cu.pkgName, cu.filename.get)
 
     val topDefs = cu.topDefs.map(diveIntoExpr)
 
@@ -1246,7 +1246,7 @@ object Typer {
   }
 
   def typedTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
-    Namer.nodeLevelNamed(tpeDef, ctx)
+    Namer.nodeLevelNamed(tpeDef)
 
     tpeDef.symbol.tpe
 

@@ -355,4 +355,9 @@ class ParseTest extends TchdlFunSuite {
     assert(args == Vector(StringLiteral("1")))
     assert(prefix == StaticSelect(int, "from"))
   }
+
+  test("parse top level method definition") {
+    val filename = buildName(rootDir, filePath, "topLevelMethod.tchdl")
+    val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+  }
 }

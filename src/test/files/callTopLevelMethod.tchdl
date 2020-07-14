@@ -1,0 +1,10 @@
+package test
+
+struct ST
+impl ST {
+  def caller() -> Int {
+    called()
+  }
+}
+
+def called() -> Int { 42 }

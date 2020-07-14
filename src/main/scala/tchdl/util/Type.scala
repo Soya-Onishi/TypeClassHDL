@@ -1341,13 +1341,10 @@ object Type {
   }
 
   def buildThisType(symbol: Symbol.TypeSymbol, hps: Vector[ValDef], tps: Vector[TypeDef])(implicit ctx: Context.NodeContext, global: GlobalData): Option[Type.RefType] = {
-    val typedHPs = hps.map(Typer.typedValDef)
-    val typedTPs = tps.map(Typer.typedTypeParam)
+    val hasError = hps.exists(_.symbol.tpe.isErrorType)
 
-    val hasError = typedHPs.exists(_.symbol.tpe.isErrorType)
-
-    val typedHargs = typedHPs.map(hp => Ident(hp.name).setSymbol(hp.symbol).setTpe(hp.symbol.tpe))
-    val typedTargs = typedTPs.map{
+    val typedHargs = hps.map(hp => Ident(hp.name).setSymbol(hp.symbol).setTpe(hp.symbol.tpe))
+    val typedTargs = tps.map{
       tp =>
         val tpSymbol = tp.symbol.asTypeParamSymbol
         Type.RefType(tpSymbol, Vector.empty, Vector.empty)

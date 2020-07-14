@@ -81,4 +81,14 @@ class NamerTest extends TchdlFunSuite {
     assert(symbol.hps.length == 1)
     assert(symbol.hps.head.name == "m")
   }
+
+  test("top level method definition") {
+    val global: GlobalData = GlobalData()
+    val filename = buildName(rootDir, filePath, "topLevelMethod.tchdl")
+    val tree = parser(filename).asInstanceOf[CompilationUnit]
+    Namer.exec(tree)(global)
+
+    val method = tree.topDefs.collectFirst{ case m: MethodDef => m }.get
+    assert(method.symbol.isMethodSymbol)
+  }
 }
