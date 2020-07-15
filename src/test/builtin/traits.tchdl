@@ -70,14 +70,10 @@ impl Eq for Boolean {
   def equals(that: Boolean) -> Boolean { this == that }
 }
 
-trait EqHW {
-  def equals(that: This) -> Bit[1]
-}
-
-impl[m: Num] EqHW for Bit[m]
+impl[m: Num] Eq for Bit[m]
   where m: min 1
 {
-  def equals(that: Bit[m]) -> Bit[1] { this == that }
+  def equals(that: Bit[m]) -> Boolean { this == that }
 }
 
 trait Ord {
@@ -92,11 +88,7 @@ impl Ord for Int {
   }
 }
 
-trait OrdHW {
-  def cmp(that: This) -> Ordering
-}
-
-impl[m: Num] OrdHW for Bit[m]
+impl[m: Num] Ord for Bit[m]
   where m: min 1
 {
   def cmp(that: Bit[m]) -> Ordering {
