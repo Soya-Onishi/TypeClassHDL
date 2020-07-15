@@ -41,12 +41,15 @@ object Error {
   case class RequireHardwareType(actual: Type.RefType) extends Error
   case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol) extends Error
   case class RequireFlag(require: Modifier, actual: Symbol) extends Error
+
   case object RejectSelfType extends Error
   case object RejectHigherKind extends Error
   case object RejectTPFromSelf extends Error
   case object RejectPackage extends Error
   case class RejectEntityTypeFromLookup(symbol: Symbol.TypeSymbol) extends Error
   case class RejectTypeParam[From <: Symbol : TypeTag]() extends Error
+  case class RejectHeapType(tpe: Type.RefType) extends Error
+
   case object RejectPolyParams extends Error
   case class NoNeedTypeParameter(method: Type.MethodType) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type]) extends Error

@@ -1,0 +1,6 @@
+package test
+
+def function(cond: Bool, a: String, b: String) -> String = {
+  if(cond) a
+  else     b
+}

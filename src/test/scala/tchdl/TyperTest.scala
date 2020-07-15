@@ -473,4 +473,17 @@ class TyperTest extends TchdlFunSuite {
 
     assert(select.symbol == called.symbol)
   }
+
+  test("use Int and Bool as parameters of interface causes no error") {
+    val (_, global) = untilTyper("useIntasInterface.tchdl")
+    expectNoError(global)
+  }
+
+  test("if expr reject String type as return type") {
+    val (_, global) = untilTyper("useStringAsIfExpr.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RejectHeapType])
+  }
 }

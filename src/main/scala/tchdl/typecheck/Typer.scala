@@ -655,11 +655,17 @@ object Typer {
           }
         }
 
+        def retIsNotHeapType(retTpe: Type.RefType): Either[Error, Unit] = {
+          if(retTpe.isHardwareType) Right(())
+          else Left(Error.RejectHeapType(retTpe))
+        }
+
         val result = for {
           _ <- hasError
           _ <- typeMismatches
           _ <- patternTypeMismatch
           _ <- hasFullPatterns
+          _ <- retIsNotHeapType(typedCases.head.tpe.asRefType)
         } yield Match(typedMatched, typedCases)
           .setTpe(typedCases.head.tpe)
           .setID(matchExpr.id)
@@ -888,12 +894,17 @@ object Typer {
         val retTpe = (alt.tpe, typedConseq.tpe) match {
           case (Type.ErrorType, tpe) => tpe
           case (tpe, Type.ErrorType) => tpe
-          case (altTpe, conseqTpe)  =>
-            if(altTpe =!= conseqTpe)
+          case (altTpe: Type.RefType, conseqTpe: Type.RefType)  =>
+            if(altTpe != conseqTpe)
               global.repo.error.append(Error.TypeMismatch(altTpe, conseqTpe))
+
+            if(!altTpe.isHardwareType)
+              global.repo.error.append(Error.RejectHeapType(altTpe))
 
             altTpe
         }
+
+
 
         IfExpr(typedCond, typedConseq, typedAlt).setTpe(retTpe).setID(ifexpr.id)
     }

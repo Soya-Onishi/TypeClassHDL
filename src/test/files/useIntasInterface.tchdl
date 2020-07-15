@@ -1,0 +1,6 @@
+package test
+
+module Top
+impl Top {
+  input def function(a: Int, b: Bool) -> Unit {}
+}
