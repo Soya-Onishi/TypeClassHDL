@@ -342,10 +342,10 @@ abstract class UnaryOp extends Expression with HasSymbol {
   type Expr <: Expression
 
   val op: Operation
-  val expr: Expr
+  val operand: Expr
 }
 
-case class StdUnaryOp(op: Operation, expr: Expression) extends UnaryOp {
+case class StdUnaryOp(op: Operation, operand: Expression) extends UnaryOp {
   type Expr = Expression
 }
 
@@ -442,42 +442,42 @@ object Operation {
 
   case object Eq extends Operation {
     override def toInterface: String = "Eq"
-    override def toMethod: String = "equals"
+    override def toMethod: String = "equal"
     override def toOperator: String = "=="
     override def isCommutative: Boolean = true
   }
 
   case object Ne extends Operation {
     override def toInterface: String = "Eq"
-    override def toMethod: String = "equals"
+    override def toMethod: String = "nequal"
     override def toOperator: String = "!="
     override def isCommutative: Boolean = true
   }
 
   case object Ge extends Operation {
     override def toInterface: String = "Ord"
-    override def toMethod: String = "cmp"
+    override def toMethod: String = "greaterEq"
     override def toOperator: String = "<="
     override def isCommutative: Boolean = false
   }
 
   case object Gt extends Operation {
     override def toInterface: String = "Ord"
-    override def toMethod: String = "cmp"
+    override def toMethod: String = "greaterThan"
     override def toOperator: String = "<"
     override def isCommutative: Boolean = false
   }
 
   case object Le extends Operation {
     override def toInterface: String = "Ord"
-    override def toMethod: String = "cmp"
+    override def toMethod: String = "lessEqual"
     override def toOperator: String = ">="
     override def isCommutative: Boolean = false
   }
 
   case object Lt extends Operation {
     override def toInterface: String = "Ord"
-    override def toMethod: String = "cmp"
+    override def toMethod: String = "lessThan"
     override def toOperator: String = ">"
     override def isCommutative: Boolean = false
   }

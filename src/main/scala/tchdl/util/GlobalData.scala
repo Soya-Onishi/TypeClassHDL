@@ -14,6 +14,7 @@ abstract class GlobalData {
   val builtin = new {
     val types: BuiltInTypes = new BuiltInTypes
     val interfaces: BuiltInInterfaces = new BuiltInInterfaces
+    val functions: BuiltInFunctions = new BuiltInFunctions
   }
 
   val buffer = new {
@@ -99,7 +100,7 @@ trait BuiltInSymbols[T <: Symbol] {
 
   def append(symbol: T): Unit = {
     builtin.get(symbol.name) match {
-      case None => throw new ImplementationErrorException(s"${symbol.name} is not a builtin type")
+      case None => throw new ImplementationErrorException(s"${symbol.name} is not a builtin symbol")
       case Some(null) => builtin(symbol.name) = symbol
       case Some(_) => throw new ImplementationErrorException(s"${symbol.name} is already assigned")
     }
@@ -109,7 +110,7 @@ trait BuiltInSymbols[T <: Symbol] {
     builtin.get(name) match {
       case Some(null) => throw new ImplementationErrorException(s"$name is not assigned yet")
       case Some(symbol) => symbol
-      case None => throw new ImplementationErrorException(s"$name is not builtin type")
+      case None => throw new ImplementationErrorException(s"$name is not builtin symbol")
     }
   }
 }
@@ -143,6 +144,25 @@ class BuiltInInterfaces extends BuiltInSymbols[Symbol.InterfaceSymbol] {
     "Eq" -> null,
     "HW" -> null,
     "Module" -> null,
+  )
+}
+
+class BuiltInFunctions extends BuiltInSymbols[Symbol.MethodSymbol] {
+  import scala.collection.mutable
+
+  protected val builtin: mutable.Map[String, Symbol.MethodSymbol] = mutable.Map[String, Symbol.MethodSymbol](
+    "add" -> null,
+    "sub" -> null,
+    "mul" -> null,
+    "div" -> null,
+    "equal" -> null,
+    "notEqual" -> null,
+    "greaterThan" -> null,
+    "greaterEqual" -> null,
+    "lessThan" -> null,
+    "lessEqual" -> null,
+    "not" -> null,
+    "neg" -> null,
   )
 }
 

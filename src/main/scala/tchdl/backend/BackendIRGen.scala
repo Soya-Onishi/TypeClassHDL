@@ -454,7 +454,7 @@ object BackendIRGen {
       val leftTpe = toRefType(leftExpr.tpe)
       val rightTpe = toRefType(rightExpr.tpe)
 
-      val (operator, _) = leftTpe.lookupOperator(binop.op, rightTpe, Vector.empty, Vector.empty)
+      val (operator, _) = leftTpe.lookupOperator(binop.op, Some(rightTpe), Vector.empty, Vector.empty)
         .toEither
         .getOrElse(throw new ImplementationErrorException(s"operator[${binop.op}] for [$leftTpe] and [$rightTpe] should be found"))
 

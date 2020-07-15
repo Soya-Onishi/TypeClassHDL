@@ -17,7 +17,8 @@ class TchdlFunSuite extends AnyFunSuite {
   val builtinTypes: String = buildName(rootDir, builtinPath, "types.tchdl")
   val builtinTraits: String = buildName(rootDir, builtinPath, "traits.tchdl")
   val builtinInterfaces: String = buildName(rootDir, builtinPath, "interfaces.tchdl")
-  val builtInFiles: Vector[String] = Vector(builtinTypes, builtinTraits, builtinInterfaces)
+  val builtinFunctions: String = buildName(rootDir, builtinPath, "functions.tchdl")
+  val builtInFiles: Vector[String] = Vector(builtinTypes, builtinTraits, builtinInterfaces, builtinFunctions)
 
   def parseString[T <: ParseTree](parsing: TchdlParser => T)(ast: (ASTGenerator, T) => AST)(code: String): AST =
     parseInput(parsing)(ast)(CharStreams.fromString(code))

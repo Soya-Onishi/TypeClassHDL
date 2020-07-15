@@ -62,7 +62,7 @@ object Typer {
 
     val typedBody = typedBlock(body)(methodSigCtx, global)
 
-    if(!typedBody.tpe.isErrorType && typedBody.tpe.asRefType =!= methodTpe.returnType) {
+    if(!typedBody.tpe.isErrorType && typedBody.tpe.asRefType != methodTpe.returnType) {
       global.repo.error.append(Error.TypeMismatch(methodTpe.returnType, typedBody.tpe.asRefType))
     }
 
@@ -204,6 +204,7 @@ object Typer {
       case select: Select => typedExprSelect(select)
       case matchExpr: Match => typedMatch(matchExpr)
       case binop: StdBinOp => typedStdBinOp(binop)
+      case unaryOp: StdUnaryOp => typedStdUnaryOp(unaryOp)
       case ifExpr: IfExpr => typedIfExpr(ifExpr)
       case self: This => typedThis(self)
       case blk: Block => typedBlock(blk)
@@ -825,7 +826,7 @@ object Typer {
       .setID(construct.id)
   }
 
-  def typedStdBinOp(binop: StdBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): BinOp = {
+  def typedStdBinOp(binop: StdBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): StdBinOp = {
     val typedLeft = typedExpr(binop.left)
     val typedRight = typedExpr(binop.right)
 
@@ -833,7 +834,7 @@ object Typer {
       case (Type.ErrorType, _) => LookupResult.LookupFailure(Error.DummyError)
       case (_, Type.ErrorType) => LookupResult.LookupFailure(Error.DummyError)
       case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
-        leftTpe.lookupOperator(binop.op, rightTpe, ctx.hpBounds, ctx.tpBounds)
+        leftTpe.lookupOperator(binop.op, Some(rightTpe), ctx.hpBounds, ctx.tpBounds)
     }
 
     result match {
@@ -845,6 +846,23 @@ object Typer {
           .setSymbol(methodSymbol)
           .setTpe(methodTpe.returnType)
           .setID(binop.id)
+    }
+  }
+
+  def typedStdUnaryOp(unaryOp: StdUnaryOp)(implicit ctx: Context.NodeContext, global: GlobalData): StdUnaryOp = {
+    val typedOperand = typedExpr(unaryOp.operand)
+
+    val result = typedOperand.tpe match {
+      case Type.ErrorType => LookupResult.LookupFailure(Error.DummyError)
+      case operand: Type.RefType => operand.lookupOperator(unaryOp.op, None, ctx.hpBounds, ctx.tpBounds)
+    }
+
+    result match {
+      case LookupResult.LookupFailure(err) =>
+        global.repo.error.append(err)
+        unaryOp.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
+      case LookupResult.LookupSuccess((symbol, tpe)) =>
+        unaryOp.setSymbol(symbol).setTpe(tpe.returnType)
     }
   }
 

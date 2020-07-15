@@ -134,12 +134,16 @@ object Type {
       val signatureCtx = Context(ctx, methodDef.symbol)
       signatureCtx.reAppend(
         methodDef.symbol.asMethodSymbol.hps ++
-          methodDef.symbol.asMethodSymbol.tps: _*
+        methodDef.symbol.asMethodSymbol.tps: _*
       )(global)
 
       val method = methodDef.symbol.asMethodSymbol
       val hpBoundTrees = methodDef.bounds.collect { case b: HPBoundTree => b }
       val tpBoundTrees = methodDef.bounds.collect { case b: TPBoundTree => b }
+      val paramSymbols = methodDef.params
+        .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
+        .map(Typer.typedValDef(_)(signatureCtx, global))
+        .map(_.symbol)
 
       val result = for {
         _ <- verifyHPTpes(methodDef.hp)
@@ -154,10 +158,6 @@ object Type {
           .map { case (t, bs) => TPBound(t, bs) }
           .toVector
         _ = method.setBound(hpBounds ++ tpBounds)
-        paramSymbols = methodDef.params
-          .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
-          .map(Typer.typedValDef(_)(signatureCtx, global))
-          .map(_.symbol)
         retTpeTree = Typer.typedTypeTree(methodDef.retTpe)(signatureCtx, global)
         _ = methodDef.retTpe.setSymbol(retTpeTree.symbol).setTpe(retTpeTree.tpe)
         tpes = paramSymbols.map(_.tpe) :+ retTpeTree.tpe
@@ -356,6 +356,12 @@ object Type {
 
   object MethodType {
     def apply(args: Vector[Type.RefType], retTpe: RefType): MethodType = new MethodType(args, retTpe)
+    def unapply(obj: Any): Option[(Vector[Type.RefType], Type.RefType)] =
+      obj match {
+        case method: Type.MethodType => Some(method.params, method.returnType)
+        case _ => None
+      }
+
   }
 
   class EnumMemberType(
@@ -557,12 +563,12 @@ object Type {
         methodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
         methodTpBound = TPBound.swapBounds(method.tpBound, appendHpTable, appendTpTable)
         _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound, impl, target)
-        swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable)
+        swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable, this)
         _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
     }
 
-    def lookupFromTypeParam(
+    private def lookupFromTypeParam(
       interface: Symbol.InterfaceSymbol,
       interfaceHPs: Vector[HPExpr],
       interfaceTPs: Vector[Type.RefType],
@@ -608,12 +614,12 @@ object Type {
         simplifiedHPBounds <- HPBound.simplify(swappedHPBounds)
         _ <- verifyEachBounds(simplifiedHPBounds, swappedTPBounds)
         methodTpe = method.tpe.asMethodType
-        swappedTpe = RefType.assignMethodTpe(methodTpe, hpTable, tpTable)
+        swappedTpe = RefType.assignMethodTpe(methodTpe, hpTable, tpTable, this)
         _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
     }
 
-    def lookupFromImpls(
+    private def lookupFromImpls(
       impls: Iterable[ImplementContainer],
       methodName: String,
       args: Vector[Type.RefType],
@@ -685,7 +691,7 @@ object Type {
           swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
           simplifiedHPBound <- HPBound.simplify(swappedHpBound)
           _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, Vector.empty, Vector.empty, impl, this)
-          swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable)
+          swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable, this)
           _ <- RefType.verifyMethodType(swappedTpe, args)
         } yield (stage, stageTpe)
       }
@@ -707,11 +713,27 @@ object Type {
 
     def lookupOperator(
       op: Operation,
-      arg: Type.RefType,
+      arg: Option[Type.RefType],
       callerHPBounds: Vector[HPBound],
       callerTPBounds: Vector[TPBound]
     )(implicit global: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
-      val interface = global.builtin.interfaces.lookup(op.toInterface)
+      val method = global.builtin.functions.lookup(op.toMethod)
+      val hpTable = Map.empty[Symbol.HardwareParamSymbol, HPExpr]
+      val tpTable = Map(method.tps.head -> this)
+      val swappedTPBounds = TPBound.swapBounds(method.tpBound, hpTable, tpTable)
+      val result = swappedTPBounds
+        .map(TPBound.verifyMeetBound(_, callerHPBounds, callerTPBounds))
+        .combine(errs => Error.MultipleErrors(errs: _*))
+
+      result match {
+        case Left(err) => LookupResult.LookupFailure(err)
+        case Right(_) =>
+          val methodTpe = method.tpe.asMethodType.replaceWithMap(hpTable, tpTable)
+
+          LookupResult.LookupSuccess(method, methodTpe)
+      }
+
+      /*
       this.origin match {
         case _: Symbol.EntityTypeSymbol =>
           val (errs, methods) = interface.impls
@@ -761,6 +783,7 @@ object Type {
             }
           }
       }
+      */
     }
 
     def lookupMethodFromBounds(
@@ -1113,7 +1136,8 @@ object Type {
     def assignMethodTpe(
       method: Type.MethodType,
       hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
-      tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]
+      tpTable: Map[Symbol.TypeParamSymbol, Type.RefType],
+      thisTpe: Type.RefType
     ): Type.MethodType = {
       def swapHP(expr: HPExpr): HPExpr =
         expr match {
@@ -1127,11 +1151,12 @@ object Type {
 
       def swapType(tpe: Type.RefType): Type.RefType =
         tpe.origin match {
-          case _: Symbol.EntityTypeSymbol =>
+          case _: Symbol.ClassTypeSymbol =>
             val swappedHP = tpe.hardwareParam.map(swapHP)
             val swappedTP = tpe.typeParam.map(swapType)
 
             Type.RefType(tpe.origin, swappedHP, swappedTP)
+          case _: Symbol.InterfaceSymbol => thisTpe
           case t: Symbol.TypeParamSymbol =>
             tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
         }

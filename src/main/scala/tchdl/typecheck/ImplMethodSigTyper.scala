@@ -326,7 +326,11 @@ object ImplMethodSigTyper {
       (paramResults :+ retResult).combine(errs => Error.MultipleErrors(errs: _*))
     }
 
-    methodDef.symbol.tpe
+    methodDef.symbol.tpe match {
+      case Type.ErrorType => methodDef.retTpe.setTpe(Type.ErrorType)
+      case Type.MethodType(_, ret) => methodDef.retTpe.setTpe(ret)
+    }
+
     val methodSymbol = methodDef.symbol.asMethodSymbol
     val signatureCtx = Context(ctx, methodSymbol)
     signatureCtx.reAppend(methodSymbol.hps ++ methodSymbol.tps: _*)

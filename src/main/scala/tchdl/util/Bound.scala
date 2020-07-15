@@ -116,7 +116,7 @@ object TPBound {
       case _: Symbol.TypeParamSymbol => verifyTypeParamTarget(swapped, callerHPBound, callerTPBound)
     }
 
-  def verifyEntityTarget(
+  private def verifyEntityTarget(
     tpBound: TPBound,
     callerHPBound: Vector[HPBound],
     callerTPBound: Vector[TPBound]
@@ -210,7 +210,7 @@ object TPBound {
     else Left(Error.MultipleErrors(errs: _*))
   }
 
-  def verifyTypeParamTarget(
+  private def verifyTypeParamTarget(
     swappedTPBound: TPBound,
     callerHPBound: Vector[HPBound],
     callerTPBound: Vector[TPBound]

@@ -59,21 +59,21 @@ impl[m: Num] Div for Bit[m]
 }
 
 trait Eq {
-  def equals(that: This) -> Boolean
+  def equals(that: This) -> Bool
 }
 
 impl Eq for Int {
-  def equals(that: Int) -> Boolean { this == that }
+  def equals(that: Int) -> Bool { this == that }
 }
 
-impl Eq for Boolean {
-  def equals(that: Boolean) -> Boolean { this == that }
+impl Eq for Bool {
+  def equals(that: Bool) -> Bool { this == that }
 }
 
 impl[m: Num] Eq for Bit[m]
   where m: min 1
 {
-  def equals(that: Bit[m]) -> Boolean { this == that }
+  def equals(that: Bit[m]) -> Bool { this == that }
 }
 
 trait Ord {
@@ -106,14 +106,14 @@ impl Not for Int {
   def not() -> Int { !this }
 }
 
-impl Not for Boolean {
-  def not() -> Boolean { !this }
+impl Not for Bool {
+  def not() -> Bool { !this }
 }
 
 impl[m: Num] Not for Bit[m]
   where m: min 1
 {
-  def not() -> Boolean { !this }
+  def not() -> Bit[m] { !this }
 }
 
 trait Neg {
@@ -124,7 +124,9 @@ impl Neg for Int {
   def neg() -> Int { -this }
 }
 
-impl[m: Num] Neg for Bit[m] {
+impl[m: Num] Neg for Bit[m]
+  where m: min 1
+{
   def neg() -> Bit[m] { -this }
 }
 

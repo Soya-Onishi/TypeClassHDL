@@ -1,5 +1,16 @@
 package std::functions
 
+import std::traits:::Add
+import std::traits:::Sub
+import std::traits:::Mul
+import std::traits:::Div
+import std::traits:::Eq
+import std::traits:::Ord
+import std::traits:::Not
+import std::traits:::Neg
+
+import std::types:::Ordering
+
 def add[T](a: T, b: T) -> T where T: Add {
   a.add(b)
 }
@@ -16,15 +27,15 @@ def div[T](a: T, b: T) -> T where T: Div {
   a.div(b)
 }
 
-def equal[T](a: T, b: T) -> Boolean where T: Eq {
+def equal[T](a: T, b: T) -> Bool where T: Eq {
   a.equals(b)
 }
 
-def nequal[T](a: T, b: T) -> Boolean where T: Eq {
+def notEqual[T](a: T, b: T) -> Bool where T: Eq {
   !(a.equals(b))
 }
 
-def greaterEq(a: T, b: T) -> Boolean where T: Ord {
+def greaterEqual[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Gt => true
     case Ordering:::Eq => true
@@ -32,7 +43,7 @@ def greaterEq(a: T, b: T) -> Boolean where T: Ord {
   }
 }
 
-def greaterThan(a: T, b: T) -> Boolean where T: Ord {
+def greaterThan[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Gt => true
     case Ordering:::Eq => false
@@ -40,7 +51,7 @@ def greaterThan(a: T, b: T) -> Boolean where T: Ord {
   }
 }
 
-def lessEq(a: T, b: T) -> Boolean where T: Ord {
+def lessEqual[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Lt => true
     case Ordering:::Eq => true
@@ -48,11 +59,19 @@ def lessEq(a: T, b: T) -> Boolean where T: Ord {
   }
 }
 
-def lessThan(a: T, b: T) -> Boolean where T: Ord {
+def lessThan[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Lt => true
     case Ordering:::Eq => false
     case Ordering:::Gt => false
   }
+}
+
+def neg[T](a: T) -> T where T: Neg {
+  a.neg()
+}
+
+def not[T](a: T) -> T where T: Not {
+  a.not()
 }
 

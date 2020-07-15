@@ -28,6 +28,11 @@ object Namer {
   }
 
   def namedMethod(method: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
+    def tryAppendBuiltin(symbol: Symbol.MethodSymbol): Unit = {
+      if(ctx.path.pkgName == Vector("std", "functions") && global.builtin.functions.names.contains(symbol.name))
+        global.builtin.functions.append(symbol)
+    }
+
     val methodTpe = Type.MethodTypeGenerator(method, ctx, global)
     val methodSymbol = Symbol.MethodSymbol(
       method.name,
@@ -44,6 +49,7 @@ object Namer {
     methodSymbol.setHPs(namedHPs.map(_.symbol.asHardwareParamSymbol))
     methodSymbol.setTPs(namedTPs.map(_.symbol.asTypeParamSymbol))
 
+    tryAppendBuiltin(methodSymbol)
     ctx.append(methodSymbol).left.foreach(global.repo.error.append)
     method.setSymbol(methodSymbol)
   }
