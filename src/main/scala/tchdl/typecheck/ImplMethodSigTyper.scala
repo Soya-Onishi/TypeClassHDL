@@ -10,9 +10,10 @@ object ImplMethodSigTyper {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
     val ctx = getContext(cu.pkgName, cu.filename.get)
 
-    cu.topDefs.collect{
+    cu.topDefs.collect {
       case impl: ImplementClass => verifyImplClass(impl)(ctx, global)
       case impl: ImplementInterface => verifyImplInterface(impl)(ctx, global)
+      case method: MethodDef => verifyMethodDef(method)(ctx, global)
     }
   }
 
@@ -22,7 +23,7 @@ object ImplMethodSigTyper {
 
     implSigCtx.reAppend(
       implSymbol.hps ++
-      implSymbol.tps: _*
+        implSymbol.tps: _*
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
@@ -39,7 +40,9 @@ object ImplMethodSigTyper {
 
     val (valErrs, _) = impl.components
       .collect { case v: ValDef => v }
-      .map{ verifyValDef(_)(implCtx, global) }
+      .map {
+        verifyValDef(_)(implCtx, global)
+      }
       .partitionMap(identity)
 
     val errs = methodErrs ++ stageErrs ++ valErrs
@@ -57,13 +60,13 @@ object ImplMethodSigTyper {
           .getOrElse(Left(Error.ImplementMethodInterfaceNotHas(implMethod, interface)))
 
       def verifyModifier(implMethod: Symbol.MethodSymbol, interfaceMethod: Symbol.MethodSymbol): Either[Error, Unit] = {
-        if(implMethod.flag == interfaceMethod.flag) Right(())
+        if (implMethod.flag == interfaceMethod.flag) Right(())
         else Left(Error.ModifierMismatch(interfaceMethod.flag, implMethod.flag))
       }
 
       def verifySignatureLength(implMethod: Symbol.MethodSymbol, interfaceMethod: Symbol.MethodSymbol): Either[Error, Unit] = {
         def verify(expect: Int, actual: Int, err: (Int, Int) => Error): Either[Error, Unit] =
-          if(expect == actual) Right(())
+          if (expect == actual) Right(())
           else Left(err(expect, actual))
 
         val results = Vector(
@@ -85,7 +88,7 @@ object ImplMethodSigTyper {
       ): Either[Error, Unit] = {
         def verifyBounds(impls: Vector[HPBound], interfaces: Vector[HPBound]): Either[Error, Unit] =
           (impls zip interfaces)
-            .map{ case (impl, interface) => verifyBound(impl, interface) }
+            .map { case (impl, interface) => verifyBound(impl, interface) }
             .combine(errs => Error.MultipleErrors(errs: _*))
 
         def verifyBound(impl: HPBound, interface: HPBound): Either[Error, Unit] = {
@@ -103,8 +106,8 @@ object ImplMethodSigTyper {
           def verifyConstRange(c0: HPRange.ConstantRange, c1: HPRange.ConstantRange): Either[Error, Unit] = {
             val isValid =
               c0.max == c1.max &&
-              c0.min == c1.min &&
-              c0.ne == c1.ne
+                c0.min == c1.min &&
+                c0.ne == c1.ne
 
             if (isValid) Right(())
             else Left(Error.NotEnoughHPBound(interface))
@@ -161,7 +164,7 @@ object ImplMethodSigTyper {
 
         def verifyBounds(impls: Vector[TPBound], interfaces: Vector[TPBound]): Either[Error, Unit] = {
           (impls zip interfaces)
-            .map{ case (impl, interface) => verifyBound(impl, interface) }
+            .map { case (impl, interface) => verifyBound(impl, interface) }
             .combine(errs => Error.MultipleErrors(errs: _*))
         }
 
@@ -188,7 +191,7 @@ object ImplMethodSigTyper {
       }
 
       def replaceThisType(interfaceType: Type.RefType, implThisType: Type.RefType): Type.RefType = {
-        if(interfaceType.origin.isInterfaceSymbol) implThisType
+        if (interfaceType.origin.isInterfaceSymbol) implThisType
         else interfaceType
       }
 
@@ -237,7 +240,7 @@ object ImplMethodSigTyper {
 
     implSigCtx.reAppend(
       implSymbol.hps ++
-      implSymbol.tps: _*
+        implSymbol.tps: _*
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
@@ -245,7 +248,7 @@ object ImplMethodSigTyper {
 
     val (errs, methodSymbols) = impl.methods.map(verifyMethodDef(_)(implCtx, global)).partitionMap(identity)
     val result =
-      if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+      if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
       else {
         methodSymbols
           .map(verifyMethodSignatureValidity(_)(implCtx))
@@ -258,9 +261,9 @@ object ImplMethodSigTyper {
     val interfaceMethods = impl.interface.symbol
       .tpe.asEntityType
       .declares
-      .toMap.collect{ case (name, method: Symbol.MethodSymbol) => name -> method }
+      .toMap.collect { case (name, method: Symbol.MethodSymbol) => name -> method }
 
-    interfaceMethods.map{
+    interfaceMethods.map {
       case (name, _) if impl.methods.exists(_.name == name) => Right(())
       case (_, method) => Left(Error.RequireImplementMethod(method))
     }
@@ -270,28 +273,31 @@ object ImplMethodSigTyper {
       .foreach(global.repo.error.append)
   }
 
-  def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
+  def verifyMethodDef(methodDef: MethodDef)(implicit ctx: Context, global: GlobalData): Either[Error, Symbol.MethodSymbol] = {
     def verifyModifierValidity: Either[Error, Unit] = {
-      val self = ctx.self.getOrElse(throw new ImplementationErrorException("This type should be there"))
-      val validModifiers = self.origin match {
-        case _: Symbol.StructSymbol => Vector(Modifier.NoModifier, Modifier.Static)
-        case _: Symbol.ModuleSymbol => Vector(
-          Modifier.Input | Modifier.Sibling,
-          Modifier.Input,
-          Modifier.Sibling,
-          Modifier.Parent,
-          Modifier.Internal,
-          Modifier.Static,
-          Modifier.NoModifier
-        )
+      val validModifiers = ctx.self match {
+        case None => Vector(Modifier.NoModifier)
+        case Some(tpe) => tpe.origin match {
+          case _: Symbol.StructSymbol => Vector(Modifier.NoModifier, Modifier.Static)
+          case _: Symbol.ModuleSymbol =>
+            Vector(
+              Modifier.Input | Modifier.Sibling,
+              Modifier.Input,
+              Modifier.Sibling,
+              Modifier.Parent,
+              Modifier.Internal,
+              Modifier.Static,
+              Modifier.NoModifier
+            )
+        }
       }
 
-      if(validModifiers.contains(methodDef.flag)) Right(())
+      if (validModifiers.contains(methodDef.flag)) Right(())
       else Left(Error.InvalidModifier(validModifiers, methodDef.flag))
     }
 
     def verifyMethodTpe: Either[Error, Unit] = {
-      val moduleInterfaceModifier = Vector (
+      val moduleInterfaceModifier = Vector(
         Modifier.Input | Modifier.Sibling,
         Modifier.Input,
         Modifier.Sibling,
@@ -323,7 +329,7 @@ object ImplMethodSigTyper {
     methodDef.symbol.tpe
     val methodSymbol = methodDef.symbol.asMethodSymbol
     val signatureCtx = Context(ctx, methodSymbol)
-    signatureCtx.reAppend (methodSymbol.hps ++ methodSymbol.tps: _*)
+    signatureCtx.reAppend(methodSymbol.hps ++ methodSymbol.tps: _*)
 
     for {
       _ <- TyperUtil.verifyTPBoundType(methodSymbol)(signatureCtx, global)
@@ -333,7 +339,7 @@ object ImplMethodSigTyper {
   }
 
   def verifyStageDef(stageDef: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.StageSymbol] = {
-    def verifyDefinitionPositionValidity(self: Type.RefType, stage: Symbol.StageSymbol): Either[Error, Type.MethodType]  = self.origin match {
+    def verifyDefinitionPositionValidity(self: Type.RefType, stage: Symbol.StageSymbol): Either[Error, Type.MethodType] = self.origin match {
       case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self))
       case _: Symbol.ModuleSymbol => stage.tpe match {
         case Type.ErrorType => Left(Error.DummyError)
@@ -344,8 +350,8 @@ object ImplMethodSigTyper {
     def verifySignature(stage: Type.MethodType): Either[Error, Unit] = {
       val errs = stage.params.filterNot(_.isHardwareType).map(Error.RequireHardwareType.apply).map(Left.apply[Error, Unit])
       val err =
-        if(stage.returnType == Type.unitTpe) Right(())
-        else if(stage.returnType.origin == global.builtin.types.lookup("Future")) Right(())
+        if (stage.returnType == Type.unitTpe) Right(())
+        else if (stage.returnType.origin == global.builtin.types.lookup("Future")) Right(())
         else Left(Error.RequireSpecificType(stage.returnType, Type.unitTpe))
 
       (errs :+ err).combine(errs => Error.MultipleErrors(errs: _*))

@@ -27,7 +27,7 @@ object Namer {
     always.setSymbol(symbol)
   }
 
-  def namedMethod(method: MethodDef)(implicit ctx: Context.NodeContext, global: GlobalData): MethodDef = {
+  def namedMethod(method: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
     val methodTpe = Type.MethodTypeGenerator(method, ctx, global)
     val methodSymbol = Symbol.MethodSymbol(
       method.name,
@@ -243,7 +243,7 @@ object Namer {
     impl.setSymbol(implSymbol)
   }
 
-  def nodeLevelNamed[T](ast: T)(implicit ctx: Context.NodeContext, global: GlobalData): T = {
+  def nodeLevelNamed[T <: Definition](ast: T)(implicit ctx: Context.NodeContext, global: GlobalData): T = {
     val namedTree = ast match {
       case always: AlwaysDef => namedAlways(always)
       case method: MethodDef => namedMethod(method)
@@ -253,13 +253,12 @@ object Namer {
       case stage: StageDef => namedStageDef(stage)
       case state: StateDef => namedStateDef(state)
       case typeDef: TypeDef => namedTPDef(typeDef)
-      case ast => ast
     }
 
     namedTree.asInstanceOf[T]
   }
 
-  def topLevelNamed[T](ast: T)(implicit ctx: Context.RootContext, global: GlobalData): T = {
+  def topLevelNamed[T <: Definition](ast: T)(implicit ctx: Context.RootContext, global: GlobalData): T = {
     val namedAST = ast match {
       case module: ModuleDef => namedModule(module)
       case struct: StructDef=> namedStruct(struct)
@@ -267,7 +266,7 @@ object Namer {
       case interface: InterfaceDef => namedInterface(interface)
       case impl: ImplementInterface => namedImplInterface(impl)
       case impl: ImplementClass => namedImplClass(impl)
-      case ast => ast
+      case method: MethodDef => namedMethod(method)
     }
 
     namedAST.asInstanceOf[T]

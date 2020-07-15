@@ -123,7 +123,7 @@ object Type {
     }
   }
 
-  case class MethodTypeGenerator(methodDef: MethodDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+  case class MethodTypeGenerator(methodDef: MethodDef, ctx: Context, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
       def verifyHPTpes(hps: Vector[ValDef]): Either[Error, Unit] =
         hps.map(_.symbol.tpe).map {
@@ -858,6 +858,8 @@ object Type {
     }
 
     def isHardwareType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = {
+      val builtinSymbols = global.builtin.types.symbols
+
       def loop(verified: Type.RefType, types: Set[Type.RefType]): Boolean = {
         def verify: Boolean = verified.origin match {
           case _: Symbol.ModuleSymbol => false
@@ -865,14 +867,11 @@ object Type {
           case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
             case None => false
             case Some(tpBound) =>
-              val hardware = global.builtin.interfaces.lookup("HW")
-              tpBound.bounds.exists(_.origin == hardware)
+              val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
+              tpBound.bounds.exists(_ =:= hardwareInterface)
           }
-          case struct: Symbol.StructSymbol if struct == Symbol.bit => true
-          case struct: Symbol.StructSymbol if struct == Symbol.int => true
-          case struct: Symbol.StructSymbol if struct == Symbol.bool => true
-          case struct: Symbol.StructSymbol if struct == Symbol.unit => true
-          case struct: Symbol.StructSymbol if struct == Symbol.string => false
+          case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
+          case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
           case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
           case struct: Symbol.StructSymbol =>
             val hpTable = (struct.hps zip verified.hardwareParam).toMap
@@ -1342,13 +1341,10 @@ object Type {
   }
 
   def buildThisType(symbol: Symbol.TypeSymbol, hps: Vector[ValDef], tps: Vector[TypeDef])(implicit ctx: Context.NodeContext, global: GlobalData): Option[Type.RefType] = {
-    val typedHPs = hps.map(Typer.typedValDef)
-    val typedTPs = tps.map(Typer.typedTypeParam)
+    val hasError = hps.exists(_.symbol.tpe.isErrorType)
 
-    val hasError = typedHPs.exists(_.symbol.tpe.isErrorType)
-
-    val typedHargs = typedHPs.map(hp => Ident(hp.name).setSymbol(hp.symbol).setTpe(hp.symbol.tpe))
-    val typedTargs = typedTPs.map{
+    val typedHargs = hps.map(hp => Ident(hp.name).setSymbol(hp.symbol).setTpe(hp.symbol.tpe))
+    val typedTargs = tps.map{
       tp =>
         val tpSymbol = tp.symbol.asTypeParamSymbol
         Type.RefType(tpSymbol, Vector.empty, Vector.empty)

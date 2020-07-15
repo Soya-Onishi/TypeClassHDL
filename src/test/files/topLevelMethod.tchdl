@@ -1,0 +1,5 @@
+package test
+
+def method(a: Int, b: Int) -> Int {
+  a + b
+}

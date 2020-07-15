@@ -486,4 +486,31 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.RejectHeapType])
   }
+
+  test("top level method definition") {
+    val (Seq(tree), global) = untilTyper("topLevelMethod.tchdl")
+    expectNoError(global)
+
+    val method = tree.topDefs.collectFirst{ case m: MethodDef => m }.get
+    val intTpe = Type.intTpe(global)
+    val expectTpe = Type.MethodType(Vector(intTpe, intTpe), intTpe)
+    assert(method.symbol.isMethodSymbol)
+    assert(method.symbol.tpe == expectTpe)
+  }
+
+  test("call top level method") {
+    val (Seq(tree), global) = untilTyper("callTopLevelMethod.tchdl")
+    expectNoError(global)
+
+    val method = tree.topDefs.collectFirst{ case m: MethodDef => m }.get
+    val implMethod = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case m: MethodDef => m }.get
+
+    val Apply(name: Ident, _, _, _) = implMethod.blk.get.last
+    val methodSymbol = name.symbol
+
+    assert(methodSymbol == method.symbol)
+  }
 }

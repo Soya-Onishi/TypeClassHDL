@@ -25,6 +25,7 @@ top_definition
     | implement_class
     | implement_interface
     | enum_def
+    | method_def
     ;
 
 module_def
