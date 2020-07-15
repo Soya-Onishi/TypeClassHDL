@@ -1,31 +1,131 @@
 package std::traits
 
-trait Add[Param, Output] {
-  def add(that: Param) -> Output
+import std::types:::Ordering
+
+trait Add {
+  def add(that: This) -> This
 }
 
-impl Add[Int, Int] for Int {
+impl Add for Int {
   def add(that: Int) -> Int { this + that }
 }
 
-impl[m: Num] Add[Bit[m], Bit[m]] for Bit[m]
+impl[m: Num] Add for Bit[m]
   where m: min 1
 {
   def add(that: Bit[m]) -> Bit[m] { this + that }
 }
 
-trait Sub[Param, Output] {
-  def sub(that: Param) -> Output
+trait Sub {
+  def sub(that: This) -> This
 }
 
-impl Sub[Int, Int] for Int {
-  def sub(that: Int) -> Int { this + that }
+impl Sub for Int {
+  def sub(that: Int) -> Int { this - that }
 }
 
-impl[m: Num] Sub[Bit[m], Bit[m]] for Bit[m]
+impl[m: Num] Sub for Bit[m]
   where m: min 1
 {
-  def sub(that: Bit[m]) -> Bit[m] { this + that }
+  def sub(that: Bit[m]) -> Bit[m] { this - that }
+}
+
+trait Mul {
+  def mul(that: This) -> This
+}
+
+impl Mul for Int {
+  def mul(that: Int) -> Int { this * that }
+}
+
+impl[m: Num] Mul for Bit[m]
+  where m: min 1
+{
+  def mul(that: Bit[m]) -> Bit[m] { this * that }
+}
+
+trait Div {
+  def div(that: This) -> This
+}
+
+impl Div for Int {
+  def div(that: Int) -> Int { this / that }
+}
+
+impl[m: Num] Div for Bit[m]
+  where m: min 1
+{
+  def div(that: Bit[m]) -> Bit[m] { this / that }
+}
+
+trait Eq {
+  def equals(that: This) -> Boolean
+}
+
+impl Eq for Int {
+  def equals(that: Int) -> Boolean { this == that }
+}
+
+impl Eq for Boolean {
+  def equals(that: Boolean) -> Boolean { this == that }
+}
+
+impl[m: Num] Eq for Bit[m]
+  where m: min 1
+{
+  def equals(that: Bit[m]) -> Boolean { this == that }
+}
+
+trait Ord {
+  def cmp(that: This) -> Ordering
+}
+
+impl Ord for Int {
+  def cmp(that: Int) -> Ordering {
+    if(this == that)     Ordering:::Eq
+    else if(this < that) Ordering:::Lt
+    else                 Ordering:::Gt
+  }
+}
+
+impl[m: Num] Ord for Bit[m]
+  where m: min 1
+{
+  def cmp(that: Bit[m]) -> Ordering {
+    if(this == that)     Ordering:::Eq
+    else if(this < that) Ordering:::Lt
+    else                 Ordering:::Gt
+  }
+}
+
+trait Not {
+  def not() -> This
+}
+
+impl Not for Int {
+  def not() -> Int { !this }
+}
+
+impl Not for Boolean {
+  def not() -> Boolean { !this }
+}
+
+impl[m: Num] Not for Bit[m]
+  where m: min 1
+{
+  def not() -> Boolean { !this }
+}
+
+trait Neg {
+  def neg() -> This
+}
+
+impl Neg for Int {
+  def neg() -> Int { -this }
+}
+
+impl[m: Num] Neg for Bit[m] {
+  def neg() -> Bit[m] { -this }
 }
 
 trait HW {}

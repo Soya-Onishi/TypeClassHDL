@@ -1,0 +1,58 @@
+package std::functions
+
+def add[T](a: T, b: T) -> T where T: Add {
+  a.add(b)
+}
+
+def sub[T](a: T, b: T) -> T where T: Sub {
+  a.sub(b)
+}
+
+def mul[T](a: T, b: T) -> T where T: Mul {
+  a.mul(b)
+}
+
+def div[T](a: T, b: T) -> T where T: Div {
+  a.div(b)
+}
+
+def equal[T](a: T, b: T) -> Boolean where T: Eq {
+  a.equals(b)
+}
+
+def nequal[T](a: T, b: T) -> Boolean where T: Eq {
+  !(a.equals(b))
+}
+
+def greaterEq(a: T, b: T) -> Boolean where T: Ord {
+  match a.cmp(b) {
+    case Ordering:::Gt => true
+    case Ordering:::Eq => true
+    case Ordering:::Lt => false
+  }
+}
+
+def greaterThan(a: T, b: T) -> Boolean where T: Ord {
+  match a.cmp(b) {
+    case Ordering:::Gt => true
+    case Ordering:::Eq => false
+    case Ordering:::Lt => false
+  }
+}
+
+def lessEq(a: T, b: T) -> Boolean where T: Ord {
+  match a.cmp(b) {
+    case Ordering:::Lt => true
+    case Ordering:::Eq => true
+    case Ordering:::Gt => false
+  }
+}
+
+def lessThan(a: T, b: T) -> Boolean where T: Ord {
+  match a.cmp(b) {
+    case Ordering:::Lt => true
+    case Ordering:::Eq => false
+    case Ordering:::Gt => false
+  }
+}
+

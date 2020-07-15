@@ -45,7 +45,7 @@ enum_field_def
     ;
 
 interface_def
-    : INTERFACE TYPE_ID type_param? bounds? '{' (signature_def)* '}'
+    : INTERFACE TYPE_ID type_param? bounds? '{' signature_def*'}'
     ;
 
 implement_class
@@ -161,25 +161,32 @@ component_def_body
     : EXPR_ID (':' type)? '=' expr
     ;
 
-expr: expr '.' (apply | EXPR_ID)        # SelectExpr
-    | expr op=('*' | '/') expr          # MulDivExpr
-    | expr op=('+' | '-') expr          # AddSubExpr
-    | apply                             # ApplyExpr
-    | block                             # BlockExpr
-    | construct_struct                  # ConstructStructExpr
-    | construct_module                  # ConstructModuleExpr
-    | construct_enum                    # ConstructEnumExpr
-    | IF '(' expr ')' expr (ELSE expr)? # IfExpr
-    | MATCH expr '{' case_def+ '}'      # MatchExpr
-    | FINISH                            # Finish
-    | GOTO EXPR_ID                      # Goto
-    | RELAY EXPR_ID '(' args ')'        # Relay
-    | GENERATE EXPR_ID '(' args ')'     # Generate
-    | RETURN expr                       # Return
-    | literal                           # LitExpr
-    | '(' expr ')'                      # ParenthesesExpr
-    | THIS                              # SelfExpr
-    | EXPR_ID                           # ExprID
+expr: expr '.' (apply | EXPR_ID)             # SelectExpr
+    | op=('-' | '!') expr                    # UnaryExpr
+    | expr op=('*' | '/') expr               # MulDivExpr
+    | expr op=('+' | '-') expr               # AddSubExpr
+    | expr op=('<<' | '>>') expr             # ShiftExpr
+    | expr op=('<' | '<=' | '>=' | '>') expr # CmpExpr
+    | expr op=('==' | '!=') expr             # EqExpr
+    | expr '&' expr                          # AndExpr
+    | expr '^' expr                          # XorExpr
+    | expr '|' expr                          # OrExpr
+    | apply                                  # ApplyExpr
+    | block                                  # BlockExpr
+    | construct_struct                       # ConstructStructExpr
+    | construct_module                       # ConstructModuleExpr
+    | construct_enum                         # ConstructEnumExpr
+    | IF '(' expr ')' expr (ELSE expr)?      # IfExpr
+    | MATCH expr '{' case_def+ '}'           # MatchExpr
+    | FINISH                                 # Finish
+    | GOTO EXPR_ID                           # Goto
+    | RELAY EXPR_ID '(' args ')'             # Relay
+    | GENERATE EXPR_ID '(' args ')'          # Generate
+    | RETURN expr                            # Return
+    | literal                                # LitExpr
+    | '(' expr ')'                           # ParenthesesExpr
+    | THIS                                   # SelfExpr
+    | EXPR_ID                                # ExprID
     ;
 
 hp_expr
