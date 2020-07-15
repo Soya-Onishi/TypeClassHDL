@@ -116,7 +116,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val bit4 = BackendType(bit, Vector(HPElem.Num(4)), Vector.empty)
 
     assert(function.code(0) == Temp(3, This(topTpe)))
-    assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, topTpe, ListMap.empty, ListMap.empty), subTpe)))
+    assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, Some(topTpe), ListMap.empty, ListMap.empty), subTpe)))
     val Temp(_, Ident(Term.Variable(functionA, _), _)) = function.code(2)
     val Temp(_, Ident(Term.Variable(functionB, _), _)) = function.code(3)
     assert(functionA.matches("function_[0-9a-f]+\\$a"))

@@ -1,0 +1,13 @@
+package test
+
+enum Pattern {
+  A
+  B
+}
+
+def function(pattern: Pattern, a: String, b: String) -> String {
+  match pattern {
+    case Pattern:::A => a
+    case Pattern:::B => b
+  }
+}

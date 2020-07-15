@@ -857,7 +857,7 @@ object Type {
       }
     }
 
-    def isHardwareType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = {
+    def isHardwareType(implicit ctx: Context, global: GlobalData): Boolean = {
       val builtinSymbols = global.builtin.types.symbols
 
       def loop(verified: Type.RefType, types: Set[Type.RefType]): Boolean = {
@@ -870,7 +870,10 @@ object Type {
               val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
               tpBound.bounds.exists(_ =:= hardwareInterface)
           }
-          case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
+          case struct: Symbol.StructSymbol if struct == Symbol.bit  => true
+          case struct: Symbol.StructSymbol if struct == Symbol.int  => true
+          case struct: Symbol.StructSymbol if struct == Symbol.bool => true
+          case struct: Symbol.StructSymbol if struct == Symbol.unit => true
           case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
           case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
           case struct: Symbol.StructSymbol =>

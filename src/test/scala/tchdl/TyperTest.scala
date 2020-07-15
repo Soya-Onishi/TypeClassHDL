@@ -487,6 +487,14 @@ class TyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.RejectHeapType])
   }
 
+  test("match expr reject String type as return type") {
+    val (_, global) = untilTyper("useStringAsMatch.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RejectHeapType])
+  }
+
   test("top level method definition") {
     val (Seq(tree), global) = untilTyper("topLevelMethod.tchdl")
     expectNoError(global)
