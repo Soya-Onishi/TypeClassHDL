@@ -330,8 +330,8 @@ INT: HEXLIT | DIGITLIT;
 TRUE: 'true';
 FALSE: 'false';
 STRING: '"' .*? '"';
-EXPR_ID: [a-z_][a-zA-Z_0-9]*;
-TYPE_ID: [A-Z][a-zA-Z_0-9]*;
+EXPR_ID: [a-z][a-zA-Z0-9]*;
+TYPE_ID: [A-Z][a-zA-Z0-9]*;
 
 fragment BITLIT: '0b' [01]+;
 fragment HEXLIT: '0x' [0-9a-fA-F]+;
