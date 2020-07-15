@@ -1772,12 +1772,12 @@ object FirrtlCodeGen {
     }
 
     tpe.symbol match {
-      case symbol if symbol == Symbol.bit =>
-        val HPElem.Num(width) = tpe.hargs.head
-        toBitType(width)
       case symbol if symbol == Symbol.int  => toBitType(width = 32)
       case symbol if symbol == Symbol.bool => toBitType(width = 1)
       case symbol if symbol == Symbol.unit => toBitType(width = 0)
+      case symbol if symbol == Symbol.bit =>
+        val HPElem.Num(width) = tpe.hargs.head
+        toBitType(width)
       case symbol: Symbol.EnumSymbol => toEnumType(symbol)
       case _ => toOtherType
     }
