@@ -280,8 +280,15 @@ class ASTGenerator {
 
   def expr(ctx: TP.ExprContext): Expression = ctx match {
     case ctx: TP.SelectExprContext => selectExpr(ctx)
+    case ctx: TP.UnaryExprContext => stdUnaryOp(ctx.op.getText, ctx.expr)
     case ctx: TP.MulDivExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
     case ctx: TP.AddSubExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
+    case ctx: TP.ShiftExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
+    case ctx: TP.CmpExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
+    case ctx: TP.EqExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
+    case ctx: TP.AndExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "&")
+    case ctx: TP.XorExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "^")
+    case ctx: TP.OrExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "|")
     case ctx: TP.ApplyExprContext => applyCall(ctx.apply)
     case ctx: TP.BlockExprContext => block(ctx.block)
     case ctx: TP.ConstructStructExprContext => constructStruct(ctx.construct_struct)
@@ -360,12 +367,29 @@ class ASTGenerator {
     Match(matched, cases)
   }
 
+  def stdUnaryOp(op: String, exp: TP.ExprContext): StdUnaryOp = {
+    val operation = op match {
+      case "-" => Operation.Neg
+      case "!" => Operation.Not
+    }
+
+    StdUnaryOp(operation, expr(exp))
+  }
+
   def stdBinOp(left: TP.ExprContext, right: TP.ExprContext, op: String): StdBinOp = {
     val operation = op match {
-      case "+" => Operation.Add
-      case "-" => Operation.Sub
-      case "*" => Operation.Mul
-      case "/" => Operation.Div
+      case "+"  => Operation.Add
+      case "-"  => Operation.Sub
+      case "*"  => Operation.Mul
+      case "/"  => Operation.Div
+      case ">>" => Operation.Shr
+      case "<<" => Operation.Shl
+      case "==" => Operation.Eq
+      case "!=" => Operation.Ne
+      case "<"  => Operation.Lt
+      case "<=" => Operation.Le
+      case ">"  => Operation.Gt
+      case ">=" => Operation.Ge
     }
 
     StdBinOp(operation, expr(left), expr(right))

@@ -14,3 +14,9 @@ enum Future[T] where T: HW {
   Ready(T)
   NotReady
 }
+
+enum Ordering {
+  Lt
+  Eq
+  Gt
+}

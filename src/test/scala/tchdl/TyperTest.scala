@@ -40,6 +40,11 @@ class TyperTest extends TchdlFunSuite {
     (returnedTrees, global)
   }
 
+  test("typed builtins") {
+    val (_, global) = untilTyper()
+    expectNoError(global)
+  }
+
   test("lookup ST's field. This does not cause errors") {
     val (trees, global) = untilTyper("structImpl0.tchdl")
     assert(global.repo.error.counts == 0, showErrors(global))
