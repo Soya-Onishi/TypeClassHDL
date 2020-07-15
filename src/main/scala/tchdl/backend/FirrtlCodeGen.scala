@@ -1055,18 +1055,36 @@ object FirrtlCodeGen {
         case backend.Term.Variable(name, _) => stack.lookup(stack.refer(name))
       }
 
-    val left = getInstance(call.args.head)
-    val right = getInstance(call.args.tail.head)
+    val insts = call.args.map(getInstance)
 
     val instance = call.label match {
-      case "_builtin_add_int_int" => builtin.intIntAdd(left, right, global)
-      case "_builtin_sub_int_int" => builtin.intIntSub(left, right, global)
-      case "_builtin_mul_int_int" => builtin.intIntMul(left, right, global)
-      case "_builtin_div_int_int" => builtin.intIntDiv(left, right, global)
-      case "_builtin_add_bit_bit" => builtin.bitBitAdd(left, right, global)
-      case "_builtin_sub_bit_bit" => builtin.bitBitSub(left, right, global)
-      case "_builtin_mul_bit_bit" => builtin.bitBitMul(left, right, global)
-      case "_builtin_div_bit_bit" => builtin.bitBitDiv(left, right, global)
+      case "_builtin_add_int" => builtin.intAdd(insts(0), insts(1), global)
+      case "_builtin_sub_int" => builtin.intSub(insts(0), insts(1), global)
+      case "_builtin_mul_int" => builtin.intMul(insts(0), insts(1), global)
+      case "_builtin_div_int" => builtin.intDiv(insts(0), insts(1), global)
+      case "_builtin_eq_int"  => builtin.intEq(insts(0), insts(1), global)
+      case "_builtin_ne_int"  => builtin.intNe(insts(0), insts(1), global)
+      case "_builtin_gt_int"  => builtin.intGt(insts(0), insts(1), global)
+      case "_builtin_ge_int"  => builtin.intGe(insts(0), insts(1), global)
+      case "_builtin_lt_int"  => builtin.intLt(insts(0), insts(1), global)
+      case "_builtin_le_int"  => builtin.intLe(insts(0), insts(1), global)
+      case "_builtin_neg_int" => builtin.intNeg(insts(0), global)
+      case "_builtin_not_int" => builtin.intNot(insts(0), global)
+      case "_builtin_eq_bool" => builtin.boolEq(insts(0), insts(1), global)
+      case "_builtin_ne_bool" => builtin.boolNe(insts(0), insts(1), global)
+      case "_builtin_not_bool"=> builtin.boolNot(insts(0), global)
+      case "_builtin_add_bit" => builtin.bitAdd(insts(0), insts(1))
+      case "_builtin_sub_bit" => builtin.bitSub(insts(0), insts(1))
+      case "_builtin_mul_bit" => builtin.bitMul(insts(0), insts(1))
+      case "_builtin_div_bit" => builtin.bitDiv(insts(0), insts(1))
+      case "_builtin_eq_bit"  => builtin.bitEq(insts(0), insts(1))
+      case "_builtin_ne_bit"  => builtin.bitNe(insts(0), insts(1))
+      case "_builtin_gt_bit"  => builtin.bitGt(insts(0), insts(1))
+      case "_builtin_ge_bit"  => builtin.bitGe(insts(0), insts(1))
+      case "_builtin_lt_bit"  => builtin.bitLt(insts(0), insts(1))
+      case "_builtin_le_bit"  => builtin.bitLe(insts(0), insts(1))
+      case "_builtin_neg_bit" => builtin.bitNeg(insts(0))
+      case "_builtin_not_bit" => builtin.bitNot(insts(0))
     }
 
     RunResult(Future.empty, Vector.empty, instance)
@@ -1094,50 +1112,54 @@ object FirrtlCodeGen {
           case _ => None
         }}
 
-    val condName = stack.refer(ifExpr.cond.id)
-    stack.lookup(condName) match {
-      case BoolInstance(true) => runInner(ifExpr.conseq, ifExpr.conseqLast)
-      case BoolInstance(false) => runInner(ifExpr.alt, ifExpr.altLast)
-      case BitInstance(_, condRef) =>
-        lazy val retName = stack.next("_IFRET")
+    def buildCondition(condRef: ir.Expression): RunResult = {
+      lazy val retName = stack.next("_IFRET")
 
-        val retWire =
-          if(ifExpr.tpe.symbol == Symbol.unit || ifExpr.tpe.symbol == Symbol.future) None
-          else Some(ir.DefWire(ir.NoInfo, retName.name, toFirrtlType(ifExpr.tpe)))
+      val retWire =
+        if(ifExpr.tpe.symbol == Symbol.unit || ifExpr.tpe.symbol == Symbol.future) None
+        else Some(ir.DefWire(ir.NoInfo, retName.name, toFirrtlType(ifExpr.tpe)))
 
-        val wireRef = retWire.map(wire => ir.Reference(wire.name, ir.UnknownType))
+      val wireRef = retWire.map(wire => ir.Reference(wire.name, ir.UnknownType))
 
-        val RunResult(conseqFuture, conseqStmts, conseqInst) = runInner(ifExpr.conseq, ifExpr.conseqLast)
-        val RunResult(altFuture, altStmts, altInst) = runInner(ifExpr.alt, ifExpr.altLast)
-        val conseqRet = connectRet(wireRef, conseqInst)
-        val altRet = connectRet(wireRef, altInst)
+      val RunResult(conseqFuture, conseqStmts, conseqInst) = runInner(ifExpr.conseq, ifExpr.conseqLast)
+      val RunResult(altFuture, altStmts, altInst) = runInner(ifExpr.alt, ifExpr.altLast)
+      val conseqRet = connectRet(wireRef, conseqInst)
+      val altRet = connectRet(wireRef, altInst)
 
-        val whenStmt = ir.Conditionally (
-          ir.NoInfo,
-          condRef,
-          ir.Block(conseqStmts ++ conseqRet),
-          ir.Block(altStmts ++ altRet)
-        )
+      val whenStmt = ir.Conditionally (
+        ir.NoInfo,
+        condRef,
+        ir.Block(conseqStmts ++ conseqRet),
+        ir.Block(altStmts ++ altRet)
+      )
 
-        val retInstance = wireRef match {
-          case None => UnitInstance()
-          case Some(wireRef) => DataInstance(ifExpr.tpe, wireRef)
+      val retInstance = wireRef match {
+        case None => UnitInstance()
+        case Some(wireRef) => DataInstance(ifExpr.tpe, wireRef)
+      }
+
+      val retFuture =
+        if(ifExpr.tpe.symbol != Symbol.future) Map.empty[ir.Expression, FormKind]
+        else {
+          val referRet = ir.Reference(retName.name, ir.UnknownType)
+          val refers = Vector(
+            conseqInst.asInstanceOf[DataInstance].refer,
+            altInst.asInstanceOf[DataInstance].refer,
+          )
+
+          Map[ir.Expression, FormKind](referRet -> FormKind.Local(refers, toFirrtlType(ifExpr.tpe)))
         }
 
-        val retFuture =
-          if(ifExpr.tpe.symbol != Symbol.future) Map.empty[ir.Expression, FormKind]
-          else {
-            val referRet = ir.Reference(retName.name, ir.UnknownType)
-            val refers = Vector(
-              conseqInst.asInstanceOf[DataInstance].refer,
-              altInst.asInstanceOf[DataInstance].refer,
-            )
+      val future = conseqFuture + altFuture + Future(Map.empty, retFuture)
+      RunResult(future, retWire.toVector :+ whenStmt, retInstance)
+    }
 
-            Map[ir.Expression, FormKind](referRet -> FormKind.Local(refers, toFirrtlType(ifExpr.tpe)))
-          }
-
-        val future = conseqFuture + altFuture + Future(Map.empty, retFuture)
-        RunResult(future, retWire.toVector :+ whenStmt, retInstance)
+    val condName = stack.refer(ifExpr.cond.id)
+    stack.lookup(condName) match {
+      case BoolInstance(ir.UIntLiteral(cond, _)) if cond == 1 => runInner(ifExpr.conseq, ifExpr.conseqLast)
+      case BoolInstance(ir.UIntLiteral(cond, _)) if cond == 0 => runInner(ifExpr.alt, ifExpr.altLast)
+      case BoolInstance(condRef) => buildCondition(condRef)
+      case BitInstance(_, condRef) => buildCondition(condRef)
     }
   }
 

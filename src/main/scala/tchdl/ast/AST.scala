@@ -449,14 +449,14 @@ object Operation {
 
   case object Ne extends Operation {
     override def toInterface: String = "Eq"
-    override def toMethod: String = "nequal"
+    override def toMethod: String = "notEqual"
     override def toOperator: String = "!="
     override def isCommutative: Boolean = true
   }
 
   case object Ge extends Operation {
     override def toInterface: String = "Ord"
-    override def toMethod: String = "greaterEq"
+    override def toMethod: String = "greaterEqual"
     override def toOperator: String = "<="
     override def isCommutative: Boolean = false
   }

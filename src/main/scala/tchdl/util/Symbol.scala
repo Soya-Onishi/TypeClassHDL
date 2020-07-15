@@ -399,5 +399,11 @@ object Symbol {
 
   def string(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("String")
+
+  def num(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Num")
+
+  def str(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Str")
 }
 

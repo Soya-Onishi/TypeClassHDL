@@ -256,6 +256,7 @@ object BackendIRGen {
       case select: frontend.Select => buildSelect(select)
       case apply: frontend.Apply => buildApply(apply)
       case binop: frontend.StdBinOp => buildBinOp(binop)
+      case unaryOp: frontend.StdUnaryOp => buildUnaryOp(unaryOp)
       case blk: frontend.Block => buildBlk(blk)
       case matchExpr: frontend.Match => buildMatch(matchExpr)
       case construct: frontend.ConstructClass => buildConstructClass(construct)
@@ -413,31 +414,39 @@ object BackendIRGen {
   }
 
   def buildBinOp(binop: frontend.StdBinOp)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    val int = global.builtin.types.symbols.find(_.name == "Int").get
-    val num = global.builtin.types.symbols.find(_.name == "Num").get
-    val bit = global.builtin.types.symbols.find(_.name == "Bit").get
+    def toName(symbol: Symbol.ClassTypeSymbol): String = symbol match {
+      case symbol if symbol == Symbol.int  => "int"
+      case symbol if symbol == Symbol.num  => "num"
+      case symbol if symbol == Symbol.bit  => "bit"
+      case symbol if symbol == Symbol.bool => "bool"
+    }
 
-    val builtInPairs = Map[frontend.Operation, Vector[(Symbol.TypeSymbol, Symbol.TypeSymbol, String)]](
-      frontend.Operation.Add -> Vector(
-        (int, int, "_builtin_add_int_int"),
-        (num, num, "_builtin_add_int_int"),
-        (bit, bit, "_builtin_add_bit_bit"),
-      ),
-      frontend.Operation.Sub -> Vector(
-        (int, int, "_builtin_sub_int_int"),
-        (num, num, "_builtin_add_int_int"),
-        (bit, bit, "_builtin_sub_bit_bit"),
-      ),
-      frontend.Operation.Mul -> Vector(
-        (int, int, "_builtin_mul_int_int"),
-        (num, num, "_builtin_add_int_int"),
-        (bit, bit, "_builtin_mul_bit_bit"),
-      ),
-      frontend.Operation.Div -> Vector(
-        (int, int, "_builtin_div_int_int"),
-        (num, num, "_builtin_add_int_int"),
-        (bit, bit, "_builtin_div_bit_bit"),
-      ),
+    def methodName(tpe: String, ops: String): String = s"_builtin_${ops}_$tpe"
+
+    def binOp(ops: String, symbols: Symbol.ClassTypeSymbol*): Vector[(Vector[Symbol.TypeSymbol], String)] = {
+      val names = symbols.map(toName)
+
+      (names zip symbols)
+        .map{ case (name, symbol) => Vector(symbol, symbol) -> methodName(name, ops) }
+        .toVector
+    }
+
+    val int = Symbol.int
+    val num = Symbol.num
+    val bit = Symbol.bit
+    val bool = Symbol.bool
+
+    val builtInPairs = Map[frontend.Operation, Vector[(Vector[Symbol.TypeSymbol], String)]](
+      frontend.Operation.Add -> binOp("add", int, num, bit),
+      frontend.Operation.Sub -> binOp("sub", int, num, bit),
+      frontend.Operation.Mul -> binOp("mul", int, num, bit),
+      frontend.Operation.Div -> binOp("div", int, num, bit),
+      frontend.Operation.Eq  -> binOp("eq",  int, num, bit, bool),
+      frontend.Operation.Ne  -> binOp("ne",  int, num, bit, bool),
+      frontend.Operation.Gt  -> binOp("gt",  int, num, bit),
+      frontend.Operation.Ge  -> binOp("ge",  int, num, bit),
+      frontend.Operation.Lt  -> binOp("lt",  int, num, bit),
+      frontend.Operation.Le  -> binOp("le",  int, num, bit),
     )
 
     val BuildResult(leftNodes, Some(leftExpr), leftLabels) = buildExpr(binop.left)
@@ -473,13 +482,13 @@ object BackendIRGen {
         val leftTpeSymbol = leftExpr.tpe.symbol
         val rightTpeSymbol = rightExpr.tpe.symbol
         val called = candidates.find {
-          case (left, right, _) => left == leftTpeSymbol && right == rightTpeSymbol
+          case (Vector(left, right), _) => left == leftTpeSymbol && right == rightTpeSymbol
         }
         val retTpe = leftExpr.tpe
 
         called match {
           case None => buildCallMethod
-          case Some((_, _, name)) => backend.CallBuiltIn(name, Vector(left, right), retTpe)
+          case Some((_, name)) => backend.CallBuiltIn(name, Vector(left, right), retTpe)
         }
     }
 
@@ -489,6 +498,77 @@ object BackendIRGen {
     }
 
     BuildResult(nodes, Some(call), returnedLabels)
+  }
+
+  def buildUnaryOp(unaryOp: frontend.StdUnaryOp)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    def toName(symbol: Symbol.ClassTypeSymbol): String = symbol match {
+      case symbol if symbol == Symbol.int  => "int"
+      case symbol if symbol == Symbol.num  => "num"
+      case symbol if symbol == Symbol.bit  => "bit"
+      case symbol if symbol == Symbol.bool => "bool"
+    }
+
+    def methodName(tpe: String, ops: String): String = s"__builtin_${tpe}_$ops"
+
+    def unaryOps(ops: String, symbols: Symbol.ClassTypeSymbol*): Vector[(Symbol.ClassTypeSymbol, String)] = {
+      val names = symbols.map(toName)
+
+      (names zip symbols)
+        .map{ case (name, symbol) => symbol -> methodName(name, ops) }
+        .toVector
+    }
+
+    val int = Symbol.int
+    val num = Symbol.num
+    val bit = Symbol.bit
+    val bool = Symbol.bool
+
+    val builtInPairs = Map[frontend.Operation, Vector[(Symbol.ClassTypeSymbol, String)]] (
+      frontend.Operation.Not -> unaryOps("not", int, num, bit, bool),
+      frontend.Operation.Neg -> unaryOps("not", int, num, bit),
+    )
+
+    val BuildResult(operandNodes, Some(operandExpr), operandLabels) = buildExpr(unaryOp.operand)
+    val opNode = backend.Temp(ctx.temp.get(), operandExpr)
+    val operandStmts = operandNodes :+ opNode
+    val operand = backend.Term.Temp(opNode.id, operandExpr.tpe)
+
+    def buildCallMethod: backend.CallMethod = {
+      val operandTpe = toRefType(operandExpr.tpe)
+      val (operator, _) = operandTpe.lookupOperator(unaryOp.op, None, Vector.empty, Vector.empty)
+        .toEither
+        .getOrElse(throw new ImplementationErrorException(s"operator[${unaryOp.op}] for [$operandTpe] should be found"))
+
+      val targetMethod = operator.tpe.asMethodType
+      val targetMethodTpe = targetMethod.params
+      val callerTpe = Vector(operand.tpe)
+      val tpTable = buildTPTable(operator.tps, callerTpe, targetMethodTpe)
+
+      val label = makeLabel(operator, None, Vector(operand.tpe), Vector.empty, tpTable.values.toVector)
+      val retTpe = toBackendType(unaryOp.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+
+      backend.CallMethod(label, None, Vector.empty, Vector(operand), retTpe)
+    }
+
+    val call = builtInPairs.get(unaryOp.op) match {
+      case None => buildCallMethod
+      case Some(candidates) =>
+        val operandTpeSymbol = operandExpr.tpe.symbol
+        val called = candidates.find { case (ops, _) => ops == operandTpeSymbol }
+        val retTpe = operandExpr.tpe
+
+        called match {
+          case None => buildCallMethod
+          case Some((_, name)) => backend.CallBuiltIn(name, Vector(operand), retTpe)
+        }
+    }
+
+    val returnedLabels = call match {
+      case call: backend.CallMethod => operandLabels + call.label
+      case _: backend.CallBuiltIn => operandLabels
+    }
+
+    BuildResult(operandStmts, Some(call), returnedLabels)
   }
 
   def makeLabel(

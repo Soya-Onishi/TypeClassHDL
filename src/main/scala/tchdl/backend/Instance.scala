@@ -69,10 +69,14 @@ object ModuleInstance {
 case class EnumInstance(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: ir.Expression) extends DataInstance
 case class StructInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
 case class BitInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
-case class IntInstance(value: Int)(implicit global: GlobalData) extends DataInstance {
+case class IntInstance(refer: ir.Expression)(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.intTpe, Map.empty, Map.empty)
-  val refer = ir.UIntLiteral(value, ir.IntWidth(32))
+}
+object IntInstance {
+  def apply(value: Int)(implicit global: GlobalData): IntInstance = {
+    IntInstance(ir.UIntLiteral(value, ir.IntWidth(32)))
+  }
 }
 
 case class StringInstance(value: String)(implicit global: GlobalData) extends DataInstance {
@@ -81,12 +85,17 @@ case class StringInstance(value: String)(implicit global: GlobalData) extends Da
   def refer = throw new ImplementationErrorException("refer string instance")
 }
 
-case class BoolInstance(value: Boolean)(implicit global: GlobalData) extends DataInstance {
+case class BoolInstance(refer: ir.Expression)(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.boolTpe, Map.empty, Map.empty)
-  val refer = {
+}
+
+object BoolInstance {
+  def apply(value: Boolean)(implicit global: GlobalData): BoolInstance = {
     val num = if (value) 1 else 0
-    ir.UIntLiteral(num, ir.IntWidth(1))
+    val refer = ir.UIntLiteral(num, ir.IntWidth(1))
+
+    BoolInstance(refer)
   }
 }
 
