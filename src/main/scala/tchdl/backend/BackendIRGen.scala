@@ -273,7 +273,6 @@ object BackendIRGen {
       case frontend.IntLiteral(value) => BuildResult(backend.IntLiteral(value))
       case frontend.BitLiteral(value, length) => BuildResult(backend.BitLiteral(value, HPElem.Num(length)))
       case frontend.UnitLiteral() => BuildResult(backend.UnitLiteral())
-      case frontend.StringLiteral(str) => BuildResult(backend.StringLiteral(str))
     }
 
   def buildIdent(ident: frontend.Ident)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
@@ -635,9 +634,6 @@ object BackendIRGen {
         case frontend.IntLiteral(value) =>
           val temp = makeTemp(Type.intTpe)
           temp -> Some(backend.IntLiteral(value))
-        case frontend.StringLiteral(value) =>
-          val temp = makeTemp(Type.stringTpe)
-          temp -> Some(backend.StringLiteral(value))
         case frontend.BitLiteral(value, width) =>
           val temp = makeTemp(Type.bitTpe(frontend.IntLiteral(width)))
           temp -> Some(backend.BitLiteral(value, HPElem.Num(width)))

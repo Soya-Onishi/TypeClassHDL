@@ -298,7 +298,7 @@ class ParseTest extends TchdlFunSuite {
         |match expr {
         |  case Pattern:::A(a, b) =>
         |  case Pattern:::B(0, 0b00) =>
-        |  case Pattern:::C("abc", ()) =>
+        |  case Pattern:::C(()) =>
         |}
         |""".stripMargin
     )
@@ -316,7 +316,7 @@ class ParseTest extends TchdlFunSuite {
     assert(expr == Ident("expr"))
     assert(cases(0).pattern == pattern("A", Ident("a"), Ident("b")))
     assert(cases(1).pattern == pattern("B", IntLiteral(0), BitLiteral(0, 2)))
-    assert(cases(2).pattern == pattern("C", StringLiteral("abc"), UnitLiteral()))
+    assert(cases(2).pattern == pattern("C", UnitLiteral()))
   }
 
   test("parse static method definition") {
@@ -345,14 +345,14 @@ class ParseTest extends TchdlFunSuite {
 
   test("parse static method call") {
     val Apply(prefix, hargs, targs, args) = parseString(_.expr)((gen, tree) => gen.expr(tree)) {
-      """Int:::from("1")"""
+      """Int:::from(true)"""
     }
 
     val int = TypeTree(Ident("Int"), Vector.empty, Vector.empty)
 
     assert(hargs == Vector.empty)
     assert(targs == Vector.empty)
-    assert(args == Vector(StringLiteral("1")))
+    assert(args == Vector(BoolLiteral(true)))
     assert(prefix == StaticSelect(int, "from"))
   }
 }

@@ -371,6 +371,7 @@ case class This() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
 case class BitLiteral(value: BigInt, length: Int) extends Expression with PatternExpr
 case class IntLiteral(value: Int) extends Expression with HPExpr with PatternExpr
+case class BoolLiteral(value: Boolean) extends Expression with HPExpr with PatternExpr
 case class UnitLiteral() extends Expression with PatternExpr
 case class StringLiteral(str: String) extends Expression with HPExpr with PatternExpr
 

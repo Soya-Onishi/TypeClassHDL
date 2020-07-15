@@ -210,7 +210,7 @@ object Typer {
       case construct: ConstructModule => typedConstructModule(construct)
       case construct: ConstructEnum => typedConstructEnum(construct)
       case int: IntLiteral => typedIntLiteral(int)
-      case string: StringLiteral => typedStringLiteral(string)
+      case bool: BoolLiteral => typedBoolLiteral(bool)
       case unit: UnitLiteral => typedUnitLiteral(unit)
       case bit: BitLiteral => typedBitLiteral(bit)
       case apply: Apply => typedExprApply(apply)
@@ -562,7 +562,6 @@ object Typer {
       else {
         val results = (exprs zip fieldTpes).map {
           case (_: IntLiteral, tpe) => typeCheck(Type.intTpe, tpe)
-          case (_: StringLiteral, tpe) => typeCheck(Type.stringTpe, tpe)
           case (_: UnitLiteral, tpe) => typeCheck(Type.unitTpe, tpe)
           case (BitLiteral(_, width), tpe) => typeCheck(Type.bitTpe(IntLiteral(width)), tpe)
           case (ident @ Ident(name), tpe) =>
@@ -1069,15 +1068,15 @@ object Typer {
   }
 
   def typedIntLiteral(int: IntLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): IntLiteral = {
-    int.setTpe(Type.intTpe).setID(int.id)
+    int.setTpe(Type.intTpe)
+  }
+
+  def typedBoolLiteral(bool: BoolLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): BoolLiteral = {
+    bool.setTpe(Type.boolTpe)
   }
 
   def typedUnitLiteral(unit: UnitLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): UnitLiteral = {
     unit.setTpe(Type.unitTpe).setID(unit.id)
-  }
-
-  def typedStringLiteral(str: StringLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): StringLiteral = {
-    str.setTpe(Type.stringTpe).setID(str.id)
   }
 
   def typedFinish(finish: Finish)(implicit ctx: Context.NodeContext, global: GlobalData): Finish = {

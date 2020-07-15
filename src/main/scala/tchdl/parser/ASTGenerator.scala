@@ -561,8 +561,8 @@ class ASTGenerator {
         case Some(value) => IntLiteral(value)
         case None => ???
       }
-    case ctx: TP.StringLitContext =>
-      StringLiteral(ctx.STRING().getText.dropRight(1).tail)
+    case _: TP.TrueLitContext => BoolLiteral(true)
+    case _: TP.FalseLitContext => BoolLiteral(false)
     case _: TP.UnitLitContext =>
       UnitLiteral()
   }

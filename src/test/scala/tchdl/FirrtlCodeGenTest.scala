@@ -324,7 +324,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
       .collectFirst{ case cond: ir.Conditionally => cond }.get
       .conseq
 
-    assert(conseq == ir.Block(Seq.empty))
+    val elems = conseq.asInstanceOf[ir.Block].stmts
+    assert(elems(0) == ir.DefNode(ir.NoInfo, "TEMP_1", ir.UIntLiteral(1, ir.IntWidth(32))))
+    assert(elems(3) == ir.Connect(ir.NoInfo, ir.SubField(ir.Reference("_ENUM_0", ir.UnknownType), "_data", ir.UnknownType), ir.Reference("TEMP_1", ir.UnknownType)))
 
     runFirrtl(circuit)
   }
@@ -431,11 +433,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("call sibling interface with Future[_] parameter") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "CallSiblingFuture.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 
   test("call parent interface with Future[_] parameter") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "CallParentFuture.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 }

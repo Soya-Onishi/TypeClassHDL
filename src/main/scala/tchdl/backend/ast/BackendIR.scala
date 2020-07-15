@@ -79,14 +79,6 @@ case class UnitLiteral()(implicit global: GlobalData) extends Expr {
   )
 }
 
-case class StringLiteral(value: String)(implicit global: GlobalData) extends Expr {
-  val tpe: BackendType = BackendType (
-    global.builtin.types.lookup("Int"),
-    Vector.empty,
-    Vector.empty
-  )
-}
-
 sealed trait Term { val tpe: BackendType }
 object Term {
   case class Variable(name: String, tpe: BackendType) extends Term {

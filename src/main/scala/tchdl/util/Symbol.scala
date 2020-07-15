@@ -387,7 +387,16 @@ object Symbol {
   def bit(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("Bit")
 
+  def int(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Int")
+
+  def bool(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Bool")
+
   def unit(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("Unit")
+
+  def string(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("String")
 }
 

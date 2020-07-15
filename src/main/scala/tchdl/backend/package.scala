@@ -78,7 +78,7 @@ package object backend {
     }
 
     def isHardware(implicit global: GlobalData): Boolean = {
-      def verifyEnum(symbol: Symbol.EnumSymbol, verified: BackendType, types: Set[BackendType]) = {
+      def verifyEnum(symbol: Symbol.EnumSymbol, verified: BackendType, types: Set[BackendType]): Boolean = {
         val memberFieldTypes = symbol.tpe.declares.toMap
           .values.toVector
           .map(_.tpe.asEnumMemberType)
@@ -96,8 +96,10 @@ package object backend {
       def loop(verified: BackendType, types: Set[BackendType]): Boolean = {
         verified.symbol match {
           case bit if bit == Symbol.bit => true
+          case int if int == Symbol.int => true
+          case bool if bool == Symbol.bool => true
+          case string if string == Symbol.string => false
           case future if future == Symbol.future => verifyEnum(future.asEnumSymbol, verified, types)
-          case symbol if global.builtin.types.symbols.contains(symbol) => false
           case symbol: Symbol.EnumSymbol => verifyEnum(symbol, verified, types)
           case _ if global.lookupFields(verified).isEmpty => false
           case _ if types(verified) => false

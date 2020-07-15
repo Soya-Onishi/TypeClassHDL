@@ -2,8 +2,8 @@ package test
 
 struct ST {}
 impl ST {
-  def f(bool: Bool) -> String {
+  def f(bool: Bool) -> Bool {
     if(bool) 0
-    else     "hello"
+    else     true
   }
 }

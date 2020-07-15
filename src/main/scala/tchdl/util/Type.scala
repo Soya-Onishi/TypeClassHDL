@@ -858,8 +858,6 @@ object Type {
     }
 
     def isHardwareType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = {
-      val builtinSymbols = global.builtin.types.symbols
-
       def loop(verified: Type.RefType, types: Set[Type.RefType]): Boolean = {
         def verify: Boolean = verified.origin match {
           case _: Symbol.ModuleSymbol => false
@@ -867,11 +865,14 @@ object Type {
           case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
             case None => false
             case Some(tpBound) =>
-              val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
-              tpBound.bounds.exists(_ =:= hardwareInterface)
+              val hardware = global.builtin.interfaces.lookup("HW")
+              tpBound.bounds.exists(_.origin == hardware)
           }
-          case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
-          case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
+          case struct: Symbol.StructSymbol if struct == Symbol.bit => true
+          case struct: Symbol.StructSymbol if struct == Symbol.int => true
+          case struct: Symbol.StructSymbol if struct == Symbol.bool => true
+          case struct: Symbol.StructSymbol if struct == Symbol.unit => true
+          case struct: Symbol.StructSymbol if struct == Symbol.string => false
           case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
           case struct: Symbol.StructSymbol =>
             val hpTable = (struct.hps zip verified.hardwareParam).toMap

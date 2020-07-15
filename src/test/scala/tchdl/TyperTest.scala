@@ -150,8 +150,8 @@ class TyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.TypeMismatch])
 
     val mismatch = err.asInstanceOf[Error.TypeMismatch]
-    assert(mismatch.expect =:= Type.stringTpe(global))
-    assert(mismatch.actual =:= Type.intTpe(global))
+    assert(mismatch.expect == Type.boolTpe(global))
+    assert(mismatch.actual == Type.intTpe(global))
   }
 
   test("condition expression must be Bit[1], Bit[m]") {
@@ -421,13 +421,11 @@ class TyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.NotExhaustiveEnum])
   }
 
-  test("pattern match of software type with bit literal causes an error") {
+  test("pattern match of enum that has int and bit field causes no error") {
     val (_, global) = untilTyper("PatternMatch8.tchdl")
     expectError(1)(global)
-
-    val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.CannotUseBitLitForSWPattern])
   }
+
 
   test("return Future value in stage does not cause any errors") {
     val (_, global) = untilTyper("stageWithFuture.tchdl")

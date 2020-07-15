@@ -255,8 +255,9 @@ pattern_expr
 literal
     : BIT      # BitLit
     | INT      # IntLit
+    | TRUE     # TrueLit
+    | FALSE    # FalseLit
     | unit_lit # UnitLit
-    | STRING   # StringLit
     ;
 
 type_param
@@ -318,6 +319,8 @@ THISTYPE: 'This';
 
 BIT: BITLIT;
 INT: HEXLIT | DIGITLIT;
+TRUE: 'true';
+FALSE: 'false';
 STRING: '"' .*? '"';
 EXPR_ID: [a-z_][a-zA-Z_0-9]*;
 TYPE_ID: [A-Z][a-zA-Z_0-9]*;

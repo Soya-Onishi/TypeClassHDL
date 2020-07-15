@@ -1,31 +1,28 @@
 package tchdl.backend
 
 import tchdl.util.{GlobalData, Symbol, Type}
-
 import firrtl.ir
+import tchdl.util.TchdlException.ImplementationErrorException
+
 import scala.collection.immutable.ListMap
 
 trait Instance {
-val tpe: BackendType
+  type ReferType
 
-def isHardware: Boolean
+  val tpe: BackendType
+  def refer: ReferType
 }
 
-abstract class SoftInstance extends Instance {
+abstract class DataInstance extends Instance {
+  override type ReferType = ir.Expression
+
   val tpe: BackendType
-  val field: Map[String, Instance]
-
-  override def isHardware = false
-}
-
-abstract class HardInstance extends Instance {
-  val tpe: BackendType
-  val reference: ir.Expression
-
-  override def isHardware = true
+  def refer: ir.Expression
 }
 
 abstract class ModuleInstance extends Instance {
+  override type ReferType = ModuleLocation
+
   val tpe: BackendType
   val refer: ModuleLocation
 }
@@ -37,25 +34,16 @@ object ModuleLocation {
   case object This extends ModuleLocation
 }
 
-
-object SoftInstance {
-  def unapply(obj: Any): Option[(BackendType, Map[String, Instance])] =
-    obj match {
-      case instance: SoftInstance => Some(instance.tpe, instance.field)
-      case _ => None
-    }
-}
-
-object HardInstance {
-  def apply(tpe: BackendType, refer: ir.Expression)(implicit global: GlobalData): HardInstance =
+object DataInstance {
+  def apply(tpe: BackendType, refer: ir.Expression)(implicit global: GlobalData): DataInstance =
     tpe.symbol match {
       case symbol if symbol == global.builtin.types.lookup("Bit") => BitInstance(tpe, refer)
-      case _ => UserHardInstance(tpe, refer)
+      case _ => StructInstance(tpe, refer)
     }
 
   def unapply(obj: Any): Option[(BackendType, ir.Expression)] =
     obj match {
-      case instance: HardInstance => Some(instance.tpe, instance.reference)
+      case instance: DataInstance => Some(instance.tpe, instance.refer)
       case _ => None
     }
 }
@@ -67,8 +55,6 @@ object ModuleInstance {
     new ModuleInstance {
       val refer = _refer
       val tpe = module
-
-      override def isHardware: Boolean = false
     }
   }
 
@@ -79,27 +65,33 @@ object ModuleInstance {
     }
 }
 
-case class UserSoftInstance(tpe: BackendType, field: Map[String, Instance]) extends SoftInstance
-case class EnumSoftInstance(tpe: BackendType, variant: Symbol.EnumMemberSymbol, field: ListMap[String, Instance]) extends SoftInstance
-case class IntInstance(value: Int)(implicit global: GlobalData) extends SoftInstance {
+
+case class EnumInstance(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: ir.Expression) extends DataInstance
+case class StructInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
+case class BitInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
+case class IntInstance(value: Int)(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.intTpe, Map.empty, Map.empty)
+  val refer = ir.UIntLiteral(value, ir.IntWidth(32))
 }
 
-case class StringInstance(value: String)(implicit global: GlobalData) extends SoftInstance {
+case class StringInstance(value: String)(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.stringTpe, Map.empty, Map.empty)
+  def refer = throw new ImplementationErrorException("refer string instance")
 }
 
-case class BoolInstance(value: Boolean)(implicit global: GlobalData) extends SoftInstance {
+case class BoolInstance(value: Boolean)(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.boolTpe, Map.empty, Map.empty)
+  val refer = {
+    val num = if (value) 1 else 0
+    ir.UIntLiteral(num, ir.IntWidth(1))
+  }
 }
 
-case class UnitInstance()(implicit global: GlobalData) extends SoftInstance {
+case class UnitInstance()(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
+  val refer = ir.UIntLiteral(0, ir.IntWidth(0))
 }
-
-case class UserHardInstance(tpe: BackendType, reference: ir.Expression) extends HardInstance
-case class BitInstance(tpe: BackendType, reference: ir.Expression) extends HardInstance
