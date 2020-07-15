@@ -10,8 +10,8 @@ struct Complex[T] {
   imag: T
 }
 
-impl[T] Add[Complex[T], Complex[T]] for Complex[T]
-  where T: Add[T, T]
+impl[T] Add for Complex[T]
+  where T: Add
 {
   def add(that: Complex[T]) -> Complex[T] {
     val real = this.real + that.real
@@ -24,8 +24,8 @@ impl[T] Add[Complex[T], Complex[T]] for Complex[T]
   }
 }
 
-impl[T] Sub[Complex[T], Complex[T]] for Complex[T]
-  where T: Sub[T, T]
+impl[T] Sub for Complex[T]
+  where T: Sub
 {
   def sub(that: Complex[T]) -> Complex[T] {
     val real = this.real - that.real
@@ -52,7 +52,7 @@ impl Top {
 }
 
 module ALU[T] where T: HW
-impl[T] ALU[T] where T: HW + Add[T, T] + Sub[T, T] {
+impl[T] ALU[T] where T: HW + Add + Sub {
   input def add(a: T, b: T) -> T {
     a + b
   }

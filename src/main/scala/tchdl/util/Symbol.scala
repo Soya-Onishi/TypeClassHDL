@@ -378,6 +378,7 @@ object Symbol {
   object ErrorSymbol extends Symbol(Type.ErrorType, Modifier.NoModifier) {
     override val name: String = "<error>"
     override val path: NameSpace = NameSpace.empty
+    override val tpe: Type.ErrorType.type = Type.ErrorType
     override val accessibility: Accessibility = Accessibility.Public
   }
 

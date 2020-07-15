@@ -29,7 +29,7 @@ object BackendIRGen {
     symbol.hasFlag(Modifier.Sibling)
 
   @tailrec def build(summary: Summary)(implicit global: GlobalData): Summary = {
-    def makeContext(label: BackendLabel, impl: Symbol.ImplementSymbol, method: Option[Symbol.MethodSymbol]): BackendContext = {
+    def makeContext(label: BackendLabel, impl: Option[Symbol.ImplementSymbol], method: Option[Symbol.MethodSymbol]): BackendContext = {
       def makeTPBound(symbol: Symbol with HasParams): Map[Type.RefType, Vector[BackendType]] = {
         val tpBounds = symbol.tpBound.map {
           tpBound => tpBound.target -> tpBound.bounds.map(toBackendType(_, label.hps, label.tps))
@@ -38,9 +38,9 @@ object BackendIRGen {
         tpBounds.toMap
       }
 
-      val implTPBound = makeTPBound(impl)
-      val methodTPBound = method.map(makeTPBound).getOrElse(Vector.empty)
-      val tpBound = implTPBound ++ methodTPBound
+      val implTPBound = impl.map(makeTPBound).toVector
+      val methodTPBound = method.map(makeTPBound).toVector
+      val tpBound = (implTPBound ++ methodTPBound).flatten.toMap
 
       BackendContext(label, tpBound)
     }
@@ -58,24 +58,22 @@ object BackendIRGen {
       case (summary, label: MethodLabel) if isInterface(label.symbol) =>
         val impl =
           findImplClassTree(label.symbol, global) orElse
-            findImplInterfaceTree(label.symbol, global) getOrElse(throw new ImplementationErrorException("method must be there"))
+          findImplInterfaceTree(label.symbol, global) getOrElse(throw new ImplementationErrorException("method must be there"))
         val method = findMethodTree(label.symbol, global).getOrElse(throw new ImplementationErrorException("method tree should be found"))
 
-        val context = makeContext(label, impl.symbol.asImplementSymbol, None)
+        val context = makeContext(label, Some(impl.symbol.asImplementSymbol), None)
         val (container, labels) = buildMethod(method, label)(context, global)
 
         val modules = summary.modules.map {
-          case module if module.tpe == label.accessor => module.addInterface(container)
+          case module if label.accessor.contains(module.tpe) => module.addInterface(container)
           case module => module
         }
 
         Summary(modules, summary.methods, summary.labels ++ labels)
       case (summary, label: MethodLabel) =>
-        val impl =
-          findImplClassTree(label.symbol, global) orElse
-            findImplInterfaceTree(label.symbol, global) getOrElse(throw new ImplementationErrorException("method must be there"))
+        val impl = findImplClassTree(label.symbol, global) orElse findImplInterfaceTree(label.symbol, global)
         val method = findMethodTree(label.symbol, global).getOrElse(throw new ImplementationErrorException("method tree should be found"))
-        val context = makeContext(label, impl.symbol.asImplementSymbol, Some(method.symbol.asMethodSymbol))
+        val context = makeContext(label, impl.map(_.symbol.asImplementSymbol), Some(method.symbol.asMethodSymbol))
         val (container, labels) = buildMethod(method, label)(context, global)
 
         Summary(summary.modules, summary.methods :+ container, summary.labels ++ labels)
@@ -85,12 +83,12 @@ object BackendIRGen {
           findImplInterfaceTree(label.symbol, global) getOrElse(throw new ImplementationErrorException("method must be there"))
         val stage = findStageTree(label.symbol, global).getOrElse(throw new ImplementationErrorException("stage tree should be found"))
 
-        val context = makeContext(label, impl.symbol.asImplementSymbol, None)
+        val context = makeContext(label, Some(impl.symbol.asImplementSymbol), None)
 
         val (container, labels) = buildStage(stage, label)(context, global)
 
         val modules = summary.modules.map {
-          case module if module.tpe == label.accessor => module.addStage(container)
+          case module if label.accessor.contains(module.tpe) => module.addStage(container)
           case module => module
         }
 
@@ -447,8 +445,8 @@ object BackendIRGen {
     val leftNode = backend.Temp(ctx.temp.get(), leftExpr)
     val rightNode = backend.Temp(ctx.temp.get(), rightExpr)
     val nodes = (leftNodes :+ leftNode) ++ (rightNodes :+ rightNode)
-    val accessor = backend.Term.Temp(leftNode.id, leftExpr.tpe)
-    val arg = backend.Term.Temp(rightNode.id, rightExpr.tpe)
+    val left = backend.Term.Temp(leftNode.id, leftExpr.tpe)
+    val right = backend.Term.Temp(rightNode.id, rightExpr.tpe)
 
     def buildCallMethod: backend.CallMethod = {
       val leftTpe = toRefType(leftExpr.tpe)
@@ -458,10 +456,15 @@ object BackendIRGen {
         .toEither
         .getOrElse(throw new ImplementationErrorException(s"operator[${binop.op}] for [$leftTpe] and [$rightTpe] should be found"))
 
-      val label = makeLabel(operator, Some(leftExpr.tpe), Vector(rightExpr.tpe), Vector.empty, Vector.empty)
+      val targetMethod = operator.tpe.asMethodType
+      val targetMethodTpe = targetMethod.params
+      val callerTpe = Vector(leftExpr.tpe, rightExpr.tpe)
+      val tpTable = buildTPTable(operator.tps, callerTpe, targetMethodTpe)
+
+      val label = makeLabel(operator, None, Vector(leftExpr.tpe, rightExpr.tpe), Vector.empty, tpTable.values.toVector)
       val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
 
-      backend.CallMethod(label, Some(accessor), Vector.empty, Vector(arg), retTpe)
+      backend.CallMethod(label, None, Vector.empty, Vector(left, right), retTpe)
     }
 
     val call = builtInPairs.get(binop.op) match {
@@ -476,7 +479,7 @@ object BackendIRGen {
 
         called match {
           case None => buildCallMethod
-          case Some((_, _, name)) => backend.CallBuiltIn(name, Vector(accessor, arg), retTpe)
+          case Some((_, _, name)) => backend.CallBuiltIn(name, Vector(left, right), retTpe)
         }
     }
 

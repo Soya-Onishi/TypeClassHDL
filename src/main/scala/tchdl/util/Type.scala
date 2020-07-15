@@ -140,10 +140,6 @@ object Type {
       val method = methodDef.symbol.asMethodSymbol
       val hpBoundTrees = methodDef.bounds.collect { case b: HPBoundTree => b }
       val tpBoundTrees = methodDef.bounds.collect { case b: TPBoundTree => b }
-      val paramSymbols = methodDef.params
-        .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
-        .map(Typer.typedValDef(_)(signatureCtx, global))
-        .map(_.symbol)
 
       val result = for {
         _ <- verifyHPTpes(methodDef.hp)
@@ -158,6 +154,10 @@ object Type {
           .map { case (t, bs) => TPBound(t, bs) }
           .toVector
         _ = method.setBound(hpBounds ++ tpBounds)
+        paramSymbols = methodDef.params
+          .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
+          .map(Typer.typedValDef(_)(signatureCtx, global))
+          .map(_.symbol)
         retTpeTree = Typer.typedTypeTree(methodDef.retTpe)(signatureCtx, global)
         _ = methodDef.retTpe.setSymbol(retTpeTree.symbol).setTpe(retTpeTree.tpe)
         tpes = paramSymbols.map(_.tpe) :+ retTpeTree.tpe
@@ -168,6 +168,7 @@ object Type {
         case Right((params, ret)) => MethodType(params, ret)
         case Left(err) =>
           global.repo.error.append(err)
+          methodDef.params.foreach(_.setSymbol(Symbol.ErrorSymbol))
           Type.ErrorType
       }
     }

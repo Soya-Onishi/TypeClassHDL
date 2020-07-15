@@ -246,6 +246,7 @@ package object backend {
       .collect {
         case impl: frontend.ImplementClass => impl.components
         case impl: frontend.ImplementInterface => impl.methods
+        case method: frontend.MethodDef => Vector(method)
       }
       .flatten
       .collect { case m: frontend.MethodDef => m }
@@ -311,16 +312,17 @@ package object backend {
       table: ListMap[Symbol.TypeParamSymbol, Option[BackendType]],
       callerSide: BackendType,
       targetSide: Type.RefType
-    ): ListMap[Symbol.TypeParamSymbol, Option[BackendType]] =
-      (callerSide.targs zip targetSide.typeParam).foldLeft(table) {
-        case (tab, (callerTArg, tpe)) => tpe.origin match {
-          case tp: Symbol.TypeParamSymbol if tab.contains(tp) => tab.updated(tp, Some(callerTArg))
-          case _: Symbol.TypeParamSymbol => tab
-          case _: Symbol.EntityTypeSymbol => (callerTArg.targs zip tpe.typeParam).foldLeft(tab) {
-            case (t, (caller, target)) => loop(t, caller, target)
-          }
+    ): ListMap[Symbol.TypeParamSymbol, Option[BackendType]] = {
+      val tableList = table.keys.toVector
+
+      targetSide.origin match {
+        case tp: Symbol.TypeParamSymbol if tableList.contains(tp) => table.updated(tp, Some(callerSide))
+        case _: Symbol.TypeParamSymbol => table
+        case _: Symbol.EntityTypeSymbol => (callerSide.targs zip targetSide.typeParam).foldLeft(table) {
+          case (t, (caller, target)) => loop(t, caller, target)
         }
       }
+    }
 
     val initTable = ListMap.from(tps.map(_ -> Option.empty[BackendType]))
     val assigned = (callers zip targets).foldLeft(initTable) {

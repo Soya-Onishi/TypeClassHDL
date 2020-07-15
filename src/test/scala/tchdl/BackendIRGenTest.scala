@@ -131,7 +131,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val aluCU = global.compilationUnits.find(_.filename.get == aluFile).get
 
     assert(modules.length == 2)
-    assert(methods.length == 2)
+    assert(methods.length == 4)
 
     val impls = aluCU.topDefs.collect { case impl: frontend.ImplementInterface => impl }
     val add = impls.flatMap(_.methods.find(_.name == "add")).map(_.symbol.asMethodSymbol).head

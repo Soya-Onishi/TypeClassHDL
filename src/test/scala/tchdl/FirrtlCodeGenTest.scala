@@ -240,8 +240,6 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
   test("compile ALU without always statement") {
     val (circuit, _) = untilThisPhase(Vector("test", "alu"), "Top", "ALUwithoutAlways.tchdl")
 
-    // println(circuit.serialize)
-
     runFirrtl(circuit)
   }
 
