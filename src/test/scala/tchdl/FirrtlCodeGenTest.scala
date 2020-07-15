@@ -441,6 +441,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("call all binary operation of Bit[_]") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAllBinOpBit.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
+  }
+
+  test("call all binary operation of Int") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAllBinOpInt.tchdl")
+    runFirrtl(circuit)
   }
 }

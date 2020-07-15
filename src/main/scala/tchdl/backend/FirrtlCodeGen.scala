@@ -231,7 +231,7 @@ object FirrtlCodeGen {
     module.hps
       .map { case (name, elem) => stack.next(name) -> elem }
       .foreach {
-        case (name, HPElem.Num(num)) => stack.append(name, IntInstance(num))
+        case (name, HPElem.Num(num)) => stack.append(name, DataInstance(num))
         case (name, HPElem.Str(str)) => stack.append(name, StringInstance(str))
       }
 
@@ -392,7 +392,7 @@ object FirrtlCodeGen {
     stage.params.foreach { case (name, _) => stack.lock(name) }
     val args = stage.params
       .map{ case (name, tpe) => stack.refer(name) -> tpe }
-      .map{ case (name, tpe) => name -> DataInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
+      .map{ case (name, tpe) => name -> StructInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
       .toVector
 
     args.foreach { case (name, instance) => stack.append(name, instance) }
@@ -795,12 +795,12 @@ object FirrtlCodeGen {
       case goto: backend.Goto => runGoto(goto)
       case generate: backend.Generate => runGenerate(generate)
       case ret: backend.Return => runReturn(ret)
-      case backend.IntLiteral(value) => RunResult(Future.empty, Vector.empty, IntInstance(value))
-      case backend.UnitLiteral() => RunResult(Future.empty, Vector.empty, UnitInstance())
+      case backend.IntLiteral(value) => RunResult(Future.empty, Vector.empty, DataInstance(value))
+      case backend.UnitLiteral() => RunResult(Future.empty, Vector.empty, DataInstance())
       case bit @ backend.BitLiteral(value, HPElem.Num(width)) =>
         val future = Future.empty
         val stmts = Vector.empty
-        val instance = BitInstance(bit.tpe, ir.UIntLiteral(value, ir.IntWidth(width)))
+        val instance = StructInstance(bit.tpe, ir.UIntLiteral(value, ir.IntWidth(width)))
         RunResult(future, stmts, instance)
     }
 
@@ -868,7 +868,7 @@ object FirrtlCodeGen {
     val accessor = call.accessor.map(getInstance)
     val args = call.args.map(getInstance)
     val hargs = call.hargs.map {
-      case HPElem.Num(value) => IntInstance(value)
+      case HPElem.Num(value) => DataInstance(value)
       case HPElem.Str(value) => StringInstance(value)
     }
 
@@ -936,8 +936,8 @@ object FirrtlCodeGen {
       val future = Future(accesses, Map.empty)
 
       val instance = referReturn match {
-        case None => UnitInstance()
-        case Some(refer) => DataInstance(call.tpe, refer)
+        case None => DataInstance()
+        case Some(refer) => StructInstance(call.tpe, refer)
       }
 
       RunResult(future, activate +: connects, instance)
@@ -984,7 +984,7 @@ object FirrtlCodeGen {
       val future = Future(accesses, Map.empty)
 
       val instance = referReturn match {
-        case None => UnitInstance()
+        case None => DataInstance()
         case Some(refer) => DataInstance(call.tpe, refer)
       }
 
@@ -1029,7 +1029,7 @@ object FirrtlCodeGen {
       val future = Future(accesses, Map.empty)
 
       val instance = referReturn match {
-        case None => UnitInstance()
+        case None => DataInstance()
         case Some(refer) => DataInstance(call.tpe, refer)
       }
 
@@ -1134,8 +1134,8 @@ object FirrtlCodeGen {
       )
 
       val retInstance = wireRef match {
-        case None => UnitInstance()
-        case Some(wireRef) => DataInstance(ifExpr.tpe, wireRef)
+        case None => DataInstance()
+        case Some(wireRef) => StructInstance(ifExpr.tpe, wireRef)
       }
 
       val retFuture =
@@ -1156,10 +1156,9 @@ object FirrtlCodeGen {
 
     val condName = stack.refer(ifExpr.cond.id)
     stack.lookup(condName) match {
-      case BoolInstance(ir.UIntLiteral(cond, _)) if cond == 1 => runInner(ifExpr.conseq, ifExpr.conseqLast)
-      case BoolInstance(ir.UIntLiteral(cond, _)) if cond == 0 => runInner(ifExpr.alt, ifExpr.altLast)
-      case BoolInstance(condRef) => buildCondition(condRef)
-      case BitInstance(_, condRef) => buildCondition(condRef)
+      case DataInstance(_, ir.UIntLiteral(cond, _)) if cond == 1 => runInner(ifExpr.conseq, ifExpr.conseqLast)
+      case DataInstance(_, ir.UIntLiteral(cond, _)) if cond == 0 => runInner(ifExpr.alt, ifExpr.altLast)
+      case DataInstance(_, condRef) => buildCondition(condRef)
     }
   }
 
@@ -1335,7 +1334,7 @@ object FirrtlCodeGen {
       val matchStmts = Vector(retWire, retInvalid).flatten ++ stmtss.flatten ++ caseStmtss.flatten :+ caseConds
       val retInstance = retWire
         .map(wire => DataInstance(retTpe, ir.Reference(wire.name, ir.UnknownType)))
-        .getOrElse(UnitInstance())
+        .getOrElse(DataInstance())
 
       val future = caseFutures.foldLeft(Future.empty)(_ + _)
       RunResult(future, matchStmts, retInstance)
@@ -1665,7 +1664,7 @@ object FirrtlCodeGen {
     val activeRef = ir.Reference(active, ir.UnknownType)
     val finishStmt = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(0))
 
-    RunResult(Future.empty, Vector(finishStmt), UnitInstance())
+    RunResult(Future.empty, Vector(finishStmt), DataInstance())
   }
 
   def runGoto(goto: backend.Goto)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1674,7 +1673,7 @@ object FirrtlCodeGen {
     val stateRef = ir.Reference(stageState, ir.UnknownType)
     val changeState = ir.Connect(ir.NoInfo, stateRef, ir.UIntLiteral(stateIndex))
 
-    RunResult(Future.empty, Vector(changeState), UnitInstance())
+    RunResult(Future.empty, Vector(changeState), DataInstance())
   }
 
   def runGenerate(generate: backend.Generate)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1715,7 +1714,7 @@ object FirrtlCodeGen {
     val future = Future(futureParams, Map.empty)
 
     val retInstance =
-      if(stageContainer.ret.symbol == Symbol.unit) UnitInstance()
+      if(stageContainer.ret.symbol == Symbol.unit) DataInstance()
       else DataInstance(stageContainer.ret, ir.Reference(stageContainer.retName, ir.UnknownType))
 
     RunResult(future, activate +: normalParams.toVector, retInstance)
@@ -1727,7 +1726,7 @@ object FirrtlCodeGen {
     val DataInstance(_, refer) = instance
     val retFuture = Future(Map(loc -> Vector(refer)), Map.empty)
 
-    RunResult(exprFuture + retFuture, stmts, UnitInstance())
+    RunResult(exprFuture + retFuture, stmts, DataInstance())
   }
 
   def toFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {

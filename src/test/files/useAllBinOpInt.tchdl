@@ -2,7 +2,7 @@ package test
 
 module Top
 impl Top {
-  input def ops(x: Bit[8], y: Bit[8]) -> Unit {
+  input def ops(x: Int, y: Int) -> Unit {
     val a = x + y
     val b = x - y
     val c = x * y

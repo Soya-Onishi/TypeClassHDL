@@ -1,6 +1,6 @@
 package tchdl.backend
 
-import tchdl.backend.FirrtlCodeGen._
+import tchdl.util.Type
 import tchdl.util.GlobalData
 
 import firrtl.ir
@@ -116,15 +116,15 @@ package object builtin {
   }
 
   private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => BigInt): Instance = {
-    val IntInstance(l) = left
-    val IntInstance(r) = right
+    val DataInstance(tpe, l) = left
+    val DataInstance(_, r) = right
 
     val ret = (l, r) match {
       case (ir.UIntLiteral(left, _), ir.UIntLiteral(right, _)) => ir.UIntLiteral(f(left, right), ir.IntWidth(32))
       case (left, right) => ir.DoPrim(ops, Seq(left, right), Seq.empty, ir.UIntType(ir.IntWidth(32)))
     }
 
-    IntInstance(ret)(global)
+    DataInstance(tpe, ret)
   }
 
   private def intCmpOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => Boolean): Instance = {
@@ -132,24 +132,25 @@ package object builtin {
       if(bool) BigInt(1)
       else     BigInt(0)
 
-    val IntInstance(l) = left
-    val IntInstance(r) = right
+    val DataInstance(_, l) = left
+    val DataInstance(_, r) = right
 
     val ret = (l, r) match {
       case (ir.UIntLiteral(left, _), ir.UIntLiteral(right, _)) => ir.UIntLiteral(toInt(f(left, right)), ir.IntWidth(1))
       case (left, right) => ir.DoPrim(ops, Seq(left, right), Seq.empty, ir.UIntType(ir.IntWidth(1)))
     }
 
-    BoolInstance(ret)(global)
+    val boolTpe = toBackendType(Type.boolTpe(global))(global)
+    DataInstance(boolTpe, ret)
   }
 
   private def intUnaryOps(operand: Instance, ops: ir.PrimOp, global: GlobalData)(f: BigInt => BigInt): Instance = {
     val ret = operand match {
-      case IntInstance(ir.UIntLiteral(value, _)) => ir.UIntLiteral(f(value), ir.IntWidth(32))
-      case IntInstance(expr) => ir.DoPrim(ops, Seq(expr), Seq.empty, ir.UIntType(ir.IntWidth(32)))
+      case DataInstance(_, ir.UIntLiteral(value, _)) => ir.UIntLiteral(f(value), ir.IntWidth(32))
+      case DataInstance(_, expr) => ir.DoPrim(ops, Seq(expr), Seq.empty, ir.UIntType(ir.IntWidth(32)))
     }
 
-    IntInstance(ret)(global)
+    DataInstance(operand.tpe, ret)
   }
 
   private def boolBinOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (Boolean, Boolean) => Boolean): Instance = {
@@ -165,8 +166,8 @@ package object builtin {
       else     ir.UIntLiteral(0, ir.IntWidth(1))
     }
 
-    val BoolInstance(leftRef) = left
-    val BoolInstance(rightRef) = right
+    val DataInstance(tpe, leftRef) = left
+    val DataInstance(_, rightRef) = right
 
     val retRef = (leftRef, rightRef) match {
       case (ir.UIntLiteral(left, _), ir.UIntLiteral(right, _)) =>
@@ -176,7 +177,7 @@ package object builtin {
         ir.DoPrim(ops, Seq(left, right), Seq.empty, ir.UIntType(ir.IntWidth(1)))
     }
 
-    BoolInstance(retRef)(global)
+    DataInstance(tpe, retRef)
   }
 
   private def boolUnaryOps(operand: Instance, ops: ir.PrimOp, global: GlobalData)(f: Boolean => Boolean): Instance = {
@@ -192,26 +193,26 @@ package object builtin {
       else     ir.UIntLiteral(0, ir.IntWidth(1))
     }
 
-    val BoolInstance(ref) = operand
+    val DataInstance(_, ref) = operand
 
     val ret = ref match {
       case ir.UIntLiteral(value, _) => (toRef _ compose f compose toBool)(value)
       case expr => ir.DoPrim(ops, Seq(expr), Seq.empty, ir.UIntType(ir.IntWidth(1)))
     }
 
-    BoolInstance(ret)(global)
+    DataInstance(operand.tpe, ret)
   }
 
   private def bitBinOps(left: Instance, right: Instance, ops: ir.PrimOp): Instance = {
-    val BitInstance(tpe, leftRef) = left
-    val BitInstance(_, rightRef) = right
+    val DataInstance(tpe, leftRef) = left
+    val DataInstance(_, rightRef) = right
 
-    BitInstance(tpe, ir.DoPrim(ops, Seq(leftRef, rightRef), Seq.empty, ir.UnknownType))
+    DataInstance(tpe, ir.DoPrim(ops, Seq(leftRef, rightRef), Seq.empty, ir.UnknownType))
   }
 
   private def bitUnaryOps(operand: Instance, ops: ir.PrimOp): Instance = {
-    val BitInstance(tpe, ref) = operand
+    val DataInstance(tpe, ref) = operand
 
-    BitInstance(tpe, ir.DoPrim(ops, Seq(ref), Seq.empty, ir.UnknownType))
+    DataInstance(tpe, ir.DoPrim(ops, Seq(ref), Seq.empty, ir.UnknownType))
   }
 }

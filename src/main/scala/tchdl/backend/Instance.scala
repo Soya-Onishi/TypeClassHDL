@@ -4,8 +4,6 @@ import tchdl.util.{GlobalData, Symbol, Type}
 import firrtl.ir
 import tchdl.util.TchdlException.ImplementationErrorException
 
-import scala.collection.immutable.ListMap
-
 trait Instance {
   type ReferType
 
@@ -35,11 +33,22 @@ object ModuleLocation {
 }
 
 object DataInstance {
-  def apply(tpe: BackendType, refer: ir.Expression)(implicit global: GlobalData): DataInstance =
-    tpe.symbol match {
-      case symbol if symbol == global.builtin.types.lookup("Bit") => BitInstance(tpe, refer)
-      case _ => StructInstance(tpe, refer)
-    }
+  def apply(int: Int)(implicit global: GlobalData): StructInstance =
+    StructInstance(toBackendType(Type.intTpe), ir.UIntLiteral(int, ir.IntWidth(32)))
+
+  def apply(bool: Boolean)(implicit global: GlobalData): StructInstance = {
+    val value = if(bool) 1 else 0
+    StructInstance(toBackendType(Type.boolTpe), ir.UIntLiteral(value, ir.IntWidth(1)))
+  }
+
+  def apply()(implicit global: GlobalData): StructInstance =
+    StructInstance(toBackendType(Type.unitTpe), ir.UIntLiteral(0, ir.IntWidth(0)))
+
+  def apply(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: ir.Expression): EnumInstance =
+    EnumInstance(tpe, variant, refer)
+
+  def apply(tpe: BackendType, refer: ir.Expression): StructInstance =
+    StructInstance(tpe, refer)
 
   def unapply(obj: Any): Option[(BackendType, ir.Expression)] =
     obj match {
@@ -68,7 +77,15 @@ object ModuleInstance {
 
 case class EnumInstance(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: ir.Expression) extends DataInstance
 case class StructInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
-case class BitInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
+case class StringInstance(value: String)(implicit global: GlobalData) extends DataInstance {
+  val field = Map.empty
+  val tpe = toBackendType(Type.stringTpe, Map.empty, Map.empty)
+  def refer = throw new ImplementationErrorException("refer string instance")
+}
+
+// case class BitInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
+
+/*
 case class IntInstance(refer: ir.Expression)(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.intTpe, Map.empty, Map.empty)
@@ -78,24 +95,19 @@ object IntInstance {
     IntInstance(ir.UIntLiteral(value, ir.IntWidth(32)))
   }
 }
+*/
 
-case class StringInstance(value: String)(implicit global: GlobalData) extends DataInstance {
-  val field = Map.empty
-  val tpe = toBackendType(Type.stringTpe, Map.empty, Map.empty)
-  def refer = throw new ImplementationErrorException("refer string instance")
-}
-
-case class BoolInstance(refer: ir.Expression)(implicit global: GlobalData) extends DataInstance {
+/*
+case class BoolInstance()(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.boolTpe, Map.empty, Map.empty)
 }
 
 object BoolInstance {
-  def apply(value: Boolean)(implicit global: GlobalData): BoolInstance = {
+  def apply(value: Boolean): BoolInstance = {
     val num = if (value) 1 else 0
     val refer = ir.UIntLiteral(num, ir.IntWidth(1))
 
-    BoolInstance(refer)
   }
 }
 
@@ -104,3 +116,4 @@ case class UnitInstance()(implicit global: GlobalData) extends DataInstance {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
   val refer = ir.UIntLiteral(0, ir.IntWidth(0))
 }
+*/
