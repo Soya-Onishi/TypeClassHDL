@@ -190,7 +190,11 @@ object Typer {
   }
 
   def typedStateDef(stateDef: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): StateDef = {
+    stateDef.symbol.tpe
+
     val stateSigCtx = Context(ctx, stateDef.symbol)
+    stateSigCtx.reAppend(stateDef.params.map(_.symbol): _*)
+
     val typedBlk = typedBlock(stateDef.blk)(stateSigCtx, global)
 
     stateDef.copy(blk = typedBlk)

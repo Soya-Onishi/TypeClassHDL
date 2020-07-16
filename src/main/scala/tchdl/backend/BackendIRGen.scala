@@ -250,15 +250,14 @@ object BackendIRGen {
   }
 
   def buildState(stateDef: frontend.StateDef, label: StateLabel)(implicit ctx: BackendContext, global: GlobalData): (StateContainer, Set[BackendLabel]) = {
+    val paramNames = stateDef.params.map(_.name).map(param => label.toString + "$" + param)
+    val paramTpes = stateDef.params.map(_.symbol.tpe.asRefType).map(toBackendType(_, ctx.hpTable, ctx.tpTable))
+    val paramSymbols = stateDef.params.map(_.symbol.asTermSymbol)
+    (paramSymbols zip paramNames).foreach{ case (symbol, name) => ctx.append(symbol, name) }
+
     val BuildResult(nodes, last, labels) = buildBlk(stateDef.blk)
     val lastStmt = last.map(backend.Abandon.apply).getOrElse(backend.Abandon(backend.UnitLiteral()))
-    val params = ListMap.from(stateDef.params.map{
-      param =>
-        val name = param.name
-        val tpe = toBackendType(param.symbol.tpe.asRefType, ctx.hpTable, ctx.tpTable)
-
-        name -> tpe
-    })
+    val params = ListMap.from(paramNames zip paramTpes)
 
     val code = nodes :+ lastStmt
 

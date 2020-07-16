@@ -448,4 +448,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAllBinOpInt.tchdl")
     runFirrtl(circuit)
   }
+
+  test("use state parameter with Future[Bit[8]]") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam.tchdl")
+    runFirrtl(circuit, print = true)
+  }
 }

@@ -1,0 +1,26 @@
+package test
+
+module Top
+impl Top {
+  stage st1(a: Bit[8], b: Bit[8]) -> Future[Bit[8]] {
+    state s1() {
+      val ans = generate st2(a, b)
+      return Future[Bit[8]]:::NotReady
+      goto s2(ans)
+    }
+
+    state s2(ans: Future[Bit[8]]) {
+      match ans {
+        case Future[Bit[8]]:::NotReady =>
+        case Future[Bit[8]]:::Ready(ans) =>
+          return Future[Bit[8]]:::Ready(ans)
+          finish
+      }
+    }
+  }
+
+  stage st2(a: Bit[8], b: Bit[8]) -> Future[Bit[8]] {
+    return Future[Bit[8]]:::Ready(a + b)
+    finish
+  }
+}

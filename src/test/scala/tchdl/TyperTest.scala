@@ -526,4 +526,22 @@ class TyperTest extends TchdlFunSuite {
 
     assert(methodSymbol == method.symbol)
   }
+
+  test("state's parameters are in scope correctly") {
+    val (Seq(tree), global) = untilTyper("useStateParam.tchdl")
+    expectNoError(global)
+
+    val s2 = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case stage: StageDef => stage }.get
+      .states
+      .find(_.name == "s2").get
+
+    assert(s2.params.length == 1)
+    assert(s2.params.head.name == "ans")
+    val ansIdent = s2.blk.last.asInstanceOf[Match].expr.asInstanceOf[Ident]
+
+    assert(ansIdent.symbol == s2.params.head.symbol)
+  }
 }
