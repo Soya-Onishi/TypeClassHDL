@@ -16,6 +16,8 @@ trait Type {
   def asEntityType: Type.EntityType = this.asInstanceOf[Type.EntityType]
   def asParameterType: Type.TypeParamType = this.asInstanceOf[Type.TypeParamType]
   def asMethodType: Type.MethodType = this.asInstanceOf[Type.MethodType]
+  // def asStageType: Type.StageType = this.asInstanceOf[Type.StageType]
+  // def asStateType: Type.StateType = this.asInstanceOf[Type.StateType]
   def asEnumMemberType: Type.EnumMemberType = this.asInstanceOf[Type.EnumMemberType]
 
   def isErrorType: Boolean = this.isInstanceOf[Type.ErrorType.type]
@@ -251,16 +253,35 @@ object Type {
   }
 
   case class StageTypeGenerator(stage: StageDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
-    override def generate: Type.MethodType = {
+    override def generate: Type = {
       val paramCtx = Context(ctx, stage.symbol)
-      val typedParams = stage.params
+      val paramTpes = stage.params
         .map(Namer.nodeLevelNamed(_)(paramCtx, global))
         .map(Typer.typedValDef(_)(paramCtx, global))
-        .map(_.symbol.tpe.asRefType)
+        .map(_.symbol.tpe)
 
-      val typedTpe = Typer.typedTypeTree(stage.retTpe)(paramCtx, global)
+      if(paramTpes.exists(_.isErrorType)) Type.ErrorType
+      else {
+        val bodyCtx = Context(paramCtx)
+        stage.states.foreach(Namer.nodeLevelNamed(_)(bodyCtx, global))
 
-      MethodType(typedParams, typedTpe.tpe.asRefType)
+        val typedTpe = Typer.typedTypeTree(stage.retTpe)(paramCtx, global)
+
+        MethodType(paramTpes.map(_.asRefType), typedTpe.tpe.asRefType, bodyCtx.scope)
+      }
+    }
+  }
+
+  case class StateTypeGenerator(state: StateDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+    override def generate: Type = {
+      val signatureCtx = Context(ctx, state.symbol)
+      val paramTpes = state.params
+        .map(Namer.nodeLevelNamed(_)(signatureCtx, global))
+        .map(Typer.typedValDef(_)(signatureCtx, global))
+        .map(_.symbol.tpe)
+
+      if(paramTpes.exists(_.isErrorType)) Type.ErrorType
+      else MethodType(paramTpes.map(_.asRefType), Type.unitTpe(global))
     }
   }
 
@@ -331,7 +352,7 @@ object Type {
     }
 
     val namespace: NameSpace = NameSpace.empty
-    val declares: Scope = returnType.declares
+    val declares: Scope = Scope.empty
 
     def replaceWithMap(hpMap: Map[Symbol.HardwareParamSymbol, HPExpr], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.MethodType = {
       def replace: PartialFunction[Type, Type.RefType] = {
@@ -356,7 +377,12 @@ object Type {
   }
 
   object MethodType {
-    def apply(args: Vector[Type.RefType], retTpe: RefType): MethodType = new MethodType(args, retTpe)
+    def apply(args: Vector[Type.RefType], retTpe: Type.RefType): MethodType = new MethodType(args, retTpe)
+    def apply(args: Vector[Type.RefType], retTpe: Type.RefType, scope: Scope) =
+      new MethodType(args, retTpe) {
+        override val declares = scope
+      }
+
     def unapply(obj: Any): Option[(Vector[Type.RefType], Type.RefType)] =
       obj match {
         case method: Type.MethodType => Some(method.params, method.returnType)
@@ -364,6 +390,64 @@ object Type {
       }
 
   }
+
+  /*
+  class StageType(
+    val params: Vector[Type.RefType],
+    val returnType: Type.RefType,
+    val declares: Scope
+  ) extends Type {
+    override val namespace: NameSpace = NameSpace.empty
+    lazy val name: String = {
+      val argTypeNames = params.map(_.name).mkString(", ")
+      s"($argTypeNames) -> ${returnType.name}"
+    }
+
+    override def equals(obj: Any): Boolean = obj match {
+      case that: Type.StageType =>
+        def isSameParam: Boolean = this.params == that.params
+        def isSameRet: Boolean = this.returnType == that.returnType
+
+        isSameParam && isSameRet
+      case _ => false
+    }
+
+    def lookupState(name: String): Option[Symbol.StateSymbol] =
+      declares.lookup(name) match {
+        case None => None
+        case Some(symbol: Symbol.StateSymbol) => Some(symbol)
+        case Some(_) => None
+      }
+
+    def =:=(that: Type): Boolean = this == that
+  }
+
+  object StageType {
+    def apply(params: Vector[Type.RefType], returnType: Type.RefType, declares: Scope): StageType = {
+      new StageType(params, returnType, declares)
+    }
+  }
+
+  class StateType(val params: Vector[Type.RefType]) extends Type {
+    override val declares: Scope = Scope.empty
+    override val namespace: NameSpace = NameSpace.empty
+    lazy val name: String = {
+      val argTypeNames = params.map(_.name).mkString(", ")
+      s"($argTypeNames)"
+    }
+
+    override def equals(obj: Any): Boolean = obj match {
+      case that: Type.StateType => this.params == that.params
+      case _ => false
+    }
+
+    def =:=(that: Type): Boolean = this == that
+  }
+
+  object StateType {
+    def apply(params: Vector[Type.RefType]): Type.StateType = new StateType(params)
+  }
+  */
 
   class EnumMemberType(
     val name: String,

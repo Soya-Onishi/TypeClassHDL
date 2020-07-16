@@ -301,7 +301,7 @@ case class AlwaysDef(name: String, blk: Block) extends Component
 case class MethodDef(flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
 case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Component with BlockElem
 case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component
-case class StateDef(name: String, blk: Block) extends Definition
+case class StateDef(name: String, params: Vector[ValDef], blk: Block) extends Definition
 
 case class TypeDef(name: String) extends Definition
 
@@ -388,8 +388,11 @@ case class StringLiteral(str: String) extends Expression with HPExpr with Patter
 
 case class Finish() extends Expression
 case class Goto(target: String) extends Expression with HasSymbol
-case class Generate(target: String, params: Vector[Expression]) extends Expression with HasSymbol
-case class Relay(target: String, params: Vector[Expression]) extends Expression with HasSymbol
+
+case class Generate(target: String, args: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol
+case class Relay(target: String, params: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol
+case class StateInfo(target: String, args: Vector[Expression]) extends AST with HasSymbol
+
 case class Return(expr: Expression) extends Expression
 
 case class Match(expr: Expression, cases: Vector[Case]) extends Expression

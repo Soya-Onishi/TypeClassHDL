@@ -230,7 +230,7 @@ object Typer {
         global.repo.error.append(err)
         ident.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
       case LookupResult.LookupSuccess(symbol) =>
-        ident.setTpe(symbol.tpe.asRefType).setSymbol(symbol)
+        ident.setSymbol(symbol).setTpe(symbol.tpe)
     }
   }
 
@@ -1138,7 +1138,7 @@ object Typer {
 
   def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext, global: GlobalData): Generate = {
     val self = ctx.self.getOrElse(throw new ImplementationErrorException("stage must be in module instance"))
-    val typedArgs = generate.params.map(typedExpr)
+    val typedArgs = generate.args.map(typedExpr)
 
     val (symbol, tpe) =
       if(typedArgs.exists(_.tpe.isErrorType)) (Symbol.ErrorSymbol, Type.ErrorType)
@@ -1150,11 +1150,73 @@ object Typer {
           (stageSymbol, stageType.returnType)
       }
 
-    Generate(generate.target, typedArgs)
-      .setSymbol(symbol)
-      .setTpe(tpe)
+    val result = symbol match {
+      case Symbol.ErrorSymbol        => Left(Error.DummyError)
+      case stage: Symbol.StageSymbol => verifyInitState(stage, generate.state)
+    }
+
+    val (stageSymbol, retTpe, generateState) = result match {
+      case Right(generateState) => (symbol, tpe, generateState)
+      case Left(err) =>
+        global.repo.error.append(err)
+        (Symbol.ErrorSymbol, Type.ErrorType, generate.state)
+    }
+
+    Generate(generate.target, typedArgs, generateState)
+      .setSymbol(stageSymbol)
+      .setTpe(retTpe)
       .setID(generate.id)
   }
+
+  private def verifyInitState(stage: Symbol.StageSymbol, state: Option[StateInfo])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Option[StateInfo]] = {
+    def noStatePattern(tpe: Type.MethodType): Either[Error, Option[StateInfo]] = {
+      val states = tpe.declares.toMap.values.collect{ case state: Symbol.StateSymbol => state }.toVector
+
+      if(states.isEmpty) Right(Option.empty)
+      else Left(Error.RequireStateSpecify(states))
+    }
+
+    def withStatePattern(tpe: Type.MethodType, state: String, args: Vector[Expression]): Either[Error, Option[StateInfo]] = {
+      tpe.declares.lookup(state) match {
+        case None => Left(Error.SymbolNotFound(state))
+        case Some(symbol) if !symbol.isStateSymbol => Left(Error.SymbolNotFound(state))
+        case Some(stateSymbol: Symbol.StateSymbol) => stateSymbol.tpe match {
+          case Type.ErrorType => Left(Error.DummyError)
+          case tpe: Type.MethodType => verifyStatePattern(stateSymbol, tpe, state, args)
+        }
+      }
+    }
+
+    def verifyStatePattern(symbol: Symbol.StateSymbol, tpe: Type.MethodType, state: String, args: Vector[Expression]): Either[Error, Option[StateInfo]] = {
+      val params = tpe.params
+      val typedArgs = args.map(typedExpr)
+
+      lazy val sameLength: Either[Error, Unit] =
+        if(typedArgs.length == params.length) Right(())
+        else Left(Error.ParameterLengthMismatch(params.length, typedArgs.length))
+
+      lazy val sameTypes: Either[Error, Unit] =
+        (params zip typedArgs.map(_.tpe))
+          .collect{ case (param: Type.RefType, arg: Type.RefType) => param -> arg }
+          .filter { case (param, arg) => param != arg }
+          .map { case (param, arg) => Error.TypeMismatch(param, arg) }
+          .combine(errs => Error.MultipleErrors(errs: _*))
+
+      for {
+        _ <- sameLength
+        _ <- sameTypes
+      } yield Some(StateInfo(state, typedArgs).setSymbol(symbol))
+    }
+
+    stage.tpe match {
+      case Type.ErrorType => Left(Error.DummyError)
+      case tpe: Type.MethodType => state match {
+        case None => noStatePattern(tpe)
+        case Some(StateInfo(stateName, args)) => withStatePattern(tpe, stateName, args)
+      }
+    }
+  }
+
 
   def typedRelay(relay: Relay)(implicit ctx: Context.NodeContext, global: GlobalData): Relay = {
     def verifyRelayTarget: Relay = {
@@ -1172,7 +1234,22 @@ object Typer {
           }
         }
 
-      Relay(relay.target, typedArgs).setSymbol(symbol).setTpe(tpe).setID(relay.id)
+      val result = symbol match {
+        case Symbol.ErrorSymbol =>        Left(Error.DummyError)
+        case stage: Symbol.StageSymbol => verifyInitState(stage, relay.state)
+      }
+
+      val (relaySymbol, relayTpe, stateInfo) = result match {
+        case Right(state) => (symbol, tpe, state)
+        case Left(err) =>
+          global.repo.error.append(err)
+          (Symbol.ErrorSymbol, Type.ErrorType, relay.state)
+      }
+
+      Relay(relay.target, typedArgs, stateInfo)
+        .setSymbol(relaySymbol)
+        .setTpe(relayTpe)
+        .setID(relay.id)
     }
 
     ctx.owner match {

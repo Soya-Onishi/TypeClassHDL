@@ -323,7 +323,7 @@ class TyperTest extends TchdlFunSuite {
     val s1Generate = s1.blk.last.asInstanceOf[Generate]
     assert(s1Generate.symbol == st2.symbol)
     assert(s1Generate.tpe.asRefType.origin == unitSymbol)
-    assert(s1Generate.params.head.tpe =:= bit8)
+    assert(s1Generate.args.head.tpe =:= bit8)
 
     assert(s2.blk.last.isInstanceOf[Relay])
     val s2Generate = s2.blk.last.asInstanceOf[Relay]

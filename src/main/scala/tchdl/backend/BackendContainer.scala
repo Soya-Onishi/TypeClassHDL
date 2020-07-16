@@ -65,6 +65,7 @@ case class StageContainer(
 
 case class StateContainer (
   label: StateLabel,
+  params: ListMap[String, BackendType],
   code: Vector[ast.Stmt]
 ) extends BackendContainer {
   lazy val toFirrtlString: String = label.toString

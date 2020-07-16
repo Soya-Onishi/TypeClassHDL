@@ -50,7 +50,9 @@ case class Goto(state: StateLabel)(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
 }
 
-case class Generate(stage: StageLabel, args: Vector[Term], tpe: BackendType) extends Expr
+case class Generate(stage: StageLabel, args: Vector[Term], state: Option[State], tpe: BackendType) extends Expr
+case class State(state: StateLabel, args: Vector[Term.Temp])
+
 case class Return(stage: StageLabel, expr: Expr)(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
 }

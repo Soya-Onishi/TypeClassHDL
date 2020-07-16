@@ -360,4 +360,10 @@ class ParseTest extends TchdlFunSuite {
     val filename = buildName(rootDir, filePath, "topLevelMethod.tchdl")
     val tree = parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
   }
+
+  test("parse generate stage") {
+    parseString(_.generate)((gen, tree) => gen.generate(tree)) {
+      "generate s1(a, b) # st1(c, d)"
+    }
+  }
 }

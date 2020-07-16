@@ -3,8 +3,8 @@ package test
 module Top
 impl Top {
   input def function() -> Future[Bit[2]] {
-    val a = generate s1()
-    val b = generate s2()
+    val a = generate s1() # st1
+    val b = generate s2() # st1
 
     generate s3(a, b)
   }

@@ -70,6 +70,11 @@ package object util {
 
       (foundElem, builder.result())
     }
+
+    def combine[B](f: F[T] => B): Either[B, Unit] = {
+      if(iter.isEmpty) Right(())
+      else Left(f(iter))
+    }
   }
 
   implicit class Unzip4Traversable[A, B, C, D, F[T] <: Traversable[T]](iter: F[(A, B, C, D)]) {

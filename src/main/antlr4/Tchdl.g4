@@ -130,7 +130,7 @@ stage_body
     ;
 
 state_def
-    : STATE EXPR_ID block
+    : STATE EXPR_ID ('(' param_defs? ')')? block
     ;
 
 port_def
@@ -180,8 +180,8 @@ expr: expr '.' (apply | EXPR_ID)             # SelectExpr
     | MATCH expr '{' case_def+ '}'           # MatchExpr
     | FINISH                                 # Finish
     | GOTO EXPR_ID                           # Goto
-    | RELAY EXPR_ID '(' args ')'             # Relay
-    | GENERATE EXPR_ID '(' args ')'          # Generate
+    | relay                                  # RelayExpr
+    | generate                               # GenerateExpr
     | RETURN expr                            # Return
     | literal                                # LitExpr
     | '(' expr ')'                           # ParenthesesExpr
@@ -258,6 +258,14 @@ case_def
 pattern_expr
     : EXPR_ID # IdentPattern
     | literal # LiteralPattern
+    ;
+
+generate
+    : GENERATE EXPR_ID '(' args ')' ('#' EXPR_ID ('(' args ')')? )?
+    ;
+
+relay
+    : RELAY EXPR_ID '(' args ')' ('#' EXPR_ID ( '(' args ')' )? )?
     ;
 
 literal

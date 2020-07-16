@@ -41,6 +41,7 @@ object Error {
   case class RequireHardwareType(actual: Type.RefType) extends Error
   case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol) extends Error
   case class RequireFlag(require: Modifier, actual: Symbol) extends Error
+  case class RequireStateSpecify(candidates: Vector[Symbol.StateSymbol]) extends Error
 
   case object RejectSelfType extends Error
   case object RejectHigherKind extends Error

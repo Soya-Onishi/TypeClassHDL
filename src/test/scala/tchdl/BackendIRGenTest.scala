@@ -177,7 +177,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val stage = module.stages.head
 
     assert(interface.ret.isInstanceOf[Generate])
-    val Generate(generatedStage, _, _) = interface.ret
+    val Generate(generatedStage, _, _, _) = interface.ret
     assert(generatedStage == stage.label)
 
     assert(stage.code.length == 1)

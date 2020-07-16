@@ -245,8 +245,9 @@ class ASTGenerator {
   def stateDef(ctx: TP.State_defContext): StateDef = {
     val name = ctx.EXPR_ID.getText
     val blk = block(ctx.block)
+    val params = Option(ctx.param_defs).map(paramDefs).getOrElse(Vector.empty)
 
-    StateDef(name, blk)
+    StateDef(name, params, blk)
   }
 
   def portDef(ctx: TP.Port_defContext): ValDef = {
@@ -303,12 +304,8 @@ class ASTGenerator {
     case ctx: TP.MatchExprContext => matchExpr(ctx)
     case _: TP.FinishContext => Finish()
     case ctx: TP.GotoContext => Goto(ctx.EXPR_ID.getText)
-    case ctx: TP.RelayContext =>
-      val args = ctx.args.expr.asScala.map(expr).toVector
-      Relay(ctx.EXPR_ID.getText, args)
-    case ctx: TP.GenerateContext =>
-      val args = ctx.args.expr.asScala.map(expr).toVector
-      Generate(ctx.EXPR_ID.getText, args)
+    case ctx: TP.RelayExprContext => relay(ctx.relay)
+    case ctx: TP.GenerateExprContext => generate(ctx.generate)
     case ctx: TP.ReturnContext => Return(expr(ctx.expr))
     case ctx: TP.LitExprContext => literal(ctx.literal)
     case ctx: TP.ParenthesesExprContext => expr(ctx.expr)
@@ -574,6 +571,40 @@ class ASTGenerator {
 
         HPBoundTree(target, bounds)
     }
+  }
+
+  def generate(ctx: TP.GenerateContext): Generate = {
+    val stageArgs = ctx.args(0).expr.asScala.map(expr).toVector
+    val stateArgs = Option(ctx.args(1))
+      .map(_.expr.asScala.toVector)
+      .getOrElse(Vector.empty)
+      .map(expr)
+
+    val stageName = ctx.EXPR_ID(0).getText
+    val stateName = Option(ctx.EXPR_ID(1)).map(_.getText)
+    val state = stateName match {
+      case None => None
+      case Some(name) => Some(StateInfo(name, stateArgs))
+    }
+
+    Generate(stageName, stageArgs, state)
+  }
+
+  def relay(ctx: TP.RelayContext): Relay = {
+    val stageArgs = ctx.args(0).expr.asScala.map(expr).toVector
+    val stateArgs = Option(ctx.args(1))
+      .map(_.expr.asScala.toVector)
+      .getOrElse(Vector.empty)
+      .map(expr)
+
+    val stageName = ctx.EXPR_ID(0).getText
+    val stateName = Option(ctx.EXPR_ID(1)).map(_.getText)
+    val state = stateName match {
+      case None => None
+      case Some(name) => Some(StateInfo(name, stateArgs))
+    }
+
+    Relay(stageName, stageArgs, state)
   }
 
   def literal(ctx: TP.LiteralContext): Expression = ctx match {

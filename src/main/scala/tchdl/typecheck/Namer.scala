@@ -111,7 +111,7 @@ object Namer {
   }
 
   def namedStateDef(state: StateDef)(implicit ctx: Context.NodeContext, global: GlobalData): StateDef = {
-    val symbol = Symbol.StateSymbol(state.name, ctx.path)
+    val symbol = Symbol.StateSymbol(state.name, ctx.path, Type.StateTypeGenerator(state, ctx, global))
 
     ctx.append(symbol).left.foreach(global.repo.error.append)
     state.setSymbol(symbol)

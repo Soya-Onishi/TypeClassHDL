@@ -76,6 +76,8 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def isEnumMemberSymbol: Boolean = this.isInstanceOf[Symbol.EnumMemberSymbol]
   def isTermSymbol: Boolean = this.isInstanceOf[Symbol.TermSymbol]
   def isMethodSymbol: Boolean = this.isInstanceOf[Symbol.MethodSymbol]
+  def isStageSymbol: Boolean = this.isInstanceOf[Symbol.StageSymbol]
+  def isStateSymbol: Boolean = this.isInstanceOf[Symbol.StateSymbol]
   def isInterfaceSymbol: Boolean = this.isInstanceOf[Symbol.InterfaceSymbol]
 }
 
@@ -285,13 +287,13 @@ object Symbol {
       new StageSymbol(path.appendComponentName(name), tpe)
   }
 
-  class StateSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier){
+  class StateSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier){
     override val accessibility: Accessibility = Accessibility.Private
   }
 
   object StateSymbol {
-    def apply(name: String, path: NameSpace): StateSymbol =
-      new StateSymbol(path.appendComponentName(name))
+    def apply(name: String, path: NameSpace, tpe: Type): StateSymbol =
+      new StateSymbol(path.appendComponentName(name), tpe)
   }
 
   class ImplementSymbol(
