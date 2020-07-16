@@ -823,8 +823,16 @@ object BackendIRGen {
       ctx.tpTable
     )
 
-    val gotoExpr = backend.Goto(targetLabel)
-    BuildResult(Vector.empty, Some(gotoExpr), Set.empty)
+    val argResults = goto.args.map(buildExpr)
+    val argStmts = argResults.flatMap(_.nodes)
+    val argTemps = argResults.map(_.last.get).map(backend.Temp(ctx.temp.get(), _))
+    val argTerms = argTemps.map(temp => backend.Term.Temp(temp.id, temp.expr.tpe))
+    val argLabels = argResults.flatMap(_.labels).toSet
+
+    val target = backend.State(targetLabel, argTerms)
+
+    val gotoExpr = backend.Goto(target)
+    BuildResult(argStmts ++ argTemps, Some(gotoExpr), argLabels)
   }
 
   def buildRelay(relay: frontend.Relay)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {

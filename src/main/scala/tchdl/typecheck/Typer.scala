@@ -1120,6 +1120,7 @@ object Typer {
   }
 
   def typedGoto(goto: Goto)(implicit ctx: Context.NodeContext, global: GlobalData): Goto = {
+    val typedArgs = goto.args.map(typedExpr)
     val symbol = ctx.owner match {
       case _: Symbol.StateSymbol =>
         ctx.lookup[Symbol.StateSymbol](goto.target) match {
@@ -1133,7 +1134,36 @@ object Typer {
         Symbol.ErrorSymbol
     }
 
-    goto.setSymbol(symbol).setTpe(Type.unitTpe).setID(goto.id)
+    val result = symbol.tpe match {
+      case Type.ErrorType => Left(Error.DummyError)
+      case tpe: Type.MethodType =>
+        lazy val lengthMismatch: Either[Error, Unit] =
+          if(tpe.params.length == typedArgs.length) Right(())
+          else Left(Error.ParameterLengthMismatch(tpe.params.length, typedArgs.length))
+
+        lazy val typeMismatches: Either[Error, Unit] =
+          (tpe.params zip typedArgs.map(_.tpe))
+            .collect { case (param: Type.RefType, arg: Type.RefType) => param -> arg }
+            .filter { case (param, arg) => param != arg }
+            .map { case (param, arg) => Error.TypeMismatch(param, arg) }
+            .combine(errs => Error.MultipleErrors(errs: _*))
+
+        for {
+          _ <- lengthMismatch
+          _ <- typeMismatches
+        } yield ()
+    }
+
+
+
+    val stateSymbol = result match {
+      case Right(_) => symbol
+      case Left(err) =>
+        global.repo.error.append(err)
+        Symbol.ErrorSymbol
+    }
+
+    goto.setSymbol(stateSymbol).setTpe(Type.unitTpe)
   }
 
   def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext, global: GlobalData): Generate = {

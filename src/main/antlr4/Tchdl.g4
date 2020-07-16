@@ -179,7 +179,7 @@ expr: expr '.' (apply | EXPR_ID)             # SelectExpr
     | IF '(' expr ')' expr (ELSE expr)?      # IfExpr
     | MATCH expr '{' case_def+ '}'           # MatchExpr
     | FINISH                                 # Finish
-    | GOTO EXPR_ID                           # Goto
+    | goto_expr                              # GotoExpr
     | relay                                  # RelayExpr
     | generate                               # GenerateExpr
     | RETURN expr                            # Return
@@ -266,6 +266,10 @@ generate
 
 relay
     : RELAY EXPR_ID '(' args ')' ('#' EXPR_ID ( '(' args ')' )? )?
+    ;
+
+goto_expr
+    : GOTO EXPR_ID ( '(' args ')' )?
     ;
 
 literal

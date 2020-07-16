@@ -206,7 +206,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val s2Finish = s2.code.collectFirst{ case Abandon(finish: Finish) => finish }.get
     val s2Generate = s2.code.collectFirst{ case Abandon(gen: Generate) => gen }.get
 
-    assert(s1Goto.state == s2.label)
+    assert(s1Goto.state.label == s2.label)
     assert(s1Generate.stage == st2.label)
 
     assert(s2Finish.stage == st1.label)

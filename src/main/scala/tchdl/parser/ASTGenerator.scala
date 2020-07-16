@@ -303,7 +303,7 @@ class ASTGenerator {
       IfExpr(cond, conseq, alt)
     case ctx: TP.MatchExprContext => matchExpr(ctx)
     case _: TP.FinishContext => Finish()
-    case ctx: TP.GotoContext => Goto(ctx.EXPR_ID.getText)
+    case ctx: TP.GotoExprContext => goto(ctx.goto_expr)
     case ctx: TP.RelayExprContext => relay(ctx.relay)
     case ctx: TP.GenerateExprContext => generate(ctx.generate)
     case ctx: TP.ReturnContext => Return(expr(ctx.expr))
@@ -605,6 +605,14 @@ class ASTGenerator {
     }
 
     Relay(stageName, stageArgs, state)
+  }
+
+  def goto(ctx: TP.Goto_exprContext): Goto = {
+    val args = Option(ctx.args)
+      .map(_.expr.asScala.map(expr).toVector)
+      .getOrElse(Vector.empty)
+
+    Goto(ctx.EXPR_ID.getText, args)
   }
 
   def literal(ctx: TP.LiteralContext): Expression = ctx match {

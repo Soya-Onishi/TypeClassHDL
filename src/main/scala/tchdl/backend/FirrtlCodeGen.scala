@@ -1659,8 +1659,7 @@ object FirrtlCodeGen {
   }
 
   def runFinish(finish: backend.Finish)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    val stageName = finish.stage.toString
-    val active = stageName + "$_active"
+    val active = finish.stage.activeName
     val activeRef = ir.Reference(active, ir.UnknownType)
     val finishStmt = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(0))
 
@@ -1668,18 +1667,21 @@ object FirrtlCodeGen {
   }
 
   def runGoto(goto: backend.Goto)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    val stateIndex = goto.state.index
-    val stageState = goto.state.stage.toString + "$_state"
-    val stateRef = ir.Reference(stageState, ir.UnknownType)
-    val changeState = ir.Connect(ir.NoInfo, stateRef, ir.UIntLiteral(stateIndex))
+    val stage = goto.state.label.stage
+    val state = goto.state.label
+    val stageContainer = ctx.stages(stack.lookupThis.get.tpe).find(_.label == stage).get
+    val stateContainer = stageContainer.states.find(_.label == state).get
 
-    RunResult(Future.empty, Vector(changeState), DataInstance())
+    val stateRef = ir.Reference(stage.stateName, ir.UnknownType)
+    val changeState = ir.Connect(ir.NoInfo, stateRef, ir.UIntLiteral(state.index))
+
+    val (future, stmts) = assignRegParams(stateContainer.params, goto.state.args)
+
+    RunResult(future, changeState +: stmts, DataInstance())
   }
 
   def runGenerate(generate: backend.Generate)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    val activeName = generate.stage.toString + "$_active"
-    val activeRef = ir.Reference(activeName, ir.UnknownType)
-
+    /*
     val normalArgNames = generate.args
       .filter(_.tpe.symbol != Symbol.future)
       .map {
@@ -1696,15 +1698,42 @@ object FirrtlCodeGen {
 
     val normalArgRefs = normalArgNames.map(name => ir.Reference(name.name, ir.UnknownType))
     val futureArgRefs = futureArgNames.map(name => ir.Reference(name.name, ir.UnknownType))
+    */
 
     val stageContainer = ctx.stages(stack.lookupThis.get.tpe).find(_.label == generate.stage).get
+    val activeRef = ir.Reference(generate.stage.activeName, ir.UnknownType)
+    val activate = Vector(ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(1)))
+    val state = generate.state match {
+      case None => Vector.empty
+      case Some(backend.State(label, _)) =>
+        Vector(ir.Connect(
+          ir.NoInfo,
+          ir.Reference(stageContainer.label.stateName, ir.UnknownType),
+          ir.UIntLiteral(label.index)
+        ))
+    }
+
+    val (stageFuture, stageAssigns) = assignRegParams(stageContainer.params, generate.args)
+    val (stateFuture, stateAssigns) = generate.state.map {
+      state =>
+        val backend.State(stateLabel, args) = state
+        val stateContainer = stageContainer.states.find(_.label.index == stateLabel.index).get
+
+        assignRegParams(stateContainer.params, args)
+    }.getOrElse(Future.empty, Vector.empty)
+
+    val stmts = activate ++ state ++ stageAssigns ++ stateAssigns
+    val future = stageFuture + stateFuture
+    /*
     val normalStageParamNames = stageContainer.params.collect{ case (name, tpe) if tpe.symbol != Symbol.future => name }
     val futureStageParamNames = stageContainer.params.collect{ case (name, tpe) if tpe.symbol == Symbol.future => name }
 
     val normalParamRefs = normalStageParamNames.map(name => ir.Reference(name, ir.UnknownType))
+    */
 
-    val activate = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(1))
 
+
+    /*
     val normalStageParams = (normalParamRefs zip normalArgRefs)
       .map{ case (param, arg) => ir.Connect(ir.NoInfo, param, arg) }
 
@@ -1712,21 +1741,23 @@ object FirrtlCodeGen {
       .map{ case (param, arg) => ir.Reference(param, ir.UnknownType) -> arg}
       .map{ case (param, arg) => param -> Vector(arg) }
       .toMap[ir.Expression, Vector[ir.Expression]]
+    */
 
+    /*
     val (stateFuture, stateConnects) = generate.state match {
       case None => (Future.empty, Vector.empty)
       case Some(state) => runGenerateState(state, stageContainer)
     }
-
-    val future = Future(futureStageParams, Map.empty) + stateFuture
+    */
 
     val retInstance =
       if(stageContainer.ret.symbol == Symbol.unit) DataInstance()
       else DataInstance(stageContainer.ret, ir.Reference(stageContainer.retName, ir.UnknownType))
 
-    RunResult(future, (activate +: normalStageParams.toVector) ++ stateConnects, retInstance)
+    RunResult(future, stmts, retInstance)
   }
 
+  /*
   def runGenerateState(state: backend.State, stageContainer: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Future, Vector[ir.Statement]) = {
     val backend.State(stateLabel, args) = state
     val stateContainer = stageContainer.states.find(_.label.index == stateLabel.index).get
@@ -1761,6 +1792,29 @@ object FirrtlCodeGen {
     val future = Future(futureAssigns, Map.empty)
 
     (future, stateConnect +: normalAssigns)
+  }
+  */
+
+  def assignRegParams(params: ListMap[String, BackendType], args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Future, Vector[ir.Statement]) = {
+    val (futureStateParams, normalStateParams) = params.partition{ case (_, tpe) => tpe.symbol == Symbol.future }
+    val (futureStateArgs, normalStateArgs) = args.partition{ case backend.Term.Temp(_, tpe) => tpe.symbol == Symbol.future }
+
+    val normalAssigns = (normalStateParams zip normalStateArgs)
+      .map{ case ((param, _), backend.Term.Temp(id, _)) => param -> stack.refer(id).name }
+      .map{ case (param, arg) => param -> ir.Reference(arg, ir.UnknownType) }
+      .map{ case (param, arg) => ir.Connect(ir.NoInfo, ir.Reference(param, ir.UnknownType), arg) }
+      .toVector
+
+    val futureAssigns = (futureStateParams zip futureStateArgs)
+      .map{ case ((param, _), arg) => ir.Reference(param, ir.UnknownType) -> arg }
+      .map{ case (param, backend.Term.Temp(id, _)) => param -> stack.refer(id).name }
+      .map{ case (param, arg) => param -> ir.Reference(arg, ir.UnknownType) }
+      .map{ case (param, arg) => param -> Vector(arg) }
+      .toMap[ir.Expression, Vector[ir.Expression]]
+
+    val future = Future(futureAssigns, Map.empty)
+
+    (future, normalAssigns)
   }
 
   def runReturn(ret: backend.Return)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {

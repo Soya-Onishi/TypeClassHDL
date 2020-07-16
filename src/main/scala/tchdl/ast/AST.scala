@@ -387,7 +387,7 @@ case class UnitLiteral() extends Expression with PatternExpr
 case class StringLiteral(str: String) extends Expression with HPExpr with PatternExpr
 
 case class Finish() extends Expression
-case class Goto(target: String) extends Expression with HasSymbol
+case class Goto(target: String, args: Vector[Expression]) extends Expression with HasSymbol
 
 case class Generate(target: String, args: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol
 case class Relay(target: String, params: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol
