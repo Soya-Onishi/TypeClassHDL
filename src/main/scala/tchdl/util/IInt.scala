@@ -82,6 +82,13 @@ trait IInt extends Ordered[IInt] {
       else 1
   }
 
+  override def hashCode(): Int =
+    this match {
+      case IInt.PInf => IInt.PInf.getClass.hashCode
+      case IInt.NInf => IInt.NInf.getClass.hashCode
+      case IInt.Integer(value) => value.hashCode
+    }
+
   def isPInf: Boolean = this.isInstanceOf[IInt.PInf.type]
   def isNInf: Boolean = this.isInstanceOf[IInt.NInf.type]
 }

@@ -641,9 +641,14 @@ object HPBound {
       def buildError(caller: HPBound): Left[Error, Unit] =
         Left(Error.NotMeetHPBound(swapped, Some(caller)))
 
-      callerHPBounds.find(_.target.isSameExpr(expr)) match {
-        case None => Left(Error.NotMeetHPBound(swapped, None))
-        case Some(callerBound) => callerBound.bound match {
+      val derivedRange = callerHPBounds
+        .find(_.target.isSameExpr(expr))
+        .map(Right.apply)
+        .getOrElse(deriveRange(expr, callerHPBounds).map(HPBound(expr, _)))
+
+      derivedRange match {
+        case Left(err) => Left(err)
+        case Right(callerBound) => callerBound.bound match {
           case HPRange.Eq(HPRange.ExprEqual(callerExpr)) => swapped.bound match {
             case HPRange.Eq(HPRange.ExprEqual(replacedExpr)) =>
               if (replacedExpr.isSameExpr(callerExpr)) Right(())
@@ -675,6 +680,140 @@ object HPBound {
               if (isValid) Right(())
               else buildError(callerBound)
           }
+        }
+      }
+    }
+
+    def deriveRange(expr: HPExpr, callerHPBounds: Vector[HPBound]): Either[Error, HPRange] = {
+      def splitConstant(expr: HPExpr): (HPExpr, Option[(Operation, IntLiteral)]) =
+        expr match {
+          case ident: Ident => (ident, None)
+          case literal: IntLiteral => (literal, None)
+          case HPBinOp(op, left, right: IntLiteral) => (left, Some(op, right))
+          case binop: HPBinOp => (binop, None)
+        }
+
+      def buildFromConstEq(equal: HPRange.ConstantEqual)(f: IInt => IInt): Either[Error, HPRange] = {
+        f(IInt(equal.num)) match {
+          case IInt.Integer(value) => Right(HPRange.Eq(HPRange.ConstantEqual(value)))
+          case _ => Left(???)
+        }
+      }
+
+      def buildFronConstRange(range: HPRange.ConstantRange)(f: IInt => IInt): Either[Error, HPRange] = {
+        val range0 = f(range.max)
+        val range1 = f(range.min)
+
+        if(range0 == range1) {
+          range0 match {
+            case IInt.Integer(value) =>
+              val constEq = HPRange.ConstantEqual(value)
+              Right(HPRange.Eq(constEq))
+            case _ => Left(???) // Constant Equal but Positive Inf or Negative Inf is error
+          }
+        } else {
+          val (max, min) =
+            if(range0 > range1) (range0, range1)
+            else (range1, range0)
+
+          val ne = range.ne
+            .map(value => f(IInt(value)))
+            .collect{ case IInt.Integer(value) => value }
+
+          val exprRange = HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty)
+          val constRange = HPRange.ConstantRange(max, min, ne)
+          Right(HPRange.Range(exprRange, constRange))
+        }
+      }
+
+      def constructRange(expr: HPExpr): Either[Error, HPRange] = {
+        def getOperand(expr: HPRange): Vector[IInt] = expr match {
+          case HPRange.Range(_, HPRange.ConstantRange(max, min, _)) => Vector(max, min)
+          case HPRange.Eq(HPRange.ConstantEqual(value)) => Vector(IInt(value))
+        }
+
+        def selectEdge(values: Vector[IInt])(f: (IInt, IInt) => Boolean): IInt = {
+          values.tail.foldLeft(values.head) {
+            case (remain, edge) =>
+              if(f(edge, remain)) edge
+              else remain
+          }
+        }
+
+        def calcRange(left: HPRange, right: HPRange, op: Operation): Either[Error, HPRange] = {
+          val lefts = getOperand(left)
+          val rights = getOperand(right)
+
+          val operands = for {
+            l <- lefts
+            r <- rights
+          } yield (l, r)
+
+          val f: (IInt, IInt) => IInt = op match {
+            case Operation.Add => _ + _
+            case Operation.Sub => _ - _
+            case Operation.Mul => _ * _
+            case Operation.Div => _ / _
+          }
+
+          val values = operands.map{ case (l, r) => f(l, r) }
+          val max = selectEdge(values)(_ > _)
+          val min = selectEdge(values)(_ < _)
+
+          if(max != min) Right(HPRange.Range(HPRange.ExprRange.empty, HPRange.ConstantRange(max, min, Set.empty)))
+          else max match {
+            case IInt.Integer(value) => Right(HPRange.Eq(HPRange.ConstantEqual(value)))
+            case _ => Left(???)
+          }
+        }
+
+        def loop(expr: HPExpr): Either[Error, HPRange] = {
+          expr match {
+            case IntLiteral(value) => Right(HPRange.Eq(HPRange.ConstantEqual(value)))
+            case ident: Ident =>
+              val range = callerHPBounds
+                .find(_.target.isSameExpr(ident))
+                .map(_.bound)
+                .filterNot(_.isInstanceOf[HPRange.ExprEqual])
+                .getOrElse(HPRange.Range.empty)
+
+              Right(range)
+            case HPBinOp(op, left, right) =>
+              for {
+                l <- loop(left)
+                r <- loop(right)
+                range <- calcRange(l, r, op)
+              } yield range
+          }
+        }
+
+        loop(expr)
+      }
+
+      val (remain, constant) = splitConstant(expr)
+      val range = callerHPBounds
+        .find(_.target.isSameExpr(remain))
+        .map(_.bound)
+        .map(Right.apply)
+        .getOrElse(constructRange(remain))
+
+      range match {
+        case Left(err) => Left(err)
+        case Right(range) => constant match {
+          case None => Right(range)
+          case Some((op, IntLiteral(value))) =>
+            val f: IInt => IInt = op match {
+              case Operation.Add => _ + IInt(value)
+              case Operation.Sub => _ - IInt(value)
+              case Operation.Mul => _ * IInt(value)
+              case Operation.Div => _ / IInt(value)
+            }
+
+            range match {
+              case HPRange.Eq(eq: HPRange.ConstantEqual) => buildFromConstEq(eq)(f)
+              case HPRange.Eq(_) => Right(HPRange.Range.empty)
+              case HPRange.Range(_, consts) => buildFronConstRange(consts)(f)
+            }
         }
       }
     }
@@ -714,6 +853,10 @@ object HPRange {
         forall(this.ne, that.ne)
       case _ => false
     }
+  }
+
+  object ExprRange {
+    def empty: HPRange.ExprRange = HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty)
   }
 
   case class ConstantRange(max: IInt, min: IInt, ne: Set[Int]) {
@@ -761,7 +904,7 @@ object HPRange {
   }
 
   object Range {
-    def empty: Range = Range(
+    def empty: HPRange.Range = Range(
       ExprRange(Vector.empty, Vector.empty, Vector.empty),
       ConstantRange(IInt.PInf, IInt.NInf, Set.empty)
     )
