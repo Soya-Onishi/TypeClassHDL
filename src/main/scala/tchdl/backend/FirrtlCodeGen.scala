@@ -389,15 +389,44 @@ object FirrtlCodeGen {
   }
 
   def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.DefWire], Vector[ir.Statement], Future) = {
-    stage.params.foreach { case (name, _) => stack.lock(name) }
-    val args = stage.params
-      .map{ case (name, tpe) => stack.refer(name) -> tpe }
-      .map{ case (name, tpe) => name -> StructInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
-      .toVector
+    def buildParams(paramPairs: Vector[(String, BackendType)]): (Future, Vector[ir.DefRegister], Vector[ir.DefWire]) = {
+      paramPairs.foreach{ case (name, _) => stack.lock(name) }
 
-    args.foreach { case (name, instance) => stack.append(name, instance) }
+      val params = paramPairs
+        .map{ case (name, tpe) => stack.refer(name) -> tpe }
+        .map{ case (name, tpe) => name -> StructInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
 
-    val (futureArgs, normalArgs) = args.partition { case (_, DataInstance(tpe, _)) => tpe.symbol == Symbol.future }
+      params.foreach { case (name, instance) => stack.append(name, instance) }
+
+      val (futureParams, normalParams) =
+        params.partition{ case (_, DataInstance(tpe, _)) => tpe.symbol == Symbol.future }
+
+      val regs = normalParams.map {
+        case (name, instance) =>
+          ir.DefRegister(
+            ir.NoInfo,
+            name.name,
+            toFirrtlType(instance.tpe),
+            clockRef,
+            resetRef,
+            ir.Reference(name.name, ir.UnknownType)
+          )
+      }
+
+      val wires = futureParams.map{ case (name, instance) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(instance.tpe)) }
+
+      val futureElems = futureParams
+        .map { case (name, _) => ir.Reference(name.name, ir.UnknownType) }
+        .map { _ -> FormKind.Stage }
+        .toMap[ir.Expression, FormKind]
+
+      val future = Future(Map.empty, futureElems)
+
+      (future, regs, wires)
+    }
+
+    val (stageFuture, stageRegs, stageWires) = buildParams(stage.params.toVector)
+    val (stateFuture, stateRegs, stateWires) = buildParams(stage.states.flatMap(_.params))
 
     val active = ir.DefRegister(
       ir.NoInfo,
@@ -422,18 +451,6 @@ object FirrtlCodeGen {
         ir.UIntLiteral(0)
       ))
 
-    val regs = normalArgs.map {
-      case (name, instance) =>
-        ir.DefRegister(
-          ir.NoInfo,
-          name.name,
-          toFirrtlType(instance.tpe),
-          clockRef,
-          resetRef,
-          ir.Reference(name.name, ir.UnknownType)
-        )
-    }
-
     val ret =
       if(stage.ret == toBackendType(Type.unitTpe)) None
       else Some(ir.DefWire(ir.NoInfo, stage.retName, toFirrtlType(stage.ret)))
@@ -443,16 +460,10 @@ object FirrtlCodeGen {
       if(stage.ret == toBackendType(Type.unitTpe)) Future(Map.empty, Map.empty)
       else Future(Map.empty, Map(retRef -> FormKind.Stage))
 
-    val futureElems = futureArgs
-      .map { case (name, _) => ir.Reference(name.name, ir.UnknownType) }
-      .map { _ -> FormKind.Stage }
-      .toMap[ir.Expression, FormKind]
+    val wires = (ret ++ stageWires ++ stateWires).toVector
+    val regs = active +: (stageRegs ++ stateRegs ++ state)
 
-    val wires = futureArgs.map{ case (name, instance) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(instance.tpe)) }
-
-    val future = Future(Map.empty, futureElems)
-
-    ((ret ++ wires).toVector, active +: (regs ++ Vector(state).flatten), future + futureRet)
+    (wires, regs, stageFuture + stateFuture + futureRet)
   }
 
   def runStage(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (ir.Conditionally, Future) = {
