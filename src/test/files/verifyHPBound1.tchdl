@@ -1,0 +1,11 @@
+package test
+
+module Top[m: Num, n: Num]
+impl[m: Num, n: Num] Top[m, n]
+  where m: min 1,
+        n: min 1
+{
+  input def f(x: Bit[m + n + 1]) -> Bit[m + n + 1] {
+    x
+  }
+}

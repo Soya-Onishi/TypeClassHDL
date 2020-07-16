@@ -74,4 +74,3 @@ def neg[T](a: T) -> T where T: Neg {
 def not[T](a: T) -> T where T: Not {
   a.not()
 }
-

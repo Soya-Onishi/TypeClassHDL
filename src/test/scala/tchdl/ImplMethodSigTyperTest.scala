@@ -265,4 +265,15 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(expectSignatureTpe == signatureTpe)
     assert(expectMethodTpe == methodTpe)
   }
+
+  test("unspecified hp bound does not meet constraints for m + n + 1") {
+    val (Seq(tree), global) = untilThisPhase("verifyHPBound2.tchdl")
+    expectError(2)(global)
+
+    val err0 = global.repo.error.elems(0)
+    val err1 = global.repo.error.elems(1)
+
+    assert(err0.isInstanceOf[Error.NotMeetHPBound])
+    assert(err1.isInstanceOf[Error.NotMeetHPBound])
+  }
 }

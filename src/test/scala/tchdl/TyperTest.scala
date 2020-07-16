@@ -544,4 +544,14 @@ class TyperTest extends TchdlFunSuite {
 
     assert(ansIdent.symbol == s2.params.head.symbol)
   }
+
+  test("unspecified hp bound meet constraints implicitly for m + 1") {
+    val (Seq(tree), global) = untilTyper("verifyHPBound0.tchdl")
+    expectNoError(global)
+  }
+
+  test("unspecified hp bound meet constraints implicitly for m + n + 1") {
+    val (Seq(tree), global) = untilTyper("verifyHPBound1.tchdl")
+    expectNoError(global)
+  }
 }

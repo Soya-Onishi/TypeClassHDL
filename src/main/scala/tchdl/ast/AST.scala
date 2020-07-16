@@ -45,12 +45,13 @@ sealed trait HPExpr extends Expression {
         case leaf => Vector(leaf)
       }
 
-      def reConstruct(leafs: Vector[HPExpr], op: Operation): HPExpr = leafs.init match {
-        case Vector(leaf) => leaf
-        case remains =>
-          val binop = HPBinOp(op, reConstruct(remains, op), leafs.last)
-          binop._sortedExpr = Some(binop)
-          binop
+      def reConstruct(leafs: Vector[HPExpr], op: Operation): HPExpr = {
+        val binop = leafs.reduceRight[HPExpr]{
+          case (expr, leaf) => HPBinOp(op, expr, leaf)
+        }
+
+        binop._sortedExpr = Some(binop)
+        binop
       }
 
       val leafs = collectLeafs(binop)
