@@ -438,10 +438,15 @@ object FirrtlCodeGen {
     )
 
     def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
-    def stateWidth(x: Double): Double = (math.ceil _ compose log2)(x)
+    def stateWidth(x: Double): Double = {
+      val width = (math.ceil _ compose log2)(x)
+
+      if(width == 0) 1
+      else width
+    }
 
     val state =
-      if(stage.states.length <= 1) None
+      if(stage.states.length == 0) None
       else Some(ir.DefRegister (
         ir.NoInfo,
         stage.stateName,
@@ -1806,7 +1811,7 @@ object FirrtlCodeGen {
   }
   */
 
-  def assignRegParams(params: ListMap[String, BackendType], args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Future, Vector[ir.Statement]) = {
+  private def assignRegParams(params: ListMap[String, BackendType], args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Future, Vector[ir.Statement]) = {
     val (futureStateParams, normalStateParams) = params.partition{ case (_, tpe) => tpe.symbol == Symbol.future }
     val (futureStateArgs, normalStateArgs) = args.partition{ case backend.Term.Temp(_, tpe) => tpe.symbol == Symbol.future }
 

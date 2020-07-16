@@ -458,4 +458,33 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam1.tchdl")
     runFirrtl(circuit)
   }
+
+  test("use state parameter for generate and relay") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam2.tchdl")
+    val stmts = circuit.modules
+      .head.asInstanceOf[ir.Module]
+      .body.asInstanceOf[ir.Block]
+      .stmts
+
+    val whens = stmts.collect{ case cond: ir.Conditionally => cond }
+    val functionWhen = whens.find(_.pred.asInstanceOf[ir.Reference].name.contains("function")).get
+    val s0When = whens.find(_.pred.asInstanceOf[ir.Reference].name.contains("s0")).get
+
+    val functionName = functionWhen.pred.asInstanceOf[ir.Reference].name
+    val s0Name = s0When.pred.asInstanceOf[ir.Reference].name
+
+    val functionID = extractHashCode("function_([0-9a-f]+)\\$_active", functionName)
+    val s0ID = extractHashCode("s0_([0-9a-f]+)\\$_active", s0Name)
+
+    val connects = functionWhen.conseq.asInstanceOf[ir.Block].stmts.collect { case connect: ir.Connect => connect }
+    assert(connects.length == 4)
+
+    val connectX = connects(2)
+    val connectY = connects(3)
+
+    assert(connectX.loc == ir.Reference("s0_" + s0ID + "$st1$x", ir.UnknownType))
+    assert(connectY.loc == ir.Reference("s0_" + s0ID + "$st1$y", ir.UnknownType))
+
+    runFirrtl(circuit, print = true)
+  }
 }

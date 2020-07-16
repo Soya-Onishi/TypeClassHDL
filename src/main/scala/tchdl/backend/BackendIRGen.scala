@@ -892,7 +892,7 @@ object BackendIRGen {
           if(gotIndex != -1) gotIndex
           else throw new ImplementationErrorException(s"${info.symbol} does not found in states")
 
-        val argResults = args.map(buildExpr)
+        val argResults = info.args.map(buildExpr)
         val argLabels = argResults.flatMap(_.labels).toSet
         val argStmts = argResults.flatMap(_.nodes)
         val argTemps = argResults
