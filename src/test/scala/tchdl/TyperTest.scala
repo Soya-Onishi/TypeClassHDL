@@ -651,4 +651,35 @@ class TyperTest extends TchdlFunSuite {
     val (_, global) = untilTyper("castTPtoCallNormal.tchdl")
     expectNoError(global)
   }
+
+  test("refer field type of interface in method return type") {
+    val (Seq(tree), global) = untilTyper("referFieldTypeInSignature.tchdl")
+    expectNoError(global)
+
+    val output = tree.topDefs
+      .collectFirst{ case inter: InterfaceDef => inter }.get
+      .types.head
+
+    val call = tree.topDefs
+      .collectFirst{ case method: MethodDef => method }.get
+      .blk.get.last
+
+    assert(call.tpe == output.symbol.tpe)
+  }
+
+  test("refer field type of interface in method return type and it is converted correctly") {
+    val (Seq(tree), global) = untilTyper("referFieldTypeInSignature1.tchdl")
+    expectNoError(global)
+
+    val call = tree.topDefs
+      .collectFirst{ case method: MethodDef if method.name == "caller" => method }.get
+      .blk.get.last
+
+    assert(call.tpe == Type.intTpe(global))
+  }
+
+  test("refer field type for type parameter") {
+    val (Seq(tree), global) = untilTyper("referFieldTypeInSignature2.tchdl")
+    expectNoError(global)
+  }
 }

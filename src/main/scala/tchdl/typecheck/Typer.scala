@@ -1060,22 +1060,20 @@ object Typer {
 
       val result = for {
         prefix <- typedPrefix
-        symbol <- prefix.tpe.asRefType.lookupType[Symbol.TypeSymbol](select.name).toEither
+        symbol <- prefix.tpe.asRefType.lookupType(select.name).toEither
         _ <- verifyHP(symbol, hargs)
         _ <- verifyTP(symbol, hargs, targs)
       } yield (prefix, symbol)
 
       result match {
         case Left(err) => Left(err)
-        case Right(pair) =>
+        case Right(pair @ (prefixTree, _)) =>
           val (symbol, tpe) = pair match {
             case (prefix, symbol: Symbol.EnumMemberSymbol) => (symbol, prefix.tpe)
-            case (_, symbol) => (symbol, symbol.tpe)
+            case (_, symbol) => (symbol, Type.RefType.accessed(prefixTree.tpe.asRefType, symbol.tpe.asRefType))
           }
 
-          val (prefix, _) = pair
-
-          val typedSelect = StaticSelect(prefix, select.name)
+          val typedSelect = StaticSelect(prefixTree, select.name)
             .setSymbol(symbol)
             .setTpe(tpe)
             .setID(select.id)

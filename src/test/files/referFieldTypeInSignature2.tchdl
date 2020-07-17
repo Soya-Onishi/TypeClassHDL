@@ -1,0 +1,29 @@
+package test
+
+trait Field {
+  type Output
+
+  def call() -> Output
+}
+
+impl Field for Int {
+  type Output = Int
+
+  def call() -> Int { 128 }
+}
+
+def third[T](n: T) -> (T as Field):::Output
+  where T: Field
+{
+   n.call()
+}
+
+def second[T](n: T) -> (T as Field):::Output
+  where T: Field
+{
+  third[T](n)
+}
+
+def first() -> Int {
+  second[Int](15)
+}

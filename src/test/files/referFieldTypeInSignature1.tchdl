@@ -1,0 +1,23 @@
+package test
+
+trait Field {
+  type Output
+
+  def call() -> Output
+}
+
+impl Field for Int {
+  type Output = Int
+
+  def call() -> Int { 128 }
+}
+
+def function[T](n: T) -> (T as Field):::Output
+  where T: Field
+{
+   n.call()
+}
+
+def caller() -> Int {
+  function[Int](15)
+}

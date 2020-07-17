@@ -115,6 +115,8 @@ object Error {
   case class NotExhaustiveEnum(remains: Vector[Symbol.EnumMemberSymbol]) extends Error
   case class CannotUseBitLitForSWPattern(tpe: Type) extends Error
 
+  case class RequireCastToLookup(tpe: Type.RefType) extends Error
+
   case class RequireLiteral(actual: AST) extends Error
 
   case class TopModuleHasNoImpl(tpe: Type.RefType) extends Error

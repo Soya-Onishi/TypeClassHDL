@@ -1,0 +1,13 @@
+package test
+
+trait Field {
+  type Output
+
+  def call() -> Output
+}
+
+def function[T](n: T) -> (T as Field):::Output
+  where T: Field
+{
+   n.call()
+}

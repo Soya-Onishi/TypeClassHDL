@@ -488,7 +488,8 @@ object Type {
     val origin: Symbol.TypeSymbol,
     val hardwareParam: Vector[HPExpr],
     val typeParam: Vector[Type.RefType],
-    val castedAs: Option[Type.RefType]
+    val castedAs: Option[Type.RefType],
+    val accessor: Option[Type.RefType],
   ) extends Type {
     val name: String = origin.name
     val namespace: NameSpace = origin.path
@@ -940,30 +941,96 @@ object Type {
     }
 
     // TODO: lookup type that is defined at implementation
-    def lookupType[T <: Symbol.TypeSymbol : ClassTag : TypeTag](name: String): LookupResult[T] = {
-      def lookupFromEnum(symbol: Symbol.EnumSymbol): LookupResult[T] = {
+    def lookupType(name: String): LookupResult[Symbol.TypeSymbol] = {
+      def lookupFromEnum(symbol: Symbol.EnumSymbol): LookupResult[Symbol.TypeSymbol] = {
         symbol.tpe.declares.lookup(name) match {
           case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
-          case Some(symbol: T) => LookupResult.LookupSuccess(symbol)
+          case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
           case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
         }
       }
 
+      def lookupFieldTypeFromEntity(interface: Type.RefType): LookupResult[Symbol.TypeSymbol] = {
+        val implOpt = interface.origin.asInterfaceSymbol.impls.find {
+          impl =>
+            val targets = Vector(impl.targetInterface, impl.targetType)
+            val callers = Vector(interface, this)
+
+            Type.RefType.verifySuperSets(callers, targets).isRight
+        }
+
+        val impl = implOpt.getOrElse(throw new ImplementationErrorException("interface's impl must be found"))
+        impl.scope.lookup(name) match {
+          case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+        }
+      }
+
+      def lookupFieldTypeFromTypeParameter(interface: Type.RefType): LookupResult[Symbol.TypeSymbol] =
+        interface.declares.lookup(name) match {
+          case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+        }
+
       this.origin match {
         case symbol: Symbol.EnumSymbol => lookupFromEnum(symbol)
-        case _ => throw new ImplementationErrorException("reference to field type except for enum does not support yet.")
+        case _: Symbol.EntityTypeSymbol =>
+          this.castedAs
+            .map(lookupFieldTypeFromEntity)
+            .getOrElse(LookupResult.LookupFailure(Error.RequireCastToLookup(this)))
+        case _: Symbol.TypeParamSymbol =>
+          this.castedAs
+            .map(lookupFieldTypeFromTypeParameter)
+            .getOrElse(LookupResult.LookupFailure(Error.RequireCastToLookup(this)))
       }
     }
 
-    def replaceWithMap(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr], tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.RefType =
+    def replaceWithMap(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr], tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.RefType = {
+      val accessor = this.accessor.map(_.replaceWithMap(hpTable, tpTable))
+      val castedAs = this.castedAs.map(_.replaceWithMap(hpTable, tpTable))
+
       origin match {
-        case symbol: Symbol.TypeParamSymbol => tpTable.getOrElse(symbol, this)
-        case _ => RefType(
-          this.origin,
-          this.hardwareParam.map(_.replaceWithMap(hpTable)),
-          typeParam.map(_.replaceWithMap(hpTable, tpTable))
-        )
+        case symbol: Symbol.TypeParamSymbol =>
+          val tpe = tpTable.getOrElse(symbol, this)
+          val tpeSymbol = tpe.origin
+          val hargs = tpe.hardwareParam
+          val targs = tpe.typeParam
+
+          new RefType(tpeSymbol, hargs, targs, castedAs, accessor)
+        case symbol =>
+          val tpeSymbol = accessor match {
+            case None => this.origin
+            case Some(accessor) =>
+              accessor.lookupType(symbol.name)
+                .toOption
+                .getOrElse(throw new ImplementationErrorException("lookup type should be found"))
+          }
+
+          val castTpe = for {
+            accessorTpe <- accessor
+            castTpe <- accessorTpe.castedAs
+          } yield castTpe
+
+          tpeSymbol match {
+            case symbol: Symbol.FieldTypeSymbol =>
+              castTpe match {
+                case None => symbol.tpe.asRefType
+                case Some(castTpe) =>
+                  val castHPTable = (castTpe.origin.hps zip castTpe.hardwareParam).toMap
+                  val castTPTable = (castTpe.origin.tps zip castTpe.typeParam).toMap
+
+                  symbol.tpe.asRefType.replaceWithMap(castHPTable, castTPTable)
+              }
+            case _ =>
+              val hargs = this.hardwareParam.map(_.replaceWithMap(hpTable))
+              val targs = typeParam.map(_.replaceWithMap(hpTable, tpTable))
+
+              new RefType(tpeSymbol, hargs, targs, castedAs, accessor)
+          }
       }
+    }
 
     override def equals(obj: Any): Boolean = obj match {
       case that: Type.RefType =>
@@ -1056,29 +1123,40 @@ object Type {
       val name = this.origin.name
       val hps = this.hardwareParam.map(_.toString).mkString(", ")
       val tps = this.typeParam.map(_.toString).mkString(", ")
+
       val params =
         if (this.typeParam.isEmpty && this.hardwareParam.isEmpty) ""
         else if (this.hardwareParam.isEmpty) s"[$tps]"
         else if (this.typeParam.isEmpty) s"[$hps]"
         else s"[$hps, $tps]"
+
       val cast = castedAs match {
         case None => ""
         case Some(tpe) => s" as $tpe"
       }
 
-      s"$name$params$cast"
+      val accessor = this.accessor match {
+        case None => ""
+        case Some(tpe) => s"($tpe):::"
+      }
+
+      s"$accessor$name$params$cast"
     }
   }
 
   object RefType {
     def apply(origin: Symbol.TypeSymbol, hp: Vector[HPExpr], tp: Vector[Type.RefType]): Type.RefType =
-      new RefType(origin, hp, tp, None)
+      new RefType(origin, hp, tp, None, None)
 
     def apply(origin: Symbol.TypeSymbol): RefType =
-      new RefType(origin, Vector.empty, Vector.empty, None)
+      new RefType(origin, Vector.empty, Vector.empty, None, None)
 
     def cast(from: Type.RefType, into: Type.RefType): Type.RefType = {
-      new RefType(from.origin, from.hardwareParam, from.typeParam, Some(into))
+      new RefType(from.origin, from.hardwareParam, from.typeParam, Some(into), from.accessor)
+    }
+
+    def accessed(from: Type.RefType, to: Type.RefType): Type.RefType = {
+      new RefType(to.origin, to.hardwareParam, to.typeParam, to.castedAs, Some(from))
     }
 
     def unapply(obj: Any): Option[(Symbol.TypeSymbol, Vector[HPExpr], Vector[RefType])] = obj match {
@@ -1291,6 +1369,7 @@ object Type {
 
             Type.RefType(tpe.origin, swappedHP, swappedTP)
           case _: Symbol.InterfaceSymbol => thisTpe
+          case symbol: Symbol.FieldTypeSymbol => symbol.tpe.asRefType.replaceWithMap(hpTable, tpTable)
           case t: Symbol.TypeParamSymbol =>
             tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
         }

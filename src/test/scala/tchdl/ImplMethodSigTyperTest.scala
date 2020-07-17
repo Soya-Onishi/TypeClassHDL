@@ -317,4 +317,18 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val (_, global) = untilThisPhase("useFieldType.tchdl")
     expectNoError(global)
   }
+
+  test("refer field type from method return part") {
+    val (Seq(tree), global) = untilThisPhase("referFieldTypeInSignature.tchdl")
+    expectNoError(global)
+
+    val output = tree.topDefs
+      .collectFirst{ case inter: InterfaceDef => inter }.get
+      .types.head
+
+    val method = tree.topDefs.collectFirst{ case method: MethodDef => method }.get
+
+    assert(method.retTpe.symbol == output.symbol)
+    assert(method.retTpe.tpe == output.symbol.tpe)
+  }
 }
