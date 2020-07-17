@@ -118,7 +118,8 @@ object Type {
         case Some(thisType) =>
           val bodyCtx = Context(signatureCtx, thisType)
 
-          interface.methods.map(Namer.namedMethod(_)(bodyCtx, global))
+          interface.methods.foreach(Namer.namedMethod(_)(bodyCtx, global))
+          interface.types.foreach(Namer.namedFieldTypeDef(_)(bodyCtx, global))
 
           EntityType(interface.name, ctx.path, bodyCtx.scope)
       }
@@ -283,6 +284,17 @@ object Type {
       if(paramTpes.exists(_.isErrorType)) Type.ErrorType
       else MethodType(paramTpes.map(_.asRefType), Type.unitTpe(global))
     }
+  }
+
+  case class FieldTypeGenerator(typeDef: TypeDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+    override def generate: Type =
+      typeDef.tpe match {
+        case None => Type.RefType(typeDef.symbol.asTypeSymbol)
+        case Some(tpeTree) =>
+          val typedTree = Typer.typedTypeTree(tpeTree)(ctx, global)
+          global.cache.set(typedTree)
+          typedTree.tpe
+      }
   }
 
   abstract class DeclaredType extends Type {

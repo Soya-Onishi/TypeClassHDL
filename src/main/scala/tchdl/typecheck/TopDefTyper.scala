@@ -107,6 +107,7 @@ object TopDefTyper {
           _ <- verifyMethodValidity
         } yield ()
 
+        interfaceDef.types.foreach(_.symbol.tpe)
         result.left.foreach(global.repo.error.append)
 
         interfaceDef
@@ -174,6 +175,7 @@ object TopDefTyper {
       _ <- verifyType(impl.interface, signatureCtx, global)
     } yield ()
 
+    impl.types.foreach(_.symbol.tpe)
     result.left.foreach(global.repo.error.append)
 
     impl

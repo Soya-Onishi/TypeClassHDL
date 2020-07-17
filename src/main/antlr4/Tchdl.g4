@@ -33,7 +33,15 @@ module_def
     ;
 
 trait_def
-    : TRAIT TYPE_ID type_param? bounds? '{' (signature_def)* '}'
+    : TRAIT TYPE_ID type_param? bounds? '{' (signature_def | type_dec)* '}'
+    ;
+
+interface_def
+    : INTERFACE TYPE_ID type_param? bounds? '{' (signature_def | type_dec)*'}'
+    ;
+
+type_dec
+    : 'type' TYPE_ID
     ;
 
 enum_def
@@ -44,16 +52,16 @@ enum_field_def
     : TYPE_ID ('(' type+ ')')?
     ;
 
-interface_def
-    : INTERFACE TYPE_ID type_param? bounds? '{' signature_def*'}'
-    ;
-
 implement_class
     : IMPLEMENT type_param? type bounds? '{' component* '}'
     ;
 
 implement_interface
-    : IMPLEMENT type_param? type FOR type bounds? '{' (method_def)* '}'
+    : IMPLEMENT type_param? type FOR type bounds? '{' (method_def | type_def)* '}'
+    ;
+
+type_def
+    : 'type' TYPE_ID '=' type
     ;
 
 parents

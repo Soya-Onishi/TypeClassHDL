@@ -23,7 +23,7 @@ object ImplMethodSigTyper {
 
     implSigCtx.reAppend(
       implSymbol.hps ++
-        implSymbol.tps: _*
+      implSymbol.tps: _*
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
@@ -240,7 +240,7 @@ object ImplMethodSigTyper {
 
     implSigCtx.reAppend(
       implSymbol.hps ++
-        implSymbol.tps: _*
+      implSymbol.tps: _*
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
@@ -258,16 +258,25 @@ object ImplMethodSigTyper {
     result.left.foreach(global.repo.error.append)
 
     // search methods that is not implemented at impl's context
-    val interfaceMethods = impl.interface.symbol
-      .tpe.asEntityType
-      .declares
-      .toMap.collect { case (name, method: Symbol.MethodSymbol) => name -> method }
+    val interfaceDeclares = impl.interface.symbol.tpe.asEntityType.declares
+    val interfaceMethods = interfaceDeclares.toMap.collect {
+      case (name, method: Symbol.MethodSymbol) => name -> method
+    }
+    val interfaceTypes = interfaceDeclares.toMap.collect {
+      case (name, tpeSymbol: Symbol.FieldTypeSymbol) => name -> tpeSymbol
+    }
 
-    interfaceMethods.map {
+    val methodResults = interfaceMethods.toVector.map {
       case (name, _) if impl.methods.exists(_.name == name) => Right(())
       case (_, method) => Left(Error.RequireImplementMethod(method))
     }
-      .toVector
+
+    val typeResults = interfaceTypes.toVector.map {
+      case (name, _) if impl.types.exists(_.name == name) => Right(())
+      case (_, tpe) => Left(Error.RequireImplementType(tpe))
+    }
+
+    (methodResults ++ typeResults)
       .combine(errs => Error.MultipleErrors(errs: _*))
       .left
       .foreach(global.repo.error.append)

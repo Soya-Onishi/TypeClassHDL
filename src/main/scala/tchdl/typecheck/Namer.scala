@@ -44,7 +44,7 @@ object Namer {
 
     val signatureCtx = Context(ctx, methodSymbol)
     val namedHPs = method.hp.map(namedHPDef(_)(signatureCtx, global))
-    val namedTPs = method.tp.map(namedTPDef(_)(signatureCtx, global))
+    val namedTPs = method.tp.map(namedTypeParamDef(_)(signatureCtx, global))
 
     methodSymbol.setHPs(namedHPs.map(_.symbol.asHardwareParamSymbol))
     methodSymbol.setTPs(namedTPs.map(_.symbol.asTypeParamSymbol))
@@ -117,9 +117,17 @@ object Namer {
     state.setSymbol(symbol)
   }
 
-  def namedTPDef(typeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
+  def namedTypeParamDef(typeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
     val tpe = Type.TypeParamType(typeDef.name, ctx.path)
     val symbol: Symbol = Symbol.TypeParamSymbol(typeDef.name, ctx.path, tpe)
+
+    ctx.append(symbol).left.foreach(global.repo.error.append)
+    typeDef.setSymbol(symbol)
+  }
+
+  def namedFieldTypeDef(typeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
+    val tpe = Type.FieldTypeGenerator(typeDef, ctx, global)
+    val symbol = Symbol.FieldTypeSymbol(typeDef.name, ctx.path, tpe)
 
     ctx.append(symbol).left.foreach(global.repo.error.append)
     typeDef.setSymbol(symbol)
@@ -137,7 +145,7 @@ object Namer {
 
     val signatureCtx = Context(ctx, moduleSymbol)
     val hps = module.hp.map(namedHPDef(_)(signatureCtx, global))
-    val tps = module.tp.map(namedTPDef(_)(signatureCtx, global))
+    val tps = module.tp.map(namedTypeParamDef(_)(signatureCtx, global))
     moduleSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     moduleSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
@@ -162,7 +170,7 @@ object Namer {
 
     val signatureCtx = Context(ctx, structSymbol)
     val hps = struct.hp.map(namedHPDef(_)(signatureCtx, global))
-    val tps = struct.tp.map(namedTPDef(_)(signatureCtx, global))
+    val tps = struct.tp.map(namedTypeParamDef(_)(signatureCtx, global))
     structSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     structSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
@@ -192,7 +200,7 @@ object Namer {
 
     val signatureCtx = Context(ctx, interfaceSymbol)
     val hps = interface.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).toVector
-    val tps = interface.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
+    val tps = interface.tp.view.map(namedTypeParamDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
     interfaceSymbol.setHPs(hps)
     interfaceSymbol.setTPs(tps)
 
@@ -218,7 +226,7 @@ object Namer {
 
     val signatureCtx = Context(ctx, symbol)
     val hps = enum.hp.map(namedHPDef(_)(signatureCtx, global))
-    val tps = enum.tp.map(namedTPDef(_)(signatureCtx, global))
+    val tps = enum.tp.map(namedTypeParamDef(_)(signatureCtx, global))
     symbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     symbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
@@ -231,7 +239,7 @@ object Namer {
     val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
     val signatureCtx = Context(ctx, implSymbol)
     val hps = impl.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).toVector
-    val tps = impl.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
+    val tps = impl.tp.view.map(namedTypeParamDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
     implSymbol.setHPs(hps)
     implSymbol.setTPs(tps)
 
@@ -242,7 +250,7 @@ object Namer {
     val implSymbol = Symbol.ImplementSymbol(impl.id, ctx.path)
     val signatureCtx = Context(ctx, implSymbol)
     val hps = impl.hp.view.map(namedHPDef(_)(signatureCtx, global)).map(_.symbol.asHardwareParamSymbol).toVector
-    val tps = impl.tp.view.map(namedTPDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
+    val tps = impl.tp.view.map(namedTypeParamDef(_)(signatureCtx, global)).map(_.symbol.asTypeParamSymbol).toVector
     implSymbol.setHPs(hps)
     implSymbol.setTPs(tps)
 
@@ -258,7 +266,8 @@ object Namer {
       case vdef: ValDef => namedLocalDef(vdef)
       case stage: StageDef => namedStageDef(stage)
       case state: StateDef => namedStateDef(state)
-      case typeDef: TypeDef => namedTPDef(typeDef)
+      case typeDef: TypeDef if typeDef.flag.hasFlag(Modifier.Param) => namedTypeParamDef(typeDef)
+      case typeDef: TypeDef if typeDef.flag.hasFlag(Modifier.Field) => namedFieldTypeDef(typeDef)
     }
 
     namedTree.asInstanceOf[T]

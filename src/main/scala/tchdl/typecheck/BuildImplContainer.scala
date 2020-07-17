@@ -175,6 +175,7 @@ object BuildImplContainer {
         case Right(_) =>
           val implContext = Context(signatureCtx, target.tpe.asRefType)
           impl.methods.foreach(Namer.nodeLevelNamed(_)(implContext, global))
+          impl.types.foreach(Namer.nodeLevelNamed(_)(implContext, global))
 
           val interfaceTpe = interface.tpe.asRefType
           val targetTpe = target.tpe.asRefType

@@ -88,7 +88,26 @@ class ASTGenerator {
       .map(signatureDef)
       .toVector
 
-    InterfaceDef(Modifier.Trait, name, hp, tp, bound, methods)
+    val types = ctx.type_dec.asScala
+      .map(ctx => TypeDef(Modifier.Field, ctx.TYPE_ID.getText, None))
+      .toVector
+
+    InterfaceDef(Modifier.Trait, name, hp, tp, bound, methods, types)
+  }
+
+  def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
+    val name = ctx.TYPE_ID.getText
+    val (hp, tp, bound) = definitionHeader(ctx.type_param, ctx.bounds)
+    val methods = ctx.signature_def
+      .asScala
+      .map(signatureDef)
+      .toVector
+
+    val types = ctx.type_dec.asScala
+      .map(ctx => TypeDef(Modifier.Field, ctx.TYPE_ID.getText, None))
+      .toVector
+
+    InterfaceDef(Modifier.Interface, name, hp, tp, bound, methods, types)
   }
 
   def enumDef(ctx: TP.Enum_defContext): EnumDef = {
@@ -106,23 +125,20 @@ class ASTGenerator {
     EnumDef(enumName, hps, tps, bounds, fields)
   }
 
-  def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
-    val name = ctx.TYPE_ID.getText
-    val (hp, tp, bound) = definitionHeader(ctx.type_param, ctx.bounds)
-    val methods = ctx.signature_def
-      .asScala
-      .map(signatureDef)
-      .toVector
-
-    InterfaceDef(Modifier.Interface, name, hp, tp, bound, methods)
-  }
-
   def implementInterface(ctx: TP.Implement_interfaceContext): ImplementInterface = {
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
-    val Seq(targetTrait, tpe) = ctx.`type`().asScala.map(typeTree).toSeq
+    val Seq(targetTrait, tpe) = ctx.`type`().asScala.map(typeTree)
     val methods = ctx.method_def.asScala.map(methodDef).toVector
+    val tpes = ctx.type_def.asScala.map(typeDef).toVector
 
-    ImplementInterface(targetTrait, tpe, hp, tp, bound, methods)
+    ImplementInterface(targetTrait, tpe, hp, tp, bound, methods, tpes)
+  }
+
+  def typeDef(ctx: TP.Type_defContext): TypeDef = {
+    val name = ctx.TYPE_ID.getText
+    val tpe = Option(ctx.`type`).map(typeTree)
+
+    TypeDef(Modifier.Field, name, tpe)
   }
 
   def methodDef(ctx: TP.Method_defContext): MethodDef = {
@@ -480,7 +496,7 @@ class ASTGenerator {
         val tps = ctx.TYPE_ID()
           .asScala
           .map(_.getText)
-          .map(TypeDef.apply)
+          .map(TypeDef(Modifier.Param, _, None))
           .toVector
 
         (hps, tps)
@@ -488,7 +504,7 @@ class ASTGenerator {
         val tps = ctx.TYPE_ID()
           .asScala
           .map(_.getText)
-          .map(TypeDef.apply)
+          .map(TypeDef(Modifier.Param, _, None))
           .toVector
 
         (Vector.empty, tps)

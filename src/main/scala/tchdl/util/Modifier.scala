@@ -60,6 +60,7 @@ object Modifier {
 
     Local -> "Local",
     Field -> "Field",
+    Param -> "Param",
   )
 
   case object NoModifier extends Modifier(Some(0))
@@ -78,4 +79,5 @@ object Modifier {
 
   case object Local extends Modifier
   case object Field extends Modifier
+  case object Param extends Modifier
 }

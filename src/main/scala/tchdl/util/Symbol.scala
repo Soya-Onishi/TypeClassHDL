@@ -225,6 +225,12 @@ object Symbol {
     override val accessibility: Accessibility = Accessibility.Public
   }
 
+  object FieldTypeSymbol {
+    def apply(name: String, path: NameSpace, tpe: Type): FieldTypeSymbol = {
+      new FieldTypeSymbol(path.appendInnerName(name), tpe, Modifier.Field)
+    }
+  }
+
   abstract class TermSymbol(tpe: Type, flags: Modifier) extends Symbol(tpe, flags)
 
   class VariableSymbol(

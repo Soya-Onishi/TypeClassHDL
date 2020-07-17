@@ -1478,12 +1478,11 @@ object Typer {
       .map { case (e, a) => Error.TypeMismatch(e, a) }
   }
 
-  def typedTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
-    Namer.nodeLevelNamed(tpeDef)
-
+  def typedFieldTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
     tpeDef.symbol.tpe
 
-    val typedTpeDef = tpeDef.copy(tpeDef.name)
+    val tpeTree = global.cache.get(tpeDef.tpe.get).get.asInstanceOf[TypeTree]
+    val typedTpeDef = tpeDef.copy(name = tpeDef.name, tpe = Some(tpeTree))
       .setSymbol(tpeDef.symbol)
       .setID(tpeDef.id)
 
