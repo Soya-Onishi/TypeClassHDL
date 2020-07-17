@@ -90,7 +90,7 @@ class ParseTest extends TchdlFunSuite {
       ModuleDef (
         "Mod",
         Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
-        Vector(TypeDef("T")),
+        Vector(TypeDef(Modifier.Param, "T", None)),
         Vector(
           HPBoundTree(
             Ident("m"),
@@ -121,7 +121,7 @@ class ParseTest extends TchdlFunSuite {
       ImplementClass(
         TypeTree(Ident("C"), Vector.empty, Vector(TypeTree(Ident("T"), Vector.empty, Vector.empty))),
         Vector.empty,
-        Vector(TypeDef("T")),
+        Vector(TypeDef(Modifier.Param, "T", None)),
         Vector.empty,
         Vector(MethodDef(
           Modifier.NoModifier,
@@ -146,7 +146,8 @@ class ParseTest extends TchdlFunSuite {
         TypeTree(Ident("I"), Vector(Ident("m")), Vector.empty),
         TypeTree(Ident("Type"), Vector.empty, Vector(TypeTree(Ident("T"), Vector.empty, Vector.empty))),
         Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
-        Vector(TypeDef("T")),
+        Vector(TypeDef(Modifier.Param, "T", None)),
+        Vector.empty,
         Vector.empty,
         Vector.empty
       )

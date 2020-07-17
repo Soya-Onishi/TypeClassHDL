@@ -1,0 +1,9 @@
+package test
+
+trait FieldType {
+  type Output
+}
+
+impl FieldType for Int {
+  type Output = Int
+}

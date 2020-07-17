@@ -276,4 +276,45 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(err0.isInstanceOf[Error.NotMeetHPBound])
     assert(err1.isInstanceOf[Error.NotMeetHPBound])
   }
+
+  test("define field type in trait") {
+    val (Seq(tree), global) = untilThisPhase("defineFieldType.tchdl")
+    expectNoError(global)
+
+    val types = tree.topDefs
+      .collectFirst { case inter: InterfaceDef => inter }.get
+      .types
+
+    assert(types.length == 1)
+
+    val symbol = types.head.symbol
+    assert(symbol.name == "Output")
+    assert(symbol.tpe == Type.RefType(symbol.asTypeSymbol))
+  }
+
+  test("implement field type in trait impl") {
+    val (Seq(tree), global) = untilThisPhase("implFieldType.tchdl")
+    expectNoError(global)
+
+    val types = tree.topDefs
+      .collectFirst { case impl: ImplementInterface => impl }.get
+      .types
+
+    assert(types.length == 1)
+    assert(types.head.symbol.name == "Output")
+    assert(types.head.symbol.tpe == Type.intTpe(global))
+  }
+
+  test("not implemented field type causes an error") {
+    val (_, global) = untilThisPhase("implNoFieldType.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireImplementType])
+  }
+
+  test("use field type as method return type") {
+    val (_, global) = untilThisPhase("useFieldType.tchdl")
+    expectNoError(global)
+  }
 }

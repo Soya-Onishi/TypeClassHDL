@@ -1,0 +1,15 @@
+package test
+
+trait FieldType {
+  type Output
+
+  def f() -> Output
+}
+
+impl FieldType for Int {
+  type Output = Int
+
+  def f() -> Int {
+    0
+  }
+}

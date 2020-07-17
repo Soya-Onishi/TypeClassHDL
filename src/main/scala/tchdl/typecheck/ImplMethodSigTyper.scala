@@ -50,7 +50,7 @@ object ImplMethodSigTyper {
   }
 
   def verifyImplInterface(impl: ImplementInterface)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
-    def verifyMethodSignatureValidity(implMethod: Symbol.MethodSymbol)(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
+    def verifyMethodSignatureValidity(implMethod: Symbol.MethodSymbol, fieldTypes: Map[String, Symbol.FieldTypeSymbol])(implicit ctx: Context.NodeContext): Either[Error, Unit] = {
       def lookupInterfaceMethod(interface: Symbol.InterfaceSymbol, name: String): Either[Error, Symbol.MethodSymbol] =
         interface.tpe
           .asEntityType
@@ -197,7 +197,8 @@ object ImplMethodSigTyper {
 
       def compareMethodSignature(
         implMethod: Type.MethodType,
-        interfaceMethod: Type.MethodType
+        interfaceMethod: Type.MethodType,
+        implFieldTypes: Map[String, Symbol.FieldTypeSymbol]
       ): Either[Error, Unit] = {
         val implThisType = ctx.self.getOrElse(throw new ImplementationErrorException("impl should have self type"))
 
@@ -205,7 +206,10 @@ object ImplMethodSigTyper {
         val interfaceTpes = (interfaceMethod.params :+ interfaceMethod.returnType).map(replaceThisType(_, implThisType))
         val results = (implTpes zip interfaceTpes).map {
           case (impl, interface) if impl == interface => Right(())
-          case (impl, interface) => Left(Error.TypeMismatch(interface, impl))
+          case (impl, interface) => interface.origin match {
+            case symbol: Symbol.FieldTypeSymbol if implFieldTypes(symbol.name).tpe == impl => Right(())
+            case _ => Left(Error.TypeMismatch(interface, impl))
+          }
         }
 
         results.combine(errs => Error.MultipleErrors(errs: _*))
@@ -231,7 +235,7 @@ object ImplMethodSigTyper {
         replacedTPBounds = TPBound.swapBounds(interfaceMethod.tpBound, hpTable, tpTable)
         _ <- verifyTPValidity(implMethod.tpBound, replacedTPBounds)
         replacedMethodTpe = interfaceMethod.tpe.asMethodType.replaceWithMap(hpTable, tpTable)
-        _ <- compareMethodSignature(implMethod.tpe.asMethodType, replacedMethodTpe)
+        _ <- compareMethodSignature(implMethod.tpe.asMethodType, replacedMethodTpe, fieldTypes)
       } yield ()
     }
 
@@ -244,6 +248,8 @@ object ImplMethodSigTyper {
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
+    val fieldTypes = impl.types.map(tpe => tpe.name -> tpe.symbol.asFieldTypeSymbol).toMap
+
     impl.methods.foreach(_.symbol.tpe)
 
     val (errs, methodSymbols) = impl.methods.map(verifyMethodDef(_)(implCtx, global)).partitionMap(identity)
@@ -251,7 +257,7 @@ object ImplMethodSigTyper {
       if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
       else {
         methodSymbols
-          .map(verifyMethodSignatureValidity(_)(implCtx))
+          .map(verifyMethodSignatureValidity(_, fieldTypes)(implCtx))
           .combine(errs => Error.MultipleErrors(errs: _*))
       }
 

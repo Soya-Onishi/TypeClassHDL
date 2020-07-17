@@ -61,6 +61,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asModuleSymbol: Symbol.ModuleSymbol = this.asInstanceOf[Symbol.ModuleSymbol]
   def asInterfaceSymbol: Symbol.InterfaceSymbol = this.asInstanceOf[Symbol.InterfaceSymbol]
   def asTypeParamSymbol: Symbol.TypeParamSymbol = this.asInstanceOf[Symbol.TypeParamSymbol]
+  def asFieldTypeSymbol: Symbol.FieldTypeSymbol = this.asInstanceOf[Symbol.FieldTypeSymbol]
   def asImplementSymbol: Symbol.ImplementSymbol = this.asInstanceOf[Symbol.ImplementSymbol]
   def asHardwareParamSymbol: Symbol.HardwareParamSymbol = this.asInstanceOf[Symbol.HardwareParamSymbol]
   def asVariableSymbol: Symbol.VariableSymbol = this.asInstanceOf[Symbol.VariableSymbol]
