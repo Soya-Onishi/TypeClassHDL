@@ -1,0 +1,24 @@
+package test
+
+trait Call0 {
+  def f() -> Int
+}
+
+impl Call0 for Int {
+  def f() -> Int { 0 }
+}
+
+trait Call1 {
+  def f() -> Int
+}
+
+impl Call1 for Int {
+  def f() -> Int { 1 }
+}
+
+module Top
+impl Top {
+  input def function(in: Int) -> Int {
+    (in as Call0).f()
+  }
+}

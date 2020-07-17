@@ -614,4 +614,31 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.AmbiguousSymbols])
   }
+
+  test("calling same name method between Call0 and Call1 with cast causes no error") {
+    val (Seq(tree), global) = untilTyper("castToCallMethod.tchdl")
+    expectNoError(global)
+
+    val staticMethod = tree.topDefs
+      .collectFirst{ case impl: ImplementInterface if impl.interface.expr == Ident("Call0") => impl }.get
+      .methods.head
+
+    val call @ Apply(select: Select, _, _, _) = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case m: MethodDef => m }.get
+      .blk.get
+      .last.asInstanceOf[Apply]
+
+    assert(call.tpe == Type.intTpe(global))
+    assert(select.symbol == staticMethod.symbol)
+  }
+
+  test("cast to un implemented trait") {
+    val (_, global) = untilTyper("castVariableError.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.CannotCast])
+  }
 }

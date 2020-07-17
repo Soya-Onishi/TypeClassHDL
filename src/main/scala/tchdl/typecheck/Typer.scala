@@ -215,6 +215,7 @@ object Typer {
       case construct: ConstructClass => typedConstructClass(construct)
       case construct: ConstructModule => typedConstructModule(construct)
       case construct: ConstructEnum => typedConstructEnum(construct)
+      case cast: CastExpr => typedCastExpr(cast)
       case int: IntLiteral => typedIntLiteral(int)
       case bool: BoolLiteral => typedBoolLiteral(bool)
       case unit: UnitLiteral => typedUnitLiteral(unit)
@@ -830,6 +831,34 @@ object Typer {
       .setID(construct.id)
   }
 
+  def typedCastExpr(cast: CastExpr)(implicit ctx: Context.NodeContext, global: GlobalData): CastExpr = {
+    def verifyType(tpe: AST with HasType): Either[Error, Type.RefType] = {
+      tpe.tpe match {
+        case Type.ErrorType => Left(Error.DummyError)
+        case tpe: Type.RefType => Right(tpe)
+      }
+    }
+
+    val typedPrefix = typedExpr(cast.expr)
+    val typedTpeTree = typedTypeTree(cast.to)
+
+    val result = for {
+      from <- verifyType(typedPrefix)
+      to <- verifyType(typedTpeTree)
+      castTpe <- castVerification(from, to)
+    } yield castTpe
+
+    val tpe = result match {
+      case Right(tpe) => tpe
+      case Left(err) =>
+        global.repo.error.append(err)
+        Type.ErrorType
+    }
+
+    CastExpr(typedPrefix, typedTpeTree).setTpe(tpe).setID(cast.id)
+  }
+
+
   def typedStdBinOp(binop: StdBinOp)(implicit ctx: Context.NodeContext, global: GlobalData): StdBinOp = {
     val typedLeft = typedExpr(binop.left)
     val typedRight = typedExpr(binop.right)
@@ -997,37 +1026,6 @@ object Typer {
         if(tpe.tpe.isErrorType) Left(Error.DummyError)
         else Right(tpe.tpe.asRefType)
 
-      def verifyFromType(tpe: Type.RefType): Either[Error, Unit] =
-        if(tpe.origin.isInterfaceSymbol) Left(Error.MustNotCastFromTrait(tpe))
-        else Right(())
-
-      def verifyToType(tpe: Type.RefType): Either[Error, Unit] =
-        if(tpe.origin.isInterfaceSymbol) Right(())
-        else Left(Error.MustCastToTrait(tpe))
-
-      def verifyCastable(from: Type.RefType, to: Type.RefType): Either[Error, Unit] = {
-        val isCastable = from.origin match {
-          case _: Symbol.TypeParamSymbol =>
-            val bounds = ctx.tpBounds
-              .find(_.target == from)
-              .map(_.bounds)
-              .getOrElse(Vector.empty)
-
-            bounds.contains(to)
-          case symbol: Symbol.ClassTypeSymbol =>
-            to.origin.asInterfaceSymbol.impls.exists {
-              impl =>
-                val targets = Vector(impl.targetType, impl.targetInterface)
-                val callers = Vector(from, to)
-
-                Type.RefType.verifySuperSets(callers, targets).isRight
-            }
-        }
-
-        if(isCastable) Right(())
-        else Left(Error.CannotCast(from, to))
-      }
-
       val CastType(from, to) = cast
 
       val typedFrom = typedTypeTree(from)
@@ -1036,11 +1034,8 @@ object Typer {
       for {
         fromTpe <- checkType(typedFrom)
         toTpe <- checkType(typedTo)
-        _ <- verifyFromType(fromTpe)
-        _ <- verifyToType(toTpe)
-        _ <- verifyCastable(fromTpe, toTpe)
+        castTpe <- castVerification(fromTpe, toTpe)
       } yield {
-        val castTpe = Type.RefType.cast(fromTpe, toTpe)
         val typedCast = CastType(typedFrom, typedTo)
           .setTpe(castTpe)
           .setSymbol(castTpe.origin)
@@ -1152,6 +1147,45 @@ object Typer {
           .setSymbol(Symbol.ErrorSymbol)
           .setID(typeTree.id)
     }
+  }
+
+  private def castVerification(from: Type.RefType, to: Type.RefType)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Type.RefType] = {
+    def verifyFromType(tpe: Type.RefType): Either[Error, Unit] =
+      if(tpe.origin.isInterfaceSymbol) Left(Error.MustNotCastFromTrait(tpe))
+      else Right(())
+
+    def verifyToType(tpe: Type.RefType): Either[Error, Unit] =
+      if(tpe.origin.isInterfaceSymbol) Right(())
+      else Left(Error.MustCastToTrait(tpe))
+
+    def verifyCastable(from: Type.RefType, to: Type.RefType): Either[Error, Unit] = {
+      val isCastable = from.origin match {
+        case _: Symbol.TypeParamSymbol =>
+          val bounds = ctx.tpBounds
+            .find(_.target == from)
+            .map(_.bounds)
+            .getOrElse(Vector.empty)
+
+          bounds.contains(to)
+        case _: Symbol.ClassTypeSymbol =>
+          to.origin.asInterfaceSymbol.impls.exists {
+            impl =>
+              val targets = Vector(impl.targetType, impl.targetInterface)
+              val callers = Vector(from, to)
+
+              Type.RefType.verifySuperSets(callers, targets).isRight
+          }
+      }
+
+      if(isCastable) Right(())
+      else Left(Error.CannotCast(from, to))
+    }
+
+    for {
+      _ <- verifyFromType(from)
+      _ <- verifyToType(to)
+      _ <- verifyCastable(from, to)
+    } yield Type.RefType.cast(from, to)
   }
 
   def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): BitLiteral = {
