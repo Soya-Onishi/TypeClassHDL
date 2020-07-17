@@ -641,4 +641,14 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.CannotCast])
   }
+
+  test("cast from type parameter and call static method causes no error") {
+    val (_, global) = untilTyper("castTPtoCallStatic.tchdl")
+    expectNoError(global)
+  }
+
+  test("cast from type parameter and call normal method causes no error") {
+    val (_, global) = untilTyper("castTPtoCallNormal.tchdl")
+    expectNoError(global)
+  }
 }

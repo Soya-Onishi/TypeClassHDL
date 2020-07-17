@@ -321,7 +321,10 @@ object BackendIRGen {
       methodName: String,
       requireStatic: Boolean
     ): Symbol.MethodSymbol = {
-      val bounds = ctx.tpBound.getOrElse(accessor, Vector.empty).map(toRefType)
+      val bounds = accessor.castedAs match {
+        case None => ctx.tpBound.getOrElse(accessor, Vector.empty).map(toRefType)
+        case Some(tpe) => Vector(tpe)
+      }
 
       val callerHP = hargs.map {
         case HPElem.Num(value) => frontend.IntLiteral(value)
@@ -374,13 +377,18 @@ object BackendIRGen {
       case select @ frontend.StaticSelect(prefix, methodName) =>
         val prefixTpe = prefix.tpe.asRefType
         val prefixBackendTpe = toBackendType(prefixTpe, ctx.hpTable, ctx.tpTable)
+        val castBackendTpe = prefixTpe.castedAs.map(toBackendType(_, ctx.hpTable, ctx.tpTable))
         val selectMethodSymbol = select.symbol.asMethodSymbol
 
         val referredMethodSymbol = (findImplClassTree(selectMethodSymbol, global), findImplInterfaceTree(selectMethodSymbol, global)) match {
           case (Some(_), _) => selectMethodSymbol
           case (None, Some(_)) => selectMethodSymbol
           case (None, None) =>
-            val replacedType = toRefType(prefixBackendTpe)
+            val replacedType =
+              castBackendTpe.map(toRefType) match {
+                case Some(casted) => Type.RefType.cast(toRefType(prefixBackendTpe), casted)
+                case None => toRefType(prefixBackendTpe)
+              }
 
             lookupImplMethod(prefixTpe, replacedType, hargs, targs, argSummary.passeds.map(_.tpe), methodName, requireStatic = true)
         }

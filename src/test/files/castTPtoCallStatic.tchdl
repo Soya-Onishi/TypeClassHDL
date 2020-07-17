@@ -1,0 +1,31 @@
+package test
+
+trait Call0 {
+  static def f() -> Int
+}
+
+impl Call0 for Int {
+  static def f() -> Int { 32 }
+}
+
+trait Call1 {
+  static def f() -> Int
+}
+
+impl Call1 for Int {
+  static def f() -> Int { 64 }
+}
+
+module Top
+impl Top {
+  input def in() -> Int {
+    f[Int]()
+  }
+}
+
+def f[T]() -> Int
+  where T: Call0 + Call1
+{
+  (T as Call0):::f()
+}
+

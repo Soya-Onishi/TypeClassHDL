@@ -506,6 +506,16 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("static method call with cast Type") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castToSelectMethod.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
+  }
+
+  test("call static method from type parameter with cast") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castTPtoCallStatic.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("call normal method from type parameter with cast") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castTPtoCallNormal.tchdl")
+    runFirrtl(circuit)
   }
 }

@@ -911,6 +911,7 @@ object Type {
       val impls = bounds.view
         .map(_.origin.asInterfaceSymbol)
         .flatMap(_.impls)
+        .toVector
 
       val lookupResult = lookupFromImpls(
         impls,
