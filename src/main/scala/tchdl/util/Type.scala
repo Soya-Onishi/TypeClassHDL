@@ -1431,7 +1431,7 @@ object Type {
         val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
         (err, tree)
-      case cast: Cast =>
+      case cast: CastType =>
         val err = Some(Error.CannotUseCast(cast))
         val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 

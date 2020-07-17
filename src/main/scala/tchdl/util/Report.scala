@@ -67,7 +67,7 @@ object Error {
   case class InvalidFormatForType(expr: Expression) extends Error
   case class InvalidFormatForModuleConstruct(expr: Expression) extends Error
   case class CannotUseStaticSelect(tree: StaticSelect) extends Error
-  case class CannotUseCast(tree: Cast) extends Error
+  case class CannotUseCast(tree: CastType) extends Error
 
   case object FinishOutsideStage extends Error
   case object GotoOutsideState extends Error

@@ -992,7 +992,7 @@ object Typer {
           }
       }
 
-    def typedForCast(cast: Cast): Either[Error, TypeTree] = {
+    def typedForCast(cast: CastType): Either[Error, TypeTree] = {
       def checkType(tpe: TypeTree): Either[Error, Type.RefType] =
         if(tpe.tpe.isErrorType) Left(Error.DummyError)
         else Right(tpe.tpe.asRefType)
@@ -1028,7 +1028,7 @@ object Typer {
         else Left(Error.CannotCast(from, to))
       }
 
-      val Cast(from, to) = cast
+      val CastType(from, to) = cast
 
       val typedFrom = typedTypeTree(from)
       val typedTo = typedTypeTree(to)
@@ -1041,7 +1041,7 @@ object Typer {
         _ <- verifyCastable(fromTpe, toTpe)
       } yield {
         val castTpe = Type.RefType.cast(fromTpe, toTpe)
-        val typedCast = Cast(typedFrom, typedTo)
+        val typedCast = CastType(typedFrom, typedTo)
           .setTpe(castTpe)
           .setSymbol(castTpe.origin)
           .setID(cast.id)
@@ -1132,7 +1132,7 @@ object Typer {
     def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] =
       typeTree.expr match {
         case ident: Ident => typedForIdent(ident, hargs, targs)
-        case cast: Cast => typedForCast(cast)
+        case cast: CastType => typedForCast(cast)
         case select: StaticSelect => typedForStaticSelect(select, hargs, targs)
         case select: SelectPackage => typedForSelectPackage(select, hargs, targs)
         case tree: ThisType => typedForThisType(tree)

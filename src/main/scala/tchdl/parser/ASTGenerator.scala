@@ -281,6 +281,7 @@ class ASTGenerator {
 
   def expr(ctx: TP.ExprContext): Expression = ctx match {
     case ctx: TP.SelectExprContext => selectExpr(ctx)
+    case ctx: TP.CastExprContext => CastExpr(expr(ctx.expr), typeTree(ctx.`type`))
     case ctx: TP.UnaryExprContext => stdUnaryOp(ctx.op.getText, ctx.expr)
     case ctx: TP.MulDivExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
     case ctx: TP.AddSubExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
@@ -407,7 +408,7 @@ class ASTGenerator {
     def typeCast(ctx: TP.TypeCastContext): TypeTree = {
       val from = typeTree(ctx.`type`(0))
       val to = typeTree(ctx.`type`(1))
-      val cast = Cast(from, to)
+      val cast = CastType(from, to)
 
       TypeTree(cast, Vector.empty, Vector.empty)
     }

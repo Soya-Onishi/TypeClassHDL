@@ -372,6 +372,7 @@ case class HPBinOp(
 
 case class Select(prefix: Expression, name: String) extends Expression with HasSymbol
 case class StaticSelect(prefix: TypeTree, name: String) extends Expression with TypeAST
+case class CastExpr(expr: Expression, to: TypeTree) extends Expression
 case class SelectPackage(packages: Vector[String], name: String) extends AST with TypeAST with Expression
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
 case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) extends Construct
@@ -407,7 +408,7 @@ case class EnumPattern(target: TypeTree, exprs: Vector[PatternExpr]) extends AST
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
 case class TypeTree(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
 case class ThisType() extends TypeAST with HasType
-case class Cast(from: TypeTree, to: TypeTree) extends TypeAST with HasType
+case class CastType(from: TypeTree, to: TypeTree) extends TypeAST with HasType
 
 trait Operation {
   def toInterface: String

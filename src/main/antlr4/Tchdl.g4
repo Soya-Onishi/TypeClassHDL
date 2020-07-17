@@ -184,6 +184,7 @@ expr: expr '.' (apply | EXPR_ID)             # SelectExpr
     | generate                               # GenerateExpr
     | RETURN expr                            # Return
     | literal                                # LitExpr
+    | '(' expr AS type ')'                   # CastExpr
     | '(' expr ')'                           # ParenthesesExpr
     | THIS                                   # SelfExpr
     | EXPR_ID                                # ExprID

@@ -372,7 +372,7 @@ class ParseTest extends TchdlFunSuite {
 
     def tt(name: String) = TypeTree(Ident(name), Vector.empty, Vector.empty)
     def ttPoly(name: String, hargs: Vector[HPExpr], targs: Vector[TypeTree]) = TypeTree(Ident(name), hargs, targs)
-    def cast(from: TypeTree, to: TypeTree): TypeTree = TypeTree(Cast(from, to), Vector.empty, Vector.empty)
+    def cast(from: TypeTree, to: TypeTree): TypeTree = TypeTree(CastType(from, to), Vector.empty, Vector.empty)
     def select(prefix: TypeTree, name: String): TypeTree = TypeTree(StaticSelect(prefix, name), Vector.empty, Vector.empty)
     def pkg(name: String, pkg: String*) = TypeTree(SelectPackage(pkg.toVector, name), Vector.empty, Vector.empty)
 
@@ -430,6 +430,24 @@ class ParseTest extends TchdlFunSuite {
         "C"
       ),
       tt("D")
+    ))
+  }
+
+  test("parse casting variable") {
+    val expr = parseString(_.expr)((gen, tree) => gen.expr(tree))_
+
+    val tree0 = expr("(a as Int)")
+    val tree1 = expr("(a as Int).f(2)")
+
+    assert(tree0 == CastExpr(Ident("a"), TypeTree(Ident("Int"), Vector.empty, Vector.empty)))
+    assert(tree1 == Apply(
+      Select(
+        CastExpr(Ident("a"), TypeTree(Ident("Int"), Vector.empty, Vector.empty)),
+        "f"
+      ),
+      Vector.empty,
+      Vector.empty,
+      Vector(IntLiteral(2))
     ))
   }
 }
