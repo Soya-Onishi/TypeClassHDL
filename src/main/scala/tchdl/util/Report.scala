@@ -67,6 +67,7 @@ object Error {
   case class InvalidFormatForType(expr: Expression) extends Error
   case class InvalidFormatForModuleConstruct(expr: Expression) extends Error
   case class CannotUseStaticSelect(tree: StaticSelect) extends Error
+  case class CannotUseCast(tree: Cast) extends Error
 
   case object FinishOutsideStage extends Error
   case object GotoOutsideState extends Error
@@ -103,6 +104,10 @@ object Error {
   case class CallInvalid(method: Symbol.MethodSymbol) extends Error
   case class CallInterfaceMustBeDirect(prefix: Type.RefType) extends Error
   case class ReferPrivate(field: Symbol.TermSymbol) extends Error
+
+  case class MustNotCastFromTrait(from: Type.RefType) extends Error
+  case class MustCastToTrait(to: Type.RefType) extends Error
+  case class CannotCast(from: Type.RefType, to: Type.RefType) extends Error
 
   case class CyclicModuleInstantiation(module: BackendType, route: Vector[BackendType]) extends Error
 

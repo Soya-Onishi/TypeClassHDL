@@ -1,0 +1,24 @@
+package test
+
+trait StaticCall0 {
+  static def f() -> Int
+}
+
+impl StaticCall0 for Int {
+  static def f() -> Int { 0 }
+}
+
+trait StaticCall1 {
+  static def f() -> Int
+}
+
+impl StaticCall1 for Int {
+  static def f() -> Int { 1 }
+}
+
+module Top
+impl Top {
+  input def function() -> Int {
+    Int:::f()
+  }
+}

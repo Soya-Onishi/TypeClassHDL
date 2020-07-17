@@ -992,6 +992,67 @@ object Typer {
           }
       }
 
+    def typedForCast(cast: Cast): Either[Error, TypeTree] = {
+      def checkType(tpe: TypeTree): Either[Error, Type.RefType] =
+        if(tpe.tpe.isErrorType) Left(Error.DummyError)
+        else Right(tpe.tpe.asRefType)
+
+      def verifyFromType(tpe: Type.RefType): Either[Error, Unit] =
+        if(tpe.origin.isInterfaceSymbol) Left(Error.MustNotCastFromTrait(tpe))
+        else Right(())
+
+      def verifyToType(tpe: Type.RefType): Either[Error, Unit] =
+        if(tpe.origin.isInterfaceSymbol) Right(())
+        else Left(Error.MustCastToTrait(tpe))
+
+      def verifyCastable(from: Type.RefType, to: Type.RefType): Either[Error, Unit] = {
+        val isCastable = from.origin match {
+          case _: Symbol.TypeParamSymbol =>
+            val bounds = ctx.tpBounds
+              .find(_.target == from)
+              .map(_.bounds)
+              .getOrElse(Vector.empty)
+
+            bounds.contains(to)
+          case symbol: Symbol.ClassTypeSymbol =>
+            to.origin.asInterfaceSymbol.impls.exists {
+              impl =>
+                val targets = Vector(impl.targetType, impl.targetInterface)
+                val callers = Vector(from, to)
+
+                Type.RefType.verifySuperSets(callers, targets).isRight
+            }
+        }
+
+        if(isCastable) Right(())
+        else Left(Error.CannotCast(from, to))
+      }
+
+      val Cast(from, to) = cast
+
+      val typedFrom = typedTypeTree(from)
+      val typedTo = typedTypeTree(to)
+
+      for {
+        fromTpe <- checkType(typedFrom)
+        toTpe <- checkType(typedTo)
+        _ <- verifyFromType(fromTpe)
+        _ <- verifyToType(toTpe)
+        _ <- verifyCastable(fromTpe, toTpe)
+      } yield {
+        val castTpe = Type.RefType.cast(fromTpe, toTpe)
+        val typedCast = Cast(typedFrom, typedTo)
+          .setTpe(castTpe)
+          .setSymbol(castTpe.origin)
+          .setID(cast.id)
+
+        TypeTree(typedCast, Vector.empty, Vector.empty)
+          .setTpe(castTpe)
+          .setSymbol(castTpe.origin)
+          .setID(cast.id)
+      }
+    }
+
     def typedForStaticSelect(select: StaticSelect, hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
       def typedPrefix: Either[Error, TypeTree] = {
         val tree = typedTypeTree(select.prefix)
@@ -1068,11 +1129,10 @@ object Typer {
           Right(tpeTree)
       }
 
-
-
     def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] =
       typeTree.expr match {
         case ident: Ident => typedForIdent(ident, hargs, targs)
+        case cast: Cast => typedForCast(cast)
         case select: StaticSelect => typedForStaticSelect(select, hargs, targs)
         case select: SelectPackage => typedForSelectPackage(select, hargs, targs)
         case tree: ThisType => typedForThisType(tree)

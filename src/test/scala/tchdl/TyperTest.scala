@@ -554,4 +554,64 @@ class TyperTest extends TchdlFunSuite {
     val (Seq(tree), global) = untilTyper("verifyHPBound1.tchdl")
     expectNoError(global)
   }
+
+  test("cast Int into StaticCall and call static method f works correctly") {
+    val (Seq(tree), global) = untilTyper("castType.tchdl")
+    expectNoError(global)
+
+    val static = tree.topDefs.collectFirst{ case interface: InterfaceDef => interface }.get
+    val staticMethod = tree.topDefs
+      .collectFirst{ case impl: ImplementInterface => impl }.get
+      .methods.head
+
+    val call = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case m: MethodDef => m }.get
+      .blk.get
+      .last.asInstanceOf[Apply]
+
+    assert(call.tpe == Type.intTpe(global))
+    val Apply(select @ StaticSelect(typeTree, _), _, _, _) = call
+    assert(select.symbol == staticMethod.symbol)
+
+    val tpe = typeTree.tpe.asRefType
+    assert(tpe.castedAs.contains(Type.RefType(static.symbol.asTypeSymbol)))
+    assert(tpe.origin == Symbol.int(global))
+  }
+
+  test("cast Int to StaticCall0 to select same name interface method ") {
+    val (Seq(tree), global) = untilTyper("castToSelectMethod.tchdl")
+    expectNoError(global)
+
+    val staticMethod = tree.topDefs
+      .collectFirst{ case impl: ImplementInterface if impl.interface.expr == Ident("StaticCall0") => impl }.get
+      .methods.head
+
+    val call = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case m: MethodDef => m }.get
+      .blk.get
+      .last.asInstanceOf[Apply]
+
+    val Apply(select: StaticSelect, _, _, _) = call
+    assert(select.symbol == staticMethod.symbol)
+  }
+
+  test("cast error") {
+    val (_, global) = untilTyper("castError.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.CannotCast])
+  }
+
+  test("calling same name method between StaticCall0 and StaticCall1 causes an error") {
+    val (_, global) = untilTyper("sameNameMethod.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.AmbiguousSymbols])
+  }
 }

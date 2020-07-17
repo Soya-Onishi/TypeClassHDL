@@ -476,6 +476,7 @@ object Type {
     val origin: Symbol.TypeSymbol,
     val hardwareParam: Vector[HPExpr],
     val typeParam: Vector[Type.RefType],
+    val castedAs: Option[Type.RefType]
   ) extends Type {
     val name: String = origin.name
     val namespace: NameSpace = origin.path
@@ -534,7 +535,7 @@ object Type {
       }
 
       this.origin match {
-        case clazz: Symbol.ClassTypeSymbol => lookupToClass match {
+        case clazz: Symbol.ClassTypeSymbol if castedAs.isEmpty => lookupToClass match {
           case success @ LookupResult.LookupSuccess(_) => success
           case LookupResult.LookupFailure(_) => lookupFromImpl(clazz)
         }
@@ -552,7 +553,7 @@ object Type {
       requireStatic: Boolean
     )(implicit ctx: Context.NodeContext, globalData: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
       val result = this.origin match {
-        case entity: Symbol.EntityTypeSymbol =>
+        case entity: Symbol.EntityTypeSymbol if castedAs.isEmpty =>
           lookupFromImpls(
             entity.impls,
             methodName,
@@ -579,29 +580,57 @@ object Type {
                 case methods => Left(Error.AmbiguousSymbols(methods.map(_._1)))
               }
           }
+        case _: Symbol.EntityTypeSymbol =>
+          val interface = castedAs.get
+          val impls = interface.origin.asInterfaceSymbol.impls
+          val impl = impls.find {
+            impl =>
+              val callers = Vector(this, interface)
+              val targets = Vector(impl.targetType, impl.targetInterface)
+
+              RefType.verifySuperSets(callers, targets).isRight
+          }
+
+          impl match {
+            case None => Left(Error.SymbolNotFound(methodName))
+            case Some(impl) => lookupFromImpls(Vector(impl), methodName, args, callerHP, callerTP, callerHPBound, callerTPBound, requireStatic)
+          }
         case tp: Symbol.TypeParamSymbol =>
           callerTPBound.find(_.target.origin == tp) match {
             case None => Left(Error.SymbolNotFound(methodName))
             case Some(bound) =>
-              bound.bounds.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
-                case (success @ Right(_), _) => success
-                case (Left(errs), interface) =>
-                  val result = lookupFromTypeParam(
-                    interface.origin.asInterfaceSymbol,
-                    interface.hardwareParam,
-                    interface.typeParam,
-                    methodName,
-                    args,
-                    callerHP,
-                    callerTP,
-                    callerHPBound,
-                    callerTPBound,
-                    requireStatic
-                  )
+              val bounds = castedAs match {
+                case None => Right(bound.bounds)
+                case Some(tpe) => bound.bounds
+                  .find(_ == tpe)
+                  .map(Vector(_))
+                  .map(Right.apply)
+                  .getOrElse(Left(Error.SymbolNotFound(methodName)))
+              }
 
-                  result match {
-                    case Left(err) => Left(Error.MultipleErrors(err, errs))
-                    case success @ Right(_) => success
+              bounds match {
+                case Left(err) => Left(err)
+                case Right(bounds) =>
+                  bounds.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
+                    case (success @ Right(_), _) => success
+                    case (Left(errs), interface) =>
+                      val result = lookupFromTypeParam(
+                        interface.origin.asInterfaceSymbol,
+                        interface.hardwareParam,
+                        interface.typeParam,
+                        methodName,
+                        args,
+                        callerHP,
+                        callerTP,
+                        callerHPBound,
+                        callerTPBound,
+                        requireStatic
+                      )
+
+                      result match {
+                        case Left(err) => Left(Error.MultipleErrors(err, errs))
+                        case success @ Right(_) => success
+                      }
                   }
               }
           }
@@ -925,11 +954,9 @@ object Type {
 
     override def equals(obj: Any): Boolean = obj match {
       case that: Type.RefType =>
-        def isSameOrigin = this.origin == that.origin
-
-        def isSameHp = {
+        def isSameOrigin: Boolean = this.origin == that.origin
+        def isSameHp: Boolean = {
           def isSameLength = this.hardwareParam.length == that.hardwareParam.length
-
           def isSameExpr = this.hardwareParam
             .zip(that.hardwareParam)
             .forall { case (t, o) => t.isSameExpr(o) }
@@ -937,15 +964,16 @@ object Type {
           isSameLength && isSameExpr
         }
 
-        def isSameTP = {
+        def isSameTP: Boolean = {
           def isSameLength = this.typeParam.length == that.typeParam.length
-
           def isSameTypes = (this.typeParam zip that.typeParam).forall { case (t, o) => t =:= o }
 
           isSameLength && isSameTypes
         }
 
-        isSameOrigin && isSameHp && isSameTP
+        def isSameCast: Boolean = this.castedAs == that.castedAs
+
+        isSameOrigin && isSameHp && isSameTP && isSameCast
       case _ => false
     }
 
@@ -1027,10 +1055,14 @@ object Type {
 
   object RefType {
     def apply(origin: Symbol.TypeSymbol, hp: Vector[HPExpr], tp: Vector[Type.RefType]): Type.RefType =
-      new RefType(origin, hp, tp)
+      new RefType(origin, hp, tp, None)
 
     def apply(origin: Symbol.TypeSymbol): RefType =
-      new RefType(origin, Vector.empty, Vector.empty)
+      new RefType(origin, Vector.empty, Vector.empty, None)
+
+    def cast(from: Type.RefType, into: Type.RefType): Type.RefType = {
+      new RefType(from.origin, from.hardwareParam, from.typeParam, Some(into))
+    }
 
     def unapply(obj: Any): Option[(Symbol.TypeSymbol, Vector[HPExpr], Vector[RefType])] = obj match {
       case tpe: Type.RefType => Some((tpe.origin, tpe.hardwareParam, tpe.typeParam))
@@ -1396,6 +1428,11 @@ object Type {
       case select: SelectPackage => buildForSelectPackage(select, typeTree.hp, typeTree.tp)
       case select: StaticSelect =>
         val err = Some(Error.CannotUseStaticSelect(select))
+        val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+
+        (err, tree)
+      case cast: Cast =>
+        val err = Some(Error.CannotUseCast(cast))
         val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
         (err, tree)
