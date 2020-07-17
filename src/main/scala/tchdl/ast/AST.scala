@@ -407,6 +407,7 @@ case class EnumPattern(target: TypeTree, exprs: Vector[PatternExpr]) extends AST
 // (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
 case class TypeTree(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
 case class ThisType() extends TypeAST with HasType
+case class Cast(from: TypeTree, to: TypeTree) extends TypeAST with HasType
 
 trait Operation {
   def toInterface: String

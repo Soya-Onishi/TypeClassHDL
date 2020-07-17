@@ -366,4 +366,70 @@ class ParseTest extends TchdlFunSuite {
       "generate s1(a, b) # st1(c, d)"
     }
   }
+
+  test("parse type tree") {
+    val tpe = parseString(_.`type`)((gen, tree) => gen.typeTree(tree))_
+
+    def tt(name: String) = TypeTree(Ident(name), Vector.empty, Vector.empty)
+    def ttPoly(name: String, hargs: Vector[HPExpr], targs: Vector[TypeTree]) = TypeTree(Ident(name), hargs, targs)
+    def cast(from: TypeTree, to: TypeTree): TypeTree = TypeTree(Cast(from, to), Vector.empty, Vector.empty)
+    def select(prefix: TypeTree, name: String): TypeTree = TypeTree(StaticSelect(prefix, name), Vector.empty, Vector.empty)
+    def pkg(name: String, pkg: String*) = TypeTree(SelectPackage(pkg.toVector, name), Vector.empty, Vector.empty)
+
+    val tree0 = tpe("A")
+    val tree1 = tpe("A[1]")
+    val tree2 = tpe("A[B]")
+    val tree3 = tpe("A[m, B]")
+    val tree4 = tpe("A as B")
+    val tree5 = tpe("A as b:::B")
+    val tree6 = tpe("A as B:::C")
+    val tree7 = tpe("A:::B as C:::D")
+    val tree8 = tpe("a:::A as B")
+    val tree9 = tpe("A as (B:::C)")
+    val tree10 = tpe("(A as B):::C as D")
+
+    assert(tree0 == tt("A"))
+    assert(tree1 == ttPoly("A", Vector(IntLiteral(1)), Vector.empty))
+    assert(tree2 == ttPoly("A", Vector.empty, Vector(tt("B"))))
+    assert(tree3 == ttPoly("A", Vector(Ident("m")), Vector(tt("B"))))
+    assert(tree4 == cast(
+      tt("A"),
+      tt("B")
+    ))
+
+    assert(tree5 == cast(
+      tt("A"),
+      pkg("B", "b")
+    ))
+
+
+    assert(tree6 == cast(
+      tt("A"),
+      select(tt("B"), "C")
+    ))
+
+
+    assert(tree7 == cast(
+      select(tt("A"), "B"),
+      select(tt("C"), "D")
+    ))
+
+    assert(tree8 == cast(
+      pkg("A", "a"),
+      tt("B")
+    ))
+
+    assert(tree9 == cast(
+      tt("A"),
+      select(tt("B"), "C")
+    ))
+
+    assert(tree10 == cast(
+      select(
+        cast(tt("A"), tt("B")),
+        "C"
+      ),
+      tt("D")
+    ))
+  }
 }

@@ -289,7 +289,10 @@ unit_lit
     : '(' ')'
     ;
 
-type: (pkg_select ':::')? type_elem (':::' type_elem)*
+type: (pkg_select ':::')? type_elem # TypeHead
+    | type ':::' type_elem          # TypeSelect
+    | type AS type                  # TypeCast
+    | '(' type ')'                  # TypeParentheses
     ;
 
 type_elem
@@ -328,6 +331,8 @@ MATCH: 'match';
 CASE: 'case';
 THIS: 'this';
 FOR: 'for';
+
+AS: 'as';
 
 FINISH: 'finish';
 GOTO: 'goto';

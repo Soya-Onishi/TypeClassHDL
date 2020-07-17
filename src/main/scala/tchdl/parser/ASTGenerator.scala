@@ -404,27 +404,41 @@ class ASTGenerator {
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
-    val packageRoute = Option(ctx.pkg_select).map(packageSelect).getOrElse(Vector.empty)
-    def head(name: String): TypeAST = packageRoute match {
-      case Vector() => Ident(name)
-      case pkgs => SelectPackage(pkgs, name)
+    def typeCast(ctx: TP.TypeCastContext): TypeTree = {
+      val from = typeTree(ctx.`type`(0))
+      val to = typeTree(ctx.`type`(1))
+      val cast = Cast(from, to)
+
+      TypeTree(cast, Vector.empty, Vector.empty)
     }
 
-    def constructHead(tree: TypeTree): TypeTree = tree.expr match {
-      case ThisType() => TypeTree(ThisType(), Vector.empty, Vector.empty)
-      case Ident(name) => TypeTree(head(name), tree.hp, tree.tp)
-      case StaticSelect(prefix, name) =>
-        val select = StaticSelect(constructHead(prefix), name)
-        TypeTree(select, tree.hp, tree.tp)
+    def typeHead(ctx: TP.TypeHeadContext): TypeTree = {
+      val pkg = Option(ctx.pkg_select).map(packageSelect).getOrElse(Vector.empty)
+      val elem = typeElem(ctx.type_elem)
+
+      if(pkg.isEmpty) elem
+      else {
+        val TypeTree(Ident(name), hargs, targs) = elem
+        val head = SelectPackage(pkg, name)
+
+        TypeTree(head, hargs, targs)
+      }
     }
 
-    val types = ctx.type_elem.asScala.map(typeElem)
-    val folded = types.tail.foldLeft(types.head) {
-      case (prefix, TypeTree(Ident(name), hargs, targs)) =>
-        TypeTree(StaticSelect(prefix, name), hargs, targs)
+    def typeSelect(ctx: TP.TypeSelectContext): TypeTree = {
+      val head = typeTree(ctx.`type`)
+      val TypeTree(Ident(name), hargs, targs) = typeElem(ctx.type_elem)
+      val select = StaticSelect(head, name)
+
+      TypeTree(select, hargs, targs)
     }
 
-    constructHead(folded)
+    ctx match {
+      case ctx: TP.TypeCastContext => typeCast(ctx)
+      case ctx: TP.TypeHeadContext => typeHead(ctx)
+      case ctx: TP.TypeSelectContext => typeSelect(ctx)
+      case ctx: TP.TypeParenthesesContext => typeTree(ctx.`type`)
+    }
   }
 
   def typeElem(ctx: TP.Type_elemContext): TypeTree = {
