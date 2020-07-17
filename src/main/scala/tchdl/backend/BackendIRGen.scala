@@ -283,6 +283,7 @@ object BackendIRGen {
       case generate: frontend.Generate => buildGenerate(generate)
       case relay: frontend.Relay => buildRelay(relay)
       case ret: frontend.Return => buildReturn(ret)
+      case cast: frontend.CastExpr => buildExpr(cast.expr)
       case frontend.IntLiteral(value) => BuildResult(backend.IntLiteral(value))
       case frontend.BitLiteral(value, length) => BuildResult(backend.BitLiteral(value, HPElem.Num(length)))
       case frontend.UnitLiteral() => BuildResult(backend.UnitLiteral())

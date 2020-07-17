@@ -875,9 +875,8 @@ object FirrtlCodeGen {
       stack.lookup(name)
     }
 
-    val method = call.accessor match {
-      case Some(backend.Term.Temp(_, tpe)) => ctx.methods(tpe).find(_.label == call.label).get
-      case Some(backend.Term.Variable(_, tpe)) => ctx.methods(tpe).find(_.label == call.label).get
+    val method = call.label.accessor match {
+      case Some(tpe) => ctx.methods(tpe).find(_.label == call.label).get
       case None => ctx.functions.find(_.label == call.label).get
     }
 

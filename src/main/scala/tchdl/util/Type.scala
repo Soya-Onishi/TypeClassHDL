@@ -984,7 +984,7 @@ object Type {
 
     def isModuleType(implicit ctx: Context.NodeContext, global: GlobalData): Boolean = this.origin match {
       case _: Symbol.ModuleSymbol => true
-      case _: Symbol.InterfaceSymbol => false
+      case _: Symbol.EntityTypeSymbol => false
       case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
         case None => false
         case Some(tpBound) =>
@@ -1048,8 +1048,12 @@ object Type {
         else if (this.hardwareParam.isEmpty) s"[$tps]"
         else if (this.typeParam.isEmpty) s"[$hps]"
         else s"[$hps, $tps]"
+      val cast = castedAs match {
+        case None => ""
+        case Some(tpe) => s" as $tpe"
+      }
 
-      s"$name$params"
+      s"$name$params$cast"
     }
   }
 

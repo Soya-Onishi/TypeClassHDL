@@ -138,6 +138,8 @@ object RefCheck {
     }
 
     val result = apply.prefix match {
+      case _: Ident => Right(())
+      case _: StaticSelect => Right(())
       case select @ Select(_: This, _) =>
         val method = select.symbol.asMethodSymbol
         method.accessibility match {

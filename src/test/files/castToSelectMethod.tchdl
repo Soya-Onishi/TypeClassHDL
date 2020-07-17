@@ -5,7 +5,7 @@ trait StaticCall0 {
 }
 
 impl StaticCall0 for Int {
-  static def f() -> Int { 0 }
+  static def f() -> Int { 32 }
 }
 
 trait StaticCall1 {
@@ -13,7 +13,7 @@ trait StaticCall1 {
 }
 
 impl StaticCall1 for Int {
-  static def f() -> Int { 1 }
+  static def f() -> Int { 64 }
 }
 
 module Top

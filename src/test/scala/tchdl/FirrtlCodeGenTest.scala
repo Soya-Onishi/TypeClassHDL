@@ -485,6 +485,27 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(connectX.loc == ir.Reference("s0_" + s0ID + "$st1$x", ir.UnknownType))
     assert(connectY.loc == ir.Reference("s0_" + s0ID + "$st1$y", ir.UnknownType))
 
+    runFirrtl(circuit)
+  }
+
+  test("method call with cast variable") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castToCallMethod.tchdl")
+
+    val ir.Connect(_, _, from) = circuit.modules
+      .head.asInstanceOf[ir.Module]
+      .body.asInstanceOf[ir.Block]
+      .stmts
+      .collectFirst{ case cond: ir.Conditionally => cond }.get
+      .conseq.asInstanceOf[ir.Block]
+      .stmts.last
+
+    assert(from == ir.UIntLiteral(32, ir.IntWidth(32)))
+
+    runFirrtl(circuit)
+  }
+
+  test("static method call with cast Type") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castToSelectMethod.tchdl")
     runFirrtl(circuit, print = true)
   }
 }
