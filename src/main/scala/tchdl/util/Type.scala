@@ -690,7 +690,7 @@ object Type {
         methodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
         methodTpBound = TPBound.swapBounds(method.tpBound, appendHpTable, appendTpTable)
         _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound, impl, target)
-        swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable, this)
+        swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable, callerTPBound, this)
         _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
     }
@@ -741,7 +741,7 @@ object Type {
         simplifiedHPBounds <- HPBound.simplify(swappedHPBounds)
         _ <- verifyEachBounds(simplifiedHPBounds, swappedTPBounds)
         methodTpe = method.tpe.asMethodType
-        swappedTpe = RefType.assignMethodTpe(methodTpe, hpTable, tpTable, this)
+        swappedTpe = RefType.assignMethodTpe(methodTpe, hpTable, tpTable, callerTPBound, this)
         _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
     }
@@ -818,7 +818,7 @@ object Type {
           swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
           simplifiedHPBound <- HPBound.simplify(swappedHpBound)
           _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, Vector.empty, Vector.empty, impl, this)
-          swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable, this)
+          swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable, swappedTpBound, this)
           _ <- RefType.verifyMethodType(swappedTpe, args)
         } yield (stage, stageTpe)
       }
@@ -1000,7 +1000,7 @@ object Type {
 
           new RefType(tpeSymbol, hargs, targs, castedAs, accessor)
         case symbol =>
-          val tpeSymbol = accessor match {
+          val accessedSymbol = accessor match {
             case None => this.origin
             case Some(accessor) =>
               accessor.lookupType(symbol.name)
@@ -1008,26 +1008,30 @@ object Type {
                 .getOrElse(throw new ImplementationErrorException("lookup type should be found"))
           }
 
-          val castTpe = for {
+          val prefixTpes = for {
             accessorTpe <- accessor
             castTpe <- accessorTpe.castedAs
-          } yield castTpe
+          } yield (accessorTpe, castTpe)
 
-          tpeSymbol match {
+          accessedSymbol match {
             case symbol: Symbol.FieldTypeSymbol =>
-              castTpe match {
+              prefixTpes match {
                 case None => symbol.tpe.asRefType
-                case Some(castTpe) =>
+                case Some((accessorTpe, castTpe)) =>
                   val castHPTable = (castTpe.origin.hps zip castTpe.hardwareParam).toMap
                   val castTPTable = (castTpe.origin.tps zip castTpe.typeParam).toMap
 
-                  symbol.tpe.asRefType.replaceWithMap(castHPTable, castTPTable)
+                  val tpe = symbol.tpe.asRefType.replaceWithMap(castHPTable, castTPTable)
+                  tpe.origin match {
+                    case _: Symbol.FieldTypeSymbol => Type.RefType.accessed(accessorTpe, tpe)
+                    case _ => tpe
+                  }
               }
             case _ =>
               val hargs = this.hardwareParam.map(_.replaceWithMap(hpTable))
               val targs = typeParam.map(_.replaceWithMap(hpTable, tpTable))
 
-              new RefType(tpeSymbol, hargs, targs, castedAs, accessor)
+              new RefType(accessedSymbol, hargs, targs, castedAs, accessor)
           }
       }
     }
@@ -1052,8 +1056,9 @@ object Type {
         }
 
         def isSameCast: Boolean = this.castedAs == that.castedAs
+        def isSameAccessor: Boolean = this.accessor == that.accessor
 
-        isSameOrigin && isSameHp && isSameTP && isSameCast
+        isSameOrigin && isSameHp && isSameTP && isSameCast && isSameAccessor
       case _ => false
     }
 
@@ -1349,7 +1354,8 @@ object Type {
       method: Type.MethodType,
       hpTable: Map[Symbol.HardwareParamSymbol, HPExpr],
       tpTable: Map[Symbol.TypeParamSymbol, Type.RefType],
-      thisTpe: Type.RefType
+      callerTPBound: Vector[TPBound],
+      thisTpe: Type.RefType,
     ): Type.MethodType = {
       def swapHP(expr: HPExpr): HPExpr =
         expr match {
@@ -1361,6 +1367,24 @@ object Type {
           case lit => lit
         }
 
+      def inferAccessor(field: Symbol.FieldTypeSymbol): Type.RefType =
+        thisTpe.castedAs match {
+          case Some(_) => thisTpe
+          case None =>
+            val interfaceOpt = for {
+              bound <- callerTPBound.find(_.target == thisTpe)
+              interface <- bound.bounds.find {
+                interface =>
+                  val symbols = interface.origin.tpe.declares.toMap.values.toVector
+                  symbols.contains(field)
+              }
+            } yield interface
+
+            val interface = interfaceOpt.getOrElse(throw new ImplementationErrorException("interface should be found"))
+
+            Type.RefType.cast(thisTpe, interface)
+        }
+
       def swapType(tpe: Type.RefType): Type.RefType =
         tpe.origin match {
           case _: Symbol.ClassTypeSymbol =>
@@ -1369,7 +1393,9 @@ object Type {
 
             Type.RefType(tpe.origin, swappedHP, swappedTP)
           case _: Symbol.InterfaceSymbol => thisTpe
-          case symbol: Symbol.FieldTypeSymbol => symbol.tpe.asRefType.replaceWithMap(hpTable, tpTable)
+          case symbol: Symbol.FieldTypeSymbol =>
+            val accessor = inferAccessor(symbol)
+            Type.RefType.accessed(accessor, tpe)
           case t: Symbol.TypeParamSymbol =>
             tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
         }

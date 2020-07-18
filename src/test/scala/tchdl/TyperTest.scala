@@ -664,7 +664,7 @@ class TyperTest extends TchdlFunSuite {
       .collectFirst{ case method: MethodDef => method }.get
       .blk.get.last
 
-    assert(call.tpe == output.symbol.tpe)
+    assert(call.tpe.asRefType.origin == output.symbol)
   }
 
   test("refer field type of interface in method return type and it is converted correctly") {
@@ -681,5 +681,43 @@ class TyperTest extends TchdlFunSuite {
   test("refer field type for type parameter") {
     val (Seq(tree), global) = untilTyper("referFieldTypeInSignature2.tchdl")
     expectNoError(global)
+
+    val thirdMethod = tree.topDefs.collectFirst { case m: MethodDef if m.name == "third" => m }.get
+    val secondMethod = tree.topDefs.collectFirst { case m: MethodDef if m.name == "second" => m }.get
+    val firstMethod = tree.topDefs.collectFirst { case m: MethodDef if m.name == "first" => m }.get
+
+    val callCall = thirdMethod
+      .blk.get
+      .last.asInstanceOf[Apply]
+
+    val callThird = secondMethod
+      .blk.get
+      .last.asInstanceOf[Apply]
+
+    val callSecond = firstMethod
+      .blk.get
+      .last.asInstanceOf[Apply]
+
+    val fieldTree = tree.topDefs.collectFirst{ case inter: InterfaceDef => inter }.get
+    val field = fieldTree.symbol.asInterfaceSymbol
+    val output = fieldTree.types.head.symbol.asFieldTypeSymbol
+
+    val thirdT = thirdMethod.tp.head.symbol.asTypeParamSymbol
+    val secondT = secondMethod.tp.head.symbol.asTypeParamSymbol
+
+    val callCallTpe = callCall.tpe.asRefType
+    val callThirdTpe = callThird.tpe.asRefType
+    val callSecondTpe = callSecond.tpe.asRefType
+
+    val thirdAccessor = new Type.RefType(thirdT, Vector.empty, Vector.empty, Some(Type.RefType(field)), None)
+    val secondAccessor = new Type.RefType(secondT, Vector.empty, Vector.empty, Some(Type.RefType(field)), None)
+
+    val expectCallCallTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(thirdAccessor))
+    val expectCallThirdTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(secondAccessor))
+    val expectCallSecondTpe = Type.intTpe(global)
+
+    assert(callCallTpe == expectCallCallTpe)
+    assert(callThirdTpe == expectCallThirdTpe)
+    assert(callSecondTpe == expectCallSecondTpe)
   }
 }

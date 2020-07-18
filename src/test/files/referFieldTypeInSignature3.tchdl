@@ -1,0 +1,32 @@
+package test
+
+trait Field {
+  type Output
+
+  def call() -> Output
+}
+
+impl Field for Int {
+  type Output = Int
+
+  def call() -> Int { 128 }
+}
+
+def second[T](n: T) -> (T as Field):::Output
+  where T: Field
+{
+   n.call()
+}
+
+def first[T](n: T) -> (T as Field):::Output
+  where T: Field
+{
+  second[T](n)
+}
+
+module Top
+impl Top {
+  input def f(in: Int) -> Int {
+    first[Int](in)
+  }
+}

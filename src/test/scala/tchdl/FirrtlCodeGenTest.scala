@@ -518,4 +518,10 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castTPtoCallNormal.tchdl")
     runFirrtl(circuit)
   }
+
+  test("refer field type in function signature causes no error") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "referFieldTypeInSignature3.tchdl")
+
+    runFirrtl(circuit, print = true)
+  }
 }

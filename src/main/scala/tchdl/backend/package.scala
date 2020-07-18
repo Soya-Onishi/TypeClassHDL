@@ -118,6 +118,8 @@ package object backend {
     tpTable: Map[Symbol.TypeParamSymbol, BackendType]
   )(implicit global: GlobalData): BackendType = {
     def replace(tpe: Type.RefType): BackendType = tpe.origin match {
+      case tp: Symbol.TypeParamSymbol =>
+        tpTable.getOrElse(tp, throw new ImplementationErrorException(s"$tp should be found in tpTable"))
       case _: Symbol.EntityTypeSymbol =>
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
@@ -125,8 +127,34 @@ package object backend {
         val backendType = BackendType(tpe.origin, hargs, targs)
 
         backendType
-      case tp: Symbol.TypeParamSymbol =>
-        tpTable.getOrElse(tp, throw new ImplementationErrorException(s"$tp should be found in tpTable"))
+      case symbol: Symbol.FieldTypeSymbol =>
+        val accessor = tpe.accessor.getOrElse(throw new ImplementationErrorException(s"$symbol should have accessor"))
+        val accessorTPTable = tpTable.map { case (tp, tpe) => tp -> toRefType(tpe)}
+        val accessorHPTable = hpTable.map{
+          case (hp, HPElem.Num(value)) => hp -> frontend.IntLiteral(value)
+          case (hp, HPElem.Str(value)) => hp -> frontend.StringLiteral(value)
+        }
+        val replaced = accessor.replaceWithMap(accessorHPTable, accessorTPTable)
+
+        val fieldTpe = replaced.lookupType(tpe.origin.name)
+          .toOption
+          .getOrElse(throw new ImplementationErrorException(s"type ${tpe.origin.name} should be found"))
+          .tpe
+          .asRefType
+
+        val cast = replaced.castedAs.getOrElse(throw new ImplementationErrorException(s"type $replaced should have castedAs field"))
+        val interface = cast.origin.asInterfaceSymbol
+
+        val interfaceHPTable = (interface.hps zip cast.hardwareParam).map{
+          case (hparam, frontend.IntLiteral(value)) => hparam -> HPElem.Num(value)
+          case (hparam, frontend.StringLiteral(value)) => hparam -> HPElem.Str(value)
+        }.toMap
+
+        val interfaceTPTable = (interface.tps zip cast.typeParam)
+          .map { case (tparam, targ) => tparam -> replace(targ) }
+          .toMap
+
+        toBackendType(fieldTpe, interfaceHPTable, interfaceTPTable)
     }
 
     replace(tpe)
