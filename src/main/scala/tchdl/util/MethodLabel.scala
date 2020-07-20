@@ -87,5 +87,8 @@ case class FieldLabel(
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
   override type SymbolType = Symbol.VariableSymbol
-  override lazy val toString: String = symbol.name
+  override lazy val toString: String = symbol.name match {
+    case "mem" => "_mem"
+    case name => name
+  }
 }

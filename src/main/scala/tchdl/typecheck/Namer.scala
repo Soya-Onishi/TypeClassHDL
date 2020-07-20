@@ -138,6 +138,11 @@ object Namer {
   }
 
   def namedModule(module: ModuleDef)(implicit ctx: Context.RootContext, global: GlobalData): ModuleDef = {
+    def tryAppendBuiltIn(symbol: Symbol.ModuleSymbol): Unit = {
+      if(ctx.path.pkgName == Vector("std", "types") && global.builtin.types.names.contains(module.name))
+        global.builtin.types.append(symbol)
+    }
+
     val moduleTpe = Type.ModuleTypeGenerator(module, ctx, global)
     val moduleSymbol = Symbol.ModuleSymbol(
       module.name,
@@ -153,6 +158,7 @@ object Namer {
     moduleSymbol.setHPs(hps.map(_.symbol.asHardwareParamSymbol))
     moduleSymbol.setTPs(tps.map(_.symbol.asTypeParamSymbol))
 
+    tryAppendBuiltIn(moduleSymbol)
     ctx.append(moduleSymbol).left.foreach(global.repo.error.append)
     module.setSymbol(moduleSymbol)
   }

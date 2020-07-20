@@ -13,7 +13,7 @@ object BackendIRGen {
   case class Summary(modules: Vector[ModuleContainer], methods: Vector[MethodContainer], labels: Set[BackendLabel])
 
   def exec(modules: Vector[BuiltModule])(implicit global: GlobalData): (Vector[ModuleContainer], Vector[MethodContainer]) = {
-    val (moduleContainers, moduleMethodss, labels) = modules.map(buildModule).unzip3
+    val (moduleContainers, moduleMethodss, labels) = modules.filter(_.module.symbol != Symbol.mem).map(buildModule).unzip3
     val labelSet = labels.flatten.toSet
 
     val initSummary = Summary(moduleContainers, moduleMethodss.flatten, labelSet)
@@ -24,9 +24,9 @@ object BackendIRGen {
 
   private def isInterface(symbol: Symbol.MethodSymbol): Boolean =
     symbol.hasFlag(Modifier.Input) ||
-      symbol.hasFlag(Modifier.Internal) ||
-      symbol.hasFlag(Modifier.Parent) ||
-      symbol.hasFlag(Modifier.Sibling)
+    symbol.hasFlag(Modifier.Internal) ||
+    symbol.hasFlag(Modifier.Parent) ||
+    symbol.hasFlag(Modifier.Sibling)
 
   @tailrec def build(summary: Summary)(implicit global: GlobalData): Summary = {
     def makeContext(label: BackendLabel, impl: Option[Symbol.ImplementSymbol], method: Option[Symbol.MethodSymbol]): BackendContext = {
@@ -438,17 +438,22 @@ object BackendIRGen {
             lookupImplMethod(prefixTPType, replacedType, hargs, targs, argSummary.terms.map(_.tpe), methodName, requireStatic = false)
         }
 
-
         lazy val forBuiltin = forBuiltInMethod(_, Some(accessor), hargs, retTpe)
-        val (call, label) = if (global.builtin.functions.symbols.contains(referredMethodSymbol)) (forBuiltin(referredMethodSymbol), None)
-        else {
-          val label = makeLabel(referredMethodSymbol, Some(accessor.tpe), argSummary.terms.map(_.tpe), hargs, targs)
-          val call = select.symbol match {
-            case _: Symbol.MethodSymbol if isInterface => backend.CallInterface(label, accessor, argSummary.terms, retTpe)
-            case _: Symbol.MethodSymbol => backend.CallMethod(label, Some(accessor), hargs, argSummary.terms, retTpe)
-          }
+        lazy val isBuiltin = global.builtin.functions.symbols.contains(referredMethodSymbol)
+        lazy val isMemRead = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "read"
+        lazy val isMemWrite = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "write"
+        val (call, label) = () match {
+          case _ if isBuiltin => (forBuiltin(referredMethodSymbol), None)
+          case _ if isMemRead => (backend.ReadMemory(accessor, argSummary.terms.head, retTpe), None)
+          case _ if isMemWrite => (backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1)), None)
+          case _ =>
+            val label = makeLabel(referredMethodSymbol, Some(accessor.tpe), argSummary.terms.map(_.tpe), hargs, targs)
+            val call = select.symbol match {
+              case _: Symbol.MethodSymbol if isInterface => backend.CallInterface(label, accessor, argSummary.terms, retTpe)
+              case _: Symbol.MethodSymbol => backend.CallMethod(label, Some(accessor), hargs, argSummary.terms, retTpe)
+            }
 
-          (call, Some(label))
+            (call, Some(label))
         }
 
         val resultLabels = label.map(argSummary.labels ++ labels + _).getOrElse(argSummary.labels ++ labels)
@@ -711,7 +716,10 @@ object BackendIRGen {
       .map(backend.Term.Variable(_, tpe))
       .getOrElse(backend.Term.Temp(ctx.temp.get(), tpe))
 
-    val expr = backend.ConstructModule(name, tpe, parent.inits, sibling.inits)
+    val expr =
+      if(tpe.symbol == Symbol.mem) backend.ConstructMemory(name, tpe)
+      else backend.ConstructModule(name, tpe, parent.inits, sibling.inits)
+
     val labels = parent.labels ++ sibling.labels
 
     BuildResult(nodes, Some(expr), labels)

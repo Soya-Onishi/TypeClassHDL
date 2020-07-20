@@ -16,6 +16,10 @@ case class Temp(id: Int, expr: Expr) extends Stmt
 case class Abandon(expr: Expr) extends Stmt
 case class Assign(target: Term.Variable, expr: Expr) extends Stmt
 
+case class ConstructMemory(name: Term, target: BackendType) extends Expr {
+  val tpe = target
+}
+
 case class ConstructModule(name: Term, target: BackendType, parents: Map[String, Expr], siblings: Map[String, Expr]) extends Expr {
   val tpe = target
 }
@@ -31,6 +35,10 @@ case class ConstructEnum(target: BackendType, variant: Symbol.EnumMemberSymbol, 
 case class CallMethod(label: MethodLabel, accessor: Option[Term], hargs: Vector[HPElem], args: Vector[Term], tpe: BackendType) extends Expr
 case class CallBuiltIn(label: String, args: Vector[Term], hargs: Vector[HPElem], tpe: BackendType) extends Expr
 case class CallInterface(label: MethodLabel, accessor: Term, args: Vector[Term], tpe: BackendType) extends Expr
+case class ReadMemory(accessor: Term, addr: Term, tpe: BackendType) extends Expr
+case class WriteMemory(accessor: Term, addr: Term, data: Term)(implicit global: GlobalData) extends Expr {
+  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty)
+}
 
 case class This(tpe: BackendType) extends Expr
 case class ReferField(accessor: Term, field: FieldLabel, tpe: BackendType) extends Expr
@@ -58,27 +66,15 @@ case class Return(stage: StageLabel, expr: Expr)(implicit global: GlobalData) ex
 }
 
 case class IntLiteral(value: Int)(implicit global: GlobalData) extends Expr {
-  val tpe: BackendType = BackendType (
-    global.builtin.types.lookup("Int"),
-    Vector.empty,
-    Vector.empty
-  )
+  val tpe: BackendType = BackendType (Symbol.int, Vector.empty, Vector.empty)
 }
 
 case class BitLiteral(value: BigInt, length: HPElem.Num)(implicit global: GlobalData) extends Expr {
-  val tpe: BackendType = BackendType (
-    global.builtin.types.lookup("Bit"),
-    Vector(length),
-    Vector.empty,
-  )
+  val tpe: BackendType = BackendType (Symbol.bit, Vector(length), Vector.empty)
 }
 
 case class UnitLiteral()(implicit global: GlobalData) extends Expr {
-  val tpe: BackendType = BackendType(
-    global.builtin.types.lookup("Unit"),
-    Vector.empty,
-    Vector.empty,
-  )
+  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty)
 }
 
 sealed trait Term { val tpe: BackendType }

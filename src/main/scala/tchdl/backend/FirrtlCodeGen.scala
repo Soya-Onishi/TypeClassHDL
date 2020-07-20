@@ -257,13 +257,19 @@ object FirrtlCodeGen {
 
     val (moduleFutures, moduleStmts, moduleConds, modules) = module.fields
       .filter(_.flag.hasFlag(Modifier.Child))
+      .filter(_.tpe.symbol != Symbol.mem)
       .map(runSubModule(_)(stack, ctx, global))
       .unzip4
+
+    val memoryStmts = module.fields
+      .filter(_.flag.hasFlag(Modifier.Child))
+      .filter(_.tpe.symbol == Symbol.mem)
+      .map(runMemory(_)(stack, ctx, global))
 
     val clk = ir.Port(ir.NoInfo, clockName, ir.Input, ir.ClockType)
     val reset = ir.Port(ir.NoInfo, resetName, ir.Input, ir.UIntType(ir.IntWidth(1)))
     val ports = Vector(clk, reset) ++ inputs ++ outputs
-    val initStmts = (inputStmts ++ outputStmts ++ internalStmts ++ regStmts ++ moduleStmts ++ moduleConds).flatten
+    val initStmts = (inputStmts ++ outputStmts ++ internalStmts ++ regStmts ++ moduleStmts ++ moduleConds ++ memoryStmts).flatten
     val components = internals ++ registers ++ modules
 
     val (alwaysStmtss, alwaysFutures) = module.always.map(runAlways(_)(stack, ctx, global)).unzip
@@ -386,6 +392,88 @@ object FirrtlCodeGen {
     val (stmtss, futures) = always.code.map(runStmt).unzip
 
     (stmtss.flatten, futures.foldLeft(Future.empty)(_ + _))
+  }
+
+  def runMemory(memory: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[ir.Statement] = {
+    val dataType = toFirrtlType(memory.tpe.targs.head)
+    val HPElem.Num(depth) = memory.tpe.hargs(0)
+
+    val readFlagRegName = memory.label.toString + "$" + "_reading"
+    val readFlagReg = ir.DefRegister(ir.NoInfo, readFlagRegName, ir.UIntType(ir.IntWidth(1)), clockRef, resetRef, ir.UIntLiteral(0))
+    val memDef = ir.DefMemory(
+      ir.NoInfo,
+      memory.label.toString,
+      dataType, depth,
+      1,
+      1,
+      Seq("read"),
+      Seq("write"),
+      Seq.empty,
+      ir.ReadUnderWrite.Undefined
+    )
+
+    def memSubField(fields: String*): ir.Expression =
+      fields.foldLeft[ir.Expression](ir.Reference(memory.toFirrtlString, ir.UnknownType)) {
+        case (accessor, name) => ir.SubField(accessor, name, ir.UnknownType)
+      }
+
+    def buildWriteMaskInit(tpe: ir.Type): Vector[ir.Connect] = {
+      def loop(fieldTpe: ir.Type, accessor: ir.SubField): Vector[ir.SubField] = {
+        fieldTpe match {
+          case ir.UIntType(_) => Vector(accessor.copy(tpe = ir.UIntType(ir.IntWidth(1))))
+          case bundle: ir.BundleType =>
+            bundle.fields.toVector.flatMap(
+              field => loop(field.tpe,  ir.SubField(accessor, field.name, ir.UnknownType))
+            )
+        }
+      }
+
+      val subField = memSubField("write", "mask").asInstanceOf[ir.SubField]
+
+      val leafs = tpe match {
+        case ir.UIntType(_) => Vector(subField.copy(tpe = ir.UIntType(ir.IntWidth(1))))
+        case bundle: ir.BundleType => loop(bundle, subField)
+      }
+
+      leafs.map(loc => ir.Connect(ir.NoInfo, loc, ir.UIntLiteral(0)))
+    }
+
+    val readingRegDefault = ir.Connect(ir.NoInfo, ir.Reference(readFlagRegName, ir.UnknownType), ir.UIntLiteral(0))
+    val readEnable = ir.Connect(ir.NoInfo, memSubField("read", "en"), ir.UIntLiteral(0))
+    val readAddr = ir.IsInvalid(ir.NoInfo, memSubField("read", "addr"))
+    val readClk = ir.Connect(ir.NoInfo, memSubField("read", "clk"), clockRef)
+
+    val readDataName = memory.toFirrtlString + "$" + "_read_data"
+    val readDataFuture = ir.BundleType(Seq(
+      ir.Field("_member", ir.Default, ir.UIntType(ir.IntWidth(1))),
+      ir.Field("_data", ir.Default, dataType)
+    ))
+
+    val readDataWire = ir.DefWire(ir.NoInfo, readDataName, readDataFuture)
+    val readDataMemberConnect = ir.Connect(
+      ir.NoInfo,
+      ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_member", ir.UnknownType),
+      ir.Reference(readFlagRegName, ir.UnknownType)
+    )
+    val readDataDataConnect = ir.Connect(
+      ir.NoInfo,
+      ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_data", ir.UnknownType),
+      memSubField("read", "data")
+    )
+
+    val writeMask = buildWriteMaskInit(dataType)
+    val writeEnable = ir.Connect(ir.NoInfo, memSubField("write", "en"), ir.UIntLiteral(0))
+    val writeAddr = ir.IsInvalid(ir.NoInfo, memSubField("write", "addr"))
+    val writeData = ir.IsInvalid(ir.NoInfo, memSubField("write", "data"))
+    val writeClk = ir.Connect(ir.NoInfo, memSubField("write", "clk"), clockRef)
+
+    val stmts = Vector(
+      readFlagReg, memDef, readingRegDefault,
+      readEnable, readAddr, readClk, readDataWire, readDataMemberConnect, readDataDataConnect,
+      writeEnable, writeAddr, writeData, writeClk
+    )
+
+    stmts ++ writeMask
   }
 
   def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.DefWire], Vector[ir.Statement], Future) = {
@@ -801,10 +889,13 @@ object FirrtlCodeGen {
       case _: backend.This => runThis()
       case construct: backend.ConstructStruct => runConstructStruct(construct)
       case construct: backend.ConstructModule => runConstructModule(construct)
+      case construct: backend.ConstructMemory => runConstructMemory(construct)
       case construct: backend.ConstructEnum => runConstructEnum(construct)
       case call: backend.CallMethod => runCallMethod(call)
       case call: backend.CallInterface => runCallInterface(call)
       case call: backend.CallBuiltIn => runCallBuiltIn(call)
+      case read: backend.ReadMemory => runReadMemory(read)
+      case write: backend.WriteMemory => runWriteMemory(write)
       case ifExpr: backend.IfExpr => runIfExpr(ifExpr)
       case matchExpr: backend.Match => runMatch(matchExpr)
       case finish: backend.Finish => runFinish(finish)
@@ -1106,6 +1197,61 @@ object FirrtlCodeGen {
     }
 
     RunResult(Future.empty, Vector.empty, instance)
+  }
+
+  def runReadMemory(read: backend.ReadMemory)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    def getName(term: backend.Term): Name = term match {
+      case backend.Term.Variable(name, _) => stack.refer(name)
+      case backend.Term.Temp(id, _) => stack.refer(id)
+    }
+
+    val ModuleInstance(_, location) = stack.lookup(getName(read.accessor))
+    val ModuleLocation.Sub(memory @ ir.Reference(memName, _)) = location
+    val DataInstance(_, addrRef) = stack.lookup(getName(read.addr))
+
+    def memSubField(head: String, name: String*): ir.SubField = {
+      val subField = ir.SubField(memory, head, ir.UnknownType)
+      name.foldLeft(subField) {
+        case (accessor, name) => ir.SubField(accessor, name, ir.UnknownType)
+      }
+    }
+
+    val enable = ir.Connect(ir.NoInfo, memSubField("read", "en"), ir.UIntLiteral(1))
+    val addr = ir.Connect(ir.NoInfo, memSubField("read", "addr"), addrRef)
+
+    val stmts = Vector(enable, addr)
+    val readDataName = ir.Reference(memName + "$" + "_read_data", ir.UnknownType)
+    val future = BackendType(Symbol.future, Vector.empty, Vector(read.tpe))
+    val instance = DataInstance(future, readDataName)
+
+    RunResult(Future.empty, stmts, instance)
+  }
+
+  def runWriteMemory(write: backend.WriteMemory)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    def getName(term: backend.Term): Name = term match {
+      case backend.Term.Variable(name, _) => stack.refer(name)
+      case backend.Term.Temp(id, _) => stack.refer(id)
+    }
+
+    val ModuleInstance(_, location) = stack.lookup(getName(write.accessor))
+    val ModuleLocation.Sub(memory) = location
+    val DataInstance(_, addrRef) = stack.lookup(getName(write.addr))
+    val DataInstance(_, dataRef) = stack.lookup(getName(write.data))
+
+    def memSubField(head: String, name: String*): ir.SubField = {
+      val subField = ir.SubField(memory, head, ir.UnknownType)
+      name.foldLeft(subField) {
+        case (accessor, name) => ir.SubField(accessor, name, ir.UnknownType)
+      }
+    }
+
+    val enable = ir.Connect(ir.NoInfo, memSubField("write", "en"), ir.UIntLiteral(1))
+    val addr = ir.Connect(ir.NoInfo, memSubField("write", "addr"), addrRef)
+    val data = ir.Connect(ir.NoInfo, memSubField("write", "data"), dataRef)
+    val stmts = Vector(enable, addr, data)
+    val instance = DataInstance(BackendType(Symbol.unit, Vector.empty, Vector.empty), ir.UIntLiteral(0))
+
+    RunResult(Future.empty, stmts, instance)
   }
 
   def runThis()(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult =
@@ -1598,6 +1744,17 @@ object FirrtlCodeGen {
 
     val instance = ModuleInstance(construct.tpe, ModuleLocation.Sub(ir.Reference(moduleName.name, ir.UnknownType)))
     RunResult(future, stmts, instance)
+  }
+
+  def runConstructMemory(memory: backend.ConstructMemory)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    val refer = memory.name match {
+      case backend.Term.Variable(name, _) => ir.Reference(name, ir.UnknownType)
+      case backend.Term.Temp(id, _) => ir.Reference(stack.refer(id).name, ir.UnknownType)
+    }
+
+    val instance = ModuleInstance(memory.tpe, ModuleLocation.Sub(refer))
+
+    RunResult(Future.empty, Vector.empty, instance)
   }
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {

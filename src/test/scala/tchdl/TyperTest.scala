@@ -736,4 +736,9 @@ class TyperTest extends TchdlFunSuite {
     assert(blkElems(2).symbol.tpe == Type.bitTpe(1)(global))
     assert(blkElems(3).symbol.tpe == Type.bitTpe(12)(global))
   }
+
+  test("use memory instance") {
+    val (Seq(tree), global) = untilTyper("useMemory.tchdl")
+    expectNoError(global)
+  }
 }

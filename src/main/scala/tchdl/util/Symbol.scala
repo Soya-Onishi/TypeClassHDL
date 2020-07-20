@@ -414,5 +414,8 @@ object Symbol {
 
   def str(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("Str")
+
+  def mem(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Memory")
 }
 

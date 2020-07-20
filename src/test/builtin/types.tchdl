@@ -32,6 +32,34 @@ impl[m: Num] Bit[m] where m: min 1 {
   }
 }
 
+module Memory[depth: Num, width: Num, T]
+  where depth: min 1,
+        width: min 1,
+        T: HW
+
+impl[depth: Num, width: Num, T] Memory[depth, width, T]
+  where depth: min 1,
+        width: min 1,
+        T: HW
+{
+  input def read(addr: Bit[width]) -> Future[T] {
+    this.reading(addr)
+  }
+
+  def reading(addr: Bit[width]) -> Future[T] {
+    this.reading(addr)
+  }
+
+  input def write(addr: Bit[width], data: T) -> Unit {
+    this.writing(addr, data)
+  }
+
+  def writing(addr: Bit[width], data: T) -> Unit {
+    this.writing(addr, data)
+  }
+}
+
+
 enum Future[T] where T: HW {
   Ready(T)
   NotReady

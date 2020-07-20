@@ -89,9 +89,10 @@ object BuildGeneratedModuleList {
 
     def buildChildren(impl: ImplementClassContainer, parent: BackendType): Either[Error, Vector[BuiltModule]] = {
       val implTree = findImplClassTree(impl.symbol.asImplementSymbol, global).getOrElse(throw new ImplementationErrorException("implementation tree must be found"))
-      val subModules = implTree.components.collect {
-        case vdef: ValDef if vdef.flag.hasFlag(Modifier.Child) => vdef
-      }
+      val subModules = implTree.components
+        .collect { case vdef: ValDef => vdef }
+        .filter (_.flag.hasFlag(Modifier.Child))
+        .filter (_.symbol != Symbol.mem)
 
       val hpTable = buildHPTable(impl.symbol.hps, parent, impl.targetType)
       val tpTable = buildTPTable(impl.symbol.tps, parent, impl.targetType)

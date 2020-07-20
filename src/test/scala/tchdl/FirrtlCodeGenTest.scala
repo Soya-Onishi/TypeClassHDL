@@ -522,11 +522,16 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
   test("refer field type in function signature causes no error") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "referFieldTypeInSignature3.tchdl")
 
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 
   test("use bit manipulation methods") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useBitManipulationMethod.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("read and write memory")  {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
     runFirrtl(circuit, print = true)
   }
 }
