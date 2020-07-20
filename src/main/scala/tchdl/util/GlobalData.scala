@@ -89,6 +89,7 @@ trait BuiltInSymbols[T <: Symbol] {
   import scala.collection.mutable
   protected val builtin: mutable.Map[String, T]
 
+  def toMap: Map[String, T] = builtin.toMap
   def names: Vector[String] = builtin.keys.toVector
   def symbols: Vector[T] = {
     val symbols = builtin.values.toVector
@@ -163,6 +164,9 @@ class BuiltInFunctions extends BuiltInSymbols[Symbol.MethodSymbol] {
     "lessEqual" -> null,
     "not" -> null,
     "neg" -> null,
+    "concat" -> null,
+    "truncate" -> null,
+    "bit" -> null
   )
 }
 

@@ -658,14 +658,14 @@ object Type {
     def lookupFromEntity[T <: ImplementContainer](
       impl: T,
       methodName: String,
-      target: Type.RefType,
+      accessor: Type.RefType,
       args: Vector[Type.RefType],
       callerHP: Vector[HPExpr],
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
     )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
-      val (initHpTable, initTpTable) = RefType.buildTable(impl)
+      val (implHPTable, implTPTable) = RefType.buildTable(impl)
       val lookupResult = impl.lookup[Symbol.MethodSymbol](methodName) match {
         case None => Left(Error.SymbolNotFound(methodName))
         case Some(symbol) => Right(symbol)
@@ -675,21 +675,22 @@ object Type {
         method <- lookupResult
         _ <- RefType.verifySignatureLength(method, args, callerHP, callerTP)
         methodTpe = method.tpe.asMethodType
-        callers = target +: args
-        targets = impl.targetType +: methodTpe.params
-        _ <- RefType.verifySuperSets(callers, targets)
-        hpTable <- RefType.assignHPTable(initHpTable, callers, targets)
-        tpTable <- RefType.assignTPTable(initTpTable, callers, targets)
+        // callers = target +: args
+        // targets = impl.targetType +: methodTpe.params
+        _ <- RefType.verifySuperSets(Vector(accessor), Vector(impl.targetType))
+        hpTable <- RefType.assignHPTable(implHPTable, Vector(accessor), Vector(impl.targetType))
+        tpTable <- RefType.assignTPTable(implTPTable, Vector(accessor), Vector(impl.targetType))
         swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
         swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
         simplifiedHPBound <- HPBound.simplify(swappedHpBound)
-        _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, callerHPBound, callerTPBound, impl, target)
+        _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, callerHPBound, callerTPBound, impl, accessor)
         (methodHpTable, methodTpTable) = RefType.buildSymbolTable(method, callerHP, callerTP)
         appendHpTable = hpTable ++ methodHpTable
         appendTpTable = tpTable ++ methodTpTable
-        methodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
+        swappedMethodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
         methodTpBound = TPBound.swapBounds(method.tpBound, appendHpTable, appendTpTable)
-        _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound, impl, target)
+        methodHpBound <- HPBound.simplify(swappedMethodHpBound)
+        _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound, impl, accessor)
         swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable, callerTPBound, this)
         _ <- RefType.verifyMethodType(swappedTpe, args)
       } yield (method, swappedTpe)
@@ -1357,15 +1358,19 @@ object Type {
       callerTPBound: Vector[TPBound],
       thisTpe: Type.RefType,
     ): Type.MethodType = {
-      def swapHP(expr: HPExpr): HPExpr =
-        expr match {
+      def swapHP(expr: HPExpr): HPExpr = {
+        def loop(expr: HPExpr): HPExpr = expr match {
           case ident: Ident => hpTable.getOrElse(
             ident.symbol.asHardwareParamSymbol,
             throw new ImplementationErrorException(s"hpTable should have ${ident.symbol.name}")
           )
-          case HPBinOp(op, left, right) => HPBinOp(op, swapHP(left), swapHP(right))
+          case HPBinOp(op, left, right) => HPBinOp(op, loop(left), loop(right))
           case lit => lit
         }
+
+
+        loop(expr).sort.combine
+      }
 
       def inferAccessor(field: Symbol.FieldTypeSymbol): Type.RefType =
         thisTpe.castedAs match {
@@ -1466,6 +1471,10 @@ object Type {
 
     if (value > 0) Type.RefType(symbol, Vector(width), Vector.empty)
     else throw new ImplementationErrorException(s"Bit's width[${value}] must be natural number")
+  }
+
+  def bitTpe(width: Int)(implicit global: GlobalData): Type.RefType = {
+    bitTpe(IntLiteral(width))
   }
 
   def futureTpe(targ: Type.RefType)(implicit global: GlobalData): Type.RefType = {

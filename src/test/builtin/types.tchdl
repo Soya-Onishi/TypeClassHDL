@@ -10,6 +10,28 @@ struct Num {}
 struct Str {}
 struct Bool {}
 
+impl[m: Num] Bit[m] where m: min 1 {
+  def truncate[x: Num, y: Num]() -> Bit[x - y + 1]
+    where x: min 1 & max m - 1,
+          y: min 1 & max x,
+          x - y + 1:  min 1
+  {
+    this.truncate[x, y]()
+  }
+
+  def bit[x: Num]() -> Bit[1]
+    where x: min 1 & max m - 1
+  {
+    this.bit[x]()
+  }
+
+  def concat[n: Num](that: Bit[n]) -> Bit[m + n]
+    where n: min 1
+  {
+    this.concat[n](that)
+  }
+}
+
 enum Future[T] where T: HW {
   Ready(T)
   NotReady

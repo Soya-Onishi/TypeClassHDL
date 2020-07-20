@@ -8,10 +8,10 @@ class BuildContainerTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
-  def untilThisPhase(names: String*): (Seq[CompilationUnit], GlobalData) = {
+  def untilThisPhase(useBuiltin: Boolean, names: Seq[String]): (Seq[CompilationUnit], GlobalData) = {
     implicit val global: GlobalData = GlobalData()
     val filename = names.map(buildName(rootDir, filePath, _))
-    val filenames = filename ++ builtInFiles
+    val filenames = filename ++ (if(useBuiltin) builtInFiles else Vector.empty)
     val trees = filenames.map(parse)
 
     trees.foreach(Namer.exec)
@@ -24,6 +24,10 @@ class BuildContainerTest extends TchdlFunSuite {
 
     val cus = trees.filter(cu => filename.contains(cu.filename.get))
     (cus, global)
+  }
+
+  def untilThisPhase(names: String*): (Seq[CompilationUnit], GlobalData) = {
+    untilThisPhase(useBuiltin = true, names)
   }
 
   test("struct bounds miss match type between Num and Str") {

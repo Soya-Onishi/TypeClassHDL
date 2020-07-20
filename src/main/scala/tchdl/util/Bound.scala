@@ -362,13 +362,9 @@ object HPBound {
   def apply(target: HPExpr, range: HPRange): HPBound =
     new HPBound(target, range)
 
-  def simplify(replacedHPBound: Vector[HPBound]): Either[Error, Vector[HPBound]] = {
+  def simplify(originalHPBounds: Vector[HPBound]): Either[Error, Vector[HPBound]] = {
     def compose: Either[Error, Vector[HPBound]] = {
-      def execCompose(
-        targets: Vector[HPBound],
-        hpBound: HPBound,
-        remains: Vector[HPBound]
-      ): Either[Error, Vector[HPBound]] =
+      def execCompose(targets: Vector[HPBound], hpBound: HPBound, remains: Vector[HPBound]): Either[Error, Vector[HPBound]] =
         targets match {
           case Vector() => Right(remains :+ hpBound)
           case Vector(bound) =>
@@ -379,7 +375,7 @@ object HPBound {
           case _ => throw new ImplementationErrorException("this pattern should not reached")
         }
 
-      replacedHPBound.foldLeft[Either[Error, Vector[HPBound]]](Right(Vector.empty[HPBound])) {
+      originalHPBounds.foldLeft[Either[Error, Vector[HPBound]]](Right(Vector.empty[HPBound])) {
         case (Right(acc), hpBound) =>
           val (sameTarget, remains) = acc.partition(_.target.isSameExpr(hpBound.target))
           execCompose(sameTarget, hpBound, remains)
@@ -402,43 +398,57 @@ object HPBound {
             }
           }
           case HPRange.Range(eRange, cRange) =>
-            def restrictConstRange(eRange: Vector[HPExpr], init: IInt)(g: HPRange.ConstantRange => IInt)(f: (IInt, IInt) => IInt): IInt =
-              eRange.foldLeft(init) {
-                case (acc, edge) => delegated.find(_.target.isSameExpr(edge)) match {
-                  case None => acc
-                  case Some(lookupBound) => lookupBound.bound match {
-                    case HPRange.Eq(HPRange.ConstantEqual(v)) => f(IInt(v), acc)
-                    case HPRange.Eq(HPRange.ExprEqual(_)) => acc
-                    case HPRange.Range(_, cRange) => f(g(cRange), acc)
-                  }
+
+            def restrictConstRange(eRange: Vector[HPExpr], init: IInt)(g: HPRange.ConstantRange => IInt)(f: (IInt, IInt) => IInt): (Vector[HPExpr], IInt) = {
+              val (edge, remains) = eRange.foldLeft(init, Vector.empty[HPExpr]) {
+                case ((current, remains), edge) => edge.sort.combine match {
+                  case IntLiteral(value) => (f(IInt(value), current), remains)
+                  case expr =>
+                    delegated.find(_.target.isSameExpr(expr)) match {
+                      case None => (current, remains :+ expr)
+                      case Some(lookupBound) => lookupBound.bound match {
+                        case HPRange.Eq(HPRange.ConstantEqual(v)) => (f(IInt(v), current), remains)
+                        case HPRange.Eq(HPRange.ExprEqual(_)) => (current, remains)
+                        case HPRange.Range(_, cRange) => (f(g(cRange), current), remains)
+                      }
+                    }
                 }
+
               }
 
-            val newMax = restrictConstRange(eRange.max, cRange.max)(_.max) { (max, acc) =>
+              (remains, edge)
+            }
+
+            val (exprMaxs, newMax) = restrictConstRange(eRange.max, cRange.max)(_.max) { (max, acc) =>
               if (max < acc) max
               else acc
             }
 
-            val newMin = restrictConstRange(eRange.min, cRange.min)(_.min) { (min, acc) =>
+            val (exprMins, newMin) = restrictConstRange(eRange.min, cRange.min)(_.min) { (min, acc) =>
               if (min > acc) min
               else acc
             }
 
-            val newNEs = eRange.ne.foldLeft(cRange.ne) {
-              case (acc, ne) => delegated.find(_.target.isSameExpr(ne)) match {
-                case None => acc
-                case Some(lookupBound) => lookupBound.bound match {
-                  case HPRange.Eq(HPRange.ConstantEqual(v)) => acc + v
-                  case _ => acc
-                }
+            val (newNEs, exprNEs) = eRange.ne.foldLeft((cRange.ne, Vector.empty[HPExpr])) {
+              case ((acc, remains), IntLiteral(value)) => (acc + value, remains)
+              case ((acc, remains), ne) =>
+                delegated.find(_.target.isSameExpr(ne)) match {
+                  case None => (acc, remains :+ ne)
+                  case Some(lookupBound) => lookupBound.bound match {
+                    case HPRange.Eq(HPRange.ConstantEqual(v)) => (acc + v, remains)
+                    case _ => (acc, remains :+ ne)
+                  }
               }
             }
 
-            val newRange = HPRange.ConstantRange(newMax, newMin, newNEs)
-            if (newRange == cRange) hpBound
-            else {
+            val newExprRange = HPRange.ExprRange(exprMaxs, exprMins, exprNEs)
+            val newConstRange = HPRange.ConstantRange(newMax, newMin, newNEs)
+
+            if(newConstRange == cRange && newExprRange == eRange) {
+              hpBound
+            } else {
               isDelegated = true
-              HPBound(hpBound.target, HPRange.Range(eRange, newRange))
+              HPBound(hpBound.target, HPRange.Range(newExprRange, newConstRange))
             }
         }
       }
@@ -449,8 +459,11 @@ object HPBound {
 
     for {
       composed <- compose
+      target = composed.map(_.target.sort.combine)
       delegated <- delegateConstRange(composed)
-    } yield delegated
+    } yield (target zip delegated).map {
+      case (target, range) => HPBound(target, range.bound)
+    }
   }
 
   def verifyForm(bound: HPBoundTree)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {
@@ -499,15 +512,8 @@ object HPBound {
       case class Range(max: Option[Int], min: Option[Int], eq: Option[Int])
 
       def verifyRanges(remain: Vector[RangeExpr], assignedRange: Range): Either[Error, Unit] = {
-        def verify(expr: HPExpr)(rootPattern: PartialFunction[HPExpr, Either[Error, Range]]): Either[Error, Range] = {
+        def verify(expr: HPExpr)(rootPattern: PartialFunction[HPExpr, Either[Error, Range]]): Either[Error, Range] =
           rootPattern.applyOrElse(expr, (expr: HPExpr) => verifyExpr(expr).map(_ => assignedRange))
-          /*
-          rootPattern.unapply(expr) match {
-            case Some(ret) => ret
-            case None => verifyExpr(expr).map(_ => assignedRange)
-          }
-          */
-        }
 
         if (remain.isEmpty) Right(())
         else {

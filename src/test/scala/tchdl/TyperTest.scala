@@ -720,4 +720,20 @@ class TyperTest extends TchdlFunSuite {
     assert(callThirdTpe == expectCallThirdTpe)
     assert(callSecondTpe == expectCallSecondTpe)
   }
+
+  test("use bit manipulation method") {
+    val (Seq(tree), global) = untilTyper("useBitManipulationMethod.tchdl")
+    expectNoError(global)
+
+    val method = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }.get
+      .components
+      .collectFirst{ case method: MethodDef => method }.get
+
+    val blkElems = method.blk.get.elems.map(_.asInstanceOf[ValDef])
+    assert(blkElems(0).symbol.tpe == Type.bitTpe(5)(global))
+    assert(blkElems(1).symbol.tpe == Type.bitTpe(2)(global))
+    assert(blkElems(2).symbol.tpe == Type.bitTpe(1)(global))
+    assert(blkElems(3).symbol.tpe == Type.bitTpe(12)(global))
+  }
 }

@@ -1,0 +1,6 @@
+package test
+
+struct Hoge[m: Num]
+impl[m: Num] Hoge[m] {
+  def method[n: Num]() -> Unit where n: min m {}
+}

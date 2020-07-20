@@ -329,6 +329,6 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val method = tree.topDefs.collectFirst{ case method: MethodDef => method }.get
 
     assert(method.retTpe.symbol == output.symbol)
-    assert(method.retTpe.tpe == output.symbol.tpe)
+    assert(method.retTpe.tpe.asRefType.origin == output.symbol)
   }
 }

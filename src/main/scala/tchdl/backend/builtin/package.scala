@@ -83,28 +83,28 @@ package object builtin {
     bitBinOps(left, right, PrimOps.Div)
   }
 
-  def bitEq(left: Instance, right: Instance): Instance = {
-    bitBinOps(left, right, PrimOps.Eq)
+  def bitEq(left: Instance, right: Instance, global: GlobalData): Instance = {
+    bitCmpOps(left, right, PrimOps.Eq, global)
   }
 
-  def bitNe(left: Instance, right: Instance): Instance = {
-    bitBinOps(left, right, PrimOps.Neq)
+  def bitNe(left: Instance, right: Instance, global: GlobalData): Instance = {
+    bitCmpOps(left, right, PrimOps.Neq, global)
   }
 
-  def bitGe(left: Instance, right: Instance): Instance = {
-    bitBinOps(left, right, PrimOps.Geq)
+  def bitGe(left: Instance, right: Instance, global: GlobalData): Instance = {
+    bitCmpOps(left, right, PrimOps.Geq, global)
   }
 
-  def bitGt(left: Instance, right: Instance): Instance = {
-    bitBinOps(left, right, PrimOps.Gt)
+  def bitGt(left: Instance, right: Instance, global: GlobalData): Instance = {
+    bitCmpOps(left, right, PrimOps.Gt, global)
   }
 
-  def bitLe(left: Instance, right: Instance): Instance = {
-    bitBinOps(left, right, PrimOps.Leq)
+  def bitLe(left: Instance, right: Instance, global: GlobalData): Instance = {
+    bitCmpOps(left, right, PrimOps.Leq, global)
   }
 
-  def bitLt(left: Instance, right: Instance): Instance = {
-    bitBinOps(left, right, PrimOps.Lt)
+  def bitLt(left: Instance, right: Instance, global: GlobalData): Instance = {
+    bitCmpOps(left, right, PrimOps.Lt, global)
   }
 
   def bitNeg(operand: Instance): Instance = {
@@ -113,6 +113,40 @@ package object builtin {
 
   def bitNot(operand: Instance): Instance = {
     bitUnaryOps(operand, PrimOps.Not)
+  }
+
+  def bitTruncate(operand: Instance, hi: HPElem, lo: HPElem, global: GlobalData): Instance = {
+    val HPElem.Num(hiIndex) = hi
+    val HPElem.Num(loIndex) = lo
+    val DataInstance(_, refer) = operand
+    val truncate = ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(hiIndex, loIndex), ir.UnknownType)
+
+    val width = hiIndex - loIndex + 1
+    val retTpe = toBackendType(Type.bitTpe(width)(global))(global)
+
+    DataInstance(retTpe, truncate)
+  }
+
+  def bitBit(operand: Instance, index: HPElem, global: GlobalData): Instance = {
+    val HPElem.Num(idx) = index
+    val DataInstance(_, refer) = operand
+    val bit = ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(idx, idx), ir.UnknownType)
+    val retTpe = toBackendType(Type.bitTpe(1)(global))(global)
+
+    DataInstance(retTpe, bit)
+  }
+
+  def bitConcat(left: Instance, right: Instance, global: GlobalData): Instance = {
+    val DataInstance(BackendType(_, leftHargs, _), l) = left
+    val DataInstance(BackendType(_, rightHargs, _), r) = right
+    val concat = ir.DoPrim(PrimOps.Cat, Seq(l, r), Seq.empty, ir.UnknownType)
+
+    val HPElem.Num(leftWidth) = leftHargs.head
+    val HPElem.Num(rightWidth) = rightHargs.head
+    val width = leftWidth + rightWidth
+    val retTpe = toBackendType(Type.bitTpe(width)(global))(global)
+
+    DataInstance(retTpe, concat)
   }
 
   private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => BigInt): Instance = {
@@ -208,6 +242,15 @@ package object builtin {
     val DataInstance(_, rightRef) = right
 
     DataInstance(tpe, ir.DoPrim(ops, Seq(leftRef, rightRef), Seq.empty, ir.UnknownType))
+  }
+
+  private def bitCmpOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData): Instance = {
+    val DataInstance(_, leftRef) = left
+    val DataInstance(_, rightRef) = right
+
+    val retTpe = toBackendType(Type.bitTpe(1)(global))(global)
+
+    DataInstance(retTpe, ir.DoPrim(ops, Seq(leftRef, rightRef), Seq.empty, ir.UnknownType))
   }
 
   private def bitUnaryOps(operand: Instance, ops: ir.PrimOp): Instance = {

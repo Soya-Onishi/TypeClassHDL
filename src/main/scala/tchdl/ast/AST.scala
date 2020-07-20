@@ -26,6 +26,7 @@ sealed trait Expression extends AST with BlockElem with HasType
 sealed trait Construct extends Expression with HasSymbol
 sealed trait TypeAST extends AST with HasType with HasSymbol
 sealed trait PatternExpr extends AST with HasType
+sealed trait ApplyPrefix extends Expression with HasSymbol
 sealed trait HPExpr extends Expression {
   protected var _sortedExpr: Option[HPExpr] = None
 
@@ -95,6 +96,17 @@ sealed trait HPExpr extends Expression {
 
   // This method expects expressions are already sorted
   def combine: HPExpr = {
+    def calc(op: Operation, left: Int, right: Int): Int = {
+      val f: (Int, Int) => Int = op match {
+        case Operation.Add => _ + _
+        case Operation.Sub => _ - _
+        case Operation.Mul => _ * _
+        case Operation.Div => _ / _
+      }
+
+      f(left, right)
+    }
+
     def collectLeafs(expr: HPExpr): Vector[HPExpr] = expr match {
       case HPBinOp(_, left, right) => collectLeafs(left) ++ collectLeafs(right)
       case leaf => Vector(leaf)
@@ -110,23 +122,20 @@ sealed trait HPExpr extends Expression {
       val nums = leafs.collect { case IntLiteral(value) => value }
       val others = leafs.filterNot(_.isInstanceOf[IntLiteral])
 
-      val f: (Int, Int) => Int = binop.op match {
-        case Operation.Add => _ + _
-        case Operation.Sub => _ - _
-        case Operation.Mul => _ * _
-        case Operation.Div => _ / _
-      }
-
       if(nums.isEmpty) binop
       else {
-        val combined = IntLiteral(nums.reduce(f))
+        val combined = IntLiteral(nums.reduce[Int]{ case (l, r) => calc(binop.op, l, r) })
         reConstruct(others :+ combined, binop.op)
       }
     }
 
     if(!this.isSimpleExpr) {
       val HPBinOp(op, left, right) = this
-      HPBinOp(op, left.combine, right.combine)
+
+      (left.combine, right.combine) match {
+        case (IntLiteral(l), IntLiteral(r)) => IntLiteral(calc(op, l, r))
+        case (l, r) => HPBinOp(op, l, r)
+      }
     } else this match {
       case binop: HPBinOp => exec(binop)
       case leaf => leaf
@@ -335,8 +344,8 @@ object RangeExpr {
   case class Max(expr: HPExpr) extends RangeExpr
 }
 
-case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr with PatternExpr
-case class Apply(prefix: Expression, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
+case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr with PatternExpr with ApplyPrefix
+case class Apply(prefix: ApplyPrefix, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
 
 abstract class UnaryOp extends Expression with HasSymbol {
   type Expr <: Expression
@@ -369,8 +378,8 @@ case class HPBinOp(
   type Expr = Expression with HPExpr
 }
 
-case class Select(prefix: Expression, name: String) extends Expression with HasSymbol
-case class StaticSelect(prefix: TypeTree, name: String) extends Expression with TypeAST
+case class Select(prefix: Expression, name: String) extends Expression with HasSymbol with ApplyPrefix
+case class StaticSelect(prefix: TypeTree, name: String) extends Expression with TypeAST with ApplyPrefix
 case class CastExpr(expr: Expression, to: TypeTree) extends Expression
 case class SelectPackage(packages: Vector[String], name: String) extends AST with TypeAST with Expression
 case class Block(elems: Vector[BlockElem], last: Expression) extends Expression

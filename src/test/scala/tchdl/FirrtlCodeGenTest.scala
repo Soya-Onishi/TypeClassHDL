@@ -524,4 +524,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit, print = true)
   }
+
+  test("use bit manipulation methods") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useBitManipulationMethod.tchdl")
+    runFirrtl(circuit, print = true)
+  }
 }
