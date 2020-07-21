@@ -10,6 +10,7 @@ import tchdl.backend._
 import org.antlr.v4.runtime.{Parser => _, _}
 
 import scala.collection.JavaConverters._
+import java.nio.file._
 
 object Main extends App {
   def parseCommand(commands: Vector[String]): Command = {
@@ -65,6 +66,11 @@ object Main extends App {
             case Left(err) => ???
             case Right(tpeTree) => loop(remains.tail.tail).copy(topModule = Some(tpeTree))
           }
+        case Some("--stdlib") =>
+          remains.tail.headOption match {
+            case None => ???
+            case Some(libdir) => loop(remains.tail.tail).copy(stdlibDir = libdir)
+          }
         case Some(filename) =>
           val com = loop(remains.tail)
           com.copy(filenames = com.filenames :+ filename)
@@ -76,8 +82,23 @@ object Main extends App {
   }
 
   val command = parseCommand(args.tail.toVector)
+  val stdlibFiles = Vector("types.tchdl", "functions.tchdl", "traits.tchdl", "interfaces.tchdl").map(Paths.get(command.stdlibDir, _))
+  val filenames = command.filenames ++ stdlibFiles
   val compilationUnits = command.filenames.map(Parser.parse)
   val global = GlobalData(command)
   compilationUnits.foreach(Namer.exec(_)(global))
   compilationUnits.foreach(NamerPost.exec(_)(global))
+  compilationUnits.foreach(BuildImplContainer.exec(_)(global))
+  VerifyImplConflict.verifyImplConflict()(global)
+  val trees0 = compilationUnits.map(TopDefTyper.exec(_)(global))
+  trees0.foreach(ImplMethodSigTyper.exec(_)(global))
+  val trees1 = trees0.map(Typer.exec(_)(global))
+  trees1.foreach(RefCheck.exec(_)(global))
+  val newGlobal = global.assignCompilationUnits(trees1)
+  val modules = BuildGeneratedModuleList.exec(newGlobal)
+  val (moduleContainers, methodContainers) = BackendIRGen.exec(modules)(newGlobal)
+  val topModule = moduleContainers.head.tpe
+  val circuit = FirrtlCodeGen.exec(topModule, moduleContainers, methodContainers)(newGlobal)
+
+  Files.writeString(Paths.get("out.fir"), circuit.serialize)
 }
