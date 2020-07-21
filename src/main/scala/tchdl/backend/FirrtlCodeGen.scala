@@ -10,8 +10,8 @@ import scala.collection.immutable.ListMap
 import scala.collection.mutable
 
 object FirrtlCodeGen {
-  val clockName = "_CLK"
-  val resetName = "_RESET"
+  val clockName = "CLK"
+  val resetName = "RESET"
   val clockRef = ir.Reference(clockName, ir.ClockType)
   val resetRef = ir.Reference(resetName, ir.UIntType(ir.IntWidth(1)))
 
@@ -129,7 +129,7 @@ object FirrtlCodeGen {
       table(key) = nextMax
       max = nextMax
 
-      Name(s"TEMP_$nextMax")
+      Name(s"_TEMP_$nextMax")
     }
 
     def count(key: Int): Unit = {
@@ -138,7 +138,7 @@ object FirrtlCodeGen {
 
     def refer(key: Int): Name = {
       val value = table(key)
-      Name(s"TEMP_$value")
+      Name(s"_TEMP_$value")
     }
 
     def lock(key: Int): Unit = throw new ImplementationErrorException("lock is not allowed to temp counter")
