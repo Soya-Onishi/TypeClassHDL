@@ -90,17 +90,27 @@ object RefCheck {
     }
 
   def verifySelect(select: Select)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    def publicPattern(symbol: Symbol.TermSymbol): Either[Error, Unit] = select.prefix match {
+      case _: This if symbol.hasFlag(Modifier.Output) => Left(Error.ReadOutputFromInner(symbol))
+      case _ if symbol.hasFlag(Modifier.Input) => Left(Error.ReadInputFromOuter(symbol))
+      case _ => Right(())
+    }
+
+    def privatePattern(symbol: Symbol.TermSymbol): Either[Error, Unit] = select.prefix match {
+      case _: This if symbol.hasFlag(Modifier.Output) => Left(Error.ReadOutputFromInner(symbol))
+      case _: This => Right(())
+      case _ => Left(Error.ReferPrivate(symbol))
+    }
+
     verifyExpr(select.prefix)
 
     val prefixTpe = select.prefix.tpe.asRefType
     prefixTpe.lookupField(select.name, ctx.hpBounds, ctx.tpBounds) match {
-      case LookupResult.LookupSuccess(symbol) => symbol.accessibility match {
-        case Accessibility.Public => Right(())
-        case Accessibility.Private => select.prefix match {
-          case _: This => Right(())
-          case _ => Left(Error.ReferPrivate(symbol))
+      case LookupResult.LookupSuccess(symbol) =>
+        symbol.accessibility match {
+          case Accessibility.Public => publicPattern(symbol)
+          case Accessibility.Private => privatePattern(symbol)
         }
-      }
       case LookupResult.LookupFailure(_) =>
         throw new ImplementationErrorException("looked up field must be found")
     }
@@ -111,11 +121,10 @@ object RefCheck {
     verifyExpr(ifExpr.conseq)
     ifExpr.alt.foreach(verifyExpr)
 
-    val isCondBit1 = ifExpr.cond.tpe =:= Type.bitTpe(IntLiteral(1))
     val isRetUnit = ifExpr.tpe =:= Type.unitTpe
     val isRetHWTpe = ifExpr.tpe.asRefType.isHardwareType
 
-    if (isCondBit1 && !isRetHWTpe && !isRetUnit)
+    if (!isRetHWTpe && !isRetUnit)
       global.repo.error.append(Error.RequireHardwareType(ifExpr.tpe.asRefType))
   }
 

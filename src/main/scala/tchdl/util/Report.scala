@@ -105,6 +105,8 @@ object Error {
   case class CallInvalid(method: Symbol.MethodSymbol) extends Error
   case class CallInterfaceMustBeDirect(prefix: Type.RefType) extends Error
   case class ReferPrivate(field: Symbol.TermSymbol) extends Error
+  case class ReadOutputFromInner(field: Symbol.TermSymbol) extends Error
+  case class ReadInputFromOuter(field: Symbol.TermSymbol) extends Error
 
   case class MustNotCastFromTrait(from: Type.RefType) extends Error
   case class MustCastToTrait(to: Type.RefType) extends Error
