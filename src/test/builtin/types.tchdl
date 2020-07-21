@@ -9,6 +9,7 @@ struct Unit {}
 struct Num {}
 struct Str {}
 struct Bool {}
+struct Vector[m: Num, T] where m: min 0, T: HW
 
 impl[m: Num] Bit[m] where m: min 1 {
   def truncate[x: Num, y: Num]() -> Bit[x - y + 1]
@@ -29,6 +30,23 @@ impl[m: Num] Bit[m] where m: min 1 {
     where n: min 1
   {
     this.concat[n](that)
+  }
+}
+
+impl[m: Num, T] Vector[m, T]
+  where m: min 0,
+        T: HW
+{
+  def idx[x: Num]() -> T
+    where x: min 0 & max m - 1
+  {
+    this.idx[x]()
+  }
+
+  def idxDyn[n: Num](idx: Bit[n]) -> T
+    where n: min 1
+  {
+    this.idxDyn[n](idx)
   }
 }
 

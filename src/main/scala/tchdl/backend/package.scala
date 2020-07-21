@@ -5,6 +5,7 @@ import tchdl.util._
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.collection.immutable.ListMap
+import firrtl.ir
 
 package object backend {
   case class BuiltModule(module: BackendType, impl: Option[ImplementClassContainer], children: Vector[BackendType]) {
@@ -170,6 +171,87 @@ package object backend {
     val targs = sig.targs.map(toRefType)
 
     Type.RefType(sig.symbol, hargs, targs)
+  }
+
+  def toFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {
+    def toBitType(width: Int): ir.UIntType = ir.UIntType(ir.IntWidth(width))
+    def toVecType(length: Int, tpe: ir.Type): ir.VectorType = ir.VectorType(tpe, length)
+    def toEnumType(symbol: Symbol.EnumSymbol): ir.BundleType = {
+      def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
+      def flagWidth(x: Double): Double = (math.ceil _ compose log2)(x)
+
+      def makeBitLength(
+        member: Type.EnumMemberType,
+        hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
+        tpTable: Map[Symbol.TypeParamSymbol, BackendType]
+      ): BigInt = {
+        def loop(tpe: ir.Type): BigInt = tpe match {
+          case ir.BundleType(fields) => fields.map(_.tpe).map(loop).sum
+          case ir.UIntType(ir.IntWidth(width)) => width
+        }
+
+        val fieldTypes = member.fields
+          .map(_.tpe.asRefType)
+          .map(toBackendType(_, hpTable, tpTable))
+          .map(toFirrtlType)
+
+        fieldTypes.map(loop).sum
+      }
+
+      val members = symbol.tpe.declares
+        .toMap
+        .toVector
+        .sortWith{ case ((left, _), (right, _)) => left < right }
+        .map{ case (_, symbol) => symbol }
+
+      val kind =
+        if(members.length <= 1) None
+        else Some(ir.Field(
+          "_member",
+          ir.Default,
+          ir.UIntType(ir.IntWidth(flagWidth(members.length).toInt))
+        ))
+
+      val hpTable = (symbol.hps zip tpe.hargs).toMap
+      val tpTable = (symbol.tps zip tpe.targs).toMap
+
+      val maxLength = members
+        .map(_.tpe.asEnumMemberType)
+        .map(makeBitLength(_, hpTable, tpTable))
+        .max
+
+      val dataStorage = Some(ir.Field("_data", ir.Default, ir.UIntType(ir.IntWidth(maxLength))))
+
+      val field = Seq(kind, dataStorage).flatten
+      ir.BundleType(field)
+    }
+
+    def toOtherType: ir.BundleType = {
+      val typeFields = global.lookupFields(tpe)
+
+      val fields = typeFields.map{ case (name, tpe) => name -> toFirrtlType(tpe) }
+        .toVector
+        .sortWith{ case ((left, _), (right, _)) => left < right }
+        .map{ case (name, tpe) => ir.Field(name, ir.Default, tpe) }
+
+      ir.BundleType(fields)
+    }
+
+    tpe.symbol match {
+      case symbol if symbol == Symbol.int  => toBitType(width = 32)
+      case symbol if symbol == Symbol.bool => toBitType(width = 1)
+      case symbol if symbol == Symbol.unit => toBitType(width = 0)
+      case symbol if symbol == Symbol.bit =>
+        val HPElem.Num(width) = tpe.hargs.head
+        toBitType(width)
+      case symbol if symbol == Symbol.vec =>
+        val HPElem.Num(length) = tpe.hargs.head
+        val elemType = toFirrtlType(tpe.targs.head)
+
+        toVecType(length, elemType)
+      case symbol: Symbol.EnumSymbol => toEnumType(symbol)
+      case _ => toOtherType
+    }
   }
 
   def evalHPExpr(hpExpr: frontend.HPExpr, hpTable: Map[Symbol.HardwareParamSymbol, HPElem]): HPElem =

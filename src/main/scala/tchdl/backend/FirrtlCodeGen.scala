@@ -32,7 +32,7 @@ object FirrtlCodeGen {
     def next(name: String): Name = {
       namer.variable.next(name)
 
-      if(parent != null)
+      if (parent != null)
         parent.count(name)
 
       refer(name)
@@ -41,7 +41,7 @@ object FirrtlCodeGen {
     def next(id: Int): Name = {
       namer.temp.next(id)
 
-      if(parent != null)
+      if (parent != null)
         parent.count(id)
 
       refer(id)
@@ -55,14 +55,14 @@ object FirrtlCodeGen {
     @tailrec private def count(name: String): Unit = {
       namer.variable.count(name)
 
-      if(parent != null)
+      if (parent != null)
         parent.count(name)
     }
 
     @tailrec private def count(id: Int): Unit = {
       namer.temp.count(id)
 
-      if(parent != null)
+      if (parent != null)
         parent.count(id)
     }
 
@@ -189,7 +189,9 @@ object FirrtlCodeGen {
       }
     }
 
-    def lock(key: String): Unit = { locked += key }
+    def lock(key: String): Unit = {
+      locked += key
+    }
 
     def copy: Counter[String] = {
       val _table = this.table.clone()
@@ -206,9 +208,9 @@ object FirrtlCodeGen {
     val interfaceTable = modules.map(module => module.tpe -> module.interfaces).toMap
     val stageTable = modules.map(module => module.tpe -> module.stages).toMap
     val methodTable = methods
-      .collect{ case method if method.label.accessor.isDefined => method }
+      .collect { case method if method.label.accessor.isDefined => method }
       .groupBy(_.label.accessor.get)
-    val functionTable = methods.collect{ case method if method.label.accessor.isEmpty => method }
+    val functionTable = methods.collect { case method if method.label.accessor.isEmpty => method }
 
     val firrtlModules = modules.map(buildModule(_, interfaceTable, stageTable, methodTable, functionTable))
     val circuitName = topModule.toFirrtlString
@@ -280,7 +282,7 @@ object FirrtlCodeGen {
     val stageStmts = stageStmtss.flatten
     val (stageConds, stageCondFutures) = module.stages.map(runStage(_)(stack, ctx, global)).unzip
     val moduleField = global.lookupFields(module.tpe)
-    val (upperFutures, upperPorts, upperPortInits) = moduleField.map{ case (name, tpe) => buildUpperModule(name, tpe)(ctx, global) }.toVector.unzip3
+    val (upperFutures, upperPorts, upperPortInits) = moduleField.map { case (name, tpe) => buildUpperModule(name, tpe)(ctx, global) }.toVector.unzip3
 
     val (futureInterfacePortss, futureInterfaceWiress) = futurePorts.map {
       case Left(ports) => (ports, Vector.empty)
@@ -293,16 +295,16 @@ object FirrtlCodeGen {
 
     val futures =
       moduleFutures ++
-      upperFutures ++
-      inputFutures ++
-      outputFutures ++
-      internalFutures ++
-      regFutures ++
-      alwaysFutures ++
-      interfaceFutures ++
-      interfaceCondFutures ++
-      stageFutures ++
-      stageCondFutures
+        upperFutures ++
+        inputFutures ++
+        outputFutures ++
+        internalFutures ++
+        regFutures ++
+        alwaysFutures ++
+        interfaceFutures ++
+        interfaceCondFutures ++
+        stageFutures ++
+        stageCondFutures
 
     val futureStmts = buildFuture(futures.foldLeft(Future.empty)(_ + _))
 
@@ -346,8 +348,8 @@ object FirrtlCodeGen {
     val fieldRef = ir.Reference(field.toFirrtlString, ir.UnknownType)
     val (retFuture, retStmt) = field.ret
       .map(runExpr)
-      .map{ case RunResult(future, stmts, DataInstance(_, refer)) => (future, stmts, refer) }
-      .map{ case (future, stmts, refer) => (future, stmts :+ ir.Connect(ir.NoInfo, fieldRef, refer)) }
+      .map { case RunResult(future, stmts, DataInstance(_, refer)) => (future, stmts, refer) }
+      .map { case (future, stmts, refer) => (future, stmts :+ ir.Connect(ir.NoInfo, fieldRef, refer)) }
       .getOrElse((Future.empty, Vector(ir.IsInvalid(ir.NoInfo, fieldRef))))
     val tpe = toFirrtlType(field.tpe)
     val wire = ir.DefWire(ir.NoInfo, field.toFirrtlString, tpe)
@@ -362,7 +364,7 @@ object FirrtlCodeGen {
     val fieldRef = ir.Reference(field.toFirrtlString, ir.UnknownType)
     val (retFuture, retStmts, retExpr) = field.ret
       .map(runExpr)
-      .map{ case RunResult(retFuture, stmts, DataInstance(_, refer)) => (retFuture, stmts, refer) }
+      .map { case RunResult(retFuture, stmts, DataInstance(_, refer)) => (retFuture, stmts, refer) }
       .getOrElse((Future.empty, Vector.empty, fieldRef))
     val tpe = toFirrtlType(field.tpe)
     val reg = ir.DefRegister(ir.NoInfo, field.toFirrtlString, tpe, clockRef, resetRef, retExpr)
@@ -376,14 +378,14 @@ object FirrtlCodeGen {
     val (stmtss, _) = field.code.map(runStmt).unzip
     val (future, retStmts) = field.ret
       .map(runExpr)
-      .map{ case RunResult(future, stmts, _) => (future, stmts) }
+      .map { case RunResult(future, stmts, _) => (future, stmts) }
       .getOrElse(throw new ImplementationErrorException("sub module instance expression must be there"))
 
     val tpeString = field.tpe.toFirrtlString
     val module = ir.DefInstance(ir.NoInfo, field.toFirrtlString, tpeString)
 
     val subModuleStmts = stmtss.flatten ++ retStmts
-    val (conds, others) = subModuleStmts.collectPartition{ case cond: ir.Conditionally => cond }
+    val (conds, others) = subModuleStmts.collectPartition { case cond: ir.Conditionally => cond }
 
     (future, others, conds, module)
   }
@@ -423,7 +425,7 @@ object FirrtlCodeGen {
           case ir.UIntType(_) => Vector(accessor.copy(tpe = ir.UIntType(ir.IntWidth(1))))
           case bundle: ir.BundleType =>
             bundle.fields.toVector.flatMap(
-              field => loop(field.tpe,  ir.SubField(accessor, field.name, ir.UnknownType))
+              field => loop(field.tpe, ir.SubField(accessor, field.name, ir.UnknownType))
             )
         }
       }
@@ -478,16 +480,16 @@ object FirrtlCodeGen {
 
   def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.DefWire], Vector[ir.Statement], Future) = {
     def buildParams(paramPairs: Vector[(String, BackendType)]): (Future, Vector[ir.DefRegister], Vector[ir.DefWire]) = {
-      paramPairs.foreach{ case (name, _) => stack.lock(name) }
+      paramPairs.foreach { case (name, _) => stack.lock(name) }
 
       val params = paramPairs
-        .map{ case (name, tpe) => stack.refer(name) -> tpe }
-        .map{ case (name, tpe) => name -> StructInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
+        .map { case (name, tpe) => stack.refer(name) -> tpe }
+        .map { case (name, tpe) => name -> StructInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
 
       params.foreach { case (name, instance) => stack.append(name, instance) }
 
       val (futureParams, normalParams) =
-        params.partition{ case (_, DataInstance(tpe, _)) => tpe.symbol == Symbol.future }
+        params.partition { case (_, DataInstance(tpe, _)) => tpe.symbol == Symbol.future }
 
       val regs = normalParams.map {
         case (name, instance) =>
@@ -501,11 +503,13 @@ object FirrtlCodeGen {
           )
       }
 
-      val wires = futureParams.map{ case (name, instance) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(instance.tpe)) }
+      val wires = futureParams.map { case (name, instance) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(instance.tpe)) }
 
       val futureElems = futureParams
         .map { case (name, _) => ir.Reference(name.name, ir.UnknownType) }
-        .map { _ -> FormKind.Stage }
+        .map {
+          _ -> FormKind.Stage
+        }
         .toMap[ir.Expression, FormKind]
 
       val future = Future(Map.empty, futureElems)
@@ -526,16 +530,17 @@ object FirrtlCodeGen {
     )
 
     def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
-    def stateWidth(x: Double): Double = {
-      val width = (math.ceil _ compose log2)(x)
 
-      if(width == 0) 1
+    def stateWidth(x: Double): Double = {
+      val width = (math.ceil _ compose log2) (x)
+
+      if (width == 0) 1
       else width
     }
 
     val state =
-      if(stage.states.length == 0) None
-      else Some(ir.DefRegister (
+      if (stage.states.length == 0) None
+      else Some(ir.DefRegister(
         ir.NoInfo,
         stage.stateName,
         ir.UIntType(ir.IntWidth(stateWidth(stage.states.length).toInt)),
@@ -545,12 +550,12 @@ object FirrtlCodeGen {
       ))
 
     val ret =
-      if(stage.ret == toBackendType(Type.unitTpe)) None
+      if (stage.ret == toBackendType(Type.unitTpe)) None
       else Some(ir.DefWire(ir.NoInfo, stage.retName, toFirrtlType(stage.ret)))
 
     val retRef = ir.Reference(stage.retName, ir.UnknownType)
     val futureRet =
-      if(stage.ret == toBackendType(Type.unitTpe)) Future(Map.empty, Map.empty)
+      if (stage.ret == toBackendType(Type.unitTpe)) Future(Map.empty, Map.empty)
       else Future(Map.empty, Map(retRef -> FormKind.Stage))
 
     val wires = (ret ++ stageWires ++ stateWires).toVector
@@ -589,39 +594,39 @@ object FirrtlCodeGen {
   def buildInterfaceSignature(interface: MethodContainer)(implicit stack: StackFrame, global: GlobalData): (Either[Vector[ir.Port], Vector[ir.DefWire]], Vector[ir.Port], Vector[ir.Statement], Future) = {
     interface.params.foreach { case (name, _) => stack.lock(name) }
     val args = interface.params
-      .map{ case (name, tpe) => stack.refer(name) -> tpe }
-      .map{ case (name, tpe) => name -> DataInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
+      .map { case (name, tpe) => stack.refer(name) -> tpe }
+      .map { case (name, tpe) => name -> DataInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
       .toVector
 
     args.foreach { case (name, instance) => stack.append(name, instance) }
 
     val isInputInterface =
       interface.label.symbol.hasFlag(Modifier.Input) ||
-      interface.label.symbol.hasFlag(Modifier.Sibling)
+        interface.label.symbol.hasFlag(Modifier.Sibling)
 
-    val normalParams = args.filter{ case (_, DataInstance(tpe, _)) => tpe.symbol != Symbol.future }
-    val futureParams = args.filter{ case (_, DataInstance(tpe, _)) => tpe.symbol == Symbol.future }
+    val normalParams = args.filter { case (_, DataInstance(tpe, _)) => tpe.symbol != Symbol.future }
+    val futureParams = args.filter { case (_, DataInstance(tpe, _)) => tpe.symbol == Symbol.future }
 
     val normalParamWires =
-      if(isInputInterface) normalParams.map{ case (name, inst) => ir.Port(ir.NoInfo, name.name, ir.Input, toFirrtlType(inst.tpe))}
-      else normalParams.map{ case (name, inst) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(inst.tpe)) }
+      if (isInputInterface) normalParams.map { case (name, inst) => ir.Port(ir.NoInfo, name.name, ir.Input, toFirrtlType(inst.tpe)) }
+      else normalParams.map { case (name, inst) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(inst.tpe)) }
 
     val futureParamWires =
-      if(isInputInterface) futureParams.map{ case (name, inst) => ir.Port(ir.NoInfo, name.name, ir.Input, toFirrtlType(inst.tpe))}
-      else futureParams.map{ case (name, inst) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(inst.tpe)) }
+      if (isInputInterface) futureParams.map { case (name, inst) => ir.Port(ir.NoInfo, name.name, ir.Input, toFirrtlType(inst.tpe)) }
+      else futureParams.map { case (name, inst) => ir.DefWire(ir.NoInfo, name.name, toFirrtlType(inst.tpe)) }
 
     val paramInvalids =
-      if(isInputInterface) Vector.empty
+      if (isInputInterface) Vector.empty
       else args
-        .filter{ case (_, DataInstance(tpe, _)) => tpe.symbol != Symbol.future }
-        .map{ case (name, _) => ir.IsInvalid(ir.NoInfo, ir.Reference(name.name, ir.UnknownType)) }
+        .filter { case (_, DataInstance(tpe, _)) => tpe.symbol != Symbol.future }
+        .map { case (name, _) => ir.IsInvalid(ir.NoInfo, ir.Reference(name.name, ir.UnknownType)) }
 
     val active =
-      if(isInputInterface) ir.Port(ir.NoInfo, interface.activeName, ir.Input, ir.UIntType(ir.IntWidth(1)))
+      if (isInputInterface) ir.Port(ir.NoInfo, interface.activeName, ir.Input, ir.UIntType(ir.IntWidth(1)))
       else ir.DefWire(ir.NoInfo, interface.activeName, ir.UIntType(ir.IntWidth(1)))
 
     val activeOff =
-      if(isInputInterface) None
+      if (isInputInterface) None
       else Some(ir.Connect(ir.NoInfo, ir.Reference(interface.activeName, ir.UnknownType), ir.UIntLiteral(0)))
 
     val retTpe = interface.label.symbol.tpe.asMethodType.returnType
@@ -633,25 +638,25 @@ object FirrtlCodeGen {
 
     val normalRet =
       if (isUnitRet || isFutureRet) None
-      else if(isInputInterface) Some(retPort)
+      else if (isInputInterface) Some(retPort)
       else Some(retWire)
 
     val futureRet =
-      if(isFutureRet && isInputInterface) Some(retPort)
-      else if(isFutureRet) Some(retWire)
+      if (isFutureRet && isInputInterface) Some(retPort)
+      else if (isFutureRet) Some(retWire)
       else None
 
     val retRef = ir.Reference(interface.retName, ir.UnknownType)
 
     val retInit =
-      if(isUnitRet || isFutureRet) None
+      if (isUnitRet || isFutureRet) None
       else Some(ir.IsInvalid(ir.NoInfo, retRef))
 
     val retFuture =
-      if(isFutureRet) Future(Map.empty, Map(retRef -> FormKind.Field))
+      if (isFutureRet) Future(Map.empty, Map(retRef -> FormKind.Field))
       else Future.empty
 
-    if(isInputInterface) {
+    if (isInputInterface) {
       val futurePorts = futureParamWires.map(_.asInstanceOf[ir.Port])
       val futureRetPort = futureRet.map(_.asInstanceOf[ir.Port]).toVector
       val ports = (active.asInstanceOf[ir.Port] +: normalParamWires.map(_.asInstanceOf[ir.Port])) ++ normalRet.map(_.asInstanceOf[ir.Port])
@@ -660,10 +665,10 @@ object FirrtlCodeGen {
       (Left(futurePorts ++ futureRetPort), ports, stmts.toVector, retFuture)
     } else {
       val future = args
-        .map{ case (name, DataInstance(tpe, _)) => name -> tpe }
-        .filter{ case (_, tpe) => tpe.symbol == Symbol.future }
-        .map{ case (name, tpe) => ir.Reference(name.name, ir.UnknownType) -> tpe }
-        .map{ case (refer, _) => Future(Map.empty, Map(refer -> FormKind.Field)) }
+        .map { case (name, DataInstance(tpe, _)) => name -> tpe }
+        .filter { case (_, tpe) => tpe.symbol == Symbol.future }
+        .map { case (name, tpe) => ir.Reference(name.name, ir.UnknownType) -> tpe }
+        .map { case (refer, _) => Future(Map.empty, Map(refer -> FormKind.Field)) }
         .foldLeft(retFuture)(_ + _)
 
       val futureWires = futureParamWires.map(_.asInstanceOf[ir.DefWire])
@@ -680,7 +685,7 @@ object FirrtlCodeGen {
     val RunResult(retFuture, retStmts, instance) = runExpr(interface.ret)
     val methodRetTpe = interface.label.symbol.tpe.asMethodType.returnType
     val connect =
-      if(methodRetTpe == Type.unitTpe || methodRetTpe.origin == Symbol.future) None
+      if (methodRetTpe == Type.unitTpe || methodRetTpe.origin == Symbol.future) None
       else {
         val DataInstance(_, refer) = instance
         val connectTarget = ir.Reference(interface.retName, ir.UnknownType)
@@ -690,7 +695,7 @@ object FirrtlCodeGen {
       }
 
     val access =
-      if(methodRetTpe.origin != Symbol.future) Future.empty
+      if (methodRetTpe.origin != Symbol.future) Future.empty
       else {
         val DataInstance(_, source) = instance
         val loc = ir.Reference(interface.retName, ir.UnknownType)
@@ -711,6 +716,7 @@ object FirrtlCodeGen {
 
   def buildFuture(future: Future): Vector[ir.Statement] = {
     def memberRef(expr: ir.Expression): ir.SubField = ir.SubField(expr, "_member", ir.UnknownType)
+
     def dataRef(expr: ir.Expression): ir.SubField = ir.SubField(expr, "_data", ir.UnknownType)
 
     def buildHasSource(name: ir.Expression, froms: Vector[ir.Expression]): Vector[ir.Connect] = {
@@ -719,7 +725,7 @@ object FirrtlCodeGen {
       val fromMembers = froms.map(from => ir.SubField(from, "_member", ir.UnknownType))
       val fromDatas = froms.map(from => ir.SubField(from, "_data", ir.UnknownType))
 
-      val memberOr = fromMembers.foldLeft[ir.Expression](ir.UIntLiteral(0)){
+      val memberOr = fromMembers.foldLeft[ir.Expression](ir.UIntLiteral(0)) {
         case (left, right) => ir.DoPrim(PrimOps.Or, Seq(left, right), Seq.empty, ir.UnknownType)
       }
 
@@ -772,27 +778,28 @@ object FirrtlCodeGen {
     val pairs = interfaces.map {
       interface =>
         def buildName(name: String): String = moduleName + "$" + name
+
         val activeName = buildName(interface.activeName)
         val retName = buildName(interface.retName)
 
         val activePort = ir.Port(ir.NoInfo, activeName, ir.Output, ir.UIntType(ir.IntWidth(1)))
         val retPort =
-          if(interface.ret.tpe == toBackendType(Type.unitTpe)) None
+          if (interface.ret.tpe == toBackendType(Type.unitTpe)) None
           else Some(ir.Port(ir.NoInfo, retName, ir.Input, toFirrtlType(interface.ret.tpe)))
         val paramPorts = interface.params.map {
           case (name, tpe) => ir.Port(ir.NoInfo, buildName(name), ir.Output, toFirrtlType(tpe))
         }.toVector
 
         val activeInit = ir.Connect(ir.NoInfo, ir.Reference(activeName, ir.UnknownType), ir.UIntLiteral(0))
-        val (futureParams, normalParams) = interface.params.partition{ case (_, tpe) => tpe.symbol == Symbol.future }
+        val (futureParams, normalParams) = interface.params.partition { case (_, tpe) => tpe.symbol == Symbol.future }
 
         val paramInits = normalParams
-          .map{ case (name, _) => buildName(name) }
+          .map { case (name, _) => buildName(name) }
           .map(name => ir.IsInvalid(ir.NoInfo, ir.Reference(name, ir.UnknownType)))
           .toVector
 
         val futureElems = futureParams
-          .map{ case (name, _) => buildName(name) }
+          .map { case (name, _) => buildName(name) }
           .map(name => ir.Reference(name, ir.UnknownType) -> FormKind.Field)
           .toMap[ir.Expression, FormKind]
 
@@ -829,7 +836,7 @@ object FirrtlCodeGen {
       case backend.Variable(name, tpe, expr) =>
         val varName = stack.next(name)
 
-        val (inst, stmts, future) = buildConnect(varName, expr){
+        val (inst, stmts, future) = buildConnect(varName, expr) {
           case inst if inst.tpe.symbol == Symbol.future =>
             val firrtlType = toFirrtlType(tpe)
             val local = FormKind.Local(Vector(inst.refer), firrtlType)
@@ -999,12 +1006,12 @@ object FirrtlCodeGen {
       val interface = candidates.find(_.label == call.label).get
 
       val normalParams = interface.params
-        .filter { case (_, tpe) =>tpe.symbol != Symbol.future }
-        .map{ case (name, _) => stack.refer(name) }
-        .map{ name => ir.Reference(name.name, ir.UnknownType) }
+        .filter { case (_, tpe) => tpe.symbol != Symbol.future }
+        .map { case (name, _) => stack.refer(name) }
+        .map { name => ir.Reference(name.name, ir.UnknownType) }
 
       val futureParams = interface.params
-        .filter{ case (_, tpe) => tpe.symbol == Symbol.future }
+        .filter { case (_, tpe) => tpe.symbol == Symbol.future }
         .map { case (name, _) => stack.refer(name) }
 
       val argNames = call.args.map {
@@ -1015,12 +1022,12 @@ object FirrtlCodeGen {
 
       val normalArgs = argInstances
         .map(_.asInstanceOf[DataInstance])
-        .filter{ case DataInstance(tpe, _) => tpe.symbol != Symbol.future }
+        .filter { case DataInstance(tpe, _) => tpe.symbol != Symbol.future }
         .map(inst => inst.refer)
 
-      val futureArgs= argInstances
+      val futureArgs = argInstances
         .map(_.asInstanceOf[DataInstance])
-        .filter{ case DataInstance(tpe, _) => tpe.symbol == Symbol.future }
+        .filter { case DataInstance(tpe, _) => tpe.symbol == Symbol.future }
         .map(inst => inst.refer)
 
       val activate: ir.Statement = {
@@ -1032,11 +1039,11 @@ object FirrtlCodeGen {
         case _ => Some(ir.Reference(interface.retName, ir.UnknownType))
       }
 
-      val connects = (normalParams zip normalArgs).map{ case (param, arg) => ir.Connect(ir.NoInfo, param, arg) }.toVector
+      val connects = (normalParams zip normalArgs).map { case (param, arg) => ir.Connect(ir.NoInfo, param, arg) }.toVector
 
       val accesses = (futureParams zip futureArgs)
-        .map{ case (param, arg) => ir.Reference(param.name, ir.UnknownType) -> arg }
-        .map{ case (param, arg) => param -> Vector(arg) }
+        .map { case (param, arg) => ir.Reference(param.name, ir.UnknownType) -> arg }
+        .map { case (param, arg) => param -> Vector(arg) }
         .toMap[ir.Expression, Vector[ir.Expression]]
 
       val future = Future(accesses, Map.empty)
@@ -1054,8 +1061,8 @@ object FirrtlCodeGen {
       val interface = candidates.find(_.label == call.label).get
       val (futureParams, normalParams) = interface.params
         .toVector
-        .map{ case (name, tpe) => ir.SubField(module, name, ir.UnknownType) -> tpe }
-        .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
+        .map { case (name, tpe) => ir.SubField(module, name, ir.UnknownType) -> tpe }
+        .partition { case (_, tpe) => tpe.symbol == Symbol.future }
 
       val argNames = call.args.map {
         case backend.Term.Temp(id, _) => stack.refer(id)
@@ -1063,8 +1070,8 @@ object FirrtlCodeGen {
       }
       val (futureArgs, normalArgs) = argNames.map(stack.lookup)
         .map(_.asInstanceOf[DataInstance])
-        .map{ case DataInstance(tpe, refer) => tpe -> refer }
-        .partition{ case (tpe, _) => tpe.symbol == Symbol.future }
+        .map { case DataInstance(tpe, refer) => tpe -> refer }
+        .partition { case (tpe, _) => tpe.symbol == Symbol.future }
 
       val activate: ir.Statement = {
         val subField = ir.SubField(module, interface.activeName, ir.UnknownType)
@@ -1079,12 +1086,12 @@ object FirrtlCodeGen {
       val connects = normalParams
         .map(_._1)
         .zip(normalArgs.map(_._2))
-        .map{ case (p, a) => ir.Connect(ir.NoInfo, p, a) }
+        .map { case (p, a) => ir.Connect(ir.NoInfo, p, a) }
 
       val accesses = futureParams
         .map(_._1)
         .zip(futureArgs.map(_._2))
-        .map{ case (p, a) => p -> Vector(a) }
+        .map { case (p, a) => p -> Vector(a) }
         .toMap[ir.Expression, Vector[ir.Expression]]
 
       val future = Future(accesses, Map.empty)
@@ -1102,8 +1109,8 @@ object FirrtlCodeGen {
       val interface = candidates.find(_.label == call.label).get
       val (futureParams, normalParams) = interface.params
         .toVector
-        .map{ case (name, tpe) => ir.Reference(module + "$" + name, ir.UnknownType) -> tpe }
-        .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
+        .map { case (name, tpe) => ir.Reference(module + "$" + name, ir.UnknownType) -> tpe }
+        .partition { case (_, tpe) => tpe.symbol == Symbol.future }
 
       val argNames = call.args.map {
         case backend.Term.Temp(id, _) => stack.refer(id)
@@ -1111,8 +1118,8 @@ object FirrtlCodeGen {
       }
 
       val (futureArgs, normalArgs) = argNames.map(stack.lookup)
-        .map{ case DataInstance(tpe, refer) => tpe -> refer }
-        .partition{ case (tpe, _) => tpe.symbol == Symbol.future }
+        .map { case DataInstance(tpe, refer) => tpe -> refer }
+        .partition { case (tpe, _) => tpe.symbol == Symbol.future }
 
       val activate: ir.Statement = {
         val activeRef = ir.Reference(module + "$" + interface.activeName, ir.UnknownType)
@@ -1121,7 +1128,7 @@ object FirrtlCodeGen {
 
       val referReturn = interface.ret match {
         case backend.UnitLiteral() => None
-        case _ => Some(ir.Reference(module+ "$" + interface.retName, ir.UnknownType))
+        case _ => Some(ir.Reference(module + "$" + interface.retName, ir.UnknownType))
       }
 
       val connects = (normalParams.map(_._1) zip normalArgs.map(_._2)).map {
@@ -1168,32 +1175,35 @@ object FirrtlCodeGen {
       case "_builtin_sub_int" => builtin.intSub(insts(0), insts(1), global)
       case "_builtin_mul_int" => builtin.intMul(insts(0), insts(1), global)
       case "_builtin_div_int" => builtin.intDiv(insts(0), insts(1), global)
-      case "_builtin_eq_int"  => builtin.intEq(insts(0), insts(1), global)
-      case "_builtin_ne_int"  => builtin.intNe(insts(0), insts(1), global)
-      case "_builtin_gt_int"  => builtin.intGt(insts(0), insts(1), global)
-      case "_builtin_ge_int"  => builtin.intGe(insts(0), insts(1), global)
-      case "_builtin_lt_int"  => builtin.intLt(insts(0), insts(1), global)
-      case "_builtin_le_int"  => builtin.intLe(insts(0), insts(1), global)
+      case "_builtin_eq_int" => builtin.intEq(insts(0), insts(1), global)
+      case "_builtin_ne_int" => builtin.intNe(insts(0), insts(1), global)
+      case "_builtin_gt_int" => builtin.intGt(insts(0), insts(1), global)
+      case "_builtin_ge_int" => builtin.intGe(insts(0), insts(1), global)
+      case "_builtin_lt_int" => builtin.intLt(insts(0), insts(1), global)
+      case "_builtin_le_int" => builtin.intLe(insts(0), insts(1), global)
       case "_builtin_neg_int" => builtin.intNeg(insts(0), global)
       case "_builtin_not_int" => builtin.intNot(insts(0), global)
       case "_builtin_eq_bool" => builtin.boolEq(insts(0), insts(1), global)
       case "_builtin_ne_bool" => builtin.boolNe(insts(0), insts(1), global)
-      case "_builtin_not_bool"=> builtin.boolNot(insts(0), global)
+      case "_builtin_not_bool" => builtin.boolNot(insts(0), global)
       case "_builtin_add_bit" => builtin.bitAdd(insts(0), insts(1))
       case "_builtin_sub_bit" => builtin.bitSub(insts(0), insts(1))
       case "_builtin_mul_bit" => builtin.bitMul(insts(0), insts(1))
       case "_builtin_div_bit" => builtin.bitDiv(insts(0), insts(1))
-      case "_builtin_eq_bit"  => builtin.bitEq(insts(0), insts(1), global)
-      case "_builtin_ne_bit"  => builtin.bitNe(insts(0), insts(1), global)
-      case "_builtin_gt_bit"  => builtin.bitGt(insts(0), insts(1), global)
-      case "_builtin_ge_bit"  => builtin.bitGe(insts(0), insts(1), global)
-      case "_builtin_lt_bit"  => builtin.bitLt(insts(0), insts(1), global)
-      case "_builtin_le_bit"  => builtin.bitLe(insts(0), insts(1), global)
+      case "_builtin_eq_bit" => builtin.bitEq(insts(0), insts(1), global)
+      case "_builtin_ne_bit" => builtin.bitNe(insts(0), insts(1), global)
+      case "_builtin_gt_bit" => builtin.bitGt(insts(0), insts(1), global)
+      case "_builtin_ge_bit" => builtin.bitGe(insts(0), insts(1), global)
+      case "_builtin_lt_bit" => builtin.bitLt(insts(0), insts(1), global)
+      case "_builtin_le_bit" => builtin.bitLe(insts(0), insts(1), global)
       case "_builtin_neg_bit" => builtin.bitNeg(insts(0))
       case "_builtin_not_bit" => builtin.bitNot(insts(0))
       case "_builtin_truncate_bit" => builtin.bitTruncate(insts(0), call.hargs(0), call.hargs(1), global)
       case "_builtin_bit_bit" => builtin.bitBit(insts(0), call.hargs(0), global)
       case "_builtin_concat_bit" => builtin.bitConcat(insts(0), insts(1), global)
+      // these methods actually for vector but label name contains bit because of implementation problem
+      case "_builtin_idx_bit" => builtin.vecIdx(insts(0), call.hargs(0), global)
+      case "_builtin_idxDyn_bit" => builtin.vecIdxDyn(insts(0), insts(1), global)
     }
 
     RunResult(Future.empty, Vector.empty, instance)
@@ -1271,16 +1281,17 @@ object FirrtlCodeGen {
       wire.flatMap { wire =>
         instance match {
           case DataInstance(tpe, refer) =>
-            if(tpe.symbol == Symbol.future) None
+            if (tpe.symbol == Symbol.future) None
             else Some(ir.Connect(ir.NoInfo, wire, refer))
           case _ => None
-        }}
+        }
+      }
 
     def buildCondition(condRef: ir.Expression): RunResult = {
       lazy val retName = stack.next("_IFRET")
 
       val retWire =
-        if(ifExpr.tpe.symbol == Symbol.unit || ifExpr.tpe.symbol == Symbol.future) None
+        if (ifExpr.tpe.symbol == Symbol.unit || ifExpr.tpe.symbol == Symbol.future) None
         else Some(ir.DefWire(ir.NoInfo, retName.name, toFirrtlType(ifExpr.tpe)))
 
       val wireRef = retWire.map(wire => ir.Reference(wire.name, ir.UnknownType))
@@ -1290,7 +1301,7 @@ object FirrtlCodeGen {
       val conseqRet = connectRet(wireRef, conseqInst)
       val altRet = connectRet(wireRef, altInst)
 
-      val whenStmt = ir.Conditionally (
+      val whenStmt = ir.Conditionally(
         ir.NoInfo,
         condRef,
         ir.Block(conseqStmts ++ conseqRet),
@@ -1303,7 +1314,7 @@ object FirrtlCodeGen {
       }
 
       val retFuture =
-        if(ifExpr.tpe.symbol != Symbol.future) Map.empty[ir.Expression, FormKind]
+        if (ifExpr.tpe.symbol != Symbol.future) Map.empty[ir.Expression, FormKind]
         else {
           val referRet = ir.Reference(retName.name, ir.UnknownType)
           val refers = Vector(
@@ -1355,6 +1366,24 @@ object FirrtlCodeGen {
           }
 
           (wire +: stmts, bundleName, nextIdx)
+        case ir.VectorType(tpe, length) =>
+          val vecName = stack.next("_EXTRACT")
+          val wire = ir.DefWire(ir.NoInfo, vecName.name, ir.VectorType(tpe, length))
+          val wireRef = ir.Reference(wire.name, wire.tpe)
+
+          val (stmts, nextIdx) = (0 to length).foldLeft(Vector.empty[ir.Statement], bitIdx){
+            case ((stmts, bitIdx), idx) =>
+              val (leafStmts, name, nextIdx) = extractFieldData(source, tpe, bitIdx)
+              val connect = ir.Connect(
+                ir.NoInfo,
+                ir.SubIndex(wireRef, idx, ir.UnknownType),
+                ir.Reference(name.name, ir.UnknownType)
+              )
+
+              (stmts ++ leafStmts :+ connect, nextIdx)
+          }
+
+          (wire +: stmts, vecName, nextIdx)
       }
 
     def uniqueVariantCases(cases: Vector[backend.Case]): Vector[backend.Case] = {
@@ -1362,7 +1391,7 @@ object FirrtlCodeGen {
         case (stacked, caseElem) =>
           val hasSameVariant = stacked.exists(_.cond.variant == caseElem.cond.variant)
 
-          if(hasSameVariant) stacked
+          if (hasSameVariant) stacked
           else stacked :+ caseElem
       }
     }
@@ -1412,7 +1441,7 @@ object FirrtlCodeGen {
           stack.append(sink, instance)
       }
 
-      val nodes = (sinks zip sources).map{
+      val nodes = (sinks zip sources).map {
         case (sink, source) =>
           ir.DefNode(
             ir.NoInfo,
@@ -1443,8 +1472,8 @@ object FirrtlCodeGen {
       val caseName = stack.next("_MATCH")
       val patternCond = ir.DoPrim(PrimOps.Eq, Seq(member, patternIdx), Seq.empty, ir.UnknownType)
       val condNode = caseCondExpr
-        .reduceLeftOption[ir.Expression]{ case (conds, cond) => ir.DoPrim(PrimOps.And, Seq(conds, cond), Seq.empty, ir.UnknownType) }
-        .map { cond => ir.DoPrim(PrimOps.And, Seq(cond, patternCond), Seq.empty, ir.UnknownType)}
+        .reduceLeftOption[ir.Expression] { case (conds, cond) => ir.DoPrim(PrimOps.And, Seq(conds, cond), Seq.empty, ir.UnknownType) }
+        .map { cond => ir.DoPrim(PrimOps.And, Seq(cond, patternCond), Seq.empty, ir.UnknownType) }
         .map { cond => ir.DefNode(ir.NoInfo, caseName.name, cond) }
         .getOrElse(ir.DefNode(ir.NoInfo, caseName.name, patternCond))
 
@@ -1468,7 +1497,7 @@ object FirrtlCodeGen {
       val dataRef = ir.SubField(instance.refer, "_data", ir.UnknownType)
       val allVariants = enum.tpe.declares
         .toMap.values.toVector
-        .sortWith{ case (left, right) => left.name < right.name }
+        .sortWith { case (left, right) => left.name < right.name }
         .map(_.asEnumMemberSymbol)
 
       val conds = uniqueVariantCases(cases).map(_.cond)
@@ -1477,10 +1506,10 @@ object FirrtlCodeGen {
       val fieldSourceTable = (variants zip namess).toMap
 
       val retWireInfo =
-        if(retTpe == toBackendType(Type.unitTpe)) None
+        if (retTpe == toBackendType(Type.unitTpe)) None
         else Some(stack.next("_MATCH_RET"), toFirrtlType(retTpe))
 
-      val retWire = retWireInfo.map{ case (name, tpe) => ir.DefWire(ir.NoInfo, name.name, tpe) }
+      val retWire = retWireInfo.map { case (name, tpe) => ir.DefWire(ir.NoInfo, name.name, tpe) }
 
       val memberRef = ir.SubField(instance.refer, "_member", ir.UnknownType)
       val (caseStmtss, caseBodies, caseNames, caseFutures) = cases
@@ -1621,44 +1650,45 @@ object FirrtlCodeGen {
       val targetActive = targetBuilder(interface.activeName)
 
       val targetRet =
-        if(isUnitRet || isFutureRet) None
+        if (isUnitRet || isFutureRet) None
         else Some(targetBuilder(interface.retName))
 
       val (targetFutureParams, targetNormalParams) = interface.params
-        .map{ case (param, tpe) => targetBuilder(param) -> tpe }
+        .map { case (param, tpe) => targetBuilder(param) -> tpe }
         .toVector
-        .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
+        .partition { case (_, tpe) => tpe.symbol == Symbol.future }
 
       val normalTargets = targetActive +: targetNormalParams.map(_._1)
 
       def fromRef(name: String): ir.SubField = ir.SubField(moduleRef, fromName + "$" + name, ir.UnknownType)
+
       val fromActive = fromRef(interface.activeName)
 
       val fromRet =
-        if(isUnitRet || isFutureRet) None
+        if (isUnitRet || isFutureRet) None
         else Some(fromRef(interface.retName))
 
       val retInvalid = fromRet.map(ret => ir.IsInvalid(ir.NoInfo, ret))
       val futureRet =
-        if(!isFutureRet) Map.empty[ir.Expression, FormKind]
+        if (!isFutureRet) Map.empty[ir.Expression, FormKind]
         else Map[ir.Expression, FormKind](fromRef(interface.retName) -> FormKind.Field)
 
       val (futureFromArgs, normalFromArgs) = interface.params.toVector
         .map { case (param, tpe) => fromRef(param) -> tpe }
-        .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
+        .partition { case (_, tpe) => tpe.symbol == Symbol.future }
 
       val normalFroms = fromActive +: normalFromArgs.map(_._1)
 
       val connects = (normalTargets zip normalFroms).map { case (target, from) => ir.Connect(ir.NoInfo, target, from) }
-      val retConnect = (fromRet zip targetRet).map{ case (from, target) => ir.Connect(ir.NoInfo, from, target) }
+      val retConnect = (fromRet zip targetRet).map { case (from, target) => ir.Connect(ir.NoInfo, from, target) }
 
       val retAccess =
-        if(!isFutureRet) Map.empty
+        if (!isFutureRet) Map.empty
         else Map[ir.Expression, Vector[ir.Expression]](fromRef(interface.retName) -> Vector(targetBuilder(interface.retName)))
 
       val futureTargets = targetFutureParams.map(_._1)
       val futureElems = futureTargets.map(_ -> FormKind.Field).toMap[ir.Expression, FormKind]
-      val accesses = (futureTargets zip futureFromArgs.map(_._1)).map{ case (target, from) => target -> Vector(from) }.toMap ++ retAccess
+      val accesses = (futureTargets zip futureFromArgs.map(_._1)).map { case (target, from) => target -> Vector(from) }.toMap ++ retAccess
       val future = Future(accesses, futureRet ++ futureElems)
 
       val cond = ir.Conditionally(
@@ -1710,11 +1740,12 @@ object FirrtlCodeGen {
       .map {
         interface =>
           def buildRef(name: String): ir.SubField = ir.SubField(moduleRef, name, ir.UnknownType)
+
           val activeRef = buildRef(interface.activeName)
           val (futureParams, normalParams) = interface.params
             .toVector
-            .map{ case (name, tpe) => buildRef(name) -> tpe }
-            .partition{ case (_, tpe) => tpe.symbol == Symbol.future }
+            .map { case (name, tpe) => buildRef(name) -> tpe }
+            .partition { case (_, tpe) => tpe.symbol == Symbol.future }
 
           val activeOff = ir.Connect(ir.NoInfo, activeRef, ir.UIntLiteral(0))
           val paramInvalid = normalParams
@@ -1722,9 +1753,9 @@ object FirrtlCodeGen {
             .map(ir.IsInvalid(ir.NoInfo, _))
 
           val futureElems = futureParams
-              .map(_._1)
-              .map(_ -> FormKind.Field)
-              .toMap[ir.Expression, FormKind]
+            .map(_._1)
+            .map(_ -> FormKind.Field)
+            .toMap[ir.Expression, FormKind]
 
           val future = Future(Map.empty, futureElems)
 
@@ -1758,79 +1789,65 @@ object FirrtlCodeGen {
   }
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    def constructEnum: RunResult = {
-      def splitValue(tpe: ir.Type, refer: ir.Expression): Vector[ir.Expression] = {
-        tpe match {
-          case ir.UIntType(_) => Vector(refer)
-          case ir.BundleType(fields) =>
-            val refers = fields.flatMap {
-              field =>
-                val underRefer = ir.SubField(refer, field.name, field.tpe)
-                splitValue(field.tpe, underRefer)
-            }
+    def makeLeafs(tpe: ir.Type, refer: ir.Expression): Vector[ir.Expression] = {
+      tpe match {
+        case ir.UIntType(_) => Vector(refer)
+        case ir.BundleType(fields) =>
+          val refers = fields.flatMap {
+            field =>
+              val underRefer = ir.SubField(refer, field.name, field.tpe)
+              makeLeafs(field.tpe, underRefer)
+          }
 
-            refers.toVector
-        }
+          refers.toVector
+        case ir.VectorType(tpe, length) =>
+          (0 to length).flatMap(idx => makeLeafs(tpe, ir.SubIndex(refer, idx, tpe))).toVector
       }
-
-      val tpe = toFirrtlType(enum.target)
-      val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
-
-      val value = insts
-        .map(_.asInstanceOf[DataInstance])
-        .flatMap(inst => splitValue(toFirrtlType(inst.tpe), inst.refer))
-        .reduceLeftOption[ir.Expression]{ case (prefix, refer) => ir.DoPrim(PrimOps.Cat, Seq(refer, prefix), Seq.empty, ir.UnknownType) }
-        .getOrElse(ir.UIntLiteral(0))
-
-      val flagValue = enum.tpe.symbol.tpe.declares
-        .toMap.toVector
-        .sortWith{ case ((left, _), (right, _)) => left < right }
-        .map{ case (_, symbol) => symbol }
-        .zipWithIndex
-        .find{ case (symbol, _) => symbol ==  enum.variant }
-        .map{ case (_, idx) => ir.UIntLiteral(idx) }
-        .getOrElse(throw new ImplementationErrorException(s"${enum.variant} was not found"))
-
-      val enumName = stack.next("_ENUM")
-      val enumRef = ir.Reference(enumName.name, ir.UnknownType)
-      val wireDef =
-        if(enum.target.symbol == Symbol.future) None
-        else Some(ir.DefWire(ir.NoInfo, enumName.name, tpe))
-
-      val connectFlag = ir.Connect(
-        ir.NoInfo,
-        ir.SubField(enumRef, "_member", ir.UnknownType),
-        flagValue
-      )
-      val connectData = ir.Connect(
-        ir.NoInfo,
-        ir.SubField(enumRef, "_data", ir.UnknownType),
-        value
-      )
-
-      val runResultStmts = (wireDef ++ Vector(connectFlag, connectData)).toVector
-      val instance = DataInstance(enum.tpe, enumRef)
-
-      val future =
-        if(enum.target.symbol != Symbol.future) Future(Map.empty, Map.empty)
-        else Future(Map.empty, Map(enumRef -> FormKind.Constructor(tpe)))
-
-      RunResult(future, runResultStmts, instance)
     }
 
-    /*
-    def constructSoftEnum: RunResult = {
-      val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
-      val pairs = insts.zipWithIndex.map { case (inst, idx) => s"_$idx" -> inst }
-      val table = ListMap.from(pairs)
+    val tpe = toFirrtlType(enum.target)
+    val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
 
-      val instance = EnumSoftInstance(enum.target, enum.variant, table)
+    val value = insts
+      .map(_.asInstanceOf[DataInstance])
+      .flatMap(inst => makeLeafs(toFirrtlType(inst.tpe), inst.refer))
+      .reduceLeftOption[ir.Expression] { case (prefix, refer) => ir.DoPrim(PrimOps.Cat, Seq(refer, prefix), Seq.empty, ir.UnknownType) }
+      .getOrElse(ir.UIntLiteral(0))
 
-      RunResult(Future.empty, Vector.empty, instance)
-    }
-    */
+    val flagValue = enum.tpe.symbol.tpe.declares
+      .toMap.toVector
+      .sortWith { case ((left, _), (right, _)) => left < right }
+      .map { case (_, symbol) => symbol }
+      .zipWithIndex
+      .find { case (symbol, _) => symbol == enum.variant }
+      .map { case (_, idx) => ir.UIntLiteral(idx) }
+      .getOrElse(throw new ImplementationErrorException(s"${enum.variant} was not found"))
 
-    constructEnum
+    val enumName = stack.next("_ENUM")
+    val enumRef = ir.Reference(enumName.name, ir.UnknownType)
+    val wireDef =
+      if (enum.target.symbol == Symbol.future) None
+      else Some(ir.DefWire(ir.NoInfo, enumName.name, tpe))
+
+    val connectFlag = ir.Connect(
+      ir.NoInfo,
+      ir.SubField(enumRef, "_member", ir.UnknownType),
+      flagValue
+    )
+    val connectData = ir.Connect(
+      ir.NoInfo,
+      ir.SubField(enumRef, "_data", ir.UnknownType),
+      value
+    )
+
+    val runResultStmts = (wireDef ++ Vector(connectFlag, connectData)).toVector
+    val instance = DataInstance(enum.tpe, enumRef)
+
+    val future =
+      if (enum.target.symbol != Symbol.future) Future(Map.empty, Map.empty)
+      else Future(Map.empty, Map(enumRef -> FormKind.Constructor(tpe)))
+
+    RunResult(future, runResultStmts, instance)
   }
 
   def runFinish(finish: backend.Finish)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1907,7 +1924,6 @@ object FirrtlCodeGen {
     */
 
 
-
     /*
     val normalStageParams = (normalParamRefs zip normalArgRefs)
       .map{ case (param, arg) => ir.Connect(ir.NoInfo, param, arg) }
@@ -1926,7 +1942,7 @@ object FirrtlCodeGen {
     */
 
     val retInstance =
-      if(stageContainer.ret.symbol == Symbol.unit) DataInstance()
+      if (stageContainer.ret.symbol == Symbol.unit) DataInstance()
       else DataInstance(stageContainer.ret, ir.Reference(stageContainer.retName, ir.UnknownType))
 
     RunResult(future, stmts, retInstance)
@@ -1971,20 +1987,20 @@ object FirrtlCodeGen {
   */
 
   private def assignRegParams(params: ListMap[String, BackendType], args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Future, Vector[ir.Statement]) = {
-    val (futureStateParams, normalStateParams) = params.partition{ case (_, tpe) => tpe.symbol == Symbol.future }
-    val (futureStateArgs, normalStateArgs) = args.partition{ case backend.Term.Temp(_, tpe) => tpe.symbol == Symbol.future }
+    val (futureStateParams, normalStateParams) = params.partition { case (_, tpe) => tpe.symbol == Symbol.future }
+    val (futureStateArgs, normalStateArgs) = args.partition { case backend.Term.Temp(_, tpe) => tpe.symbol == Symbol.future }
 
     val normalAssigns = (normalStateParams zip normalStateArgs)
-      .map{ case ((param, _), backend.Term.Temp(id, _)) => param -> stack.refer(id).name }
-      .map{ case (param, arg) => param -> ir.Reference(arg, ir.UnknownType) }
-      .map{ case (param, arg) => ir.Connect(ir.NoInfo, ir.Reference(param, ir.UnknownType), arg) }
+      .map { case ((param, _), backend.Term.Temp(id, _)) => param -> stack.refer(id).name }
+      .map { case (param, arg) => param -> ir.Reference(arg, ir.UnknownType) }
+      .map { case (param, arg) => ir.Connect(ir.NoInfo, ir.Reference(param, ir.UnknownType), arg) }
       .toVector
 
     val futureAssigns = (futureStateParams zip futureStateArgs)
-      .map{ case ((param, _), arg) => ir.Reference(param, ir.UnknownType) -> arg }
-      .map{ case (param, backend.Term.Temp(id, _)) => param -> stack.refer(id).name }
-      .map{ case (param, arg) => param -> ir.Reference(arg, ir.UnknownType) }
-      .map{ case (param, arg) => param -> Vector(arg) }
+      .map { case ((param, _), arg) => ir.Reference(param, ir.UnknownType) -> arg }
+      .map { case (param, backend.Term.Temp(id, _)) => param -> stack.refer(id).name }
+      .map { case (param, arg) => param -> ir.Reference(arg, ir.UnknownType) }
+      .map { case (param, arg) => param -> Vector(arg) }
       .toMap[ir.Expression, Vector[ir.Expression]]
 
     val future = Future(futureAssigns, Map.empty)
@@ -1999,80 +2015,5 @@ object FirrtlCodeGen {
     val retFuture = Future(Map(loc -> Vector(refer)), Map.empty)
 
     RunResult(exprFuture + retFuture, stmts, DataInstance())
-  }
-
-  def toFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {
-    def toBitType(width: Int): ir.UIntType = ir.UIntType(ir.IntWidth(width))
-    def toEnumType(symbol: Symbol.EnumSymbol): ir.BundleType = {
-      def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
-      def flagWidth(x: Double): Double = (math.ceil _ compose log2)(x)
-
-      def makeBitLength(
-        member: Type.EnumMemberType,
-        hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
-        tpTable: Map[Symbol.TypeParamSymbol, BackendType]
-      ): BigInt = {
-        def loop(tpe: ir.Type): BigInt = tpe match {
-          case ir.BundleType(fields) => fields.map(_.tpe).map(loop).sum
-          case ir.UIntType(ir.IntWidth(width)) => width
-        }
-
-        val fieldTypes = member.fields
-          .map(_.tpe.asRefType)
-          .map(toBackendType(_, hpTable, tpTable))
-          .map(toFirrtlType)
-
-        fieldTypes.map(loop).sum
-      }
-
-      val members = symbol.tpe.declares
-        .toMap
-        .toVector
-        .sortWith{ case ((left, _), (right, _)) => left < right }
-        .map{ case (_, symbol) => symbol }
-
-      val kind =
-        if(members.length <= 1) None
-        else Some(ir.Field(
-          "_member",
-          ir.Default,
-          ir.UIntType(ir.IntWidth(flagWidth(members.length).toInt))
-        ))
-
-      val hpTable = (symbol.hps zip tpe.hargs).toMap
-      val tpTable = (symbol.tps zip tpe.targs).toMap
-
-      val maxLength = members
-        .map(_.tpe.asEnumMemberType)
-        .map(makeBitLength(_, hpTable, tpTable))
-        .max
-
-      val dataStorage = Some(ir.Field("_data", ir.Default, ir.UIntType(ir.IntWidth(maxLength))))
-
-      val field = Seq(kind, dataStorage).flatten
-      ir.BundleType(field)
-    }
-
-    def toOtherType: ir.BundleType = {
-      val typeFields = global.lookupFields(tpe)
-
-      val fields = typeFields.map{ case (name, tpe) => name -> toFirrtlType(tpe) }
-        .toVector
-        .sortWith{ case ((left, _), (right, _)) => left < right }
-        .map{ case (name, tpe) => ir.Field(name, ir.Default, tpe) }
-
-      ir.BundleType(fields)
-    }
-
-    tpe.symbol match {
-      case symbol if symbol == Symbol.int  => toBitType(width = 32)
-      case symbol if symbol == Symbol.bool => toBitType(width = 1)
-      case symbol if symbol == Symbol.unit => toBitType(width = 0)
-      case symbol if symbol == Symbol.bit =>
-        val HPElem.Num(width) = tpe.hargs.head
-        toBitType(width)
-      case symbol: Symbol.EnumSymbol => toEnumType(symbol)
-      case _ => toOtherType
-    }
   }
 }

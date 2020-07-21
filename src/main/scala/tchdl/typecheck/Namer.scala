@@ -30,10 +30,10 @@ object Namer {
   def namedMethod(method: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
     def tryAppendBuiltin(symbol: Symbol.MethodSymbol): Unit = {
       val isTopLevel = ctx.path.pkgName == Vector("std", "functions")
-      val isBit = ctx.path.pkgName == Vector("std", "types")
+      val isBuiltinType = ctx.path.pkgName == Vector("std", "types")
       val hasName = global.builtin.functions.names.contains(symbol.name)
 
-      if((isTopLevel || isBit) && hasName)
+      if((isTopLevel || isBuiltinType) && hasName)
         global.builtin.functions.append(symbol)
     }
 

@@ -423,9 +423,9 @@ object BackendIRGen {
         val accessor = backend.Term.Temp(accessorNode.id, last.tpe)
         val isInterface =
           select.symbol.hasFlag(Modifier.Input) ||
-            select.symbol.hasFlag(Modifier.Internal) ||
-            select.symbol.hasFlag(Modifier.Parent) ||
-            select.symbol.hasFlag(Modifier.Sibling)
+          select.symbol.hasFlag(Modifier.Internal) ||
+          select.symbol.hasFlag(Modifier.Parent) ||
+          select.symbol.hasFlag(Modifier.Sibling)
 
 
         val selectMethodSymbol = select.symbol.asMethodSymbol

@@ -131,6 +131,7 @@ class BuiltInTypes extends BuiltInSymbols[Symbol.ClassTypeSymbol] {
     "Str" -> null,
     "Bool" -> null,
     "Future" -> null,
+    "Vector" -> null,
     "Memory" -> null,
   )
 }
@@ -167,7 +168,9 @@ class BuiltInFunctions extends BuiltInSymbols[Symbol.MethodSymbol] {
     "neg" -> null,
     "concat" -> null,
     "truncate" -> null,
-    "bit" -> null
+    "bit" -> null,
+    "idx" -> null,
+    "idxDyn" -> null,
   )
 }
 

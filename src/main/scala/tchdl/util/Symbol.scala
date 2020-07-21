@@ -406,6 +406,9 @@ object Symbol {
   def unit(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("Unit")
 
+  def vec(implicit global: GlobalData): Symbol.ClassTypeSymbol =
+    global.builtin.types.lookup("Vector")
+
   def string(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("String")
 

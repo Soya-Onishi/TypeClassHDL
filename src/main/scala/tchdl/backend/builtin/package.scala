@@ -149,6 +149,24 @@ package object builtin {
     DataInstance(retTpe, concat)
   }
 
+  def vecIdx(accessor: Instance, index: HPElem, global: GlobalData): Instance = {
+    val HPElem.Num(idx) = index
+    val DataInstance(tpe, refer) = accessor
+    val elemType = tpe.targs.head
+    val subIndex = ir.SubIndex(refer, idx, toFirrtlType(elemType)(global))
+
+    DataInstance(elemType, subIndex)
+  }
+
+  def vecIdxDyn(accessor: Instance, index: Instance, global: GlobalData): Instance = {
+    val DataInstance(_, idx) = index
+    val DataInstance(tpe, refer) = accessor
+    val elemType = tpe.targs.head
+    val subAccess = ir.SubAccess(refer, idx, toFirrtlType(elemType)(global))
+
+    DataInstance(elemType, subAccess)
+  }
+
   private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => BigInt): Instance = {
     val DataInstance(tpe, l) = left
     val DataInstance(_, r) = right
