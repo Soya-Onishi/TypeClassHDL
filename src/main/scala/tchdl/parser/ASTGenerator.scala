@@ -283,16 +283,11 @@ class ASTGenerator {
   }
 
   def regDef(ctx: TP.Reg_defContext): ValDef = {
-    val (name, tpe, expr) = componentBody(ctx.component_def_body)
-    ValDef(Modifier.Register | Modifier.Field, name, tpe, Some(expr))
-  }
-
-  def componentBody(ctx: TP.Component_def_bodyContext): (String, Option[TypeTree], Expression) = {
     val name = ctx.EXPR_ID.getText
-    val tpe = Option(ctx.`type`).map(typeTree)
-    val initExpr = expr(ctx.expr)
+    val tpe = typeTree(ctx.`type`)
+    val initExpr = Option(ctx.expr).map(expr)
 
-    (name, tpe, initExpr)
+    ValDef(Modifier.Register | Modifier.Field, name, Some(tpe), initExpr)
   }
 
   def expr(ctx: TP.ExprContext): Expression = ctx match {

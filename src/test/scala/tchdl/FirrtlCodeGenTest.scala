@@ -534,4 +534,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
     runFirrtl(circuit, print = true)
   }
+
+  test("read registers by static and dynamic index") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVector.tchdl")
+    runFirrtl(circuit, print = true)
+  }
 }

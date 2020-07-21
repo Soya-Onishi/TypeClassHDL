@@ -146,7 +146,7 @@ port_def
     ;
 
 reg_def
-    : REG component_def_body
+    : REG EXPR_ID ':' type ('=' expr)?
     ;
 
 bounds
@@ -163,10 +163,6 @@ hp_bound_expr
     | 'min' hp_expr # MinBound
     | 'eq' hp_expr  # EqBound
     | 'ne' hp_expr  # NeBound
-    ;
-
-component_def_body
-    : EXPR_ID (':' type)? '=' expr
     ;
 
 expr: expr '.' (apply | EXPR_ID)             # SelectExpr

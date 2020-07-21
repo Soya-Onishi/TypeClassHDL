@@ -123,8 +123,8 @@ object BackendIRGen {
         val implTree = findImplClassTree(impl.symbol.asImplementSymbol, global).getOrElse(throw new ImplementationErrorException("impl tree should be found"))
         val module = moduleContainer.tpe
 
-        val pairs = implTree.components.map {
-          case method: frontend.MethodDef =>
+        val pairs = implTree.components.collect {
+          case method: frontend.MethodDef if isInterface(method.symbol.asMethodSymbol) =>
             val label = MethodLabel(method.symbol.asMethodSymbol, Some(module), None, hpTable, tpTable)
             val context = BackendContext(label, tpBound)
             val (container, labels) = buildMethod(method, label)(context, global)

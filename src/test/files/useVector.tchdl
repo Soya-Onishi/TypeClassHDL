@@ -1,0 +1,19 @@
+package test
+
+module Top
+impl Top {
+  reg regs: Vector[32, Bit[32]]
+
+  input def readDyn(idx: Bit[5]) -> Bit[32] {
+    val a = this.regs.idxDyn[5](idx)
+    val b = this.readStatic[4]()
+
+    a + b
+  }
+
+  def readStatic[idx: Num]() -> Bit[32]
+    where idx: min 0 & max 31
+  {
+    this.regs.idx[idx]()
+  }
+}
