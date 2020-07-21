@@ -746,4 +746,9 @@ class TyperTest extends TchdlFunSuite {
     val (Seq(tree), global) = untilTyper("useVector.tchdl")
     expectNoError(global)
   }
+
+  test("assign some fields") {
+    val (Seq(tree), global) = untilTyper("useAssign.tchdl")
+    expectNoError(global)
+  }
 }

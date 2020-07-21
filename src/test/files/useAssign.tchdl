@@ -1,0 +1,15 @@
+package test
+
+module Top
+impl Top {
+  reg a: Bit[2]
+  reg vec: Vector[2, Bit[4]]
+
+  input def f() -> Unit {
+    this.a = 0b00
+  }
+
+  input def g(vec: Vector[2, Bit[4]]) -> Unit {
+    this.vec = vec
+  }
+}

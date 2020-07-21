@@ -1096,6 +1096,7 @@ object Type {
           case struct: Symbol.StructSymbol if struct == Symbol.int  => true
           case struct: Symbol.StructSymbol if struct == Symbol.bool => true
           case struct: Symbol.StructSymbol if struct == Symbol.unit => true
+          case struct: Symbol.StructSymbol if struct == Symbol.vec => true
           case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
           case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
           case struct: Symbol.StructSymbol =>
