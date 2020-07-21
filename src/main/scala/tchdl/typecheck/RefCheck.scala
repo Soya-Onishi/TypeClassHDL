@@ -84,6 +84,7 @@ object RefCheck {
         blk.elems.foreach {
           case expr: Expression => verifyExpr(expr)(blkCtx, global)
           case ValDef(_, _, _, expr) => expr.foreach(verifyExpr(_)(blkCtx, global))
+          case Assign(left, _) => verifyAssignLoc(left)
         }
         verifyExpr(blk.last)(blkCtx, global)
       case _ => // nothing to do
@@ -177,5 +178,22 @@ object RefCheck {
     }
 
     result.left.foreach(global.repo.error.append)
+  }
+
+  def verifyAssignLoc(loc: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    def verifyInnerPattern(symbol: Symbol.TermSymbol): Unit = {
+      if(symbol.hasFlag(Modifier.Input))
+        global.repo.error.append(Error.WriteInputFromInner(symbol))
+    }
+
+    def verifyOuterPattern(symbol: Symbol.TermSymbol): Unit = {
+      if(symbol.hasFlag(Modifier.Output))
+        global.repo.error.append(Error.WriteOutputFromOuter(symbol))
+    }
+
+    loc match {
+      case select @ Select(This(), _) => verifyInnerPattern(select.symbol.asTermSymbol)
+      case select @ Select(Select(This(), _), _) => verifyOuterPattern(select.symbol.asTermSymbol)
+    }
   }
 }

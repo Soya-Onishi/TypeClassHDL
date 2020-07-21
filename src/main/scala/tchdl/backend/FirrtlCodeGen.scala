@@ -507,9 +507,7 @@ object FirrtlCodeGen {
 
       val futureElems = futureParams
         .map { case (name, _) => ir.Reference(name.name, ir.UnknownType) }
-        .map {
-          _ -> FormKind.Stage
-        }
+        .map(_ -> FormKind.Stage)
         .toMap[ir.Expression, FormKind]
 
       val future = Future(Map.empty, futureElems)
@@ -814,17 +812,17 @@ object FirrtlCodeGen {
   }
 
   def runStmt(stmt: backend.Stmt)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[ir.Statement], Future) = {
-    def buildConnect(name: Name, expr: backend.Expr)(connect: DataInstance => Either[Future, Vector[ir.Statement]]): (Instance, Vector[ir.Statement], Future) = {
+    def buildConnect(loc: ir.Expression, expr: backend.Expr)(connect: DataInstance => Either[Future, Vector[ir.Statement]]): (Instance, Vector[ir.Statement], Future) = {
       val RunResult(exprFuture, stmts, instance) = runExpr(expr)
 
       val (inst, defStmts, stmtFuture) = instance match {
         case inst: ModuleInstance => (inst, Vector.empty, Future.empty)
         case inst: DataInstance => connect(inst) match {
           case Left(future) =>
-            val wireInst = DataInstance(inst.tpe, ir.Reference(name.name, ir.UnknownType))
+            val wireInst = DataInstance(inst.tpe, loc)
             (wireInst, Vector.empty, future)
           case Right(stmts) =>
-            val wireInst = DataInstance(inst.tpe, ir.Reference(name.name, ir.UnknownType))
+            val wireInst = DataInstance(inst.tpe, loc)
             (wireInst, stmts, Future.empty)
         }
       }
@@ -835,8 +833,9 @@ object FirrtlCodeGen {
     stmt match {
       case backend.Variable(name, tpe, expr) =>
         val varName = stack.next(name)
+        val varRef = ir.Reference(varName.name, ir.UnknownType)
 
-        val (inst, stmts, future) = buildConnect(varName, expr) {
+        val (inst, stmts, future) = buildConnect(varRef, expr) {
           case inst if inst.tpe.symbol == Symbol.future =>
             val firrtlType = toFirrtlType(tpe)
             val local = FormKind.Local(Vector(inst.refer), firrtlType)
@@ -858,13 +857,13 @@ object FirrtlCodeGen {
         (stmts, future)
       case backend.Temp(id, expr) =>
         val tempName = stack.next(id)
+        val tempRef = ir.Reference(tempName.name, ir.UnknownType)
 
-        val (inst, stmts, future) = buildConnect(tempName, expr) {
+        val (inst, stmts, future) = buildConnect(tempRef, expr) {
           case DataInstance(tpe, refer) if tpe.symbol == Symbol.future =>
             val firrtlType = toFirrtlType(tpe)
             val local = FormKind.Local(Vector(refer), firrtlType)
-            val referTemp = ir.Reference(tempName.name, ir.UnknownType)
-            val future = Map[ir.Expression, FormKind](referTemp -> local)
+            val future = Map[ir.Expression, FormKind](tempRef -> local)
 
             Left(Future(Map.empty, future))
           case DataInstance(_, refer) =>
@@ -875,13 +874,23 @@ object FirrtlCodeGen {
         stack.append(tempName, inst)
         (stmts, future)
       case backend.Assign(target, expr) =>
-        val targetName = stack.refer(target.name)
-        val DataInstance(_, rightRefer) = stack.lookup(targetName)
+        def makeLocation(loc: Vector[String]): ir.Expression =
+          loc.tail.foldLeft[ir.Expression](ir.Reference(loc.head, ir.UnknownType)) {
+            case (ref, name) => ir.SubField(ref, name, ir.UnknownType)
+          }
 
-        val RunResult(future, stmts, DataInstance(_, leftRefer)) = runExpr(expr)
-        val connect = ir.Connect(ir.NoInfo, rightRefer, leftRefer)
+        val loc = makeLocation(target)
 
-        (stmts :+ connect, future)
+        val (_, stmts, future) = buildConnect(loc, expr) {
+          case DataInstance(tpe, refer) if tpe.symbol == Symbol.future =>
+            val future = Map[ir.Expression, Vector[ir.Expression]](loc -> Vector(refer))
+            Left(Future(future, Map.empty))
+          case DataInstance(_, refer) =>
+            val connect = ir.Connect(ir.NoInfo, loc, refer)
+            Right(Vector(connect))
+        }
+
+        (stmts, future)
       case backend.Abandon(expr) =>
         val RunResult(future, stmts, _) = runExpr(expr)
         (stmts, future)

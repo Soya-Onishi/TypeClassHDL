@@ -984,6 +984,16 @@ object BackendIRGen {
         val v = backend.Variable(name, tpe, last)
 
         BuildResult(stmts :+ v, None, labels)
+      case assign: frontend.Assign =>
+        def buildLoc(expr: frontend.Expression): Vector[String] = expr match {
+          case frontend.Select(prefix, name) => buildLoc(prefix) :+ name
+          case frontend.This() => Vector.empty
+        }
+
+        val BuildResult(stmts, Some(expr), labels) = buildExpr(assign.right)
+        val backendAssign = backend.Assign(buildLoc(assign.left), expr)
+
+        BuildResult(stmts :+ backendAssign, None, labels)
     }
 }
 

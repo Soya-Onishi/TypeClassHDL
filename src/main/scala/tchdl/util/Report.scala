@@ -107,6 +107,8 @@ object Error {
   case class ReferPrivate(field: Symbol.TermSymbol) extends Error
   case class ReadOutputFromInner(field: Symbol.TermSymbol) extends Error
   case class ReadInputFromOuter(field: Symbol.TermSymbol) extends Error
+  case class WriteInputFromInner(field: Symbol.TermSymbol) extends Error
+  case class WriteOutputFromOuter(field: Symbol.TermSymbol) extends Error
 
   case class InvalidLHSForm(tree: Expression) extends Error
 

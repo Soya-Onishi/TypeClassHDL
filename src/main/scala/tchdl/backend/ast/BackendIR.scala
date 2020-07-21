@@ -14,7 +14,7 @@ trait HasType {
 case class Variable(name: String, tpe: BackendType, expr: Expr) extends Stmt
 case class Temp(id: Int, expr: Expr) extends Stmt
 case class Abandon(expr: Expr) extends Stmt
-case class Assign(target: Term.Variable, expr: Expr) extends Stmt
+case class Assign(loc: Vector[String], expr: Expr) extends Stmt
 
 case class ConstructMemory(name: Term, target: BackendType) extends Expr {
   val tpe = target
