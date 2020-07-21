@@ -536,13 +536,19 @@ class ASTGenerator {
       case elems => elems.last match {
         case e: Expression => Block(elems.dropRight(1), e)
         case _: ValDef     => Block(elems, UnitLiteral())
+        case _: Assign     => Block(elems, UnitLiteral())
       }
     }
   }
 
-  def blockElem(ctx: TP.Block_elemContext): BlockElem = ctx.getChild(0) match {
-    case ctx: TP.Val_defContext => valDef(ctx)
-    case ctx: TP.ExprContext => expr(ctx)
+  def blockElem(ctx: TP.Block_elemContext): BlockElem = ctx match {
+    case ctx: TP.ValDefPatternContext => valDef(ctx.val_def)
+    case ctx: TP.ExprPatternContext => expr(ctx.expr)
+    case ctx: TP.AssignPatternContext =>
+      val loc = expr(ctx.expr(0))
+      val rhs = expr(ctx.expr(1))
+
+      Assign(loc, rhs)
   }
 
   def constructStruct(ctx: TP.Construct_structContext): ConstructClass = {

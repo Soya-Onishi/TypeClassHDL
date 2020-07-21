@@ -387,6 +387,7 @@ case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) exten
 case class ConstructModule(target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair]) extends Construct
 case class ConstructEnum(target: TypeTree, fields: Vector[Expression]) extends Construct
 case class ConstructPair(name: String, init: Expression) extends AST
+case class Assign(left: Expression, right: Expression) extends BlockElem
 
 case class This() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression

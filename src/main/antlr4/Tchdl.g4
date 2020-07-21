@@ -227,8 +227,9 @@ block
     ;
 
 block_elem
-    : val_def
-    | expr
+    : val_def       # ValDefPattern
+    | expr '=' expr # AssignPattern
+    | expr          # ExprPattern
     ;
 
 construct_struct

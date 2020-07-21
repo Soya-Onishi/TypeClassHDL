@@ -451,4 +451,23 @@ class ParseTest extends TchdlFunSuite {
       Vector(IntLiteral(2))
     ))
   }
+
+  test("parse assign statement") {
+    val assign = parseString(_.block_elem)((gen, tree) => gen.blockElem(tree))_
+
+    val tree0 = assign("this.a = 1")
+    val tree1 = assign("this.mem.d = 2")
+    val tree2 = assign("this.b = f(1, 2)")
+
+    def select(head: String, name: String*): Select = {
+      val headSelect = Select(This(), head)
+
+      name.foldLeft(headSelect) {
+        case (accessor, name) => Select(accessor, name)
+      }
+    }
+    assert(tree0 == Assign(select("a"), IntLiteral(1)))
+    assert(tree1 == Assign(select("mem", "d"), IntLiteral(2)))
+    assert(tree2 == Assign(select("b"), Apply(Ident("f"), Vector.empty, Vector.empty, Vector(IntLiteral(1), IntLiteral(2)))))
+  }
 }

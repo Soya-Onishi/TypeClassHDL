@@ -108,6 +108,8 @@ object Error {
   case class ReadOutputFromInner(field: Symbol.TermSymbol) extends Error
   case class ReadInputFromOuter(field: Symbol.TermSymbol) extends Error
 
+  case class InvalidLHSForm(tree: Expression) extends Error
+
   case class MustNotCastFromTrait(from: Type.RefType) extends Error
   case class MustCastToTrait(to: Type.RefType) extends Error
   case class CannotCast(from: Type.RefType, to: Type.RefType) extends Error
