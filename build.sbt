@@ -1,3 +1,5 @@
+import java.io.File
+
 enablePlugins(Antlr4Plugin)
 
 lazy val antlr4Settings = Seq(
@@ -17,7 +19,9 @@ lazy val commonSettings = Seq(
   ),
   scalacOptions ++= Seq(
     "-language:higherKinds"
-  )
+  ),
+  assemblyJarName in assembly := "tchdl.jar",
+  assemblyOutputPath in assembly := new File("bin")
 )
 
 lazy val compiler = (project in file("."))
