@@ -142,11 +142,6 @@ class TyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.RejectParentOrSiblingIndicator])
   }
 
-  test("if expression's condition type must be Bit[1] or Bool type") {
-    val (_, global) = untilTyper("ifexpr0.tchdl")
-    expectNoError(global)
-  }
-
   test("if conseq and alt expression's type must be same") {
     val (_, global) = untilTyper("ifexpr1.tchdl")
     expectError(1)(global)

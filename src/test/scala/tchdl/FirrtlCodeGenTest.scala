@@ -98,8 +98,8 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val top = circuit.modules.find(_.name == "test_Top__8").get
 
     assert(top.ports.length == 5)
-    assert(top.ports(0).name == "_CLK")
-    assert(top.ports(1).name == "_RESET")
+    assert(top.ports(0).name == "CLK")
+    assert(top.ports(1).name == "RESET")
     assert(top.ports(2).name.matches("function_[0-9a-f]+\\$_active"))
     assert(top.ports(3).name.matches("function_[0-9a-f]+\\$in"))
     assert(top.ports(4).name.matches("function_[0-9a-f]+\\$_ret"))
@@ -323,7 +323,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
       .conseq
 
     val elems = conseq.asInstanceOf[ir.Block].stmts
-    assert(elems(0) == ir.DefNode(ir.NoInfo, "TEMP_1", ir.UIntLiteral(1, ir.IntWidth(32))))
+    assert(elems(0) == ir.DefNode(ir.NoInfo, "_TEMP_1", ir.UIntLiteral(1, ir.IntWidth(32))))
     assert(elems(3) == ir.Connect(ir.NoInfo, ir.SubField(ir.Reference("_ENUM_0", ir.UnknownType), "_data", ir.UnknownType), ir.Reference("TEMP_1", ir.UnknownType)))
 
     runFirrtl(circuit)
