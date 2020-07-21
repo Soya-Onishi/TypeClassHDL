@@ -171,6 +171,8 @@ class BuiltInFunctions extends BuiltInSymbols[Symbol.MethodSymbol] {
     "bit" -> null,
     "idx" -> null,
     "idxDyn" -> null,
+    "updated" -> null,
+    "updatedDyn" -> null
   )
 }
 

@@ -48,6 +48,18 @@ impl[m: Num, T] Vector[m, T]
   {
     this.idxDyn[n](idx)
   }
+
+  def updated[idx: Num](elem: T) -> Vector[m, T]
+    where idx: min 0 & max m - 1
+  {
+    this.updated[idx](elem)
+  }
+
+  def updatedDyn[n: Num](idx: Bit[n], elem: T) -> Vector[m, T]
+    where n: min 1
+  {
+    this.updatedDyn[n](idx, elem)
+  }
 }
 
 module Memory[depth: Num, width: Num, T]

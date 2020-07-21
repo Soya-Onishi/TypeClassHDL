@@ -544,4 +544,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAssign.tchdl")
     runFirrtl(circuit, print = true)
   }
+
+  test("use vector update") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVectorUpdate.tchdl")
+    runFirrtl(circuit, print = true)
+  }
 }

@@ -1179,7 +1179,7 @@ object FirrtlCodeGen {
 
     val insts = call.args.map(getInstance)
 
-    val instance = call.label match {
+    call.label match {
       case "_builtin_add_int" => builtin.intAdd(insts(0), insts(1), global)
       case "_builtin_sub_int" => builtin.intSub(insts(0), insts(1), global)
       case "_builtin_mul_int" => builtin.intMul(insts(0), insts(1), global)
@@ -1213,9 +1213,9 @@ object FirrtlCodeGen {
       // these methods actually for vector but label name contains bit because of implementation problem
       case "_builtin_idx_bit" => builtin.vecIdx(insts(0), call.hargs(0), global)
       case "_builtin_idxDyn_bit" => builtin.vecIdxDyn(insts(0), insts(1), global)
+      case "_builtin_updated_bit" => builtin.vecUpdated(insts(0), insts(1), call.hargs(0))
+      case "_builtin_updatedDyn_bit" => builtin.vecUpdatedDyn(insts(0), insts(1), insts(2))
     }
-
-    RunResult(Future.empty, Vector.empty, instance)
   }
 
   def runReadMemory(read: backend.ReadMemory)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {

@@ -1,0 +1,14 @@
+package test
+
+module Top
+impl Top {
+  reg regs: Vector[32, Bit[32]]
+
+  input def updateReg(idx: Bit[5], elem: Bit[32]) -> Unit {
+    this.regs = this.regs.updatedDyn[5](idx, elem)
+  }
+
+  input def updateFirstReg(elem: Bit[32]) -> Unit {
+    this.regs = this.regs.updated[0](elem)
+  }
+}
