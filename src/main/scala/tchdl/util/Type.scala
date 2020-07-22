@@ -677,11 +677,11 @@ object Type {
         method <- lookupResult
         _ <- RefType.verifySignatureLength(method, args, callerHP, callerTP)
         methodTpe = method.tpe.asMethodType
-        // callers = target +: args
-        // targets = impl.targetType +: methodTpe.params
+        callers = accessor +: args
+        targets = impl.targetType +: methodTpe.params
         _ <- RefType.verifySuperSets(Vector(accessor), Vector(impl.targetType))
-        hpTable <- RefType.assignHPTable(implHPTable, Vector(accessor), Vector(impl.targetType))
-        tpTable <- RefType.assignTPTable(implTPTable, Vector(accessor), Vector(impl.targetType))
+        hpTable <- RefType.assignHPTable(implHPTable, callers, targets)
+        tpTable <- RefType.assignTPTable(implTPTable, callers, targets)
         swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
         swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
         simplifiedHPBound <- HPBound.simplify(swappedHpBound)
@@ -1277,7 +1277,7 @@ object Type {
             table.get(hp) match {
               case Some(None) => table.updated(hp, Some(expr))
               case Some(Some(_)) => table
-              case None => throw new ImplementationErrorException(s"${hp.name} should be as key")
+              case None => table // throw new ImplementationErrorException(s"${hp.name} should be as key")
             }
           case _ => table
         }

@@ -130,4 +130,34 @@ impl[m: Num] Neg for Bit[m]
   def neg() -> Bit[m] { -this }
 }
 
+trait From[T] {
+  static def from(n: T) -> This
+}
+
+impl[m: Num] From[Int] for Bit[m]
+  where m: min 1
+{
+  static def from(n: Int) -> Bit[m] {
+    Bit[m]:::from(n)
+  }
+}
+
+impl[m: Num] From[Bool] for Bit[m]
+  where m: min 1
+{
+  static def from(n: Bool) -> Bit[m] {
+    Bit[m]:::from(n)
+  }
+}
+
+impl[x: Num, y: Num] From[Bit[y]] for Bit[x]
+  where x: min 1,
+        y: min 1
+{
+  static def from(n: Bit[y]) -> Bit[x] {
+    Bit[x]:::from(n)
+  }
+}
+
+
 trait HW {}
