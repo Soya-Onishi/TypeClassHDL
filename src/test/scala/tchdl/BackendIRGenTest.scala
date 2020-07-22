@@ -256,16 +256,16 @@ class BackendIRGenTest extends TchdlFunSuite {
     val option = matched.asInstanceOf[Term.Temp].tpe.symbol.asEnumSymbol
     val variants = option.tpe.declares.toMap.values.toVector
 
-    val Case(CaseCond(some, variables, conds), _, _) = cases.head
-    assert(some == variants.find(_.name == "Some").get)
-    assert(variables.length == 1)
-    assert(variables.head.isInstanceOf[Term.Variable])
-    assert(conds.isEmpty)
+    val Case(pattern0, _, _) = cases.head
+    val some = pattern0.asInstanceOf[EnumPattern]
+    assert(some.variant == 1)
+    assert(some.patterns.length == 1)
+    assert(some.patterns.head.isInstanceOf[IdentPattern])
 
-    val Case(CaseCond(none, empty, noConds), _, _) = cases.tail.head
-    assert(none == variants.find(_.name == "None").get)
-    assert(empty.isEmpty)
-    assert(noConds.isEmpty)
+    val Case(pattern1, _, _) = cases.tail.head
+    val none = pattern1.asInstanceOf[EnumPattern]
+    assert(none.variant == 0)
+    assert(none.patterns.isEmpty)
   }
 
   test("IR from pattern match expression with condition generated correctly") {
@@ -282,22 +282,26 @@ class BackendIRGenTest extends TchdlFunSuite {
     val option = matched.asInstanceOf[Term.Temp].tpe.symbol.asEnumSymbol
     val variants = option.tpe.declares.toMap.values.toVector
 
-    val Case(CaseCond(some0, variables0, conds0), _, _) = cases(0)
-    assert(some0 == variants.find(_.name == "Some").get)
-    assert(variables0.length == 1)
-    assert(variables0.head.isInstanceOf[Term.Temp])
-    assert(conds0.length == 1)
-    assert(conds0.head == (variables0.head, BitLiteral(0, HPElem.Num(2))(global)))
+    val Case(pattern0, stmts0, ret0) = cases(0)
+    val some0 = pattern0.asInstanceOf[EnumPattern]
+    assert(some0.variant == 1)
+    assert(some0.patterns.length == 1)
+    assert(some0.patterns.head == LiteralPattern(BitLiteral(0, HPElem.Num(2))(global)))
+    assert(stmts0.isEmpty)
+    assert(ret0 == BitLiteral(2, HPElem.Num(2))(global))
 
-    val Case(CaseCond(some1, variables1, conds1), _, _) = cases(1)
-    assert(some1 == variants.find(_.name == "Some").get)
-    assert(variables1.length == 1)
-    assert(variables1.head.isInstanceOf[Term.Variable])
-    assert(conds1.isEmpty)
+    val Case(pattern1, stmts1, ret1) = cases(1)
+    val some1 = pattern1.asInstanceOf[EnumPattern]
+    assert(some1.variant == 1)
+    assert(some1.patterns.length == 1)
+    assert(some1.patterns.head.isInstanceOf[IdentPattern])
+    assert(stmts1.isEmpty)
+    assert(ret1.isInstanceOf[Ident])
 
-    val Case(CaseCond(none2, variables2, conds2), _, _) = cases(2)
-    assert(none2 == variants.find(_.name == "None").get)
-    assert(variables2.isEmpty)
-    assert(conds2.isEmpty)
+    val Case(pattern2, stmts2, ret2) = cases(2)
+    val none2 = pattern2.asInstanceOf[EnumPattern]
+    assert(none2.variant == 0)
+    assert(stmts2.isEmpty)
+    assert(ret2 == BitLiteral(0, HPElem.Num(2))(global))
   }
 }

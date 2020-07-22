@@ -72,7 +72,7 @@ object GlobalData {
     }
 
   def apply(pkgName: Vector[String], module: TypeTree): GlobalData = {
-    val com = Command(Vector.empty, pkgName, Some(module), "")
+    val com = Command(Vector.empty, pkgName, Some(module), "", None)
 
     new GlobalData {
       override val command = com
@@ -227,9 +227,10 @@ case class Command(
   filenames: Vector[String],
   topModulePkg: Vector[String],
   topModule: Option[TypeTree],
-  stdlibDir: String
+  stdlibDir: String,
+  output: Option[String]
 )
 
 object Command {
-  def empty: Command = Command(Vector.empty, Vector.empty, Option.empty, "")
+  def empty: Command = Command(Vector.empty, Vector.empty, Option.empty, "", None)
 }

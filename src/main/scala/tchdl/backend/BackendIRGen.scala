@@ -766,47 +766,52 @@ object BackendIRGen {
     def makeTemp(tpe: Type.RefType): backend.Term.Temp =
       backend.Term.Temp(ctx.temp.get(), toBackendType(tpe, ctx.hpTable, ctx.tpTable))
 
+    def buildPatternMatching(pattern: frontend.MatchPattern): backend.MatchPattern = pattern match {
+      case frontend.IdentPattern(ident) =>
+        val name = ctx.label.toString + "$" + ident.symbol.path.innerPath.mkString("$")
+        ctx.append(ident.symbol.asTermSymbol, name)
+
+        val tpe = toBackendType(ident.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+        val variable = backend.Term.Variable(name, tpe)
+        backend.IdentPattern(variable)
+      case frontend.LiteralPattern(frontend.IntLiteral(value)) => backend.LiteralPattern(backend.IntLiteral(value))
+      case frontend.LiteralPattern(frontend.BoolLiteral(value)) => backend.LiteralPattern(backend.BoolLiteral(value))
+      case frontend.LiteralPattern(frontend.BitLiteral(value, width)) => backend.LiteralPattern(backend.BitLiteral(value, HPElem.Num(width)))
+      case frontend.LiteralPattern(frontend.UnitLiteral()) => backend.LiteralPattern(backend.UnitLiteral())
+      case frontend.LiteralPattern(frontend.StringLiteral(_)) => throw new ImplementationErrorException("string literal pattern does not implemented yet")
+      case wild: frontend.WildCardPattern =>
+        val tpe = toBackendType(wild.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+        backend.WildCardPattern(tpe)
+      case frontend.EnumPattern(variant, patterns) =>
+        val tpe = toBackendType(variant.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+        val allVariants = variant.tpe.declares.toMap
+          .values.toVector
+          .sortWith{ case (left, right) => left.name < right.name }
+
+        val conds = patterns.map(buildPatternMatching)
+        val idx = allVariants.indexOf(variant.symbol) match {
+          case -1 => throw new ImplementationErrorException(s"${variant.symbol} cannot find from $allVariants")
+          case idx => idx
+        }
+
+        backend.EnumPattern(idx, conds, tpe)
+    }
+
     def buildCase(caseDef: frontend.Case): (backend.Case, Set[BackendLabel]) = {
-      val frontend.Case(pattern, exprs) = caseDef
+      val pattern = buildPatternMatching(caseDef.pattern)
+      val (stmtss, labelss) = caseDef.exprs
+        .map(buildBlockElem)
+        .map{
+          case BuildResult(stmts, None, labels) => (stmts, labels)
+          case BuildResult(stmts, Some(expr), labels) => (stmts :+ backend.Abandon(expr), labels)
+        }
+        .unzip
 
-      val variant = pattern.target.symbol.asEnumMemberSymbol
-      val expectPairs = pattern.exprs.map {
-        case ident: frontend.Ident =>
-          val name = ctx.label.toString + "$" + ident.symbol.path.innerPath.mkString("$")
-          ctx.append(ident.symbol.asTermSymbol, name)
-
-          val variable = backend.Term.Variable(name, toBackendType(ident.tpe.asRefType, ctx.hpTable, ctx.tpTable))
-          variable -> None
-        case frontend.IntLiteral(value) =>
-          val temp = makeTemp(Type.intTpe)
-          temp -> Some(backend.IntLiteral(value))
-        case frontend.BitLiteral(value, width) =>
-          val temp = makeTemp(Type.bitTpe(frontend.IntLiteral(width)))
-          temp -> Some(backend.BitLiteral(value, HPElem.Num(width)))
-        case frontend.UnitLiteral() =>
-          val temp = makeTemp(Type.unitTpe)
-          temp -> Some(backend.UnitLiteral())
-      }
-
-      val variables = expectPairs.map(_._1)
-      val conds = expectPairs.collect { case (temp, Some(literal)) => temp -> literal }
-
-      val initResults = exprs.init.map(buildBlockElem).map {
-        case BuildResult(stmts, Some(expr), labels) => (stmts :+ backend.Abandon(expr), labels)
-        case BuildResult(stmts, None, labels) => (stmts, labels)
-      }
-      val (initStmtss, initLabelss) = initResults.unzip
-
-      val BuildResult(lastStmts, Some(lastExpr), lastLabels) = exprs.last match {
-        case expr: frontend.Expression => buildExpr(expr)
-        case _ => throw new ImplementationErrorException("blockElem's last element must be expression")
-      }
-
-      val exprStmts = initStmtss.flatten ++ lastStmts
-      val labels = initLabelss.flatten.toSet ++ lastLabels
-
-      val caseCond = backend.CaseCond(variant, variables, conds)
-      val caseTree = backend.Case(caseCond, exprStmts, lastExpr)
+      val builtStmts = stmtss.flatten
+      val stmts = builtStmts.init
+      val backend.Abandon(expr) = builtStmts.last
+      val labels = labelss.flatten.toSet
+      val caseTree = backend.Case(pattern, stmts, expr)
 
       (caseTree, labels)
     }

@@ -376,16 +376,13 @@ class TyperTest extends TchdlFunSuite {
     assert(some.exprs.last == Ident("bit"))
     assert(some.exprs.last.asInstanceOf[Ident].tpe == Type.bitTpe(IntLiteral(2))(global))
 
-    val bitSymbol = some.pattern.exprs.head.asInstanceOf[Ident].symbol
+    val bitSymbol = some.pattern.asInstanceOf[EnumPattern].patterns.head.asInstanceOf[IdentPattern].ident.symbol
     assert(some.exprs.last.asInstanceOf[Ident].symbol == bitSymbol)
   }
 
-  test("simple pattern match not exhaustive") {
+  test("simple pattern match is not exhaustive but causes no error") {
     val (_, global) = untilTyper("PatternMatch1.tchdl")
-    expectError(1)(global)
-
-    val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.NotExhaustiveEnum])
+    expectNoError(global)
   }
 
   test("pattern match but enum type mismatch") {
@@ -413,17 +410,14 @@ class TyperTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.TypeMismatch])
   }
 
-  test("not exhaustive error occurred because of Some does not have identity pattern") {
+  test("not exhaustive error didn't occurr even if Some does not have identity pattern") {
     val (_, global) = untilTyper("PatternMatch5.tchdl")
-    expectError(1)(global)
-
-    val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.NotExhaustiveEnum])
+    expectNoError(global)
   }
 
   test("pattern match of enum that has int and bit field causes no error") {
     val (_, global) = untilTyper("PatternMatch8.tchdl")
-    expectError(1)(global)
+    expectNoError(global)
   }
 
 
@@ -492,7 +486,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.RejectHeapType])
+    assert(err.isInstanceOf[Error.RequireHardwareType])
   }
 
   test("top level method definition") {
@@ -750,5 +744,33 @@ class TyperTest extends TchdlFunSuite {
   test("use vector update") {
     val (Seq(tree), global) = untilTyper("useVectorUpdate.tchdl")
     expectNoError(global)
+  }
+
+  test("pattern match with boolean does not causes an error") {
+    val (_, global) = untilTyper("PatternMatch9.tchdl")
+    expectNoError(global)
+  }
+
+  test("pattern match with int does not causes an error") {
+    val (_, global) = untilTyper("PatternMatch10.tchdl")
+    expectNoError(global)
+  }
+
+  test("pattern match with bit does not causes an error") {
+    val (_, global) = untilTyper("PatternMatch11.tchdl")
+    expectNoError(global)
+  }
+
+  test("pattern match with bit and catch ident causes no error") {
+    val (_, global) = untilTyper("PatternMatch12.tchdl")
+    expectNoError(global)
+  }
+
+  test("pattern match with bit but mismatch of bit width causes an error") {
+    val (_, global) = untilTyper("PatternMatch13.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
   }
 }

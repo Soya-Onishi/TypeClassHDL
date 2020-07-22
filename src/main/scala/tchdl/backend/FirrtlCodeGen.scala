@@ -1394,11 +1394,11 @@ object FirrtlCodeGen {
 
           (wire +: stmts, vecName, nextIdx)
       }
-
+   /*
     def uniqueVariantCases(cases: Vector[backend.Case]): Vector[backend.Case] = {
       cases.foldLeft(Vector.empty[backend.Case]) {
         case (stacked, caseElem) =>
-          val hasSameVariant = stacked.exists(_.cond.variant == caseElem.cond.variant)
+          val hasSameVariant = stacked.exists(_.pattern.variant == caseElem.pattern.variant)
 
           if (hasSameVariant) stacked
           else stacked :+ caseElem
@@ -1430,18 +1430,18 @@ object FirrtlCodeGen {
       retWire: Option[String]
     ): (Vector[ir.Statement], ir.Block, Name, Future) = {
       val patternIdx = variants.zipWithIndex
-        .find { case (variant, _) => caseStmt.cond.variant == variant }
+        .find { case (variant, _) => caseStmt.pattern.variant == variant }
         .map { case (_, idx) => idx }
         .map(ir.UIntLiteral(_))
         .get
 
-      val sources = table(caseStmt.cond.variant)
-      val sinks = caseStmt.cond.variables.map {
+      val sources = table(caseStmt.pattern.variant)
+      val sinks = caseStmt.pattern.variables.map {
         case backend.Term.Variable(name, _) => stack.next(name)
         case backend.Term.Temp(id, _) => stack.next(id)
       }
 
-      caseStmt.cond.variables.map {
+      caseStmt.pattern.variables.map {
         case backend.Term.Variable(name, tpe) => stack.refer(name) -> tpe
         case backend.Term.Temp(id, tpe) => stack.refer(id) -> tpe
       }.foreach {
@@ -1459,7 +1459,7 @@ object FirrtlCodeGen {
           )
       }
 
-      val (caseCondFutures, caseCondStmtss, caseCondExpr) = caseStmt.cond.conds
+      val (caseCondFutures, caseCondStmtss, caseCondExpr) = caseStmt.pattern.conds
         .map {
           case (backend.Term.Variable(name, _), expr) => stack.refer(name).name -> expr
           case (backend.Term.Temp(id, _), expr) => stack.refer(id).name -> expr
@@ -1500,113 +1500,125 @@ object FirrtlCodeGen {
       val future = (bodyFutures ++ caseCondFutures).foldLeft(retFuture)(_ + _)
       (condStmts, caseBody, caseName, future)
     }
+    */
 
-    def run(instance: DataInstance, cases: Vector[backend.Case], retTpe: BackendType): RunResult = {
-      val enum = instance.tpe.symbol.asEnumSymbol
-      val dataRef = ir.SubField(instance.refer, "_data", ir.UnknownType)
-      val allVariants = enum.tpe.declares
-        .toMap.values.toVector
-        .sortWith { case (left, right) => left.name < right.name }
-        .map(_.asEnumMemberSymbol)
+    def runPattern(instance: DataInstance, pattern: backend.MatchPattern): (Vector[ir.Statement], DataInstance) = {
+      def toFirrtlForm(lit: backend.Literal): ir.UIntLiteral = {
+        def toLit(value: Int, width: Int): ir.UIntLiteral = ir.UIntLiteral(value, ir.IntWidth(width))
 
-      val conds = uniqueVariantCases(cases).map(_.cond)
-      val (variants, pairs) = conds.map(cond => cond.variant -> extractForEachVariant(dataRef, cond)).unzip
-      val (stmtss, namess) = pairs.unzip
-      val fieldSourceTable = (variants zip namess).toMap
-
-      val retWireInfo =
-        if (retTpe == toBackendType(Type.unitTpe)) None
-        else Some(stack.next("_MATCH_RET"), toFirrtlType(retTpe))
-
-      val retWire = retWireInfo.map { case (name, tpe) => ir.DefWire(ir.NoInfo, name.name, tpe) }
-
-      val memberRef = ir.SubField(instance.refer, "_member", ir.UnknownType)
-      val (caseStmtss, caseBodies, caseNames, caseFutures) = cases
-        .map(constructCase(_, memberRef, allVariants, fieldSourceTable, retWire.map(_.name)))
-        .unzip4
-
-      val stopStmt = ir.Stop(ir.NoInfo, 1, clockRef, ir.UIntLiteral(1))
-      val caseConds = (caseNames zip caseBodies).foldRight[ir.Statement](stopStmt) {
-        case ((name, conseq), alt) =>
-          val refer = ir.Reference(name.name, ir.UnknownType)
-          ir.Conditionally(ir.NoInfo, refer, conseq, alt)
+        lit match {
+          case backend.IntLiteral(value) => toLit(value, 32)
+          case backend.BitLiteral(value, HPElem.Num(width)) => toLit(value.toInt, width)
+          case backend.BoolLiteral(value) => toLit(if(value) 1 else 0, 1)
+          case backend.UnitLiteral() => toLit(0, 0)
+        }
       }
 
-      val retInvalid = retWire.map(wire => ir.IsInvalid(ir.NoInfo, ir.Reference(wire.name, ir.UnknownType)))
-      val matchStmts = Vector(retWire, retInvalid).flatten ++ stmtss.flatten ++ caseStmtss.flatten :+ caseConds
-      val retInstance = retWire
-        .map(wire => DataInstance(retTpe, ir.Reference(wire.name, ir.UnknownType)))
-        .getOrElse(DataInstance())
+      def literalPattern(lit: backend.Literal): (Vector[ir.Statement], DataInstance) = {
+        val locName = stack.next("_GEN")
+        val loc = ir.Reference(locName.name, ir.UnknownType)
+        val locTpe = toBackendType(Type.boolTpe)
+        val literal = toFirrtlForm(lit)
+        val cmp = ir.DoPrim(PrimOps.Eq, Seq(instance.refer, literal), Seq.empty, ir.UnknownType)
+        val node = ir.DefNode(ir.NoInfo, locName.name, cmp)
+        val inst = DataInstance(locTpe, loc)
 
-      val future = caseFutures.foldLeft(Future.empty)(_ + _)
-      RunResult(future, matchStmts, retInstance)
-    }
-
-    /*
-    def runSoftMatch(instance: SoftInstance, cases: Vector[backend.Case]): RunResult = {
-      def runCaseBody(caseStmt: backend.Case): RunResult = {
-        val (stmtss, futures) = caseStmt.stmts.map(runStmt).unzip
-        val RunResult(retFuture, retStmts, retInstance) = runExpr(caseStmt.ret)
-
-        val future = futures.foldLeft(retFuture)(_ + _)
-        RunResult(future, stmtss.flatten ++ retStmts, retInstance)
+        (Vector(node), inst)
       }
 
-      def verifyCondition(caseStmt: backend.Case, cond: backend.CaseCond, enum: EnumSoftInstance): Option[RunResult] = {
-        val instances = enum.field.values.toVector
-        val names = cond.variables.map {
-          case backend.Term.Variable(name, _) => stack.next(name)
-          case backend.Term.Temp(id, _) => stack.next(id)
-        }
+      def identPattern(name: String): (Vector[ir.Statement], DataInstance) = {
+        val locName = stack.next(name)
+        val loc = ir.Reference(locName.name, ir.UnknownType)
+        val node = ir.DefNode(ir.NoInfo, locName.name, instance.refer)
+        val locInstance = DataInstance(instance.tpe, loc)
+        stack.append(locName, locInstance)
 
-        (names zip instances).foreach { case (name, inst) => stack.append(name, inst) }
+        (Vector(node), DataInstance(bool = true))
+      }
 
-        val condPairs = cond.conds.map {
-          case (backend.Term.Variable(name, _), expr) => stack.lookup(stack.refer(name)) -> expr
-          case (backend.Term.Temp(id, _), expr) => stack.lookup(stack.refer(id)) -> expr
-        }
+      pattern match {
+        case backend.WildCardPattern(_) => (Vector.empty, DataInstance(bool = true))
+        case backend.LiteralPattern(lit) => literalPattern(lit)
+        case backend.IdentPattern(name) => identPattern(name.name)
+        case backend.EnumPattern(variant, patterns, _) =>
+          val memberRef = ir.SubField(instance.refer, "_member", ir.UnknownType)
+          val dataRef = ir.SubField(instance.refer, "_data", ir.UnknownType)
+          val variantEq = ir.DoPrim(PrimOps.Eq, Seq(memberRef, ir.UIntLiteral(variant)), Seq.empty, ir.UnknownType)
 
-        val (condStmts, condFuture, condResult) = condPairs
-          .map{ case (inst, expr) => inst -> runExpr(expr) }
-          .foldLeft(Vector.empty[ir.Statement], Future.empty, true){
-            case ((stmts, future, false), _) => (stmts, future, false)
-            case ((stmts, future, true), (inst, RunResult(runFuture, runStmts, runInst))) =>
-              val cond = (inst, runInst) match {
-                case (IntInstance(left), IntInstance(right)) => left == right
-                case (UnitInstance(), UnitInstance()) => true
-                case (StringInstance(left), StringInstance(right)) => left == right
-                case _ => throw new ImplementationErrorException("other pattern must be rejected by compile error in front end")
-              }
+          val stmtBuilder = Vector.newBuilder[ir.Statement]
+          val refBuilder = Vector.newBuilder[ir.Reference]
+          patterns.map(_.tpe).scanLeft(BigInt(0)) {
+            case (idx, tpe) =>
+              val firrtlTpe = toFirrtlType(tpe)
+              val (stmts, name, nextIdx) = extractFieldData(dataRef, firrtlTpe, idx)
+              stmtBuilder ++= stmts
+              refBuilder += ir.Reference(name.name, ir.UnknownType)
 
-              (stmts ++ runStmts, future + runFuture, cond)
+              nextIdx
           }
 
-        if(!condResult) None
-        else {
-          val RunResult(bodyFuture, bodyStmts, instance) = runCaseBody(caseStmt)
-          Some(RunResult(bodyFuture + condFuture, condStmts ++ bodyStmts, instance))
-        }
-      }
+          val stmts = stmtBuilder.result()
+          val refs = refBuilder.result()
 
-      def matchPattern(caseStmt: backend.Case, enum: EnumSoftInstance): Option[RunResult] =
-        if(caseStmt.cond.variant != enum.variant) None
-        else verifyCondition(caseStmt, caseStmt.cond, enum)
+          val trueRef = ir.UIntLiteral(1, ir.IntWidth(1))
+          val (patternStmtss, conds) = (patterns zip refs)
+            .map{ case (pattern, ref) => pattern -> DataInstance(pattern.tpe, ref) }
+            .map{ case (pattern, inst) => runPattern(inst, pattern) }
+            .unzip
 
-      instance match {
-        case enum: EnumSoftInstance =>
-          cases.foldLeft(Option.empty[RunResult]) {
-            case (Some(result), _) => Some(result)
-            case (None, caseStmt) => matchPattern(caseStmt, enum)
-          }.get
-        case _ => throw new ImplementationErrorException("pattern match except for enum is not supported yet")
+          val condition = conds.filter(_.refer == trueRef).foldLeft[ir.Expression](variantEq) {
+            case (left, right) => ir.DoPrim(PrimOps.And, Seq(left, right.refer), Seq.empty, ir.UnknownType)
+          }
+
+          val condName = stack.next("_GEN")
+          val condRef = ir.Reference(condName.name, ir.UnknownType)
+          val connect = ir.DefNode(ir.NoInfo, condName.name, condition)
+          val returnStmts = stmts ++ patternStmtss.flatten :+ connect
+          val boolTpe = toBackendType(Type.boolTpe)
+          val returnInst = DataInstance(boolTpe, condRef)
+
+          (returnStmts, returnInst)
       }
     }
-    */
+
+    def runCase(instance: DataInstance, caseExpr: backend.Case, retLoc: ir.Reference): (Future, Vector[ir.Statement], ir.Conditionally) = {
+      val (patternStmts, condInstance) = runPattern(instance, caseExpr.pattern)
+      val (bodyStmtss, bodyFutures) = caseExpr.stmts.map(runStmt).unzip
+      val bodyStmts = bodyStmtss.flatten
+      val RunResult(retFuture, retStmts, retInstance: DataInstance) = runExpr(caseExpr.ret)
+
+      val retConnect =
+        if(retInstance.tpe.symbol == Symbol.unit) None
+        else Some(ir.Connect(ir.NoInfo, retLoc, retInstance.refer))
+
+      val conseqStmts = bodyStmts ++ retStmts ++ retConnect
+
+      val future = bodyFutures.foldLeft(retFuture)(_ + _)
+      val cond = ir.Conditionally(ir.NoInfo, condInstance.refer, ir.Block(conseqStmts), ir.EmptyStmt)
+
+      (future, patternStmts, cond)
+    }
 
     val backend.Match(matched, cases, tpe) = matchExpr
     val instance = stack.lookup(stack.refer(matched.id))
 
-    run(instance.asInstanceOf[DataInstance], cases, tpe)
+    val retName = stack.next("_GEN")
+    val retWireDef = ir.DefWire(ir.NoInfo, retName.name, toFirrtlType(tpe))
+    val retRef = ir.Reference(retWireDef.name, retWireDef.tpe)
+    val retInvalid = ir.IsInvalid(ir.NoInfo, retRef)
+    val retInstance = DataInstance(tpe, retRef)
+
+    val (futures, patternStmtss, conds) = cases.map(runCase(instance.asInstanceOf[DataInstance], _, retRef)).unzip3
+
+    val future = futures.foldLeft(Future.empty)(_ + _)
+    val patternStmts = patternStmtss.flatten
+    val caseConds = conds.foldRight[ir.Statement](ir.Stop(ir.NoInfo, 1, clockRef, ir.UIntLiteral(1))) {
+      case (cond, elsePart) =>  cond.copy(alt = elsePart)
+    }
+
+    val stmts = Vector(retWireDef, retInvalid) ++ patternStmts :+ caseConds
+
+    RunResult(future, stmts, retInstance)
   }
 
   def runConstructStruct(construct: backend.ConstructStruct)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {

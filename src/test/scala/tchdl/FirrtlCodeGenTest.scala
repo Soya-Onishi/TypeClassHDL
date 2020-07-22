@@ -324,7 +324,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     val elems = conseq.asInstanceOf[ir.Block].stmts
     assert(elems(0) == ir.DefNode(ir.NoInfo, "_TEMP_1", ir.UIntLiteral(1, ir.IntWidth(32))))
-    assert(elems(3) == ir.Connect(ir.NoInfo, ir.SubField(ir.Reference("_ENUM_0", ir.UnknownType), "_data", ir.UnknownType), ir.Reference("TEMP_1", ir.UnknownType)))
+    assert(elems(3) == ir.Connect(ir.NoInfo, ir.SubField(ir.Reference("_ENUM_0", ir.UnknownType), "_data", ir.UnknownType), ir.Reference("_TEMP_1", ir.UnknownType)))
 
     runFirrtl(circuit)
   }
@@ -548,5 +548,25 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
   test("use vector update") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVectorUpdate.tchdl")
     runFirrtl(circuit)
+  }
+
+  test("pattern match with bool type") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch9.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("pattern match with Int type") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch10.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("pattern match with Bit[2] type") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch11.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("pattern match with Bit[2] type with ident catcher") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch12.tchdl")
+    runFirrtl(circuit, print = true)
   }
 }

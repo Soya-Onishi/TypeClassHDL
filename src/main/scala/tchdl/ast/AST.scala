@@ -23,9 +23,9 @@ sealed trait Definition extends AST with HasSymbol
 sealed trait Statement extends AST
 sealed trait BlockElem extends AST
 sealed trait Expression extends AST with BlockElem with HasType
+sealed trait Literal extends Expression
 sealed trait Construct extends Expression with HasSymbol
 sealed trait TypeAST extends AST with HasType with HasSymbol
-sealed trait PatternExpr extends AST with HasType
 sealed trait ApplyPrefix extends Expression with HasSymbol
 sealed trait HPExpr extends Expression {
   protected var _sortedExpr: Option[HPExpr] = None
@@ -344,7 +344,7 @@ object RangeExpr {
   case class Max(expr: HPExpr) extends RangeExpr
 }
 
-case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr with PatternExpr with ApplyPrefix
+case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr with ApplyPrefix
 case class Apply(prefix: ApplyPrefix, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
 
 abstract class UnaryOp extends Expression with HasSymbol {
@@ -391,11 +391,12 @@ case class Assign(left: Expression, right: Expression) extends BlockElem
 
 case class This() extends Expression
 case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
-case class BitLiteral(value: BigInt, length: Int) extends Expression with PatternExpr
-case class IntLiteral(value: Int) extends Expression with HPExpr with PatternExpr
-case class BoolLiteral(value: Boolean) extends Expression with HPExpr with PatternExpr
-case class UnitLiteral() extends Expression with PatternExpr
-case class StringLiteral(str: String) extends Expression with HPExpr with PatternExpr
+
+case class BitLiteral(value: BigInt, length: Int) extends Literal
+case class IntLiteral(value: Int) extends Literal with HPExpr
+case class BoolLiteral(value: Boolean) extends Literal with HPExpr
+case class UnitLiteral() extends Literal
+case class StringLiteral(str: String) extends Literal with HPExpr
 
 case class Finish() extends Expression
 case class Goto(target: String, args: Vector[Expression]) extends Expression with HasSymbol
@@ -407,8 +408,13 @@ case class StateInfo(target: String, args: Vector[Expression]) extends AST with 
 case class Return(expr: Expression) extends Expression
 
 case class Match(expr: Expression, cases: Vector[Case]) extends Expression
-case class Case(pattern: EnumPattern, exprs: Vector[BlockElem]) extends AST with HasType
-case class EnumPattern(target: TypeTree, exprs: Vector[PatternExpr]) extends AST
+case class Case(pattern: MatchPattern, exprs: Vector[BlockElem]) extends AST with HasType
+
+trait MatchPattern extends AST
+case class EnumPattern(variant: TypeTree, patterns: Vector[MatchPattern]) extends MatchPattern
+case class LiteralPattern(lit: Literal) extends MatchPattern
+case class IdentPattern(ident: Ident) extends MatchPattern
+case class WildCardPattern() extends MatchPattern with HasType
 
 // To make easier to implement parser,
 // hp's length and tp's length maybe incorrect before Typer.

@@ -472,6 +472,8 @@ object Type {
       case _ => false
     }
 
+    // left and right compare works correctly
+    // because each field name is _0, _1, ... _n.
     def fields: Vector[Symbol] = declares
       .toMap.toVector
       .sortWith{ case ((left, _), (right, _)) => left < right }

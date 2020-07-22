@@ -258,12 +258,14 @@ sibling_pair
 
 
 case_def
-    : CASE type ('(' (pattern_expr (',' pattern_expr)*)? ')')? '=>' block_elem*
+    : CASE pattern '=>' block_elem*
     ;
 
-pattern_expr
-    : EXPR_ID # IdentPattern
-    | literal # LiteralPattern
+pattern
+    : type ('(' (pattern (',' pattern)*)? ')')? # EnumPattern
+    | EXPR_ID                                   # IdentPattern
+    | literal                                   # LiteralPattern
+    | '_'                                       # WildcardPattern
     ;
 
 generate

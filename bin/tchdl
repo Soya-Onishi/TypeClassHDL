@@ -1,0 +1,5 @@
+#!/bin/bash
+
+path=`dirname "$0"`
+cmd="java -cp ${path}/tchdl.jar tchdl.Main ${@:1}"
+eval $cmd

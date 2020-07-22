@@ -1,0 +1,11 @@
+package test
+
+module Top
+impl Top {
+  input def f(a: Bit[2]) -> Bit[2] {
+    match a {
+      case 0b000 => 0b00
+      case _ => 0b01
+    }
+  }
+}

@@ -304,7 +304,7 @@ class ParseTest extends TchdlFunSuite {
         |""".stripMargin
     )
 
-    def pattern(name: String, expr: PatternExpr*): EnumPattern = {
+    def pattern(name: String, expr: MatchPattern*): EnumPattern = {
       val typeTree = TypeTree(
         StaticSelect(TypeTree(Ident("Pattern"), Vector.empty, Vector.empty), name),
         Vector.empty,
@@ -314,10 +314,15 @@ class ParseTest extends TchdlFunSuite {
       EnumPattern(typeTree, expr.toVector)
     }
 
+    def ident(name: String) = IdentPattern(Ident(name))
+    def int(value: Int) = LiteralPattern(IntLiteral(value))
+    def bit(value: Int, width: Int) = LiteralPattern(BitLiteral(value, width))
+    def unit() = LiteralPattern(UnitLiteral())
+
     assert(expr == Ident("expr"))
-    assert(cases(0).pattern == pattern("A", Ident("a"), Ident("b")))
-    assert(cases(1).pattern == pattern("B", IntLiteral(0), BitLiteral(0, 2)))
-    assert(cases(2).pattern == pattern("C", UnitLiteral()))
+    assert(cases(0).pattern == pattern("A", ident("a"), ident("b")))
+    assert(cases(1).pattern == pattern("B", int(0), bit(0, 2)))
+    assert(cases(2).pattern == pattern("C", unit()))
   }
 
   test("parse static method definition") {

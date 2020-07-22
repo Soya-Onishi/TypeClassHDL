@@ -1,14 +1,19 @@
 package tchdl.parser
 
-import tchdl.ast._
 import org.antlr.v4.runtime._
-import org.antlr.v4.runtime.tree._
 import tchdl.antlr._
-import java.io.FileInputStream
+import tchdl.util.TchdlException.ImplementationErrorException
+
+import scala.util.Try
+
 
 object Parser {
   def parse(filename: String) = {
-    val input = CharStreams.fromFileName(filename)
+    val input = Try(CharStreams.fromFileName(filename)).toEither match {
+      case Right(input) => input
+      case Left(exception) => throw new ImplementationErrorException(exception.toString)
+    }
+
     val lexer= new TchdlLexer(input)
     val tokens = new CommonTokenStream(lexer)
     val parser = new TchdlParser(tokens)

@@ -71,6 +71,11 @@ object Main extends App {
             case None => ???
             case Some(libdir) => loop(remains.tail.tail).copy(stdlibDir = libdir)
           }
+        case Some("--output") =>
+          remains.tail.headOption match {
+            case None => ???
+            case Some(filename) => loop(remains.tail.tail).copy(output = Some(filename))
+          }
         case Some(filename) =>
           val com = loop(remains.tail)
           com.copy(filenames = com.filenames :+ filename)
@@ -81,24 +86,55 @@ object Main extends App {
     loop(commands)
   }
 
-  val command = parseCommand(args.tail.toVector)
-  val stdlibFiles = Vector("types.tchdl", "functions.tchdl", "traits.tchdl", "interfaces.tchdl").map(Paths.get(command.stdlibDir, _))
+  def showError(global: GlobalData): Unit =
+    if(global.repo.error.counts != 0) {
+      println(global.repo.error.elems.mkString("\n"))
+      System.exit(1)
+    }
+
+
+  val command = parseCommand(args.toVector)
+  val stdlibFiles = Vector("types.tchdl", "functions.tchdl", "traits.tchdl", "interfaces.tchdl").map(name => Paths.get(command.stdlibDir, name).toString)
   val filenames = command.filenames ++ stdlibFiles
-  val compilationUnits = command.filenames.map(Parser.parse)
+
+  val compilationUnits = filenames.map(Parser.parse)
   val global = GlobalData(command)
+
   compilationUnits.foreach(Namer.exec(_)(global))
+  showError(global)
+
   compilationUnits.foreach(NamerPost.exec(_)(global))
+  showError(global)
+
   compilationUnits.foreach(BuildImplContainer.exec(_)(global))
+  showError(global)
+
   VerifyImplConflict.verifyImplConflict()(global)
+  showError(global)
+
   val trees0 = compilationUnits.map(TopDefTyper.exec(_)(global))
+  showError(global)
+
   trees0.foreach(ImplMethodSigTyper.exec(_)(global))
+  showError(global)
+
   val trees1 = trees0.map(Typer.exec(_)(global))
+  showError(global)
+
   trees1.foreach(RefCheck.exec(_)(global))
+  showError(global)
+
   val newGlobal = global.assignCompilationUnits(trees1)
   val modules = BuildGeneratedModuleList.exec(newGlobal)
+  showError(global)
+
   val (moduleContainers, methodContainers) = BackendIRGen.exec(modules)(newGlobal)
+  showError(global)
+
   val topModule = moduleContainers.head.tpe
   val circuit = FirrtlCodeGen.exec(topModule, moduleContainers, methodContainers)(newGlobal)
+  showError(global)
 
-  Files.writeString(Paths.get("out.fir"), circuit.serialize)
+  val output = command.output.getOrElse("out.fir")
+  Files.writeString(Paths.get(output), circuit.serialize)
 }

@@ -28,9 +28,12 @@ object Error {
   case class SymbolNotFound(name: String) extends Error
   case object SelfTypeNotFound extends Error
   case class OperationNotFound(op: Operation) extends Error
+
   case class ParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
+  case class PatternLengthMismatch(expect: Int, actual: Int) extends Error
+
   case class LiteralOnTarget(lit: HPExpr) extends Error
   case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
   case class ReferMethodAsNormal(symbol: Symbol.MethodSymbol) extends Error

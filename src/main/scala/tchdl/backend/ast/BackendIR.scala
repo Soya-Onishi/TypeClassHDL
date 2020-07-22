@@ -6,6 +6,7 @@ import tchdl.util._
 sealed trait BackendIR
 sealed trait Stmt extends BackendIR
 sealed trait Expr extends BackendIR with HasType
+sealed trait Literal extends Expr
 
 trait HasType {
   val tpe: BackendType
@@ -47,8 +48,13 @@ case class Ident(id: Term.Variable, tpe: BackendType) extends Expr
 case class IfExpr(cond: Term.Temp, conseq: Vector[Stmt], conseqLast: Expr, alt: Vector[Stmt], altLast: Expr, tpe: BackendType) extends Expr
 
 case class Match(matched: Term.Temp, cases: Vector[Case], tpe: BackendType) extends Expr
-case class Case(cond: CaseCond, stmts: Vector[Stmt], ret: Expr) extends BackendIR
-case class CaseCond(variant: Symbol.EnumMemberSymbol, variables: Vector[Term], conds: Vector[(Term, Expr)]) extends BackendIR
+case class Case(pattern: MatchPattern, stmts: Vector[Stmt], ret: Expr) extends BackendIR
+
+trait MatchPattern { def tpe: BackendType }
+case class IdentPattern(name: Term.Variable) extends MatchPattern { def tpe: BackendType = name.tpe }
+case class LiteralPattern(lit: Literal) extends MatchPattern { def tpe: BackendType = lit.tpe }
+case class WildCardPattern(tpe: BackendType) extends MatchPattern
+case class EnumPattern(variant: Int, patterns: Vector[MatchPattern], tpe: BackendType) extends MatchPattern
 
 case class Finish(stage: StageLabel)(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
@@ -65,15 +71,19 @@ case class Return(stage: StageLabel, expr: Expr)(implicit global: GlobalData) ex
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
 }
 
-case class IntLiteral(value: Int)(implicit global: GlobalData) extends Expr {
+case class IntLiteral(value: Int)(implicit global: GlobalData) extends Literal {
   val tpe: BackendType = BackendType (Symbol.int, Vector.empty, Vector.empty)
 }
 
-case class BitLiteral(value: BigInt, length: HPElem.Num)(implicit global: GlobalData) extends Expr {
+case class BitLiteral(value: BigInt, length: HPElem.Num)(implicit global: GlobalData) extends Literal {
   val tpe: BackendType = BackendType (Symbol.bit, Vector(length), Vector.empty)
 }
 
-case class UnitLiteral()(implicit global: GlobalData) extends Expr {
+case class BoolLiteral(value: Boolean)(implicit global: GlobalData) extends Literal {
+  val tpe: BackendType = BackendType (Symbol.bool, Vector.empty, Vector.empty)
+}
+
+case class UnitLiteral()(implicit global: GlobalData) extends Literal {
   val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty)
 }
 

@@ -351,23 +351,27 @@ class ASTGenerator {
   }
 
   def matchExpr(ctx: TP.MatchExprContext): Match = {
-    def patternExpr(ctx: TP.Pattern_exprContext): PatternExpr = ctx match {
-      case ctx: TP.IdentPatternContext => Ident(ctx.EXPR_ID.getText)
-      case ctx: TP.LiteralPatternContext =>  literal(ctx.literal).asInstanceOf[PatternExpr]
+    def pattern(ctx: TP.PatternContext): MatchPattern = ctx match {
+      case ctx: TP.IdentPatternContext => IdentPattern(Ident(ctx.EXPR_ID.getText))
+      case ctx: TP.LiteralPatternContext => LiteralPattern(literal(ctx.literal))
+      case _: TP.WildcardPatternContext => WildCardPattern()
+      case ctx: TP.EnumPatternContext =>
+        val variant = typeTree(ctx.`type`)
+        val patterns = ctx.pattern.asScala.map(pattern).toVector
+
+        EnumPattern(variant, patterns)
     }
 
     def caseDef(ctx: TP.Case_defContext): Case = {
-      val enum = typeTree(ctx.`type`)
-      val patternExprs = ctx.pattern_expr.asScala.map(patternExpr).toVector
+      val patternExpr = pattern(ctx.pattern)
       val blkElems = ctx.block_elem.asScala.map(blockElem).toVector
-
       val body = blkElems.lastOption match {
         case None => blkElems :+ UnitLiteral()
         case Some(vdef: ValDef) => blkElems.init ++ Vector(vdef, UnitLiteral())
         case Some(expr) => blkElems.init :+ expr
       }
 
-      Case(EnumPattern(enum, patternExprs), body)
+      Case(patternExpr, body)
     }
 
     val matched = expr(ctx.expr)
@@ -647,7 +651,7 @@ class ASTGenerator {
     Goto(ctx.EXPR_ID.getText, args)
   }
 
-  def literal(ctx: TP.LiteralContext): Expression = ctx match {
+  def literal(ctx: TP.LiteralContext): Literal = ctx match {
     case ctx: TP.BitLitContext =>
       val raw = ctx.BIT.getText.substring(2)
       BitLiteral(BigInt(raw, 2), raw.length)

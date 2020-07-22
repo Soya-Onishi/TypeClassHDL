@@ -21,7 +21,8 @@ lazy val commonSettings = Seq(
     "-language:higherKinds"
   ),
   assemblyJarName in assembly := "tchdl.jar",
-  assemblyOutputPath in assembly := new File("bin")
+  assemblyOutputPath in assembly := new File("./bin/tchdl.jar"),
+  test in assembly := {}
 )
 
 lazy val compiler = (project in file("."))
