@@ -23,3 +23,5 @@ project/plugins/project/
 
 gen/
 project/metals.sbt
+*.jar
+*.fir
