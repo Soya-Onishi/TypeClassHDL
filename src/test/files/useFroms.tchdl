@@ -1,0 +1,18 @@
+package test
+
+import std::traits:::From
+
+module Top
+impl Top {
+  input def f(in0: Bit[4]) -> Bit[8] {
+    Bit[8]:::from(in0)
+  }
+
+  input def g(in1: Int) -> Bit[8] {
+    Bit[8]:::from(in1)
+  }
+
+  input def h(in2: Bool) -> Bit[8] {
+    Bit[8]:::from(in2)
+  }
+}

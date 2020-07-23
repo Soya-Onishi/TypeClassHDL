@@ -567,6 +567,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("pattern match with Bit[2] type with ident catcher") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch12.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
+  }
+
+  test("use cast method to cast some types into Bit[8]") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useFroms.tchdl")
+    runFirrtl(circuit)
   }
 }

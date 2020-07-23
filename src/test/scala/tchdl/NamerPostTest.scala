@@ -61,4 +61,23 @@ class NamerPostTest extends TchdlFunSuite {
       case LookupResult.LookupFailure(err) => fail(err.toString)
     }
   }
+
+  test("importing From trait works correctly") {
+    implicit val global: GlobalData = GlobalData()
+
+    val filename = Vector(rootDir, filePath, "useFroms.tchdl").mkString("/")
+    val filenames = filename +: builtInFiles
+    val trees = filenames.map(parse)
+    trees.foreach(Namer.exec)
+    expectNoError
+
+    trees.foreach(NamerPost.exec)
+    expectNoError
+
+    val ctx = global.rootPackage.search(Vector("test")).getOrElse(fail()).lookupCtx(filename).get
+    val traits = ctx.interfaceTable
+
+    assert(traits.values.toVector.length == 1)
+    assert(traits.keys.head == "From")
+  }
 }

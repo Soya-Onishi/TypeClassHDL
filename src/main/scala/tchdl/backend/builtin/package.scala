@@ -213,6 +213,42 @@ package object builtin {
     RunResult(Future.empty, stmts, instance)
   }
 
+  def bitFromInt(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
+    val HPElem.Num(toWidth) = bitTpe.hargs.head
+    val DataInstance(_, refer) = from
+    val casted =
+      if(toWidth > 32) ir.DoPrim(PrimOps.Pad, Seq(refer), Seq(toWidth - 32), ir.UnknownType)
+      else ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(toWidth - 1, 0), ir.UnknownType)
+
+    val retTpe = toBackendType(Type.bitTpe(toWidth))
+    val retInstance = DataInstance(retTpe, casted)
+
+    RunResult(Future.empty, Vector.empty, retInstance)
+  }
+
+  def bitFromBool(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
+    val HPElem.Num(toWidth) = bitTpe.hargs.head
+    val DataInstance(_, refer) = from
+    val casted = ir.DoPrim(PrimOps.Pad, Seq(refer), Seq(toWidth - 1), ir.UnknownType)
+    val retTpe = toBackendType(Type.bitTpe(toWidth))
+    val retInstance = DataInstance(retTpe, casted)
+
+    RunResult(Future.empty, Vector.empty, retInstance)
+  }
+
+  def bitFromBit(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
+    val HPElem.Num(toWidth) = bitTpe.hargs.head
+    val DataInstance(fromTpe, refer) = from
+    val HPElem.Num(fromWidth) = fromTpe.hargs.head
+    val casted =
+      if(toWidth > fromWidth) ir.DoPrim(PrimOps.Pad, Seq(refer), Seq(toWidth - fromWidth), ir.UnknownType)
+      else ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(toWidth - 1, 0), ir.UnknownType)
+    val retTpe = toBackendType(Type.bitTpe(toWidth))
+    val retInstance = DataInstance(retTpe, casted)
+
+    RunResult(Future.empty, Vector.empty, retInstance)
+  }
+
   private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => BigInt): RunResult = {
     val DataInstance(tpe, l) = left
     val DataInstance(_, r) = right

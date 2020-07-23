@@ -97,10 +97,15 @@ object Context {
     def appendImportSymbol(symbol: Symbol): Either[Error, Unit] =
       importedSymbols.append(symbol)
 
-    override def interfaceTable: Map[String, Symbol.InterfaceSymbol] =
-      this.scope.toMap.collect{
-        case (name, interface: Symbol.InterfaceSymbol) => name -> interface
-      }
+    override def interfaceTable: Map[String, Symbol.InterfaceSymbol] = {
+      def extractInterface(table: Map[String, Symbol]): Map[String, Symbol.InterfaceSymbol] =
+        table.collect { case (name, interface: Symbol.InterfaceSymbol) => name -> interface }
+
+      val interfaces0 = extractInterface(this.scope.toMap)
+      val interfaces1 = extractInterface(this.importedSymbols.toMap)
+      val interfaces2 = extractInterface(this.preludeSymbols.toMap)
+      interfaces0 ++ interfaces1 ++ interfaces2
+    }
 
     override def hpBounds: Vector[HPBound] = Vector.empty
     override def tpBounds: Vector[TPBound] = Vector.empty

@@ -357,15 +357,6 @@ object BackendIRGen {
         Summary(newTemps, newTerms, labels)
     }
 
-    def forBuiltInMethod(symbol: Symbol.MethodSymbol, thisTerm: Option[backend.Term], hargs: Vector[HPElem], retTpe: BackendType): backend.Expr = {
-      val (name, _) = global.builtin.functions.toMap.find { case (_, builtin) => builtin == symbol }.get
-
-      val methodName = s"_builtin_${name}_bit"
-      val args = (thisTerm ++ argSummary.terms).toVector
-
-      backend.CallBuiltIn(methodName, args, hargs, retTpe)
-    }
-
     val retTpe = toBackendType(apply.tpe.asRefType, ctx.hpTable, ctx.tpTable)
     val hargs = apply.hps.map(evalHPExpr(_, ctx.hpTable))
     val targs = apply.tps.view
@@ -376,14 +367,25 @@ object BackendIRGen {
 
     apply.prefix match {
       case ident @ frontend.Ident(name) =>
-        val label = makeLabel(ident.symbol.asMethodSymbol, None, argSummary.terms.map(_.tpe), hargs, targs)
-        val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
+        val pkg = ident.symbol.path.pkgName
+        val name = ident.symbol.name
+        val args = argSummary.terms.map(_.tpe.symbol).map(SigArg.Sym.apply)
+        val signature = FunctionSignature(pkg, name, None, args: _*)
+        val isBuiltIn = builtinFunctions.contains(signature)
 
-        BuildResult(
-          argSummary.nodes,
-          Some(call),
-          argSummary.labels + label
-        )
+        val (call, label) = if(isBuiltIn) {
+          val call = backend.CallBuiltIn(signature.toString, None, argSummary.terms, hargs, retTpe)
+          (call, None)
+        } else {
+          val label = makeLabel(ident.symbol.asMethodSymbol, None, argSummary.terms.map(_.tpe), hargs, targs)
+          val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
+
+          (call, Some(label))
+        }
+
+        val labels = argSummary.labels ++ label
+
+        BuildResult(argSummary.nodes, Some(call), labels)
       case select @ frontend.StaticSelect(prefix, methodName) =>
         val prefixTpe = prefix.tpe.asRefType
         val prefixBackendTpe = toBackendType(prefixTpe, ctx.hpTable, ctx.tpTable)
@@ -403,16 +405,22 @@ object BackendIRGen {
             lookupImplMethod(prefixTpe, replacedType, hargs, targs, argSummary.terms.map(_.tpe), methodName, requireStatic = true)
         }
 
-        lazy val forBuiltin = forBuiltInMethod(_, None, hargs, retTpe)
+        val pkg = referredMethodSymbol.path.pkgName
+        val name = referredMethodSymbol.name
+        val args = argSummary.terms.map(_.tpe.symbol).map(SigArg.Sym.apply)
+        val signature = FunctionSignature(pkg, name, Some(prefixTpe.origin), args: _*)
+        val isBuiltIn = builtinFunctions.contains(signature)
 
-        val (call, label) =
-          if (global.builtin.functions.symbols.contains(referredMethodSymbol)) (forBuiltin(referredMethodSymbol), None)
-          else {
-            val label = makeLabel(referredMethodSymbol, Some(prefixBackendTpe), argSummary.terms.map(_.tpe), hargs, targs)
-            val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
+        val (call, label) = if(isBuiltIn) {
+          val call = backend.CallBuiltIn(signature.toString, Some(prefixBackendTpe), argSummary.terms, hargs, retTpe)
 
-            (call, Some(label))
-          }
+          (call, None)
+        } else {
+          val label = makeLabel(referredMethodSymbol, Some(prefixBackendTpe), argSummary.terms.map(_.tpe), hargs, targs)
+          val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
+
+          (call, Some(label))
+        }
 
         val labels = label.map(argSummary.labels + _).getOrElse(argSummary.labels)
 
@@ -438,14 +446,39 @@ object BackendIRGen {
             lookupImplMethod(prefixTPType, replacedType, hargs, targs, argSummary.terms.map(_.tpe), methodName, requireStatic = false)
         }
 
-        lazy val forBuiltin = forBuiltInMethod(_, Some(accessor), hargs, retTpe)
-        lazy val isBuiltin = global.builtin.functions.symbols.contains(referredMethodSymbol)
+        val pkg = referredMethodSymbol.path.pkgName
+        val name = referredMethodSymbol.name
+        val args = argSummary.terms.map(_.tpe.symbol).map(SigArg.Sym.apply)
+        val signature = FunctionSignature(pkg, name, Some(accessor.tpe.symbol), args: _*)
+        lazy val builtInFunction = builtinFunctions.find(_ == signature)
         lazy val isMemRead = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "read"
         lazy val isMemWrite = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "write"
+
+        /*
+        lazy val forBuiltin = forBuiltInMethod(_, Some(accessor), hargs, retTpe)
         val (call, label) = () match {
           case _ if isBuiltin => (forBuiltin(referredMethodSymbol), None)
           case _ if isMemRead => (backend.ReadMemory(accessor, argSummary.terms.head, retTpe), None)
           case _ if isMemWrite => (backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1)), None)
+          case _ =>
+            val label = makeLabel(referredMethodSymbol, Some(accessor.tpe), argSummary.terms.map(_.tpe), hargs, targs)
+            val call = select.symbol match {
+              case _: Symbol.MethodSymbol if isInterface => backend.CallInterface(label, accessor, argSummary.terms, retTpe)
+              case _: Symbol.MethodSymbol => backend.CallMethod(label, Some(accessor), hargs, argSummary.terms, retTpe)
+            }
+
+            (call, Some(label))
+        }
+        */
+
+        lazy val readMem = backend.ReadMemory(accessor, argSummary.terms.head, retTpe)
+        lazy val writeMem = backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1))
+        def builtin(sig: FunctionSignature) = backend.CallBuiltIn(sig.toString, Some(accessor.tpe), accessor +: argSummary.terms, hargs, retTpe)
+
+        val (call, label) = builtInFunction match {
+          case Some(_) if isMemRead => (readMem, None)
+          case Some(_) if isMemWrite => (writeMem, None)
+          case Some(function) => (builtin(function), None)
           case _ =>
             val label = makeLabel(referredMethodSymbol, Some(accessor.tpe), argSummary.terms.map(_.tpe), hargs, targs)
             val call = select.symbol match {
@@ -485,6 +518,7 @@ object BackendIRGen {
     val bit = Symbol.bit
     val bool = Symbol.bool
 
+    /*
     val builtInPairs = Map[frontend.Operation, Vector[(Vector[Symbol.TypeSymbol], String)]](
       frontend.Operation.Add -> binOp("add", int, num, bit),
       frontend.Operation.Sub -> binOp("sub", int, num, bit),
@@ -497,6 +531,7 @@ object BackendIRGen {
       frontend.Operation.Lt -> binOp("lt", int, num, bit),
       frontend.Operation.Le -> binOp("le", int, num, bit),
     )
+    */
 
     val BuildResult(leftNodes, Some(leftExpr), leftLabels) = buildExpr(binop.left)
     val BuildResult(rightNodes, Some(rightExpr), rightLabels) = buildExpr(binop.right)
@@ -506,7 +541,7 @@ object BackendIRGen {
     val left = backend.Term.Temp(leftNode.id, leftExpr.tpe)
     val right = backend.Term.Temp(rightNode.id, rightExpr.tpe)
 
-    def buildCallMethod: backend.CallMethod = {
+    def buildCallMethod(retTpe: BackendType): backend.CallMethod = {
       val leftTpe = toRefType(leftExpr.tpe)
       val rightTpe = toRefType(rightExpr.tpe)
 
@@ -520,11 +555,22 @@ object BackendIRGen {
       val tpTable = buildTPTable(operator.tps, callerTpe, targetMethodTpe)
 
       val label = makeLabel(operator, None, Vector(leftExpr.tpe, rightExpr.tpe), Vector.empty, tpTable.values.toVector)
-      val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
 
       backend.CallMethod(label, None, Vector.empty, Vector(left, right), retTpe)
     }
 
+    val pkg = binop.symbol.path.pkgName
+    val name = binop.symbol.name
+
+    val function = FunctionSignature(pkg, name, None, SigArg.Sym(leftExpr.tpe.symbol), SigArg.Sym(rightExpr.tpe.symbol))
+    val isBuiltin = builtinFunctions.contains(function)
+    val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+
+    val call =
+      if(isBuiltin) backend.CallBuiltIn(function.toString, None, Vector(left, right), Vector.empty, retTpe)
+      else buildCallMethod(retTpe)
+
+    /*
     val call = builtInPairs.get(binop.op) match {
       case None => buildCallMethod
       case Some(candidates) =>
@@ -540,6 +586,7 @@ object BackendIRGen {
           case Some((_, name)) => backend.CallBuiltIn(name, Vector(left, right), Vector.empty, retTpe)
         }
     }
+    */
 
     val returnedLabels = call match {
       case call: backend.CallMethod => leftLabels ++ rightLabels + call.label
@@ -608,7 +655,7 @@ object BackendIRGen {
 
         called match {
           case None => buildCallMethod
-          case Some((_, name)) => backend.CallBuiltIn(name, Vector(operand), Vector.empty, retTpe)
+          case Some((_, name)) => backend.CallBuiltIn(name, None, Vector(operand), Vector.empty, retTpe)
         }
     }
 
@@ -1000,6 +1047,95 @@ object BackendIRGen {
 
         BuildResult(stmts :+ backendAssign, None, labels)
     }
+
+  trait SigArg
+  object SigArg {
+    case class Sym(symbol: Symbol.TypeSymbol) extends SigArg
+    case object Any extends SigArg
+  }
+  case class FunctionSignature(pkg: Vector[String], name: String, accessor: Option[Symbol.TypeSymbol], args: SigArg*) {
+    override def hashCode(): Int = pkg.hashCode + name.hashCode + accessor.hashCode + args.hashCode
+    override def toString: String = {
+      val accessor = this.accessor match {
+        case None => ""
+        case Some(symbol) => "_" + symbol.name.toLowerCase
+      }
+
+      val args = this.args.map {
+        case SigArg.Sym(symbol) => "_" + symbol.name.toLowerCase
+        case SigArg.Any => "_*"
+      }
+
+      s"$name$accessor${args.mkString("")}"
+    }
+
+    override def equals(obj: Any): Boolean = obj match {
+      case sig: FunctionSignature =>
+        lazy val samePkg = this.pkg == sig.pkg
+        lazy val sameName = this.name == sig.name
+        lazy val sameAccessor = this.accessor == sig.accessor
+        lazy val sameArgLength = this.args.length == sig.args.length
+        lazy val sameArg = (this.args zip sig.args).forall {
+          case (SigArg.Any, _) => true
+          case (_, SigArg.Any) => true
+          case (SigArg.Sym(s0), SigArg.Sym(s1)) => s0 == s1
+        }
+
+        samePkg && sameName && sameAccessor && sameArgLength && sameArg
+    }
+  }
+
+  def builtinFunctions(implicit global: GlobalData): Vector[FunctionSignature] = {
+    val types = Vector("std", "types")
+    val traits = Vector("std", "traits")
+    val functions = Vector("std", "functions")
+
+    val bit = Symbol.bit
+    val int = Symbol.int
+    val bool = Symbol.bool
+    val vec = Symbol.vec
+    val mem = Symbol.mem
+
+    def makeFunctions(name: String, tpes: Symbol.TypeSymbol*): Vector[FunctionSignature] =
+      tpes.map(symbol => FunctionSignature(functions, name, None, SigArg.Sym(symbol), SigArg.Sym(symbol))).toVector
+
+    val adds = makeFunctions("add", int, bit)
+    val subs = makeFunctions("sub", int, bit)
+    val muls = makeFunctions("mul", int, bit)
+    val divs = makeFunctions("div", int, bit)
+    val eqns = makeFunctions("equal", int, bit, bool)
+    val neqs = makeFunctions("notEqual", int, bit, bool)
+    val ges  = makeFunctions("greaterEqual", int, bit)
+    val gts  = makeFunctions("greaterThan", int, bit)
+    val les  = makeFunctions("lessEqual", int, bit)
+    val lts  = makeFunctions("lessThan", int, bit)
+    val negs = makeFunctions("neg", int, bit)
+    val nots = makeFunctions("not", int, bit, bool)
+    val truncate = FunctionSignature(types, "truncate", Some(bit))
+    val bitMethod = FunctionSignature(types, "bit", Some(bit))
+    val concat = FunctionSignature(types, "concat", Some(bit), SigArg.Sym(bit))
+    val idx = FunctionSignature(types, "idx", Some(vec))
+    val idxDyn = FunctionSignature(types, "idxDyn", Some(vec), SigArg.Sym(bit))
+    val updated = FunctionSignature(types, "updated", Some(vec), SigArg.Any)
+    val updatedDyn = FunctionSignature(types, "updatedDyn", Some(vec), SigArg.Sym(bit), SigArg.Any)
+    val read = FunctionSignature(types, "read", Some(mem), SigArg.Sym(bit))
+    val write = FunctionSignature(types, "write", Some(mem), SigArg.Sym(bit), SigArg.Any)
+    val bitFroms = Vector(bit, int, bool).map(symbol => FunctionSignature(traits, "from", Some(bit), SigArg.Sym(symbol)))
+
+    val builtIns0 = Vector(
+      adds, subs, muls, divs,
+      eqns, neqs, ges, gts, les, lts,
+      negs, nots, bitFroms
+    ).flatten
+
+    val builtIns1 = Vector(
+      truncate, bitMethod, concat,
+      idx, idxDyn, updated, updatedDyn,
+      read, write,
+    )
+
+    builtIns0 ++ builtIns1
+  }
 }
 
 abstract class BuildResult {
@@ -1036,5 +1172,4 @@ object BuildResult {
       case result: BuildResult => Some(result.nodes, result.last, result.labels)
       case _ => None
     }
-
 }

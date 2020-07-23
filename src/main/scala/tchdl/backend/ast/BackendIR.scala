@@ -34,7 +34,7 @@ case class ConstructEnum(target: BackendType, variant: Symbol.EnumMemberSymbol, 
 }
 
 case class CallMethod(label: MethodLabel, accessor: Option[Term], hargs: Vector[HPElem], args: Vector[Term], tpe: BackendType) extends Expr
-case class CallBuiltIn(label: String, args: Vector[Term], hargs: Vector[HPElem], tpe: BackendType) extends Expr
+case class CallBuiltIn(label: String, accessorTpe: Option[BackendType], args: Vector[Term], hargs: Vector[HPElem], tpe: BackendType) extends Expr
 case class CallInterface(label: MethodLabel, accessor: Term, args: Vector[Term], tpe: BackendType) extends Expr
 case class ReadMemory(accessor: Term, addr: Term, tpe: BackendType) extends Expr
 case class WriteMemory(accessor: Term, addr: Term, data: Term)(implicit global: GlobalData) extends Expr {
