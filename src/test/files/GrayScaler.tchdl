@@ -1,0 +1,20 @@
+package lbp
+
+import lbp::data:::RGB
+import std::traits:::From
+
+module GrayScaler
+impl GrayScaler {
+  input def convert(rgb: RGB) -> Bit[8] {
+    val redWeight   = 0b01001101
+    val greenWeight = 0b10010110
+    val blueWeight  = 0b00011101
+
+    val r = Bit[16]:::from(rgb.red) * Bit[16]:::from(redWeight)
+    val g = Bit[16]:::from(rgb.green) * Bit[16]:::from(greenWeight)
+    val b = Bit[16]:::from(rgb.blue) * Bit[16]:::from(blueWeight)
+    val tmp = r + g + b
+
+    tmp.truncate[15, 8]()
+  }
+}

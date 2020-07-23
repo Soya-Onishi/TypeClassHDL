@@ -1,0 +1,7 @@
+package lbp::data
+
+struct RGB {
+  red: Bit[8],
+  green: Bit[8],
+  blue: Bit[8]
+}

@@ -245,9 +245,9 @@ object Typer {
     val typedTPs = apply.tps.map(typedTypeTree)
 
     val hasError =
-      typedArgs.exists(_.tpe.isErrorType) &&
-        typedHPs.exists(_.tpe.isErrorType) &&
-        typedTPs.exists(_.tpe.isErrorType)
+      typedArgs.exists(_.tpe.isErrorType) ||
+      typedHPs.exists(_.tpe.isErrorType) ||
+      typedTPs.exists(_.tpe.isErrorType)
 
     lazy val errorApply =
       Apply(apply.prefix, typedHPs, typedTPs, typedArgs)

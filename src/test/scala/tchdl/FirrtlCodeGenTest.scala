@@ -574,4 +574,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useFroms.tchdl")
     runFirrtl(circuit)
   }
+
+  test("compile grayscale module") {
+    val (circuit, _) = untilThisPhase(Vector("lbp"), "GrayScaler", "RGB.tchdl", "GrayScaler.tchdl")
+    runFirrtl(circuit, print = true)
+  }
 }
