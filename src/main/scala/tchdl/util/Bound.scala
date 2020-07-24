@@ -188,10 +188,9 @@ object TPBound {
       }
     }
 
-
     val results = tpBound.bounds.map { bound => bound.origin match {
       case hw if hw == hwSymbol =>
-        if(isHardwareType(tpBound.target)) Right(())
+        if(tpBound.target.isHardwareType(callerTPBound)) Right(())
         else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
       case mod if mod == modSymbol =>
         if(isModuleType(tpBound.target)) Right(())

@@ -69,9 +69,9 @@ object BuildGeneratedModuleList {
       (hpResults ++ tpResults).combine(errs => Error.MultipleErrors(errs: _*))
     }
 
-    def findImplementClass: Option[ImplementClassContainer] = {
+    def findImplementClasses: Vector[ImplementClassContainer] = {
       val refTpe = toRefType(module)
-      module.symbol.asModuleSymbol.impls.find {
+      module.symbol.asModuleSymbol.impls.filter {
         impl =>
           val (initHPTable, initTPTable) = Type.RefType.buildTable(impl)
           val result = for {
@@ -119,11 +119,19 @@ object BuildGeneratedModuleList {
     verifyCyclic match {
       case Left(err) => Left(err)
       case Right(_) =>
-        val impl = findImplementClass
-        impl.map(buildChildren(_, module)) match {
-          case None => Right(BuiltModule(module, None, Vector.empty) +: builtModules)
-          case Some(Left(err)) => Left(err)
-          case Some(Right(modules)) => Right(modules)
+        val (errs, moduless) = findImplementClasses.map(buildChildren(_, module)).partitionMap(identity)
+
+        if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+        else moduless.flatten match {
+          case Vector() => Right(BuiltModule(module, Vector.empty, Vector.empty) +: builtModules)
+          case modules =>
+            val container = modules.tail.foldLeft(modules.head) {
+              case (acc, module) =>
+                val impls = acc.impl ++ module.impl
+                val children = acc.children ++ module.children
+
+                BuiltModule(module.module, impls, children)
+            }
         }
     }
   }

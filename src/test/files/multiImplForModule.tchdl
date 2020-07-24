@@ -1,0 +1,9 @@
+package test
+
+module Top
+impl Top {
+  input def f() -> Unit {}
+}
+impl Top {
+  input def g() -> Unit {}
+}

@@ -324,7 +324,7 @@ object ImplMethodSigTyper {
 
       val paramResults = paramTpes.map {
         case Type.ErrorType => Left(Error.DummyError)
-        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType => Right(())
+        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds) => Right(())
         case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe))
         case _ => Right(())
       }
@@ -332,7 +332,7 @@ object ImplMethodSigTyper {
       val retResult = retTpe match {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType if tpe =:= Type.unitTpe => Right(())
-        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType => Right(())
+        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds) => Right(())
         case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe))
         case _ => Right(())
       }
@@ -366,7 +366,7 @@ object ImplMethodSigTyper {
     }
 
     def verifySignature(stage: Type.MethodType): Either[Error, Unit] = {
-      val errs = stage.params.filterNot(_.isHardwareType).map(Error.RequireHardwareType.apply).map(Left.apply[Error, Unit])
+      val errs = stage.params.filterNot(_.isHardwareType(ctx.tpBounds)).map(Error.RequireHardwareType.apply).map(Left.apply[Error, Unit])
       val err =
         if (stage.returnType == Type.unitTpe) Right(())
         else if (stage.returnType.origin == global.builtin.types.lookup("Future")) Right(())

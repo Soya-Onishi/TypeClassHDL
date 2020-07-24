@@ -304,4 +304,16 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(stmts2.isEmpty)
     assert(ret2 == BitLiteral(0, HPElem.Num(2))(global))
   }
+
+  test("generate multiple impl has f and g interfaces") {
+    val (modules, _, global) = untilThisPhase(Vector("test"), "Top", "multiImplForModule.tchdl")
+    expectNoError(global)
+
+    assert(modules.length == 1)
+    assert(modules.head.interfaces.length == 2)
+
+    val names = modules.head.interfaces.map(_.label.symbol.name)
+    assert(names.contains("f"))
+    assert(names.contains("g"))
+  }
 }

@@ -261,6 +261,13 @@ object ImplementClassContainer {
         case _ => throw new ImplementationErrorException("this pattern case should not be reached")
       }
 
+    def hasSameNameMethod: Boolean = {
+      val methods0 = impl0.scope.toMap.keys.toVector
+      val methods1 = impl1.scope.toMap.keys.toVector
+
+      methods1.exists(methods0.contains)
+    }
+
     def isOverlapHPBounds(
       tpe0: Type.RefType,
       tpe1: Type.RefType,
@@ -328,6 +335,7 @@ object ImplementClassContainer {
     val swappedTarget1 = impl1.targetType.replaceWithMap(Map.empty, table)
 
     isSameForm(swappedTarget0, swappedTarget1) &&
+    hasSameNameMethod &&
     isOverlapHPBounds(impl0.targetType, impl1.targetType, impl0.symbol.hpBound, impl1.symbol.hpBound) &&
     isMeetTPBounds(table)
   }

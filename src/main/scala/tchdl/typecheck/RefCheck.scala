@@ -123,7 +123,7 @@ object RefCheck {
     ifExpr.alt.foreach(verifyExpr)
 
     val isRetUnit = ifExpr.tpe =:= Type.unitTpe
-    val isRetHWTpe = ifExpr.tpe.asRefType.isHardwareType
+    val isRetHWTpe = ifExpr.tpe.asRefType.isHardwareType(ctx.tpBounds)
 
     if (!isRetHWTpe && !isRetUnit)
       global.repo.error.append(Error.RequireHardwareType(ifExpr.tpe.asRefType))

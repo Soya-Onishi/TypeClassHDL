@@ -847,7 +847,7 @@ object Type {
       callerHPBounds: Vector[HPBound],
       callerTPBounds: Vector[TPBound]
     )(implicit global: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
-      val method = global.builtin.functions.lookup(op.toMethod)
+      val method = global.builtin.operators.lookup(op.toMethod)
       val hpTable = Map.empty[Symbol.HardwareParamSymbol, HPExpr]
       val tpTable = Map(method.tps.head -> this)
       val swappedTPBounds = TPBound.swapBounds(method.tpBound, hpTable, tpTable)
@@ -1081,14 +1081,14 @@ object Type {
       }
     }
 
-    def isHardwareType(implicit ctx: Context, global: GlobalData): Boolean = {
+    def isHardwareType(tpBounds: Vector[TPBound])(implicit global: GlobalData): Boolean = {
       val builtinSymbols = global.builtin.types.symbols
 
       def loop(verified: Type.RefType, types: Set[Type.RefType]): Boolean = {
         def verify: Boolean = verified.origin match {
           case _: Symbol.ModuleSymbol => false
           case _: Symbol.InterfaceSymbol => false
-          case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
+          case tp: Symbol.TypeParamSymbol => tpBounds.find(_.target.origin == tp) match {
             case None => false
             case Some(tpBound) =>
               val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))

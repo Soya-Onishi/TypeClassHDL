@@ -14,7 +14,7 @@ abstract class GlobalData {
   val builtin = new {
     val types: BuiltInTypes = new BuiltInTypes
     val interfaces: BuiltInInterfaces = new BuiltInInterfaces
-    val functions: BuiltInFunctions = new BuiltInFunctions
+    val operators: BuiltInOperators = new BuiltInOperators
   }
 
   val buffer = new {
@@ -150,7 +150,7 @@ class BuiltInInterfaces extends BuiltInSymbols[Symbol.InterfaceSymbol] {
   )
 }
 
-class BuiltInFunctions extends BuiltInSymbols[Symbol.MethodSymbol] {
+class BuiltInOperators extends BuiltInSymbols[Symbol.MethodSymbol] {
   import scala.collection.mutable
 
   protected val builtin: mutable.Map[String, Symbol.MethodSymbol] = mutable.Map[String, Symbol.MethodSymbol](
@@ -166,13 +166,6 @@ class BuiltInFunctions extends BuiltInSymbols[Symbol.MethodSymbol] {
     "lessEqual" -> null,
     "not" -> null,
     "neg" -> null,
-    "concat" -> null,
-    "truncate" -> null,
-    "bit" -> null,
-    "idx" -> null,
-    "idxDyn" -> null,
-    "updated" -> null,
-    "updatedDyn" -> null
   )
 }
 

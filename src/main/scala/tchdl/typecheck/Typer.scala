@@ -662,7 +662,7 @@ object Typer {
 
         def requireSizedType: Either[Error, Unit] = {
           val tpe = typedCases.head.tpe.asRefType
-          val isHardwareType = tpe.isHardwareType
+          val isHardwareType = tpe.isHardwareType(ctx.tpBounds)
 
           if(isHardwareType) Right(())
           else Left(Error.RequireHardwareType(tpe))
@@ -989,7 +989,7 @@ object Typer {
             if (altTpe != conseqTpe)
               global.repo.error.append(Error.TypeMismatch(altTpe, conseqTpe))
 
-            if (!altTpe.isHardwareType)
+            if (!altTpe.isHardwareType(ctx.tpBounds))
               global.repo.error.append(Error.RejectHeapType(altTpe))
 
             altTpe

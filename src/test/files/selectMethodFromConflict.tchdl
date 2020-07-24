@@ -1,0 +1,15 @@
+package test
+
+struct Data[T]
+impl[T] Data[T] {
+  def a() -> Unit {}
+}
+
+impl [T] Data[T] {
+  def b() -> Unit {}
+}
+
+def f(d: Data[Bit[8]]) -> Unit {
+  d.a()
+  d.b()
+}

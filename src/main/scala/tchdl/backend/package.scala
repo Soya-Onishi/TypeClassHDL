@@ -8,7 +8,7 @@ import scala.collection.immutable.ListMap
 import firrtl.ir
 
 package object backend {
-  case class BuiltModule(module: BackendType, impl: Option[ImplementClassContainer], children: Vector[BackendType]) {
+  case class BuiltModule(module: BackendType, impl: Vector[ImplementClassContainer], children: Vector[BackendType]) {
     override def hashCode(): Int = module.hashCode() + impl.hashCode + children.hashCode
   }
 

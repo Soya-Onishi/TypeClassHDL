@@ -579,4 +579,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("lbp"), "GrayScaler", "RGB.tchdl", "GrayScaler.tchdl")
     runFirrtl(circuit, print = true)
   }
+
+  test("update and refer multiple layer Vector") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVecVec.tchdl")
+    runFirrtl(circuit, print = true)
+  }
 }

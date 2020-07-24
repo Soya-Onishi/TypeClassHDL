@@ -1,0 +1,10 @@
+package test
+
+struct Data[T]
+impl[T] Data[T] {
+  def a() -> Unit {}
+}
+
+impl [T] Data[T] {
+  def b() -> Unit {}
+}

@@ -773,4 +773,9 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.TypeMismatch])
   }
+
+  test("call methods of conflicted signature implementation causes no error") {
+    val (_, global) = untilTyper("selectMethodFromConflict.tchdl")
+    expectNoError(global)
+  }
 }

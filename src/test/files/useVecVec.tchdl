@@ -1,0 +1,15 @@
+package test
+
+module Top
+impl Top {
+  reg window: Vector[3, Vector[3, Bit[8]]]
+
+  input def referHead() -> Bit[8] {
+    this.window.idx[0]().idx[0]()
+  }
+
+  input def updateHead(data: Bit[8]) -> Unit {
+    val updatedRow = this.window.idx[0]().updated[0](data)
+    this.window = this.window.updated[0](updatedRow)
+  }
+}
