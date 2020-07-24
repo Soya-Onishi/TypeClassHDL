@@ -64,7 +64,7 @@ class BackendIRGenTest extends TchdlFunSuite {
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
     val topTpe = BackendType(topSymbol, Vector.empty, Vector.empty)
-    val top = modules.find(_.tpe == topTpe).get
+    val top = modules.find(_.tpe == topTpe).get.bodies.head
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
     val subTpe = BackendType(subSymbol, Vector.empty, Vector.empty)
@@ -92,11 +92,11 @@ class BackendIRGenTest extends TchdlFunSuite {
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
     val topTpe = BackendType(topSymbol, Vector(HPElem.Num(4)), Vector.empty)
-    val top = modules.find(_.tpe == topTpe).get
+    val top = modules.find(_.tpe == topTpe).get.bodies.head
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
     val subTpe = BackendType(subSymbol, Vector(HPElem.Num(4)), Vector.empty)
-    val sub = modules.find(_.tpe == subTpe).get
+    val sub = modules.find(_.tpe == subTpe).get.bodies.head
 
     val subFieldSymbol = tree.topDefs
       .collect{ case impl: frontend.ImplementClass => impl }
@@ -147,8 +147,9 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(modules.length == 1)
     assert(methods.isEmpty)
 
-    val inputFunc = modules.head.interfaces.find(_.label.symbol.name == "inputFunc").get
-    val internalFunc = modules.head.interfaces.find(_.label.symbol.name == "internalFunc").get
+    val bodies = modules.head.bodies
+    val inputFunc = bodies.head.interfaces.find(_.label.symbol.name == "inputFunc").get
+    val internalFunc = bodies.head.interfaces.find(_.label.symbol.name == "internalFunc").get
 
     val topTpe = modules.head.tpe
     val bit8 = internalFunc.ret.tpe
@@ -168,7 +169,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(methods.isEmpty)
     assert(modules.length == 1)
 
-    val module = modules.head
+    val module = modules.head.bodies.head
 
     assert(module.interfaces.length == 1)
     assert(module.stages.length == 1)
@@ -187,7 +188,7 @@ class BackendIRGenTest extends TchdlFunSuite {
 
   test("build valid stage code correctly") {
     val (modules, _, _) = untilThisPhase(Vector("test"), "M", "validSequenceCircuit.tchdl")
-    val module = modules.head
+    val module = modules.head.bodies.head
 
     assert(module.stages.length == 3)
 
@@ -228,8 +229,8 @@ class BackendIRGenTest extends TchdlFunSuite {
   test("local variable also has hashcode") {
     val (modules, _, _) = untilThisPhase(Vector("test"), "Top", "UseLocalVariable.tchdl")
 
-    val module = modules.head
-    val local = module.interfaces.head.code.collectFirst{ case Variable(name, _, _) => name }.get
+    val body = modules.head.bodies.head
+    val local = body.interfaces.head.code.collectFirst{ case Variable(name, _, _) => name }.get
 
     assert(local.matches("func_[0-9a-f]+\\$0\\$local"))
   }
@@ -237,7 +238,7 @@ class BackendIRGenTest extends TchdlFunSuite {
   test("construct enum value") {
     val (modules, _, _) = untilThisPhase(Vector("test"), "Mod", "ConstructEnum0.tchdl")
     val module = modules.head
-    val interface = module.interfaces.head
+    val interface = module.bodies.head.interfaces.head
 
     assert(interface.ret.isInstanceOf[ConstructEnum])
   }
@@ -245,7 +246,7 @@ class BackendIRGenTest extends TchdlFunSuite {
   test("IR from pattern match expression generated correctly") {
     val (modules, _, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch0.tchdl")
 
-    val expr = modules.head.interfaces.head.ret
+    val expr = modules.head.bodies.head.interfaces.head.ret
     assert(expr.isInstanceOf[Match])
 
     val Match(matched, cases, _) = expr
@@ -271,7 +272,9 @@ class BackendIRGenTest extends TchdlFunSuite {
   test("IR from pattern match expression with condition generated correctly") {
     val (modules, _, global) = untilThisPhase(Vector("test"), "Top", "PatternMatch6.tchdl")
 
-    val expr = modules.head.interfaces.head.ret
+    assert(modules.head.bodies.length == 1)
+    val body = modules.head.bodies.head
+    val expr = body.interfaces.head.ret
     assert(expr.isInstanceOf[Match])
 
     val Match(matched, cases, _) = expr
@@ -310,9 +313,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     expectNoError(global)
 
     assert(modules.length == 1)
-    assert(modules.head.interfaces.length == 2)
+    assert(modules.head.bodies.length == 1)
+    val body = modules.head.bodies.head
+    assert(body.interfaces.length == 2)
 
-    val names = modules.head.interfaces.map(_.label.symbol.name)
+    val names = body.interfaces.map(_.label.symbol.name)
     assert(names.contains("f"))
     assert(names.contains("g"))
   }

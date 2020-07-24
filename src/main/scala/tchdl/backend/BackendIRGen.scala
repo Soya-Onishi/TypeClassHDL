@@ -13,8 +13,7 @@ object BackendIRGen {
   case class Summary(modules: Vector[ModuleContainer], methods: Vector[MethodContainer], labels: Set[BackendLabel])
 
   def exec(modules: Vector[BuiltModule])(implicit global: GlobalData): (Vector[ModuleContainer], Vector[MethodContainer]) = {
-    val (moduleContainerss, moduleMethodss, labels) = modules.filter(_.module.symbol != Symbol.mem).map(buildModule).unzip3
-    val moduleContainers = moduleContainerss.flatten
+    val (moduleContainers, moduleMethodss, labels) = modules.filter(_.tpe.symbol != Symbol.mem).map(buildModule).unzip3
     val methods = moduleMethodss.flatten
     val labelSet = labels.flatten.toSet
 
@@ -47,8 +46,8 @@ object BackendIRGen {
       BackendContext(label, tpBound)
     }
 
-    val interfaceContainers = summary.modules.flatMap(_.interfaces)
-    val stageContainers = summary.modules.flatMap(_.stages)
+    val interfaceContainers = summary.modules.flatMap(_.bodies).flatMap(_.interfaces)
+    val stageContainers = summary.modules.flatMap(_.bodies).flatMap(_.stages)
 
     val unConstructedLabels = summary.labels.filterNot {
       case label: MethodLabel if isInterface(label.symbol) => interfaceContainers.exists(_.label == label)
@@ -67,7 +66,9 @@ object BackendIRGen {
         val (container, labels) = buildMethod(method, label)(context, global)
 
         val modules = summary.modules.map {
-          case module if label.accessor.contains(module.tpe) => module.addInterface(container)
+          case module if label.accessor.contains(module.tpe) =>
+            val head = module.bodies.head.addInterface(container)
+            module.copy(bodies = module.bodies.updated(0, head))
           case module => module
         }
 
@@ -90,7 +91,9 @@ object BackendIRGen {
         val (container, labels) = buildStage(stage, label)(context, global)
 
         val modules = summary.modules.map {
-          case module if label.accessor.contains(module.tpe) => module.addStage(container)
+          case module if label.accessor.contains(module.tpe) =>
+            val head = module.bodies.head.addStage(container)
+            module.copy(bodies = module.bodies.updated(0, head))
           case module => module
         }
 
@@ -101,10 +104,10 @@ object BackendIRGen {
     else build(renewedSummary)
   }
 
-  def buildModule(builtModule: BuiltModule)(implicit global: GlobalData): (Vector[ModuleContainer], Vector[MethodContainer], Set[BackendLabel]) = {
-    val (moduleContainers, methodContainerss, labelss) = builtModule.impl.map { impl =>
-      val hpTable = buildHPTable(impl.symbol.hps, builtModule.module, impl.targetType)
-      val tpTable = buildTPTable(impl.symbol.tps, builtModule.module, impl.targetType)
+  def buildModule(builtModule: BuiltModule)(implicit global: GlobalData): (ModuleContainer, Vector[MethodContainer], Set[BackendLabel]) = {
+    val (moduleBodies, methodContainerss, labelss) = builtModule.impl.map { impl =>
+      val hpTable = buildHPTable(impl.symbol.hps, builtModule.tpe, impl.targetType)
+      val tpTable = buildTPTable(impl.symbol.tps, builtModule.tpe, impl.targetType)
       val tpBound = {
         val tpBounds = impl.symbol.tpBound.map {
           tpBound =>
@@ -116,26 +119,24 @@ object BackendIRGen {
       }
 
       val containerHPs = hpTable.map { case (hp, elem) => hp.path.rootPath.last + "$" + hp.path.innerPath.mkString("$") -> elem }
-      val moduleContainer = ModuleContainer.empty(builtModule.module, containerHPs)
-
+      val moduleBody = ModuleContainerBody.empty(containerHPs)
       val implTree = findImplClassTree(impl.symbol.asImplementSymbol, global).getOrElse(throw new ImplementationErrorException("impl tree should be found"))
-      val module = moduleContainer.tpe
 
       val pairs = implTree.components.collect {
         case method: frontend.MethodDef if isInterface(method.symbol.asMethodSymbol) =>
-          val label = MethodLabel(method.symbol.asMethodSymbol, Some(module), None, hpTable, tpTable)
+          val label = MethodLabel(method.symbol.asMethodSymbol, Some(builtModule.tpe), None, hpTable, tpTable)
           val context = BackendContext(label, tpBound)
           val (container, labels) = buildMethod(method, label)(context, global)
 
           (container, labels)
         case stage: frontend.StageDef =>
-          val label = StageLabel(stage.symbol.asStageSymbol, Some(module), hpTable, tpTable)
+          val label = StageLabel(stage.symbol.asStageSymbol, Some(builtModule.tpe), hpTable, tpTable)
           val context = BackendContext(label, tpBound)
           val (container, labels) = buildStage(stage, label)(context, global)
 
           (container, labels)
         case always: frontend.AlwaysDef =>
-          val label = AlwaysLabel(always.symbol.asAlwaysSymbol, Some(module), hpTable, tpTable)
+          val label = AlwaysLabel(always.symbol.asAlwaysSymbol, Some(builtModule.tpe), hpTable, tpTable)
           val context = BackendContext(label, tpBound)
           val BuildResult(nodes, Some(last), labels) = buildBlk(always.blk)(context, global)
 
@@ -144,7 +145,7 @@ object BackendIRGen {
 
           (container, labels)
         case vdef: frontend.ValDef =>
-          val label = FieldLabel(vdef.symbol.asVariableSymbol, Some(module), hpTable, tpTable)
+          val label = FieldLabel(vdef.symbol.asVariableSymbol, Some(builtModule.tpe), hpTable, tpTable)
           val context = BackendContext(label, tpBound)
 
           val exprResult =
@@ -172,7 +173,7 @@ object BackendIRGen {
 
       val (containers, labels) = pairs.unzip
       val labelSet = labels.flatten.toSet
-      val (assignedModule, moduleMethods) = containers.foldLeft((moduleContainer, Vector.empty[MethodContainer])) {
+      val (body, moduleMethods) = containers.foldLeft((moduleBody, Vector.empty[MethodContainer])) {
         case ((module, methods), c: MethodContainer) if isInterface(c.label.symbol) => (module.addInterface(c), methods)
         case ((module, methods), c: MethodContainer) => (module, methods :+ c)
         case ((module, methods), c: StageContainer) => (module.addStage(c), methods)
@@ -180,10 +181,11 @@ object BackendIRGen {
         case ((module, methods), c: FieldContainer) => (module.addField(c), methods)
       }
 
-      (assignedModule, moduleMethods, labelSet)
+      (body, moduleMethods, labelSet)
     }.unzip3
 
-    (moduleContainers, methodContainerss.flatten, labelss.flatten.toSet)
+    val container = ModuleContainer(builtModule.tpe, moduleBodies)
+    (container, methodContainerss.flatten, labelss.flatten.toSet)
   }
 
   def buildMethod(methodDef: frontend.MethodDef, label: MethodLabel)(implicit ctx: BackendContext, global: GlobalData): (MethodContainer, Set[BackendLabel]) = {

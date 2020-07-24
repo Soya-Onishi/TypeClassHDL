@@ -431,7 +431,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("call sibling interface with Future[_] parameter") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "CallSiblingFuture.tchdl")
-    runFirrtl(circuit)
+    runFirrtl(circuit, print = true)
   }
 
   test("call parent interface with Future[_] parameter") {

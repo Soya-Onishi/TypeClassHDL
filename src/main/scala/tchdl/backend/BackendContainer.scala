@@ -9,30 +9,39 @@ trait BackendContainer {
 
 case class ModuleContainer(
   tpe: BackendType,
+  bodies: Vector[ModuleContainerBody]
+) extends BackendContainer {
+  lazy val toFirrtlString = tpe.toFirrtlString
+}
+
+object ModuleContainer {
+  def empty(tpe: BackendType): ModuleContainer =
+    ModuleContainer(tpe, Vector.empty)
+}
+
+case class ModuleContainerBody(
   hps: Map[String, HPElem],
   interfaces: Vector[MethodContainer],
   stages: Vector[StageContainer],
   always: Vector[AlwaysContainer],
   fields: Vector[FieldContainer]
-) extends BackendContainer {
-  def addInterface(interface: MethodContainer): ModuleContainer =
+) {
+  def addInterface(interface: MethodContainer): ModuleContainerBody =
     this.copy(interfaces = this.interfaces :+ interface)
 
-  def addStage(stage: StageContainer): ModuleContainer =
+  def addStage(stage: StageContainer): ModuleContainerBody =
     this.copy(stages = this.stages :+ stage)
 
-  def addAlways(always: AlwaysContainer): ModuleContainer =
+  def addAlways(always: AlwaysContainer): ModuleContainerBody =
     this.copy(always = this.always :+ always)
 
-  def addField(field: FieldContainer): ModuleContainer =
+  def addField(field: FieldContainer): ModuleContainerBody =
     this.copy(fields = this.fields :+ field)
-
-  lazy val toFirrtlString = tpe.toFirrtlString
 }
 
-object ModuleContainer {
-  def empty(tpe: BackendType, hps: Map[String, HPElem]): ModuleContainer =
-    ModuleContainer(tpe, hps, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
+object ModuleContainerBody {
+  def empty(hps: Map[String, HPElem]): ModuleContainerBody =
+    ModuleContainerBody(hps, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
 }
 
 case class MethodContainer(

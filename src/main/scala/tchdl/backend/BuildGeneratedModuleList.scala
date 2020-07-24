@@ -102,36 +102,29 @@ object BuildGeneratedModuleList {
         .map(toBackendType(_, hpTable, tpTable))
         .toVector
 
-      val result = subModuleTpes.foldLeft[Either[Error, Vector[BuiltModule]]](Right(builtModules)) {
-        case (Right(modules), subModule) if modules.exists(_.module == subModule)  => Right(modules)
+      subModuleTpes.foldLeft[Either[Error, Vector[BuiltModule]]](Right(builtModules)) {
+        case (Right(modules), subModule) if modules.map(_.tpe).toSet.contains(subModule)  => Right(modules)
         case (Right(modules), subModule) => constructModule(subModule, subModule +: parentModules, modules)
         case (Left(err), _) => Left(err)
-      }
-
-      result match {
-        case Left(err) => Left(err)
-        case Right(builtModules) =>
-          val built = BuiltModule(parent, Some(impl), subModuleTpes)
-          Right(built +: builtModules)
       }
     }
 
     verifyCyclic match {
       case Left(err) => Left(err)
       case Right(_) =>
-        val (errs, moduless) = findImplementClasses.map(buildChildren(_, module)).partitionMap(identity)
+        val thisModuleImpls = findImplementClasses
+        val (errs, builtModuless) = thisModuleImpls.map(buildChildren(_, module)).partitionMap(identity)
 
         if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
-        else moduless.flatten match {
-          case Vector() => Right(BuiltModule(module, Vector.empty, Vector.empty) +: builtModules)
-          case modules =>
-            val container = modules.tail.foldLeft(modules.head) {
-              case (acc, module) =>
-                val impls = acc.impl ++ module.impl
-                val children = acc.children ++ module.children
+        else {
+          val builtModules = builtModuless.foldLeft[Vector[BuiltModule]](Vector.empty) {
+            case (acc, modules) =>
+              val assigns = modules.filterNot(module => acc.exists(_.tpe == module.tpe))
+              acc ++ assigns
+          }
 
-                BuiltModule(module.module, impls, children)
-            }
+          val thisModule = BuiltModule(module, thisModuleImpls)
+          Right(thisModule +: builtModules)
         }
     }
   }

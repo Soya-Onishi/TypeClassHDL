@@ -57,9 +57,7 @@ class BuildModuleListTest extends TchdlFunSuite {
     val top = modules(0)
     val sub = modules(1)
 
-    assert(top.children.length == 1)
-    assert(top.children.head == sub.module)
-    assert(top.impl.isDefined)
+    assert(top.impl.length == 1)
     assert(sub.impl.isEmpty)
   }
 
@@ -72,8 +70,8 @@ class BuildModuleListTest extends TchdlFunSuite {
     val top = modules(0)
     val sub = modules(1)
 
-    assert(top.module.hargs.head == HPElem.Num(4))
-    assert(sub.module.hargs.head == HPElem.Num(4))
+    assert(top.tpe.hargs.head == HPElem.Num(4))
+    assert(sub.tpe.hargs.head == HPElem.Num(4))
   }
 
   test("when constructing exactly same type, use same module's id") {
@@ -87,8 +85,5 @@ class BuildModuleListTest extends TchdlFunSuite {
     val sub8Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(8)), Vector.empty)
 
     val top  = modules.head
-
-    assert(top.children.count(_ == sub4Tpe) == 2)
-    assert(top.children.count(_ == sub8Tpe) == 1)
   }
 }

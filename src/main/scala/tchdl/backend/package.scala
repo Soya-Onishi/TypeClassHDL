@@ -8,8 +8,8 @@ import scala.collection.immutable.ListMap
 import firrtl.ir
 
 package object backend {
-  case class BuiltModule(module: BackendType, impl: Vector[ImplementClassContainer], children: Vector[BackendType]) {
-    override def hashCode(): Int = module.hashCode() + impl.hashCode + children.hashCode
+  case class BuiltModule(tpe: BackendType, impl: Vector[ImplementClassContainer]) {
+    override def hashCode(): Int = tpe.hashCode + impl.hashCode
   }
 
   trait ToFirrtlString {
