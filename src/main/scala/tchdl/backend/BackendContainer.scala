@@ -20,6 +20,7 @@ object ModuleContainer {
 }
 
 case class ModuleContainerBody(
+  interface: Option[BackendType],
   hps: Map[String, HPElem],
   interfaces: Vector[MethodContainer],
   stages: Vector[StageContainer],
@@ -41,7 +42,7 @@ case class ModuleContainerBody(
 
 object ModuleContainerBody {
   def empty(hps: Map[String, HPElem]): ModuleContainerBody =
-    ModuleContainerBody(hps, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
+    ModuleContainerBody(None, hps, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
 }
 
 case class MethodContainer(

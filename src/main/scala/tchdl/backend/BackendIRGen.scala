@@ -59,7 +59,7 @@ object BackendIRGen {
       case (summary, label: MethodLabel) if isInterface(label.symbol) =>
         val impl =
           findImplClassTree(label.symbol, global) orElse
-            findImplInterfaceTree(label.symbol, global) getOrElse (throw new ImplementationErrorException("method must be there"))
+          findImplInterfaceTree(label.symbol, global) getOrElse (throw new ImplementationErrorException("method must be there"))
         val method = findMethodTree(label.symbol, global).getOrElse(throw new ImplementationErrorException("method tree should be found"))
 
         val context = makeContext(label, Some(impl.symbol.asImplementSymbol), None)
@@ -67,8 +67,21 @@ object BackendIRGen {
 
         val modules = summary.modules.map {
           case module if label.accessor.contains(module.tpe) =>
-            val head = module.bodies.head.addInterface(container)
-            module.copy(bodies = module.bodies.updated(0, head))
+            val modifyIdx = module.bodies.map(_.interface).indexOf(label.interface)
+            module.bodies.find(_.interface == label.interface) match {
+              case None =>
+                val interface = label.interface.get
+                val nameSuffix = interface.toFirrtlString
+                val hpNames = interface.symbol.hps.map(hp => nameSuffix + "_" + hp.name)
+                val hps = (hpNames zip interface.hargs).toMap
+                val newBody = ModuleContainerBody(label.interface, hps, Vector(container), Vector.empty, Vector.empty, Vector.empty)
+
+                module.copy(bodies = module.bodies :+ newBody)
+              case Some(moduleBody) =>
+                val newBody = moduleBody.addInterface(container)
+                module.copy(bodies = module.bodies.updated(modifyIdx, newBody))
+            }
+
           case module => module
         }
 

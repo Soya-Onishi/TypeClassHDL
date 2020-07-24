@@ -577,11 +577,16 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("compile grayscale module") {
     val (circuit, _) = untilThisPhase(Vector("lbp"), "GrayScaler", "RGB.tchdl", "GrayScaler.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 
   test("update and refer multiple layer Vector") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVecVec.tchdl")
+    runFirrtl(circuit)
+  }
+
+  test("use interface's internal interface") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useInterfaceMethodForModule.tchdl")
     runFirrtl(circuit, print = true)
   }
 }

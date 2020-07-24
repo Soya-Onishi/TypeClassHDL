@@ -1,0 +1,22 @@
+package test
+
+import std::traits:::From
+
+module Top
+impl Top {
+  mod sub: Sub = Sub {}
+
+  input def inFunction(a: Bit[4]) -> Bit[4] {
+    this.sub.inc(a)
+  }
+}
+
+module Sub
+
+interface TopInterface[m: Num] where m: min 1 {
+  input def inc(in: Bit[m]) -> Bit[m]
+}
+
+impl[m: Num] TopInterface[m] for Sub where m: min 1 {
+  input def inc(in: Bit[m]) -> Bit[m] { in + Bit[m]:::from(1) }
+}
