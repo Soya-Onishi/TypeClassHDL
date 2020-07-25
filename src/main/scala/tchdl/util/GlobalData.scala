@@ -114,6 +114,14 @@ trait BuiltInSymbols[T <: Symbol] {
       case None => throw new ImplementationErrorException(s"$name is not builtin symbol")
     }
   }
+
+  def lookupSafe(name: String): Option[T] = {
+    builtin.get(name) match {
+      case Some(null) => None
+      case Some(symbol) => Some(symbol)
+      case None => None
+    }
+  }
 }
 
 class BuiltInTypes extends BuiltInSymbols[Symbol.ClassTypeSymbol] {

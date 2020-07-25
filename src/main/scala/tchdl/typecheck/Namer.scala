@@ -28,7 +28,7 @@ object Namer {
   }
 
   def namedMethod(method: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
-    def tryAppendBuiltin(symbol: Symbol.MethodSymbol): Unit = {
+    def tryAppendOperator(symbol: Symbol.MethodSymbol): Unit = {
       val isTopLevel = ctx.path.pkgName == Vector("std", "functions")
       val hasName = global.builtin.operators.names.contains(symbol.name)
 
@@ -42,7 +42,8 @@ object Namer {
       ctx.path,
       Accessibility.Public,
       method.flag,
-      methodTpe
+      methodTpe,
+      method.annons
     )
 
     val signatureCtx = Context(ctx, methodSymbol)
@@ -52,7 +53,7 @@ object Namer {
     methodSymbol.setHPs(namedHPs.map(_.symbol.asHardwareParamSymbol))
     methodSymbol.setTPs(namedTPs.map(_.symbol.asTypeParamSymbol))
 
-    tryAppendBuiltin(methodSymbol)
+    tryAppendOperator(methodSymbol)
     ctx.append(methodSymbol).left.foreach(global.repo.error.append)
     method.setSymbol(methodSymbol)
   }

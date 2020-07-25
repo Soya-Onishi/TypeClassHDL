@@ -137,6 +137,7 @@ trait From[T] {
 impl[m: Num] From[Int] for Bit[m]
   where m: min 1
 {
+  @built_in[fromIntBit: (Int) => Bit]
   static def from(n: Int) -> Bit[m] {
     Bit[m]:::from(n)
   }
@@ -145,6 +146,7 @@ impl[m: Num] From[Int] for Bit[m]
 impl[m: Num] From[Bool] for Bit[m]
   where m: min 1
 {
+  @built_in[fromBoolBit: (Bool) => Bit]
   static def from(n: Bool) -> Bit[m] {
     Bit[m]:::from(n)
   }
@@ -154,6 +156,7 @@ impl[x: Num, y: Num] From[Bit[y]] for Bit[x]
   where x: min 1,
         y: min 1
 {
+  @built_in[fromBitBit: (Bit) => Bit]
   static def from(n: Bit[y]) -> Bit[x] {
     Bit[x]:::from(n)
   }

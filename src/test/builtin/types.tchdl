@@ -12,6 +12,7 @@ struct Bool {}
 struct Vector[m: Num, T] where m: min 0, T: HW
 
 impl[m: Num] Bit[m] where m: min 1 {
+  @built_in[truncateBit: () => Bit]
   def truncate[x: Num, y: Num]() -> Bit[x - y + 1]
     where x: min 1 & max m - 1,
           y: min 1 & max x,
@@ -20,12 +21,14 @@ impl[m: Num] Bit[m] where m: min 1 {
     this.truncate[x, y]()
   }
 
+  @built_in[bitBit: () => Bit]
   def bit[x: Num]() -> Bit[1]
     where x: min 1 & max m - 1
   {
     this.bit[x]()
   }
 
+  @built_in[concatBit: (Bit) => Bit]
   def concat[n: Num](that: Bit[n]) -> Bit[m + n]
     where n: min 1
   {
@@ -37,24 +40,28 @@ impl[m: Num, T] Vector[m, T]
   where m: min 0,
         T: HW
 {
+  @built_in[idxVec: () => *]
   def idx[x: Num]() -> T
     where x: min 0 & max m - 1
   {
     this.idx[x]()
   }
 
+  @built_in[idxDynVec: (Bit) => *]
   def idxDyn[n: Num](idx: Bit[n]) -> T
     where n: min 1
   {
     this.idxDyn[n](idx)
   }
 
+  @built_in[updatedVec: (*) => Vector]
   def updated[idx: Num](elem: T) -> Vector[m, T]
     where idx: min 0 & max m - 1
   {
     this.updated[idx](elem)
   }
 
+  @built_in[updatedDynVec: (Bit, *) => Vector]
   def updatedDyn[n: Num](idx: Bit[n], elem: T) -> Vector[m, T]
     where n: min 1
   {
@@ -72,6 +79,7 @@ impl[depth: Num, width: Num, T] Memory[depth, width, T]
         width: min 1,
         T: HW
 {
+  @built_in[readMem: (Bit) => Future]
   input def read(addr: Bit[width]) -> Future[T] {
     this.reading(addr)
   }
@@ -80,6 +88,7 @@ impl[depth: Num, width: Num, T] Memory[depth, width, T]
     this.reading(addr)
   }
 
+  @built_in[writeMem: (Bit, *) => Unit]
   input def write(addr: Bit[width], data: T) -> Unit {
     this.writing(addr, data)
   }

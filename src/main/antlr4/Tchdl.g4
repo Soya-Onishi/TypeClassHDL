@@ -94,7 +94,16 @@ signature_accessor
     ;
 
 method_def
-    : method_accessor* DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
+    : builtin_specifier* method_accessor* DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
+    ;
+
+builtin_specifier
+    : '@' 'built_in' '[' EXPR_ID ':' '(' (builtin_type (',' builtin_type)*)? ')' '=>' builtin_type ']'
+    ;
+
+builtin_type
+    : TYPE_ID # UseIDPattern
+    | '*'     # AnyPattern
     ;
 
 method_accessor

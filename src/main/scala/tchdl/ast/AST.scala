@@ -308,7 +308,7 @@ case class EnumMemberDef(name: String, fields: Vector[TypeTree]) extends Definit
 case class ImplementClass(target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], components: Vector[Component]) extends Definition
 case class ImplementInterface(interface: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], types: Vector[TypeDef]) extends Definition
 case class AlwaysDef(name: String, blk: Block) extends Component
-case class MethodDef(flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
+case class MethodDef(annons: Vector[Annotation], flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
 case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Component with BlockElem
 case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component
 case class StateDef(name: String, params: Vector[ValDef], blk: Block) extends Definition
@@ -530,4 +530,9 @@ object Operation {
     override def toOperator: String = "!"
     override def isCommutative: Boolean = false
   }
+}
+
+trait Annotation
+object Annotation {
+  case class BuiltIn(name: String, args: Vector[String], ret: String) extends Annotation
 }

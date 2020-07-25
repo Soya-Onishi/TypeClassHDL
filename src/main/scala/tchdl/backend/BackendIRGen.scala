@@ -361,6 +361,25 @@ object BackendIRGen {
       methodSymbol
     }
 
+    def getBuiltIn(method: Symbol.MethodSymbol, accessor: Option[backend.Term], accessorTpe: Option[BackendType], args: Vector[backend.Term], hargs: Vector[HPElem], ret: BackendType): Option[backend.CallBuiltIn] = {
+      val builtins = method.annons.collect{ case x: frontend.Annotation.BuiltIn => x }
+      val foundBuiltIn = builtins.find { builtin =>
+        def verify(expect: String, actual: Symbol.TypeSymbol): Boolean = expect match {
+          case "*" => true
+          case tpe => global.builtin.types.lookupSafe(tpe).contains(actual)
+        }
+
+        lazy val sameLength = builtin.args.length == args.length
+        lazy val sameTpe = (builtin.args zip args.map(_.tpe.symbol)).forall { case (e, a) => verify(e, a) }
+        lazy val sameRet = verify(builtin.ret, ret.symbol)
+
+        sameLength && sameTpe && sameRet
+      }
+
+      val arguments = (accessor ++ args).toVector
+      foundBuiltIn.map(builtin => backend.CallBuiltIn(builtin.name, accessorTpe, arguments, hargs, ret))
+    }
+
     val argSummary = apply.args.foldLeft(Summary(Vector.empty, Vector.empty, Set.empty)) {
       case (summary, arg) =>
         val BuildResult(nodes, Some(expr), labels) = buildExpr(arg)
@@ -387,7 +406,16 @@ object BackendIRGen {
         val args = argSummary.terms.map(_.tpe.symbol).map(SigArg.Sym.apply)
         val signature = FunctionSignature(pkg, name, None, args: _*)
         val isBuiltIn = builtinFunctions.contains(signature)
+        val (call, label) = getBuiltIn(ident.symbol.asMethodSymbol, None, None, argSummary.terms, hargs, retTpe) match {
+          case Some(builtin) => (builtin, None)
+          case None =>
+            val label = makeLabel(ident.symbol.asMethodSymbol, None, argSummary.terms.map(_.tpe), hargs, targs)
+            val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
 
+            (call, Some(label))
+        }
+
+        /*
         val (call, label) = if (isBuiltIn) {
           val call = backend.CallBuiltIn(signature.toString, None, argSummary.terms, hargs, retTpe)
           (call, None)
@@ -397,6 +425,7 @@ object BackendIRGen {
 
           (call, Some(label))
         }
+        */
 
         val labels = argSummary.labels ++ label
 
@@ -426,15 +455,13 @@ object BackendIRGen {
         val signature = FunctionSignature(pkg, name, Some(prefixTpe.origin), args: _*)
         val isBuiltIn = builtinFunctions.contains(signature)
 
-        val (call, label) = if (isBuiltIn) {
-          val call = backend.CallBuiltIn(signature.toString, Some(prefixBackendTpe), argSummary.terms, hargs, retTpe)
+        val (call, label) = getBuiltIn(referredMethodSymbol, None, Some(prefixBackendTpe), argSummary.terms, hargs, retTpe) match {
+          case Some(builtIn) => (builtIn, None)
+          case None =>
+            val label = makeLabel(referredMethodSymbol, Some(prefixBackendTpe), argSummary.terms.map(_.tpe), hargs, targs)
+            val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
 
-          (call, None)
-        } else {
-          val label = makeLabel(referredMethodSymbol, Some(prefixBackendTpe), argSummary.terms.map(_.tpe), hargs, targs)
-          val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
-
-          (call, Some(label))
+            (call, Some(label))
         }
 
         val labels = label.map(argSummary.labels + _).getOrElse(argSummary.labels)
@@ -489,12 +516,10 @@ object BackendIRGen {
         lazy val readMem = backend.ReadMemory(accessor, argSummary.terms.head, retTpe)
         lazy val writeMem = backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1))
 
-        def builtin(sig: FunctionSignature) = backend.CallBuiltIn(sig.toString, Some(accessor.tpe), accessor +: argSummary.terms, hargs, retTpe)
-
-        val (call, label) = builtInFunction match {
+        val (call, label) = getBuiltIn(referredMethodSymbol, Some(accessor), Some(accessor.tpe), argSummary.terms, hargs, retTpe) match {
           case Some(_) if isMemRead => (readMem, None)
           case Some(_) if isMemWrite => (writeMem, None)
-          case Some(function) => (builtin(function), None)
+          case Some(method) => (method, None)
           case _ =>
             val label = makeLabel(referredMethodSymbol, Some(accessor.tpe), argSummary.terms.map(_.tpe), hargs, targs)
             val call = select.symbol match {
@@ -506,7 +531,6 @@ object BackendIRGen {
         }
 
         val resultLabels = label.map(argSummary.labels ++ labels + _).getOrElse(argSummary.labels ++ labels)
-
         BuildResult((nodes :+ accessorNode) ++ argSummary.nodes, Some(call), resultLabels)
     }
   }
@@ -577,14 +601,36 @@ object BackendIRGen {
 
     val pkg = binop.symbol.path.pkgName
     val name = binop.symbol.name
+    val annons = binop.symbol.asMethodSymbol.annons
+    val argSymbols = Vector(left.tpe.symbol, right.tpe.symbol)
+    val retSymbol = binop.tpe.asRefType.origin
+    val builtins = annons.collect{ case x: frontend.Annotation.BuiltIn => x }
+    val builtinName = builtins.find { builtin =>
+      def verify(expect: String, actual: Symbol.TypeSymbol): Boolean = expect match {
+        case "*" => true
+        case tpe => global.builtin.types.lookupSafe(tpe).contains(actual)
+      }
 
+      lazy val isSameLength = builtin.args.length == argSymbols.length
+      lazy val sameArgs = (builtin.args zip argSymbols).forall{ case (expect, actual) => verify(expect, actual) }
+      lazy val sameRet = verify(builtin.ret, retSymbol)
+
+      isSameLength && sameArgs && sameRet
+    }
+
+    val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+    val call = builtinName match {
+      case None => buildCallMethod(retTpe)
+      case Some(name) => backend.CallBuiltIn(name.name, None, Vector(left, right), Vector.empty, retTpe)
+    }
+
+    /*
     val function = FunctionSignature(pkg, name, None, SigArg.Sym(leftExpr.tpe.symbol), SigArg.Sym(rightExpr.tpe.symbol))
     val isBuiltin = builtinFunctions.contains(function)
-    val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
-
     val call =
       if (isBuiltin) backend.CallBuiltIn(function.toString, None, Vector(left, right), Vector.empty, retTpe)
       else buildCallMethod(retTpe)
+    */
 
     /*
     val call = builtInPairs.get(binop.op) match {

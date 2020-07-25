@@ -1,5 +1,6 @@
 package tchdl.util
 
+import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.reflect.ClassTag
@@ -261,6 +262,7 @@ object Symbol {
   class MethodSymbol(
     val path: NameSpace,
     val accessibility: Accessibility,
+    val annons : Vector[Annotation],
     flags: Modifier,
     tpe: Type
   ) extends TermSymbol(tpe, flags) with HasParams
@@ -271,9 +273,10 @@ object Symbol {
       path: NameSpace,
       visibility: Accessibility,
       flags: Modifier,
-      tpe: Type
+      tpe: Type,
+      annons: Vector[Annotation]
     ): MethodSymbol =
-      new MethodSymbol(path.appendComponentName(name), visibility, flags, tpe)
+      new MethodSymbol(path.appendComponentName(name), visibility, annons, flags, tpe)
   }
 
   class AlwaysSymbol(val path: NameSpace) extends TermSymbol(Type.NoType, Modifier.NoModifier) {

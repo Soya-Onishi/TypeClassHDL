@@ -11,30 +11,46 @@ import std::traits:::Neg
 
 import std::types:::Ordering
 
+@built_in[addInt: (Int, Int) => Int]
+@built_in[addBit: (Bit, Bit) => Bit]
 def add[T](a: T, b: T) -> T where T: Add {
   a.add(b)
 }
 
+@built_in[subInt: (Int, Int) => Int]
+@built_in[subBit: (Bit, Bit) => Bit]
 def sub[T](a: T, b: T) -> T where T: Sub {
   a.sub(b)
 }
 
+@built_in[mulInt: (Int, Int) => Int]
+@built_in[mulBit: (Bit, Bit) => Bit]
 def mul[T](a: T, b: T) -> T where T: Mul {
   a.mul(b)
 }
 
+@built_in[divInt: (Int, Int) => Int]
+@built_in[divBit: (Bit, Bit) => Bit]
 def div[T](a: T, b: T) -> T where T: Div {
   a.div(b)
 }
 
+@built_in[eqInt: (Int, Int) => Bool]
+@built_in[eqBit: (Bit, Bit) => Bool]
+@built_in[eqBool: (Bool, Bool) => Bool]
 def equal[T](a: T, b: T) -> Bool where T: Eq {
   a.equals(b)
 }
 
+@built_in[neInt: (Int, Int) => Bool]
+@built_in[neBit: (Bit, Bit) => Bool]
+@built_in[neBool: (Bool, Bool) => Bool]
 def notEqual[T](a: T, b: T) -> Bool where T: Eq {
   !(a.equals(b))
 }
 
+@built_in[geInt: (Int, Int) => Bool]
+@built_in[geBit: (Bit, Bit) => Bool]
 def greaterEqual[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Gt => true
@@ -43,6 +59,8 @@ def greaterEqual[T](a: T, b: T) -> Bool where T: Ord {
   }
 }
 
+@built_in[gtInt: (Int, Int) => Bool]
+@built_in[gtBit: (Bit, Bit) => Bool]
 def greaterThan[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Gt => true
@@ -51,6 +69,8 @@ def greaterThan[T](a: T, b: T) -> Bool where T: Ord {
   }
 }
 
+@built_in[leInt: (Int, Int) => Bool]
+@built_in[leBit: (Bit, Bit) => Bool]
 def lessEqual[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Lt => true
@@ -59,6 +79,8 @@ def lessEqual[T](a: T, b: T) -> Bool where T: Ord {
   }
 }
 
+@built_in[ltInt: (Int, Int) => Bool]
+@built_in[ltBit: (Bit, Bit) => Bool]
 def lessThan[T](a: T, b: T) -> Bool where T: Ord {
   match a.cmp(b) {
     case Ordering:::Lt => true
@@ -67,10 +89,15 @@ def lessThan[T](a: T, b: T) -> Bool where T: Ord {
   }
 }
 
+@built_in[negInt: (Int) => Int]
+@built_in[negBit: (Bit) => Bit]
 def neg[T](a: T) -> T where T: Neg {
   a.neg()
 }
 
+@built_in[notInt: (Int) => Int]
+@built_in[notBit: (Bit) => Bit]
+@built_in[notBool: (Bool) => Bool]
 def not[T](a: T) -> T where T: Not {
   a.not()
 }

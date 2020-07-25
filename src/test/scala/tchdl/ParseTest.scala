@@ -124,6 +124,7 @@ class ParseTest extends TchdlFunSuite {
         Vector(TypeDef(Modifier.Param, "T", None)),
         Vector.empty,
         Vector(MethodDef(
+          Vector.empty,
           Modifier.NoModifier,
           "f",
           Vector.empty,
@@ -197,7 +198,7 @@ class ParseTest extends TchdlFunSuite {
       "sibling input def f(a: Bit[4]) -> Bit[4] { a }"
     }
 
-    val MethodDef(flag, _, _, _, _, _, _, _) = tree.asInstanceOf[MethodDef]
+    val MethodDef(_, flag, _, _, _, _, _, _, _) = tree.asInstanceOf[MethodDef]
     assert(flag.hasFlag(Modifier.Sibling))
     assert(flag.hasFlag(Modifier.Input))
   }

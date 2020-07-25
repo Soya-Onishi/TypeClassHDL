@@ -142,6 +142,17 @@ class ASTGenerator {
   }
 
   def methodDef(ctx: TP.Method_defContext): MethodDef = {
+    def builtin(ctx: TP.Builtin_specifierContext): Annotation = {
+      val name = ctx.EXPR_ID.getText
+      val tpes = ctx.builtin_type.asScala.toVector.map {
+        case ctx: TP.UseIDPatternContext => ctx.TYPE_ID.getText
+        case _: TP.AnyPatternContext => "*"
+      }
+
+      Annotation.BuiltIn(name, tpes.init, tpes.last)
+    }
+
+    val builtins = ctx.builtin_specifier.asScala.map(builtin).toVector
     val modifier = ctx.method_accessor.asScala
       .map(_.getText)
       .map(Modifier.apply)
@@ -155,7 +166,7 @@ class ASTGenerator {
     val tpe = typeTree(ctx.`type`)
     val blk = block(ctx.block)
 
-    MethodDef(modifier, name, hps, tps, bounds, params, tpe, Some(blk))
+    MethodDef(builtins, modifier, name, hps, tps, bounds, params, tpe, Some(blk))
   }
 
   def signatureDef(ctx: TP.Signature_defContext): MethodDef = {
@@ -173,7 +184,7 @@ class ASTGenerator {
       .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
 
-    MethodDef(modifier, name, hps, tps, bounds, params, tpe, None)
+    MethodDef(Vector.empty, modifier, name, hps, tps, bounds, params, tpe, None)
   }
 
   def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[BoundTree]) = {
