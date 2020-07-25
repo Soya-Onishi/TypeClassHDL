@@ -587,6 +587,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("use interface's internal interface") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useInterfaceMethodForModule.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
+  }
+
+  test("elaborate code that uses builder pattern") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "builderPattern.tchdl")
+    runFirrtl(circuit)
   }
 }

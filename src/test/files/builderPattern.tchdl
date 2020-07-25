@@ -1,0 +1,58 @@
+package test
+
+struct Filled
+struct Empty
+
+struct Container {
+  num: Int,
+  bit: Bit[4]
+}
+
+struct Builder[A, B] {
+  num: Int,
+  bit: Bit[4]
+}
+
+impl Builder[Empty, Empty] {
+  static def new() -> Builder[Empty, Empty] {
+    Builder[Empty, Empty] {
+      num: 0,
+      bit: 0b0000
+    }
+  }
+}
+
+impl[T] Builder[Empty, T] {
+  def setNum(n: Int) -> Builder[Filled, T] {
+    Builder[Filled, T] {
+      num: n,
+      bit: this.bit
+    }
+  }
+}
+
+impl[T] Builder[T, Empty] {
+  def setBit(b: Bit[4]) -> Builder[T, Filled] {
+    Builder[T, Filled] {
+      num: this.num,
+      bit: b
+    }
+  }
+}
+
+impl Builder[Filled, Filled] {
+  def build() -> Container {
+    Container {
+      num: this.num,
+      bit: this.bit
+    }
+  }
+}
+
+module Top
+impl Top {
+  input def create() -> Container {
+    val builder = Builder[Empty, Empty]:::new()
+    builder.setNum(10).setBit(0b0010).build()
+  }
+}
