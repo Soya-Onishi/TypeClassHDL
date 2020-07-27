@@ -171,7 +171,6 @@ hp_bound_expr
     : 'max' hp_expr # MaxBound
     | 'min' hp_expr # MinBound
     | 'eq' hp_expr  # EqBound
-    | 'ne' hp_expr  # NeBound
     ;
 
 expr: expr '.' (apply | EXPR_ID)             # SelectExpr
