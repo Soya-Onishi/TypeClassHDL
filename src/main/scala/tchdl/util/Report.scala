@@ -34,12 +34,12 @@ object Error {
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class PatternLengthMismatch(expect: Int, actual: Int) extends Error
 
-  case class LiteralOnTarget(lit: HPExpr) extends Error
+  case class LiteralOnTarget(lit: Literal) extends Error
   case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
   case class ReferMethodAsNormal(symbol: Symbol.MethodSymbol) extends Error
   case class ReferMethodAsStatic(symbol: Symbol.MethodSymbol) extends Error
   case object RequireTypeTree extends Error
-  case class RequireSpecificType(actual: Type.RefType, candidates: Type.RefType*) extends Error
+  case class RequireSpecificType(actual: Type.RefType, requires: Type.RefType*) extends Error
   case class RequireModuleType(actual: Type.RefType) extends Error
   case class RequireHardwareType(actual: Type.RefType) extends Error
   case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol) extends Error
@@ -58,6 +58,13 @@ object Error {
   case class NoNeedTypeParameter(method: Type.MethodType) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type]) extends Error
   case class NotMeetHPBound(require: HPBound, caller: Option[HPBound]) extends Error
+  case class HPBoundNotEqualExpr(expect: HPExpr, actual: HPExpr) extends Error
+  case class HPBoundNotDeriveEqualConst(expr: HPExpr) extends Error
+  case class HPBoundEqualConstNotMatch(expect: Int, actual: Int) extends Error
+  case class HPBoundOutOfRange(expr: HPExpr, expect: (IInt, IInt), actual: (IInt, IInt)) extends Error
+  case class HPBoundRangeCross(max: IInt, min: IInt) extends Error
+  case class HPBoundConstraintMismatch(expect: HPConstraint, actual: HPConstraint) extends Error
+
   case class NotMeetPartialTPBound(target: Type.RefType, require: Type.RefType) extends Error
   case class ValueNotMeetHPBound(value: Int, require: HPBound) extends Error
   case class NotEnoughHPBound(require: HPBound) extends Error

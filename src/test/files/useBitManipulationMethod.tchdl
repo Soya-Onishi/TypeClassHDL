@@ -3,9 +3,9 @@ package test
 module Top
 impl Top {
   input def caller(left: Bit[8], right: Bit[4]) -> Unit {
-    val a = left.truncate[7, 3]()
-    val b = right.truncate[2, 1]()
-    val c = a.bit[4]()
-    val d = left.concat[4](right)
+    val aaa = left.truncate[7, 3]()
+    val bbb = right.truncate[2, 1]()
+    val ccc = aaa.bit[4]()
+    val ddd = left.concat[4](right)
   }
 }

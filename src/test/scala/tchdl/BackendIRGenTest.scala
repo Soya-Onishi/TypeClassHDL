@@ -313,12 +313,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     expectNoError(global)
 
     assert(modules.length == 1)
-    assert(modules.head.bodies.length == 1)
+    assert(modules.head.bodies.length == 2)
     val body = modules.head.bodies.head
-    assert(body.interfaces.length == 2)
+    assert(body.interfaces.length == 1)
 
     val names = body.interfaces.map(_.label.symbol.name)
     assert(names.contains("f"))
-    assert(names.contains("g"))
   }
 }

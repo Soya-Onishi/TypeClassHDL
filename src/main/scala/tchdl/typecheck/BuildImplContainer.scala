@@ -37,55 +37,27 @@ object BuildImplContainer {
     }
 
     def buildHPBounds(bound: HPBoundTree): Either[Error, HPBound] = {
-      def build(expr: HPExpr): Either[Error, HPExpr] = expr match {
-        case HPBinOp(op, left, right) => (build(left), build(right)) match {
-          case (Right(l), Right(r)) => Right(HPBinOp(op, l, r).setTpe(Type.numTpe).setID(expr.id))
-          case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
-          case (Left(err), _) => Left(err)
-          case (_, Left(err)) => Left(err)
-        }
-        case ident @ Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
-          case LookupResult.LookupSuccess(symbol) => symbol.tpe match {
-            case Type.ErrorType => Right(ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
-            case tpe: Type.RefType =>
-              if(tpe =:= Type.numTpe) Right(ident.setSymbol(symbol).setTpe(Type.numTpe))
-              else Left(Error.RequireSpecificType(tpe, Type.numTpe))
-          }
-          case LookupResult.LookupFailure(err) =>
-            ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
-            Left(err)
-        }
-        case lit: IntLiteral => Right(lit.setTpe(Type.numTpe))
-        case lit: StringLiteral =>  Left(Error.RequireSpecificType(Type.strTpe, Type.numTpe))
+      val hpBound = HPBound.build(bound)
+      val typedTarget = HPBound.typed(hpBound.target)
+      val typedBounds = hpBound.bound match {
+        case HPConstraint.Range(max, min) =>
+          val (maxErr, maxExpr) = max.map(HPBound.typed).partitionMap(identity)
+          val (minErr, minExpr) = min.map(HPBound.typed).partitionMap(identity)
+          val errs = maxErr ++ minErr
+
+          if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+          else Right(HPConstraint.Range(maxExpr, minExpr))
+        case HPConstraint.Eqn(exprs) =>
+          val (errs, eqns) = exprs.map(HPBound.typed).partitionMap(identity)
+          if(errs.isEmpty) Right(HPConstraint.Eqn(eqns))
+          else Left(Error.MultipleErrors(errs: _*))
       }
 
-      HPBound.verifyForm(bound) match {
-        case Left(err) => Left(err)
-        case Right(_) =>
-          val hpBound = HPBound(bound)
-          val target = build(hpBound.target)
-          val bounds = hpBound.bound match {
-            case HPRange.Range(eRange, cRange) =>
-              val (maxErr, max) = eRange.max.map(build).partitionMap(identity)
-              val (minErr, min) = eRange.min.map(build).partitionMap(identity)
-              val (neErr, ne) = eRange.ne.map(build).partitionMap(identity)
-              val errs = maxErr ++ minErr ++ neErr
-
-              if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
-              else Right(HPRange.Range(HPRange.ExprRange(max, min, ne), cRange))
-            case HPRange.Eq(range: HPRange.ExprEqual) => build(range.expr) match {
-              case Right(expr) => Right(HPRange.Eq(HPRange.ExprEqual(expr)))
-              case Left(err) => Left(err)
-            }
-            case range @ HPRange.Eq(_: HPRange.ConstantEqual) => Right(range)
-          }
-
-          (target, bounds) match {
-            case (Right(t), Right(bs)) => Right(HPBound(t, bs))
-            case (Left(targetErr), Left(boundsErr)) => Left(Error.MultipleErrors(targetErr, boundsErr))
-            case (Left(err), _) => Left(err)
-            case (_, Left(err)) => Left(err)
-          }
+      (typedTarget, typedBounds) match {
+        case (Right(t), Right(bs)) => Right(HPBound(t, bs))
+        case (Left(targetErr), Left(boundsErr)) => Left(Error.MultipleErrors(targetErr, boundsErr))
+        case (Left(err), _) => Left(err)
+        case (_, Left(err)) => Left(err)
       }
     }
 

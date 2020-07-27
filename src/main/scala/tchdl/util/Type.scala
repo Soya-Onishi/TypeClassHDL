@@ -134,6 +134,7 @@ object Type {
           case _ => Right(())
         }.combine(errs => Error.MultipleErrors(errs: _*))
 
+
       val signatureCtx = Context(ctx, methodDef.symbol)
       signatureCtx.reAppend(
         methodDef.symbol.asMethodSymbol.hps ++
@@ -144,10 +145,31 @@ object Type {
       val hpBoundTrees = methodDef.bounds.collect { case b: HPBoundTree => b }
       val tpBoundTrees = methodDef.bounds.collect { case b: TPBoundTree => b }
 
+      def typedHPConstraint(constraint: HPConstraint): Either[Error, HPConstraint] = constraint match {
+        case HPConstraint.Eqn(exprs) =>
+          val (errs, typedExprs) = exprs.map(HPBound.typed(_)(signatureCtx, global)).partitionMap(identity)
+
+          if(errs.isEmpty) Right(HPConstraint.Eqn(typedExprs))
+          else Left(Error.MultipleErrors(errs: _*))
+        case HPConstraint.Range(max, min) =>
+          val (maxErrs, typedMax) = max.map(HPBound.typed(_)(signatureCtx, global)).partitionMap(identity)
+          val (minErrs, typedMin) = min.map(HPBound.typed(_)(signatureCtx, global)).partitionMap(identity)
+          val errs = maxErrs ++ minErrs
+
+          if(errs.isEmpty) Right(HPConstraint.Range(typedMax, typedMin))
+          else Left(Error.MultipleErrors(errs: _*))
+      }
+
       val result = for {
         _ <- verifyHPTpes(methodDef.hp)
-        _ <- HPBound.verifyAllForms(hpBoundTrees)(signatureCtx, global)
-        hpBounds = hpBoundTrees.map(HPBound.apply)
+        bounds = hpBoundTrees.map(HPBound.build)
+        typedTargets = bounds.map(_.target).map(HPBound.typed(_)(signatureCtx, global).flatMap(HPBound.verifyTarget))
+        typedConstraints = bounds.map(_.bound).map(typedHPConstraint)
+        (targetErrs, targetExprs) = typedTargets.partitionMap(identity)
+        (constraintErrs, constraints) = typedConstraints.partitionMap(identity)
+        boundErrs = targetErrs ++ constraintErrs
+        _ <- if(boundErrs.isEmpty) Right(()) else Left(Error.MultipleErrors(boundErrs: _*))
+        hpBounds = (targetExprs zip constraints).map{ case (t, c) => HPBound(t, c) }
         (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget(_)(signatureCtx, global)).toVector.unzip
         (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds(_)(signatureCtx, global)).toVector.unzip
         errs = (targetErrs ++ boundsErrs).flatten
@@ -532,7 +554,7 @@ object Type {
               tpTable <- RefType.assignTPTable(initTPTable, Vector(this), Vector(impl.targetType))
               swappedHPBounds = HPBound.swapBounds(implSymbol.hpBound, hpTable)
               swappedTPBounds = TPBound.swapBounds(implSymbol.tpBound, hpTable, tpTable)
-              simplifiedHPBounds <- HPBound.simplify(swappedHPBounds)
+              simplifiedHPBounds = HPBound.simplify(swappedHPBounds)
               _ <- verifyEachBounds(simplifiedHPBounds, swappedTPBounds)
             } yield impl
 
@@ -684,14 +706,14 @@ object Type {
         tpTable <- RefType.assignTPTable(implTPTable, callers, targets)
         swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
         swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
-        simplifiedHPBound <- HPBound.simplify(swappedHpBound)
+        simplifiedHPBound = HPBound.simplify(swappedHpBound)
         _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, callerHPBound, callerTPBound, impl, accessor)
         (methodHpTable, methodTpTable) = RefType.buildSymbolTable(method, callerHP, callerTP)
         appendHpTable = hpTable ++ methodHpTable
         appendTpTable = tpTable ++ methodTpTable
         swappedMethodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
         methodTpBound = TPBound.swapBounds(method.tpBound, appendHpTable, appendTpTable)
-        methodHpBound <- HPBound.simplify(swappedMethodHpBound)
+        methodHpBound = HPBound.simplify(swappedMethodHpBound)
         _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound, impl, accessor)
         swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable, callerTPBound, this)
         _ <- RefType.verifyMethodType(swappedTpe, args)
@@ -741,7 +763,7 @@ object Type {
         tpTable = initTpTable ++ methodTpTable
         swappedHPBounds = HPBound.swapBounds(method.hpBound, hpTable)
         swappedTPBounds = TPBound.swapBounds(method.tpBound, hpTable, tpTable)
-        simplifiedHPBounds <- HPBound.simplify(swappedHPBounds)
+        simplifiedHPBounds = HPBound.simplify(swappedHPBounds)
         _ <- verifyEachBounds(simplifiedHPBounds, swappedTPBounds)
         methodTpe = method.tpe.asMethodType
         swappedTpe = RefType.assignMethodTpe(methodTpe, hpTable, tpTable, callerTPBound, this)
@@ -819,7 +841,7 @@ object Type {
           tpTable <- RefType.assignTPTable(initTPTable, callers, targets)
           swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
           swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
-          simplifiedHPBound <- HPBound.simplify(swappedHpBound)
+          simplifiedHPBound = HPBound.simplify(swappedHpBound)
           _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, Vector.empty, Vector.empty, impl, this)
           swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable, swappedTpBound, this)
           _ <- RefType.verifyMethodType(swappedTpe, args)
@@ -1367,8 +1389,9 @@ object Type {
             ident.symbol.asHardwareParamSymbol,
             throw new ImplementationErrorException(s"hpTable should have ${ident.symbol.name}")
           )
-          case HPBinOp(op, left, right) => HPBinOp(op, loop(left), loop(right))
-          case lit => lit
+          case HPBinOp(left, right) => HPBinOp(loop(left), loop(right))
+          case HPUnaryOp(ident) => loop(ident).negate
+          case lit: Literal => lit
         }
 
 
@@ -1581,7 +1604,7 @@ object Type {
         case LookupResult.LookupFailure(err) => (Some(err), ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
         case LookupResult.LookupSuccess(symbol) => (None, ident.setSymbol(symbol).setTpe(symbol.tpe))
       }
-      case HPBinOp(op, left, right) =>
+      case HPBinOp(left, right) =>
         val (err0, builtLeft) = buildHP(left)
         val (err1, builtRight) = buildHP(right)
 
@@ -1595,7 +1618,7 @@ object Type {
           if (errs1.isEmpty) (None, Type.numTpe)
           else (Some(Error.MultipleErrors(errs1: _*)), Type.ErrorType)
 
-        (errs, HPBinOp(op, builtLeft, builtRight).setTpe(tpe))
+        (errs, HPBinOp(builtLeft, builtRight).setTpe(tpe))
     }
   }
 

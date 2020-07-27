@@ -81,7 +81,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.NotEnoughHPBound])
+    assert(err.isInstanceOf[Error.HPBoundConstraintMismatch])
   }
 
   test("raise an error because of impl's method hardware parameter set bounds excessively") {
@@ -273,8 +273,8 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val err0 = global.repo.error.elems(0)
     val err1 = global.repo.error.elems(1)
 
-    assert(err0.isInstanceOf[Error.NotMeetHPBound])
-    assert(err1.isInstanceOf[Error.NotMeetHPBound])
+    assert(err0.isInstanceOf[Error.HPBoundOutOfRange])
+    assert(err1.isInstanceOf[Error.HPBoundOutOfRange])
   }
 
   test("define field type in trait") {

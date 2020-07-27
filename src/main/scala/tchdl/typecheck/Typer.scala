@@ -1471,6 +1471,12 @@ object Typer {
     case binop: HPBinOp => typedHPBinOp(binop)
     case literal: IntLiteral => typedHPIntLit(literal)
     case literal: StringLiteral => typedHPStrLit(literal)
+    case unary @ HPUnaryOp(ident) =>
+      val typedIdent = typedHPIdent(ident)
+      HPUnaryOp(typedIdent)
+        .setSymbol(typedIdent.symbol)
+        .setTpe(typedIdent.tpe)
+        .setID(unary.id)
   }
 
   def typedHPIdent(ident: Ident)(implicit ctx: Context.NodeContext, global: GlobalData): Ident = {
@@ -1509,7 +1515,7 @@ object Typer {
       }
       else Type.ErrorType
 
-    HPBinOp(binop.op, typedLeft, typedRight).setTpe(tpe).setID(binop.id)
+    HPBinOp(typedLeft, typedRight).setTpe(tpe).setID(binop.id)
   }
 
   def typedHPIntLit(int: IntLiteral)(implicit global: GlobalData): IntLiteral = {

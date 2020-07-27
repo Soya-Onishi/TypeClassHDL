@@ -259,16 +259,10 @@ package object backend {
       case ident: frontend.Ident => hpTable.getOrElse(ident.symbol.asHardwareParamSymbol, throw new ImplementationErrorException("hardware parameter must be found"))
       case frontend.IntLiteral(value) => HPElem.Num(value)
       case frontend.StringLiteral(value) => HPElem.Str(value)
-      case frontend.HPBinOp(op, left, right) =>
+      case frontend.HPBinOp(left, right) =>
         val HPElem.Num(leftValue) = evalHPExpr(left, hpTable)
         val HPElem.Num(rightValue) = evalHPExpr(right, hpTable)
-
-        op match {
-          case frontend.Operation.Add => HPElem.Num(leftValue + rightValue)
-          case frontend.Operation.Sub => HPElem.Num(leftValue - rightValue)
-          case frontend.Operation.Mul => HPElem.Num(leftValue * rightValue)
-          case frontend.Operation.Div => HPElem.Num(leftValue / rightValue)
-        }
+        HPElem.Num(leftValue + rightValue)
     }
 
   def calculateFieldLength(tpe: BackendType)(implicit global: GlobalData): BigInt = {

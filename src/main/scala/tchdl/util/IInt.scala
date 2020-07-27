@@ -1,105 +1,60 @@
 package tchdl.util
 
-trait IInt extends Ordered[IInt] {
-  def +(other: IInt): IInt =
-    (this, other) match {
-      case (IInt.PInf, _) => IInt.PInf
-      case (IInt.NInf, _) => IInt.NInf
-      case (_, IInt.PInf) => IInt.PInf
-      case (_, IInt.NInf) => IInt.NInf
-      case (IInt.Integer(v0), IInt.Integer(v1)) => IInt.Integer(v0 + v1)
-    }
+import tchdl.ast._
 
-  def -(other: IInt): IInt =
-    this + (-other)
-
-  def *(other: IInt): IInt =
-    (this, other) match {
-      case (IInt.PInf, IInt.NInf) => IInt.NInf
-      case (IInt.NInf, IInt.PInf) => IInt.NInf
-      case (IInt.PInf, IInt.PInf) => IInt.PInf
-      case (IInt.NInf, IInt.NInf) => IInt.NInf
-      case (IInt.PInf, IInt.Integer(0)) => IInt.Integer(0)
-      case (IInt.PInf, IInt.Integer(v)) if v > 0 => IInt.PInf
-      case (IInt.PInf, IInt.Integer(v)) if v < 0 => IInt.NInf
-      case (IInt.NInf, IInt.Integer(0)) => IInt.Integer(0)
-      case (IInt.NInf, IInt.Integer(v)) if v > 0 => IInt.NInf
-      case (IInt.NInf, IInt.Integer(v)) if v < 0 => IInt.PInf
-      case (IInt.Integer(0), IInt.PInf) => IInt.Integer(0)
-      case (IInt.Integer(v), IInt.PInf) if v > 0 => IInt.PInf
-      case (IInt.Integer(v), IInt.PInf) if v < 0 => IInt.NInf
-      case (IInt.Integer(0), IInt.NInf) => IInt.Integer(0)
-      case (IInt.Integer(v), IInt.NInf) if v > 0 => IInt.NInf
-      case (IInt.Integer(v), IInt.NInf) if v < 0 => IInt.PInf
-      case (IInt.Integer(v0), IInt.Integer(v1)) => IInt.Integer(v0 * v1)
-    }
-
-  def /(other: IInt): IInt =
-    (this, other) match {
-      case (IInt.PInf, IInt.NInf) => IInt.NInf
-      case (IInt.NInf, IInt.PInf) => IInt.NInf
-      case (IInt.PInf, IInt.PInf) => IInt.PInf
-      case (IInt.NInf, IInt.NInf) => IInt.NInf
-      case (IInt.PInf, IInt.Integer(0)) => IInt.PInf
-      case (IInt.PInf, IInt.Integer(v)) if v > 0 => IInt.PInf
-      case (IInt.PInf, IInt.Integer(v)) if v < 0 => IInt.NInf
-      case (IInt.NInf, IInt.Integer(0)) => IInt.NInf
-      case (IInt.NInf, IInt.Integer(v)) if v > 0 => IInt.NInf
-      case (IInt.NInf, IInt.Integer(v)) if v < 0 => IInt.PInf
-      case (IInt.Integer(_), IInt.PInf) => IInt.Integer(0)
-      case (IInt.Integer(_), IInt.NInf) => IInt.Integer(0)
-      case (IInt.Integer(v), IInt.Integer(0)) if v >= 0 => IInt.PInf
-      case (IInt.Integer(v), IInt.Integer(0)) if v < 0 => IInt.NInf
-      case (IInt.Integer(v0), IInt.Integer(v1)) => IInt.Integer(v0 / v1)
-    }
-
-  def unary_- : IInt = this match {
-    case IInt.PInf => IInt.NInf
-    case IInt.NInf => IInt.PInf
-    case IInt.Integer(v) => IInt.Integer(-v)
-  }
-
+trait IInt {
   override def equals(obj: Any): Boolean = obj match {
     case that: IInt => (this, that) match {
-      case (_: IInt.PInf.type, _: IInt.PInf.type) => true
-      case (_: IInt.NInf.type, _: IInt.NInf.type) => true
+      case (IInt.Inf(s0, e0), IInt.Inf(s1, e1)) => s0 == s1 && e0 == e1
       case (IInt.Integer(v0), IInt.Integer(v1)) => v0 == v1
       case _ => false
     }
     case _ => false
   }
 
-  override def compare(that: IInt): Int = (this, that) match {
-    case (IInt.PInf, IInt.PInf) => 0
-    case (IInt.NInf, IInt.NInf) => 0
-    case (IInt.PInf, _) => 1
-    case (IInt.NInf, _) => -1
-    case (IInt.Integer(_), IInt.PInf) => -1
-    case (IInt.Integer(_), IInt.NInf) => 1
-    case (IInt.Integer(v0), IInt.Integer(v1)) =>
-      if(v0 == v1) 0
-      else if(v0 < v1) -1
-      else 1
+
+  def >(that: IInt): Boolean = comp(that) > 0
+  def >=(that: IInt): Boolean = comp(that) >= 0
+  def <(that: IInt): Boolean = comp(that) < 0
+  def <=(that: IInt): Boolean = comp(that) <= 0
+  private def comp(that: IInt): Int = {
+    (this, that) match {
+      case (IInt.Inf(Sign.Pos, _), IInt.Inf(Sign.Pos, _)) => 0
+      case (IInt.Inf(Sign.Pos, _), IInt.Inf(Sign.Neg, _)) => 1
+      case (IInt.Inf(Sign.Neg, _), IInt.Inf(Sign.Pos, _)) => -1
+      case (IInt.Inf(Sign.Neg, _), IInt.Inf(Sign.Neg, _)) => 0
+      case (IInt.Inf(Sign.Pos, _), _) =>  1
+      case (IInt.Inf(Sign.Neg, _), _) => -1
+      case (_, IInt.Inf(Sign.Pos, _)) => -1
+      case (_, IInt.Inf(Sign.Neg, _)) =>  1
+      case (IInt.Integer(v0), IInt.Integer(v1)) =>
+        if(v0 > v1)        1
+        else if(v0 == v1)  0
+        else              -1
+    }
   }
 
-  override def hashCode(): Int =
+  override def hashCode: Int =
     this match {
-      case IInt.PInf => IInt.PInf.getClass.hashCode
-      case IInt.NInf => IInt.NInf.getClass.hashCode
-      case IInt.Integer(value) => value.hashCode
+      case IInt.Inf(sign, expr) => IInt.Inf.getClass.hashCode + sign.hashCode + expr.hashCode
+      case IInt.Integer(value)  => value.hashCode
     }
 
-  def isPInf: Boolean = this.isInstanceOf[IInt.PInf.type]
-  def isNInf: Boolean = this.isInstanceOf[IInt.NInf.type]
+  def isInf: Boolean = this.isInstanceOf[IInt.Inf]
 }
 
 
 object IInt {
-  case object NInf extends IInt
-  case object PInf extends IInt
+  case class Inf(sign: Sign, expr: HPExpr) extends IInt
   case class Integer(value: Int) extends IInt
 
   def apply(num: Int): IInt = IInt.Integer(num)
-  def nInf: IInt = IInt.NInf
-  def pInf: IInt = IInt.PInf
+  def nInf(expr: HPExpr): IInt = IInt.Inf(Sign.Neg, expr)
+  def pInf(expr: HPExpr): IInt = IInt.Inf(Sign.Pos, expr)
+}
+
+trait Sign
+object Sign {
+  case object Pos extends Sign
+  case object Neg extends Sign
 }

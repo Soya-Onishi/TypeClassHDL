@@ -69,7 +69,7 @@ class TopDefTyperTest extends TchdlFunSuite {
     val (_, global) = untilTopDefTyper("topdef4.tchdl")
     expectError(1)(global)
     val error = global.repo.error.elems.head
-    assert(error.isInstanceOf[Error.NotMeetHPBound])
+    assert(error.isInstanceOf[Error.HPBoundOutOfRange])
   }
 
   test("field has type that does not exists") {
@@ -105,10 +105,7 @@ class TopDefTyperTest extends TchdlFunSuite {
       g,
       Vector(HPBound(
         Ident("m").setSymbol(g.hps.head).setTpe(Type.numTpe(global)),
-        HPRange.Range(
-          HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty),
-          HPRange.ConstantRange(IInt.PInf, IInt.Integer(0), Set.empty)
-        )
+        HPConstraint.Range(Vector.empty, Vector(IntLiteral(0)))
       )),
       Vector.empty
     )
@@ -117,10 +114,7 @@ class TopDefTyperTest extends TchdlFunSuite {
       h,
       Vector(HPBound(
         Ident("m").setSymbol(h.hps.head).setTpe(Type.numTpe(global)),
-        HPRange.Range(
-          HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty),
-          HPRange.ConstantRange(IInt.PInf, IInt.Integer(0), Set.empty)
-        )
+        HPConstraint.Range(Vector.empty, Vector(IntLiteral(0)))
       )),
       Vector(TPBound(Type.RefType(h.tps.head), Vector(Type.RefType(interface.symbol.asInterfaceSymbol))))
     )
@@ -167,7 +161,7 @@ class TopDefTyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.NotMeetHPBound])
+    assert(err.isInstanceOf[Error.HPBoundOutOfRange])
   }
 
   test("interface that has methods without modifiers causes an error") {

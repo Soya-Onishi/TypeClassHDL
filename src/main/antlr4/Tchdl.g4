@@ -204,8 +204,7 @@ expr: expr '.' (apply | EXPR_ID)             # SelectExpr
     ;
 
 hp_expr
-    : hp_expr op=('*' | '/') hp_expr # MulDivHPExpr
-    | hp_expr op=('+' | '-') hp_expr # AddSubHPExpr
+    : hp_expr op=('+' | '-') hp_expr # AddSubHPExpr
     | STRING                         # StrLitHPExpr
     | INT                            # IntLitHPExpr
     | EXPR_ID                        # HPExprID

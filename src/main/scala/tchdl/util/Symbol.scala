@@ -50,7 +50,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
     case _ => false
   }
 
-  override def hashCode(): Int = this.getClass.hashCode + this.path.hashCode
+  override def hashCode: Int = this.getClass.hashCode + this.path.hashCode
 
   def asTypeSymbol: Symbol.TypeSymbol = this.asInstanceOf[Symbol.TypeSymbol]
   def asTermSymbol: Symbol.TermSymbol = this.asInstanceOf[Symbol.TermSymbol]

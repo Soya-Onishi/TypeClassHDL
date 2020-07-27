@@ -129,29 +129,23 @@ object ImplementInterfaceContainer {
             verifyTPBound(impl1.symbol.hpBound, combinedTPBounds, table1)
         }
 
-        def isOverlapHPBounds(
-          tpe0: Type.RefType,
-          tpe1: Type.RefType,
-          hpBound0: Vector[HPBound],
-          hpBound1: Vector[HPBound]
-        ): Boolean = {
+        def isOverlapHPBounds(tpe0: Type.RefType, tpe1: Type.RefType, hpBound0: Vector[HPBound], hpBound1: Vector[HPBound]): Boolean = {
           if(tpe0.origin.isTypeParamSymbol || tpe1.origin.isTypeParamSymbol) true
           else {
             val isOverlapped = (tpe0.hardwareParam zip tpe1.hardwareParam).forall {
               case (hp0, hp1) =>
-                def findRange(target: HPExpr, bounds: Vector[HPBound]): HPRange = target match {
-                  case IntLiteral(value) => HPRange.Eq(HPRange.ConstantEqual(value))
-                  case expr =>
-                    bounds
-                      .find(_.target.isSameExpr(expr))
-                      .map(_.bound)
-                      .getOrElse(HPRange.Range.empty)
+                def findRange(target: HPExpr, bounds: Vector[HPBound]): HPConstraint = target match {
+                  case IntLiteral(value) => HPConstraint.Eqn(Vector(IntLiteral(value)))
+                  case expr => bounds
+                    .find(_.target.isSameExpr(expr))
+                    .map(_.bound)
+                    .getOrElse(HPConstraint.empty)
                 }
 
 
                 val range0 = findRange(hp0, hpBound0)
                 val range1 = findRange(hp1, hpBound1)
-                range0.isOverlapped(range1)
+                HPConstraint.isOverlapped(range0, range1, hpBound0, hpBound1)
             }
 
             isOverlapped && (tpe0.typeParam zip tpe1.typeParam).forall{
@@ -274,11 +268,11 @@ object ImplementClassContainer {
       hpBounds0: Vector[HPBound],
       hpBounds1: Vector[HPBound]
     ): Boolean = {
-      def findRange(target: HPExpr, bounds: Vector[HPBound]): HPRange =
+      def findRange(target: HPExpr, bounds: Vector[HPBound]): HPConstraint =
         bounds
           .find(_.target.isSameExpr(target))
           .map(_.bound)
-          .getOrElse(HPRange.Range.empty)
+          .getOrElse(HPConstraint.empty)
 
       (tpe0.origin, tpe1.origin) match {
         case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>
@@ -286,7 +280,7 @@ object ImplementClassContainer {
             case (hp0, hp1) =>
               val range0 = findRange(hp0, hpBounds0)
               val range1 = findRange(hp1, hpBounds1)
-              range0.isOverlapped(range1)
+              HPConstraint.isOverlapped(range0, range1, hpBounds0, hpBounds1)
           }
 
           hpOverlapped && (tpe0.typeParam zip tpe1.typeParam).forall {

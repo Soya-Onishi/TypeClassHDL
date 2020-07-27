@@ -415,18 +415,6 @@ object BackendIRGen {
             (call, Some(label))
         }
 
-        /*
-        val (call, label) = if (isBuiltIn) {
-          val call = backend.CallBuiltIn(signature.toString, None, argSummary.terms, hargs, retTpe)
-          (call, None)
-        } else {
-          val label = makeLabel(ident.symbol.asMethodSymbol, None, argSummary.terms.map(_.tpe), hargs, targs)
-          val call = backend.CallMethod(label, None, hargs, argSummary.terms, retTpe)
-
-          (call, Some(label))
-        }
-        */
-
         val labels = argSummary.labels ++ label
 
         BuildResult(argSummary.nodes, Some(call), labels)
@@ -536,43 +524,6 @@ object BackendIRGen {
   }
 
   def buildBinOp(binop: frontend.StdBinOp)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    def toName(symbol: Symbol.ClassTypeSymbol): String = symbol match {
-      case symbol if symbol == Symbol.int => "int"
-      case symbol if symbol == Symbol.num => "num"
-      case symbol if symbol == Symbol.bit => "bit"
-      case symbol if symbol == Symbol.bool => "bool"
-    }
-
-    def methodName(tpe: String, ops: String): String = s"_builtin_${ops}_$tpe"
-
-    def binOp(ops: String, symbols: Symbol.ClassTypeSymbol*): Vector[(Vector[Symbol.TypeSymbol], String)] = {
-      val names = symbols.map(toName)
-
-      (names zip symbols)
-        .map { case (name, symbol) => Vector(symbol, symbol) -> methodName(name, ops) }
-        .toVector
-    }
-
-    val int = Symbol.int
-    val num = Symbol.num
-    val bit = Symbol.bit
-    val bool = Symbol.bool
-
-    /*
-    val builtInPairs = Map[frontend.Operation, Vector[(Vector[Symbol.TypeSymbol], String)]](
-      frontend.Operation.Add -> binOp("add", int, num, bit),
-      frontend.Operation.Sub -> binOp("sub", int, num, bit),
-      frontend.Operation.Mul -> binOp("mul", int, num, bit),
-      frontend.Operation.Div -> binOp("div", int, num, bit),
-      frontend.Operation.Eq -> binOp("eq", int, num, bit, bool),
-      frontend.Operation.Ne -> binOp("ne", int, num, bit, bool),
-      frontend.Operation.Gt -> binOp("gt", int, num, bit),
-      frontend.Operation.Ge -> binOp("ge", int, num, bit),
-      frontend.Operation.Lt -> binOp("lt", int, num, bit),
-      frontend.Operation.Le -> binOp("le", int, num, bit),
-    )
-    */
-
     val BuildResult(leftNodes, Some(leftExpr), leftLabels) = buildExpr(binop.left)
     val BuildResult(rightNodes, Some(rightExpr), rightLabels) = buildExpr(binop.right)
     val leftNode = backend.Temp(ctx.temp.get(), leftExpr)
@@ -599,11 +550,27 @@ object BackendIRGen {
       backend.CallMethod(label, None, Vector.empty, Vector(left, right), retTpe)
     }
 
-    val pkg = binop.symbol.path.pkgName
-    val name = binop.symbol.name
-    val annons = binop.symbol.asMethodSymbol.annons
+    def tpTableFromTypes(tps: Vector[Symbol.TypeParamSymbol], params: Vector[Type.RefType], args: Vector[Type.RefType]): Map[Symbol.TypeParamSymbol, Type.RefType] = {
+      def assignTP(paramTpe: Type.RefType, argTpe: Type.RefType, table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]]): Map[Symbol.TypeParamSymbol, Option[Type.RefType]] = {
+        paramTpe.origin match {
+          case tp: Symbol.TypeParamSymbol if table.contains(tp) => table.updated(tp, Some(argTpe))
+          case _ => (paramTpe.typeParam zip argTpe.typeParam).foldLeft(table) {
+            case (table, (param, arg)) => assignTP(param, arg, table)
+          }
+        }
+      }
+
+      val initTable = tps.map(_ -> Option.empty[Type.RefType]).toMap
+      val assigned = (params zip args).foldLeft(initTable) { case (table, (param, arg)) => assignTP(param, arg, table) }
+
+      assigned.map{ case (key, value) => key -> value.get }
+    }
+
+    val method = binop.symbol.asMethodSymbol
+    val methodTpe = method.tpe.asMethodType
+    val annons = method.annons
     val argSymbols = Vector(left.tpe.symbol, right.tpe.symbol)
-    val retSymbol = binop.tpe.asRefType.origin
+    val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
     val builtins = annons.collect{ case x: frontend.Annotation.BuiltIn => x }
     val builtinName = builtins.find { builtin =>
       def verify(expect: String, actual: Symbol.TypeSymbol): Boolean = expect match {
@@ -613,42 +580,15 @@ object BackendIRGen {
 
       lazy val isSameLength = builtin.args.length == argSymbols.length
       lazy val sameArgs = (builtin.args zip argSymbols).forall{ case (expect, actual) => verify(expect, actual) }
-      lazy val sameRet = verify(builtin.ret, retSymbol)
+      lazy val sameRet = verify(builtin.ret, retTpe.symbol)
 
       isSameLength && sameArgs && sameRet
     }
 
-    val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
     val call = builtinName match {
       case None => buildCallMethod(retTpe)
       case Some(name) => backend.CallBuiltIn(name.name, None, Vector(left, right), Vector.empty, retTpe)
     }
-
-    /*
-    val function = FunctionSignature(pkg, name, None, SigArg.Sym(leftExpr.tpe.symbol), SigArg.Sym(rightExpr.tpe.symbol))
-    val isBuiltin = builtinFunctions.contains(function)
-    val call =
-      if (isBuiltin) backend.CallBuiltIn(function.toString, None, Vector(left, right), Vector.empty, retTpe)
-      else buildCallMethod(retTpe)
-    */
-
-    /*
-    val call = builtInPairs.get(binop.op) match {
-      case None => buildCallMethod
-      case Some(candidates) =>
-        val leftTpeSymbol = leftExpr.tpe.symbol
-        val rightTpeSymbol = rightExpr.tpe.symbol
-        val called = candidates.find {
-          case (Vector(left, right), _) => left == leftTpeSymbol && right == rightTpeSymbol
-        }
-        val retTpe = leftExpr.tpe
-
-        called match {
-          case None => buildCallMethod
-          case Some((_, name)) => backend.CallBuiltIn(name, Vector(left, right), Vector.empty, retTpe)
-        }
-    }
-    */
 
     val returnedLabels = call match {
       case call: backend.CallMethod => leftLabels ++ rightLabels + call.label

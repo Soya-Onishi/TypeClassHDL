@@ -32,40 +32,31 @@ sealed trait HPExpr extends Expression {
 
   // This method organizes an expression when an expression is sortable format.
   def sort: HPExpr = {
-    def sortChildren: HPExpr = this match {
-      case HPBinOp(op, left, right) =>
-        val binop = HPBinOp(op, left.sort, right.sort)
-        binop._sortedExpr = Some(binop)
-        binop
-      case others => others
-    }
-
     def exec(binop: HPBinOp): HPExpr = {
-      def collectLeafs(expr: HPExpr): Vector[HPExpr] = expr match {
-        case HPBinOp(_, left, right) => collectLeafs(left) ++ collectLeafs(right)
-        case leaf => Vector(leaf)
-      }
-
       def reConstruct(leafs: Vector[HPExpr], op: Operation): HPExpr = {
         val binop = leafs.reduceRight[HPExpr]{
-          case (expr, leaf) => HPBinOp(op, expr, leaf)
+          case (expr, leaf) => HPBinOp(expr, leaf)
         }
 
         binop._sortedExpr = Some(binop)
         binop
       }
 
-      val leafs = collectLeafs(binop)
+      val leafs = binop.collectLeafs
       val (head, remains) =
         if(binop.op.isCommutative) (Vector.empty, leafs)
         else (Vector(leafs.head), leafs.tail)
 
       val sortedLeafs = head ++ remains.sortWith {
-        case (idLeft @ Ident(left), idRight @ Ident(right)) if left == right =>
-          idLeft.symbol.hashCode < idRight.symbol.hashCode
+        case (idLeft @ Ident(left), idRight @ Ident(right)) if left == right => idLeft.symbol.hashCode < idRight.symbol.hashCode
         case (Ident(left), Ident(right)) => left < right
+        case (HPUnaryOp(left @ Ident(leftName)), HPUnaryOp(right @ Ident(rightName))) =>
+          if(leftName == rightName) left.symbol.hashCode < right.symbol.hashCode
+          else leftName < rightName
         case (_: Ident, _) => true
         case (_, _: Ident) => false
+        case (_: HPUnaryOp, _) => true
+        case (_, _: HPUnaryOp) => false
         case (_: IntLiteral, _: StringLiteral) =>
           val msg = "There is a string literal in hardware parameter expression"
           throw new ImplementationErrorException(msg)
@@ -82,12 +73,10 @@ sealed trait HPExpr extends Expression {
     _sortedExpr match {
       case Some(expr) => expr
       case None =>
-        val sorted =
-          if(!this.isSimpleExpr) sortChildren
-          else this match {
-            case binOp: HPBinOp => exec(binOp)
-            case leaf => leaf
-          }
+        val sorted = this match {
+          case binOp: HPBinOp => exec(binOp)
+          case leaf => leaf
+        }
 
         sorted._sortedExpr = Some(sorted)
         sorted
@@ -108,13 +97,13 @@ sealed trait HPExpr extends Expression {
     }
 
     def collectLeafs(expr: HPExpr): Vector[HPExpr] = expr match {
-      case HPBinOp(_, left, right) => collectLeafs(left) ++ collectLeafs(right)
+      case HPBinOp(left, right) => collectLeafs(left) ++ collectLeafs(right)
       case leaf => Vector(leaf)
     }
 
     def reConstruct(leafs: Vector[HPExpr], ops: Operation): HPExpr = leafs match {
       case Vector(leaf) => leaf
-      case leafs => HPBinOp(ops, reConstruct(leafs.init, ops), leafs.last)
+      case leafs => HPBinOp(reConstruct(leafs.init, ops), leafs.last)
     }
 
     def exec(binop: HPBinOp): HPExpr = {
@@ -129,14 +118,7 @@ sealed trait HPExpr extends Expression {
       }
     }
 
-    if(!this.isSimpleExpr) {
-      val HPBinOp(op, left, right) = this
-
-      (left.combine, right.combine) match {
-        case (IntLiteral(l), IntLiteral(r)) => IntLiteral(calc(op, l, r))
-        case (l, r) => HPBinOp(op, l, r)
-      }
-    } else this match {
+    this match {
       case binop: HPBinOp => exec(binop)
       case leaf => leaf
     }
@@ -152,12 +134,13 @@ sealed trait HPExpr extends Expression {
       case (l: IntLiteral, r: IntLiteral) => l.value == r.value
       case (_: StringLiteral, _) => throw new ImplementationErrorException("string does not appear here")
       case (_, _: StringLiteral) => throw new ImplementationErrorException("string does not appear here")
+      case (HPUnaryOp(left), HPUnaryOp(right)) => left.isSameExpr(right)
       case _ => false
     }
 
   def replaceWithMap(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
     def loop(expr: HPExpr): HPExpr = expr match {
-      case HPBinOp(op, left, right) => HPBinOp(op, loop(left), loop(right))
+      case HPBinOp(left, right) => HPBinOp(loop(left), loop(right))
       case ident: Ident => hpTable.getOrElse(ident.symbol.asHardwareParamSymbol, ident)
       case e => e
     }
@@ -165,31 +148,8 @@ sealed trait HPExpr extends Expression {
     loop(this).sort
   }
 
-  private def isSimpleExpr: Boolean = {
-    def loop(expr: HPExpr, rootOp: Operation): Boolean = expr match {
-      case HPBinOp(op, left, right) =>
-        op == rootOp        &&
-        loop(left, rootOp)  &&
-        loop(right, rootOp)
-      case _ => true
-    }
 
-    this match {
-      case HPBinOp(op, left, right) => loop(left, op) && loop(right, op)
-      case _ => true
-    }
-  }
-
-  /**
-   * disassemble this expression by table
-   *
-   * This method expects [[isSimpleExpr == true]].
-   * If false, this method does not do anything.
-   *
-   * @param exprs : table
-   * @return return._1 => disassembled expressions
-   *         return._2 => remain expression
-   */
+  /*
   def disassemble(exprs: Vector[HPExpr]): (Vector[HPExpr], Option[HPExpr]) = {
     def countLeaf(expr: HPExpr): Int = expr match {
       case HPBinOp(_, left, right) => countLeaf(left) + countLeaf(right)
@@ -243,10 +203,11 @@ sealed trait HPExpr extends Expression {
     if(this.isSimpleExpr) impl(this, complexes ++ simplesTable)
     else (Vector.empty, Some(this))
   }
-
+  */
+  /*
   private def purge(expr: HPExpr): Either[Unit, Option[HPExpr]] = {
     def purging(e0: HPExpr, e1: HPExpr): Either[Unit, Option[HPExpr]] = (e0, e1) match {
-      case (HPBinOp(op0, _, _), HPBinOp(op1, _, _)) if op0 != op1 => Left(())
+      case (HPBinOp(_, _), HPBinOp(_, _)) if op0 != op1 => Left(())
       case (HPBinOp(op, left0, right0: Ident), e1 @ HPBinOp(_, left1, right1: Ident)) =>
         if(right0.symbol == right1.symbol) purging(left0, left1) match {
           case Left(()) => Left(())
@@ -256,9 +217,9 @@ sealed trait HPExpr extends Expression {
         else purging(left0, e1) match {
           case Left(()) => Left(())
           case Right(None) => Right(Some(right0))
-          case Right(Some(left)) => Right(Some(HPBinOp(op, left, right0)))
+          case Right(Some(left)) => Right(Some(HPBinOp(left, right0)))
         }
-      case (HPBinOp(_, left, right: Ident), ident: Ident) =>
+      case (HPBinOp(left, right: Ident), ident: Ident) =>
         if(right.symbol == ident.symbol) Right(Some(left))
         else purging(left, ident)
       case (id0: Ident, id1: Ident) =>
@@ -272,15 +233,101 @@ sealed trait HPExpr extends Expression {
     else
       purging(this, expr)
   }
+  */
 
   def swap(table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
     def loop(expr: HPExpr): HPExpr = expr match {
-      case HPBinOp(op, left, right) => HPBinOp(op, loop(left), loop(right))
+      case HPBinOp(left, right) => HPBinOp(loop(left), loop(right))
       case ident: Ident => table(ident.symbol.asHardwareParamSymbol)
       case lit => lit
     }
 
     loop(this).sort
+  }
+
+  def extractConstant:(HPExpr, Option[Int]) = this.sort.combine match {
+    case HPBinOp(left, IntLiteral(right)) => (left, Some(right))
+    case expr => (expr, None)
+  }
+
+  def negate: HPExpr = this match {
+    case HPBinOp(left, right) => HPBinOp(left.negate, right.negate)
+    case ident: Ident => HPUnaryOp(ident)
+    case HPUnaryOp(ident) => ident
+    case IntLiteral(value) => IntLiteral(-value)
+  }
+
+  def subtract(that: HPExpr): HPExpr = {
+    def collectPosLeafs(expr: HPExpr): Vector[Ident] = expr match {
+      case ident: Ident => Vector(ident)
+      case HPUnaryOp(_) => Vector.empty
+      case HPBinOp(left, right) => collectPosLeafs(left) ++ collectPosLeafs(right)
+    }
+
+    def collectNegLeafs(expr: HPExpr): Vector[Ident] = expr match {
+      case _: Ident => Vector.empty
+      case HPUnaryOp(ident) => Vector(ident)
+      case HPBinOp(left, right) => collectNegLeafs(left) ++ collectNegLeafs(right)
+    }
+
+    def execSubtract(lefts: Vector[Ident], rights: Vector[Ident]): (Vector[Ident], Vector[Ident]) = {
+      val leftSymbols = lefts.map(_.symbol)
+      val rightSymbols = rights.map(_.symbol)
+      val leftRemains = lefts.filterNot(left => rightSymbols.contains(left.symbol))
+      val rightRemains = rights.filterNot(right => leftSymbols.contains(right.symbol))
+
+      (leftRemains, rightRemains)
+    }
+
+    val (left, leftConst) = this.sort.combine.extractConstant
+    val (right, rightConst) = that.sort.combine.extractConstant
+    val leftPosLeafs = collectPosLeafs(left)
+    val leftNegLeafs = collectNegLeafs(left)
+    val rightPosLeafs = collectPosLeafs(right)
+    val rightNegLeafs = collectNegLeafs(right)
+
+    val (leftPosRemains, rightPosRemains) = execSubtract(leftPosLeafs, rightPosLeafs)
+    val (leftNegRemains, rightNegRemains) = execSubtract(leftNegLeafs, rightNegLeafs)
+
+    val const = (leftConst, rightConst) match {
+      case (Some(left), Some(right)) => Some(IntLiteral(left - right))
+      case (Some(left), None)  => Some(IntLiteral(left))
+      case (None, Some(right)) => Some(IntLiteral(right))
+      case (None, None) => None
+    }
+
+    val leafs = leftPosRemains ++ leftNegRemains ++ (rightPosRemains ++ rightNegRemains).map(HPUnaryOp.apply)
+    val binop = leafs.reduceLeftOption[HPExpr]{ case (acc, right) => HPBinOp(acc, right) }
+
+    val expr = (binop, const) match {
+      case (None, None) => IntLiteral(0)
+      case (None, Some(const)) => const
+      case (Some(expr), None) => expr
+      case (Some(expr), Some(const)) => HPBinOp(expr, const)
+    }
+
+    expr.sort.combine
+  }
+
+  def countLeafs: Int = this match {
+    case HPBinOp(left, right) => left.countLeafs + right.countLeafs
+    case HPUnaryOp(_) => 1
+    case Ident(_) => 1
+    case _: Literal => 1
+  }
+
+  def collectLeafs: Vector[HPExpr] = this match {
+    case lit: Literal => Vector(lit)
+    case op: HPUnaryOp => Vector(op)
+    case ident: Ident => Vector(ident)
+    case HPBinOp(left, right) => left.collectLeafs ++ right.collectLeafs
+  }
+
+  override def hashCode: Int = this match {
+    case ident: Ident => ident.symbol.hashCode
+    case HPBinOp(left, right) => left.hashCode + right.hashCode
+    case HPUnaryOp(expr) => HPUnaryOp.getClass.hashCode + expr.hashCode
+    case lit: Literal => lit.hashCode
   }
 }
 
@@ -331,7 +378,6 @@ trait RangeExpr {
   def map(f: HPExpr => HPExpr): RangeExpr = {
     this match {
       case RangeExpr.EQ(expr) => RangeExpr.EQ(f(expr))
-      case RangeExpr.NE(expr) => RangeExpr.NE(f(expr))
       case RangeExpr.Min(expr) => RangeExpr.Min(f(expr))
       case RangeExpr.Max(expr) => RangeExpr.Max(f(expr))
     }
@@ -339,7 +385,6 @@ trait RangeExpr {
 }
 object RangeExpr {
   case class EQ(expr: HPExpr) extends RangeExpr
-  case class NE(expr: HPExpr) extends RangeExpr
   case class Min(expr: HPExpr) extends RangeExpr
   case class Max(expr: HPExpr) extends RangeExpr
 }
@@ -358,6 +403,11 @@ case class StdUnaryOp(op: Operation, operand: Expression) extends UnaryOp {
   type Expr = Expression
 }
 
+case class HPUnaryOp(operand: Ident) extends UnaryOp with HPExpr {
+  type Expr = Ident
+  val op = Operation.Neg
+}
+
 abstract class BinOp extends Expression with HasSymbol {
   type Expr <: Expression
 
@@ -371,11 +421,11 @@ case class StdBinOp(op: Operation, left: Expression, right: Expression) extends 
 }
 
 case class HPBinOp(
-  op: Operation,
   left: Expression with HPExpr,
   right: Expression with HPExpr
 ) extends BinOp with HPExpr {
   type Expr = Expression with HPExpr
+  val op: Operation = Operation.Add
 }
 
 case class Select(prefix: Expression, name: String) extends Expression with HasSymbol with ApplyPrefix

@@ -84,6 +84,8 @@ class BuildModuleListTest extends TchdlFunSuite {
     val sub4Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(4)), Vector.empty)
     val sub8Tpe = BackendType(subMod.symbol.asTypeSymbol, Vector(HPElem.Num(8)), Vector.empty)
 
-    val top  = modules.head
+    val tpes = modules.map(_.tpe)
+    assert(tpes.contains(sub4Tpe))
+    assert(tpes.contains(sub8Tpe))
   }
 }

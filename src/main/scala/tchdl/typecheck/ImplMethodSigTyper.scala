@@ -82,53 +82,13 @@ object ImplMethodSigTyper {
         results.combine(errs => Error.MultipleErrors(errs: _*))
       }
 
-      def verifyHPValidity(
-        implHPBounds: Vector[HPBound],
-        interfaceHPBounds: Vector[HPBound]
+      def verifyHPValidity(implHPBounds: Vector[HPBound], interfaceHPBounds: Vector[HPBound]
       ): Either[Error, Unit] = {
         def verifyBounds(impls: Vector[HPBound], interfaces: Vector[HPBound]): Either[Error, Unit] =
           (impls zip interfaces)
-            .map { case (impl, interface) => verifyBound(impl, interface) }
+            .filter { case (impl, interface) => impl.bound != interface.bound }
+            .map{ case (impl, interface) => Error.HPBoundConstraintMismatch(impl.bound, interface.bound) }
             .combine(errs => Error.MultipleErrors(errs: _*))
-
-        def verifyBound(impl: HPBound, interface: HPBound): Either[Error, Unit] = {
-          @tailrec def verifyExprs(exprs0: Vector[HPExpr], exprs1: Vector[HPExpr]): Either[Error, Unit] = {
-            exprs1.headOption match {
-              case None if exprs0.nonEmpty => Left(Error.NotEnoughHPBound(interface))
-              case None => Right(())
-              case Some(expr1) => exprs0.findRemain(_.isSameExpr(expr1)) match {
-                case (None, _) => Left(Error.NotEnoughHPBound(interface))
-                case (Some(_), remains) => verifyExprs(remains, exprs1.tail)
-              }
-            }
-          }
-
-          def verifyConstRange(c0: HPRange.ConstantRange, c1: HPRange.ConstantRange): Either[Error, Unit] = {
-            val isValid =
-              c0.max == c1.max &&
-                c0.min == c1.min &&
-                c0.ne == c1.ne
-
-            if (isValid) Right(())
-            else Left(Error.NotEnoughHPBound(interface))
-          }
-
-          (impl.bound, interface.bound) match {
-            case (HPRange.Eq(HPRange.ConstantEqual(v0)), HPRange.Eq(HPRange.ConstantEqual(v1))) =>
-              if (v0 == v1) Right(())
-              else Left(Error.NotEnoughHPBound(interface))
-            case (HPRange.Eq(HPRange.ExprEqual(e0)), HPRange.Eq(HPRange.ExprEqual(e1))) =>
-              if (e0.isSameExpr(e1)) Right(())
-              else Left(Error.NotEnoughHPBound(interface))
-            case (HPRange.Range(e0, c0), HPRange.Range(e1, c1)) =>
-              for {
-                _ <- verifyExprs(e0.max, e1.max)
-                _ <- verifyExprs(e0.min, e1.min)
-                _ <- verifyExprs(e0.ne, e1.ne)
-                _ <- verifyConstRange(c0, c1)
-              } yield ()
-          }
-        }
 
         def buildPairs(implBounds: Vector[HPBound], interfaceBounds: Vector[HPBound]): Either[Error, Vector[(HPBound, HPBound)]] =
           interfaceBounds.headOption match {

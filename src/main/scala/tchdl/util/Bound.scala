@@ -44,9 +44,10 @@ class TPBound(
             case (_, remains) => forall(remains, thatBounds.tail)
           }
         }
+
       this.target =:= that.target &&
-      this.bounds.length == that.bounds.length &&
-      forall(this.bounds, that.bounds)
+        this.bounds.length == that.bounds.length &&
+        forall(this.bounds, that.bounds)
     case _ => false
   }
 }
@@ -81,7 +82,8 @@ object TPBound {
   ): Vector[TPBound] = {
     def swapHP(expr: HPExpr): HPExpr = expr match {
       case ident: Ident => hpTable(ident.symbol.asHardwareParamSymbol)
-      case HPBinOp(op, left, right) => HPBinOp(op, swapHP(left), swapHP(right))
+      case HPUnaryOp(ident) => swapHP(ident)
+      case HPBinOp(left, right) => HPBinOp(swapHP(left), swapHP(right))
       case lit => lit
     }
 
@@ -146,7 +148,7 @@ object TPBound {
             .partitionMap(identity)
 
           val errs = hpErrs ++ tpErrs
-          if(errs.isEmpty) Right(())
+          if (errs.isEmpty) Right(())
           else Left(Error.MultipleErrors(errs: _*))
         }
       } yield ()
@@ -188,24 +190,26 @@ object TPBound {
       }
     }
 
-    val results = tpBound.bounds.map { bound => bound.origin match {
-      case hw if hw == hwSymbol =>
-        if(tpBound.target.isHardwareType(callerTPBound)) Right(())
-        else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
-      case mod if mod == modSymbol =>
-        if(isModuleType(tpBound.target)) Right(())
-        else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
-      case interface: Symbol.InterfaceSymbol =>
-        val impls = interface.impls
-        val isValid = impls.exists(impl => verify(impl, bound))
+    val results = tpBound.bounds.map { bound =>
+      bound.origin match {
+        case hw if hw == hwSymbol =>
+          if (tpBound.target.isHardwareType(callerTPBound)) Right(())
+          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+        case mod if mod == modSymbol =>
+          if (isModuleType(tpBound.target)) Right(())
+          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+        case interface: Symbol.InterfaceSymbol =>
+          val impls = interface.impls
+          val isValid = impls.exists(impl => verify(impl, bound))
 
-        if(isValid) Right(())
-        else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
-    }}
+          if (isValid) Right(())
+          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+      }
+    }
 
     val (errs, _) = results.partitionMap(identity)
 
-    if(errs.isEmpty) Right(())
+    if (errs.isEmpty) Right(())
     else Left(Error.MultipleErrors(errs: _*))
   }
 
@@ -216,14 +220,14 @@ object TPBound {
   ): Either[Error, Unit] = {
     callerTPBound.find(_.target.origin == swappedTPBound.target.origin) match {
       case Some(bound) =>
-        val results = swappedTPBound.bounds.map{
+        val results = swappedTPBound.bounds.map {
           calledBound =>
-            if(bound.bounds.exists(_ =:= calledBound)) Right(())
+            if (bound.bounds.exists(_ =:= calledBound)) Right(())
             else Left(Error.NotMeetPartialTPBound(swappedTPBound.target, calledBound))
         }
 
         val (errs, _) = results.partitionMap(identity)
-        if(errs.isEmpty) Right(())
+        if (errs.isEmpty) Right(())
         else Left(Error.MultipleErrors(errs: _*))
       case None =>
         val isValid = swappedTPBound.bounds.isEmpty
@@ -231,7 +235,7 @@ object TPBound {
           .bounds
           .map(Error.NotMeetPartialTPBound(swappedTPBound.target, _))
 
-        if(isValid) Right(())
+        if (isValid) Right(())
         else Left(Error.MultipleErrors(errs: _*))
     }
 
@@ -265,21 +269,19 @@ object TPBound {
   }
 }
 
-class HPBound(
-  val target: HPExpr,
-  val bound: HPRange
-) extends Bound {
-  def composeBound(composed: HPRange): Either[Error, HPRange] = (this.bound, composed) match {
-    case (HPRange.Eq(HPRange.ExprEqual(origin)), HPRange.Eq(HPRange.ExprEqual(composed))) =>
+class HPBound(val target: HPExpr, val bound: HPConstraint) extends Bound {
+  /*
+  def composeBound(composed: HPConstraint): Either[Error, HPConstraint] = (this.bound, composed) match {
+    case (HPConstraint.Eqn(HPConstraint.ExprEqual(origin)), HPConstraint.Eqn(HPConstraint.ExprEqual(composed))) =>
       if (origin.isSameExpr(composed)) Right(this.bound)
       else Left(???)
-    case (HPRange.Eq(HPRange.ConstantEqual(v0)), HPRange.Eq(HPRange.ConstantEqual(v1))) =>
+    case (HPConstraint.Eqn(HPConstraint.ConstantEqual(v0)), HPConstraint.Eqn(HPConstraint.ConstantEqual(v1))) =>
       if (v0 == v1) Right(this.bound)
       else Left(???)
-    case (HPRange.Eq(_), HPRange.Eq(_)) => Left(???)
-    case (_: HPRange.Range, _: HPRange.Eq) => Left(???)
-    case (_: HPRange.Eq, _: HPRange.Range) => Left(???)
-    case (HPRange.Range(thisExprRange, thisConstRange), HPRange.Range(thatExprRange, thatConstRange)) =>
+    case (HPConstraint.Eqn(_), HPConstraint.Eqn(_)) => Left(???)
+    case (_: HPConstraint.Constraint, _: HPConstraint.Eqn) => Left(???)
+    case (_: HPConstraint.Eqn, _: HPConstraint.Constraint) => Left(???)
+    case (HPConstraint.Constraint(thisExprRange, thisConstRange), HPConstraint.Constraint(thatExprRange, thatConstRange)) =>
       def compose(origin: Vector[HPExpr], composed: Vector[HPExpr]): Vector[HPExpr] =
         composed.foldLeft(origin) {
           case (acc, expr) => acc.find(_.isSameExpr(expr)) match {
@@ -299,172 +301,145 @@ class HPBound(
       val newCMin = select(thisConstRange.min, thatConstRange.min)(_ < _)
       val newCNE = thisConstRange.ne ++ thatConstRange.ne
 
-      val newExprRange = HPRange.ExprRange(newMax, newMin, newNEs)
-      val newConstRange = HPRange.ConstantRange(newCMax, newCMin, newCNE)
+      val newExprRange = HPConstraint.ExprRange(newMax, newMin, newNEs)
+      val newConstRange = HPConstraint.ConstantRange(newCMax, newCMin, newCNE)
 
-      Right(HPRange.Range(newExprRange, newConstRange))
+      Right(HPConstraint.Constraint(newExprRange, newConstRange))
   }
+  */
 
   override def equals(obj: Any): Boolean = obj match {
     case that: HPBound =>
       this.target.isSameExpr(that.target) &&
-      this.bound == that.bound
+        this.bound == that.bound
     case _ => false
   }
 }
 
 object HPBound {
-  def apply(bound: HPBoundTree): HPBound = {
-    val (constMins, remains0) = bound.bounds.collectPartition {
-      case RangeExpr.Min(IntLiteral(value)) => IInt(value)
-    }
+  def apply(target: HPExpr, range: HPConstraint): HPBound = new HPBound(target, range)
+  def build(bound: HPBoundTree): HPBound = {
+    val (mins, remain0) = bound.bounds.collectPartition { case RangeExpr.Min(expr) => expr }
+    val (maxs, remain1) = remain0.collectPartition { case RangeExpr.Max(expr) => expr }
+    val exprEQs = remain1.map { case RangeExpr.EQ(expr) => expr }
 
-    val (constMaxs, remains1) = remains0.collectPartition {
-      case RangeExpr.Max(IntLiteral(value)) => IInt(value)
-    }
+    exprEQs match {
+      case eqs @ Vector(_, _*) => HPBound(bound.target, HPConstraint.Eqn(eqs))
+      case _ =>
+        val (constMaxs, exprMaxs) = maxs.collectPartition { case IntLiteral(value) => value }
+        val (constMins, exprMins) = mins.collectPartition { case IntLiteral(value) => value }
 
-    val (constNEs, remains2) = remains1.collectPartition {
-      case RangeExpr.NE(IntLiteral(value)) => value
-    }
+        val max = exprMaxs.unique ++ constMaxs.minOption.map(IntLiteral.apply)
+        val min = exprMins.unique ++ constMins.maxOption.map(IntLiteral.apply)
 
-    val (constEQs, remains3) = remains2.collectPartition {
-      case RangeExpr.EQ(IntLiteral(value)) => value
-    }
-
-    val (exprMins, remains4) = remains3.collectPartition {
-      case RangeExpr.Min(expr) => expr
-    }
-
-    val (exprMaxs, remains5) = remains4.collectPartition {
-      case RangeExpr.Max(expr) => expr
-    }
-
-    val (exprNEs, remains6) = remains5.collectPartition {
-      case RangeExpr.NE(expr) => expr
-    }
-
-    val exprEQs = remains6.map { case RangeExpr.EQ(expr) => expr }
-
-    if (constEQs.nonEmpty) HPBound(bound.target, HPRange.Eq(HPRange.ConstantEqual(constEQs.head)))
-    else if (exprEQs.nonEmpty) HPBound(bound.target, HPRange.Eq(HPRange.ExprEqual(exprEQs.head)))
-    else {
-      val constMin = constMins.foldLeft(IInt.nInf) { case (acc, min) => if (acc < min) min else acc }
-      val constMax = constMaxs.foldLeft(IInt.pInf) { case (acc, max) => if (acc > max) max else acc }
-      val constNESet = constNEs.toSet
-      val cRange = HPRange.ConstantRange(constMax, constMin, constNESet)
-      val eRange = HPRange.ExprRange(exprMaxs, exprMins, exprNEs)
-
-      HPBound(bound.target, HPRange.Range(eRange, cRange))
+        HPBound(bound.target, HPConstraint.Range(max, min))
     }
   }
 
-  def apply(target: HPExpr, range: HPRange): HPBound =
-    new HPBound(target, range)
-
-  def simplify(originalHPBounds: Vector[HPBound]): Either[Error, Vector[HPBound]] = {
-    def compose: Either[Error, Vector[HPBound]] = {
-      def execCompose(targets: Vector[HPBound], hpBound: HPBound, remains: Vector[HPBound]): Either[Error, Vector[HPBound]] =
-        targets match {
-          case Vector() => Right(remains :+ hpBound)
-          case Vector(bound) =>
-            hpBound.composeBound(bound.bound) match {
-              case Left(err) => Left(err)
-              case Right(range) => Right(remains :+ HPBound(hpBound.target, range))
-            }
-          case _ => throw new ImplementationErrorException("this pattern should not reached")
-        }
-
-      originalHPBounds.foldLeft[Either[Error, Vector[HPBound]]](Right(Vector.empty[HPBound])) {
-        case (Right(acc), hpBound) =>
-          val (sameTarget, remains) = acc.partition(_.target.isSameExpr(hpBound.target))
-          execCompose(sameTarget, hpBound, remains)
-        case (Left(err), _) => Left(err)
+  def typed(expr: HPExpr)(implicit ctx: Context, global: GlobalData): Either[Error, HPExpr] = expr match {
+    case HPBinOp(left, right) => (typed(left), typed(right)) match {
+      case (Right(l), Right(r)) => Right(HPBinOp(l, r).setTpe(Type.numTpe).setID(expr.id))
+      case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
+      case (Left(err), _) => Left(err)
+      case (_, Left(err)) => Left(err)
+    }
+    case HPUnaryOp(ident) => typed(ident).map(ident => HPUnaryOp(ident.asInstanceOf[Ident]).setTpe(ident.tpe))
+    case ident @ Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
+      case LookupResult.LookupSuccess(symbol) => symbol.tpe match {
+        case Type.ErrorType => Right(ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
+        case tpe: Type.RefType =>
+          if (tpe == Type.numTpe) Right(ident.setSymbol(symbol).setTpe(Type.numTpe))
+          else Left(Error.RequireSpecificType(tpe, Type.numTpe))
       }
+      case LookupResult.LookupFailure(err) =>
+        ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
+        Left(err)
     }
-
-    @tailrec
-    def delegateConstRange(delegated: Vector[HPBound]): Either[Error, Vector[HPBound]] = {
-      var isDelegated = false
-
-      val newBounds = delegated.map { hpBound =>
-        hpBound.bound match {
-          case HPRange.Eq(HPRange.ConstantEqual(_)) => hpBound
-          case HPRange.Eq(HPRange.ExprEqual(expr)) => delegated.find(_.target.isSameExpr(expr)) match {
-            case None => hpBound
-            case Some(lookupBound) => lookupBound.bound match {
-              case const@HPRange.Eq(_: HPRange.ConstantEqual) => HPBound(hpBound.target, const)
-              case _ => hpBound
-            }
-          }
-          case HPRange.Range(eRange, cRange) =>
-
-            def restrictConstRange(eRange: Vector[HPExpr], init: IInt)(g: HPRange.ConstantRange => IInt)(f: (IInt, IInt) => IInt): (Vector[HPExpr], IInt) = {
-              val (edge, remains) = eRange.foldLeft(init, Vector.empty[HPExpr]) {
-                case ((current, remains), edge) => edge.sort.combine match {
-                  case IntLiteral(value) => (f(IInt(value), current), remains)
-                  case expr =>
-                    delegated.find(_.target.isSameExpr(expr)) match {
-                      case None => (current, remains :+ expr)
-                      case Some(lookupBound) => lookupBound.bound match {
-                        case HPRange.Eq(HPRange.ConstantEqual(v)) => (f(IInt(v), current), remains)
-                        case HPRange.Eq(HPRange.ExprEqual(_)) => (current, remains)
-                        case HPRange.Range(_, cRange) => (f(g(cRange), current), remains)
-                      }
-                    }
-                }
-
-              }
-
-              (remains, edge)
-            }
-
-            val (exprMaxs, newMax) = restrictConstRange(eRange.max, cRange.max)(_.max) { (max, acc) =>
-              if (max < acc) max
-              else acc
-            }
-
-            val (exprMins, newMin) = restrictConstRange(eRange.min, cRange.min)(_.min) { (min, acc) =>
-              if (min > acc) min
-              else acc
-            }
-
-            val (newNEs, exprNEs) = eRange.ne.foldLeft((cRange.ne, Vector.empty[HPExpr])) {
-              case ((acc, remains), IntLiteral(value)) => (acc + value, remains)
-              case ((acc, remains), ne) =>
-                delegated.find(_.target.isSameExpr(ne)) match {
-                  case None => (acc, remains :+ ne)
-                  case Some(lookupBound) => lookupBound.bound match {
-                    case HPRange.Eq(HPRange.ConstantEqual(v)) => (acc + v, remains)
-                    case _ => (acc, remains :+ ne)
-                  }
-              }
-            }
-
-            val newExprRange = HPRange.ExprRange(exprMaxs, exprMins, exprNEs)
-            val newConstRange = HPRange.ConstantRange(newMax, newMin, newNEs)
-
-            if(newConstRange == cRange && newExprRange == eRange) {
-              hpBound
-            } else {
-              isDelegated = true
-              HPBound(hpBound.target, HPRange.Range(newExprRange, newConstRange))
-            }
-        }
-      }
-
-      if (!isDelegated) Right(newBounds)
-      else delegateConstRange(newBounds)
-    }
-
-    for {
-      composed <- compose
-      target = composed.map(_.target.sort.combine)
-      delegated <- delegateConstRange(composed)
-    } yield (target zip delegated).map {
-      case (target, range) => HPBound(target, range.bound)
-    }
+    case lit: IntLiteral => Right(lit.setTpe(Type.numTpe))
+    case _: StringLiteral => Left(Error.RequireSpecificType(Type.strTpe, Type.numTpe))
   }
 
+  def verifyTarget(target: HPExpr): Either[Error, HPExpr] = target match {
+    case lit: Literal => Left(Error.LiteralOnTarget(lit))
+    case HPUnaryOp(expr) => verifyTarget(expr)
+    case ident: Ident => Right(ident)
+    case HPBinOp(left, right) =>
+      for {
+        l <- verifyTarget(left)
+        r <- verifyTarget(right)
+      } yield HPBinOp(l, r)
+  }
+
+  def simplify(originalHPBounds: Vector[HPBound]): Vector[HPBound] = {
+    def execSimplify: Vector[HPBound] = {
+      def simplifyConstraint(constraint: HPConstraint): HPConstraint = constraint match {
+        case HPConstraint.Eqn(expr) => HPConstraint.Eqn(expr.map(_.sort.combine).unique)
+        case HPConstraint.Range(maxs, mins) =>
+          val simpleMaxs = maxs.map(_.sort.combine)
+          val simpleMins = mins.map(_.sort.combine)
+          val (constMaxs, exprMaxs) = simpleMaxs.collectPartition { case IntLiteral(value) => value }
+          val (constMins, exprMins) = simpleMins.collectPartition { case IntLiteral(value) => value }
+
+          val emaxs = exprMaxs.unique
+          val emins = exprMins.unique
+          val cmax = if (constMaxs.isEmpty) None else Some(IntLiteral(constMaxs.min))
+          val cmin = if (constMins.isEmpty) None else Some(IntLiteral(constMins.max))
+
+          HPConstraint.Range(emaxs ++ cmax, emins ++ cmin)
+      }
+
+      originalHPBounds.map {
+        bound =>
+          val target = bound.target.sort.combine
+          val constraint = simplifyConstraint(bound.bound)
+
+          HPBound(target, constraint)
+      }
+    }
+
+    def aggregate(bounds: Vector[HPBound]): Vector[(HPExpr, Vector[HPConstraint])] = {
+      bounds.headOption match {
+        case None => Vector.empty
+        case Some(bound) =>
+          val target = bound.target
+          val (filtered, remains) = bounds.partition(_.target.isSameExpr(target))
+          val head = (target, filtered.map(_.bound))
+          head +: aggregate(remains)
+      }
+    }
+
+    def execCompose(constraints: Vector[HPConstraint]): HPConstraint = {
+      def composeEqn(eqs: Vector[HPConstraint.Eqn]): HPConstraint.Eqn = HPConstraint.Eqn(eqs.flatMap(_.expr).unique)
+
+      def composeRange(ranges: Vector[HPConstraint.Range]): HPConstraint.Range = {
+        val collectLit: PartialFunction[HPExpr, Int] = {
+          case IntLiteral(value) => value
+        }
+        val (maxConsts, maxExprs) = ranges.flatMap(_.max).map(_.sort.combine).collectPartition(collectLit)
+        val (minConsts, minExprs) = ranges.flatMap(_.min).map(_.sort.combine).collectPartition(collectLit)
+        val maxConst = maxConsts.minOption
+        val minConst = minConsts.maxOption
+        val max = maxExprs.unique ++ maxConst.map(IntLiteral.apply)
+        val min = minExprs.unique ++ minConst.map(IntLiteral.apply)
+
+        HPConstraint.Range(max, min)
+      }
+
+      val (rngs, eqns) = constraints.collect {
+        case eqn: HPConstraint.Eqn => Right(eqn)
+        case rng: HPConstraint.Range => Left(rng)
+      }.partitionMap(identity)
+
+      eqns match {
+        case Vector() => composeRange(rngs)
+        case eqns => composeEqn(eqns)
+      }
+    }
+
+    aggregate(execSimplify).map { case (target, constraints) => HPBound(target, execCompose(constraints)) }
+  }
+
+  /*
   def verifyForm(bound: HPBoundTree)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {
     def verifyExpr(expr: HPExpr): Either[Error, HPExpr] = expr match {
       case lit: StringLiteral => Right(lit.setTpe(Type.strTpe))
@@ -473,9 +448,9 @@ object HPBound {
         .lookup[Symbol.HardwareParamSymbol](ident.name)
         .toEither
         .map(symbol => ident.setSymbol(symbol).setTpe(symbol.tpe))
-      case HPBinOp(op, left, right) =>
+      case HPBinOp(left, right) =>
         val terms = for {
-          typedLeft  <- verifyExpr(left)
+          typedLeft <- verifyExpr(left)
           typedRight <- verifyExpr(right)
         } yield (typedLeft, typedRight)
 
@@ -484,14 +459,14 @@ object HPBound {
             case (Type.ErrorType, _) => Left(Error.DummyError)
             case (_, Type.ErrorType) => Left(Error.DummyError)
             case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
-              lazy val typedBinOp = HPBinOp(op, left, right).setTpe(Type.numTpe).setID(expr.id)
+              lazy val typedBinOp = HPBinOp(left, right).setTpe(Type.numTpe).setID(expr.id)
               lazy val leftTypeMissMatch = Error.TypeMismatch(Type.numTpe, leftTpe)
               lazy val rightTypeMissMatch = Error.TypeMismatch(Type.numTpe, rightTpe)
 
-              if(leftTpe =:= Type.numTpe && rightTpe =:= Type.numTpe) Right(typedBinOp)
-              else if (leftTpe =!= Type.numTpe && rightTpe =!= Type.numTpe)
+              if (leftTpe == Type.numTpe && rightTpe == Type.numTpe) Right(typedBinOp)
+              else if (leftTpe != Type.numTpe && rightTpe != Type.numTpe)
                 Left(Error.MultipleErrors(leftTypeMissMatch, rightTypeMissMatch))
-              else if(leftTpe =!= Type.numTpe) Left(leftTypeMissMatch)
+              else if (leftTpe != Type.numTpe) Left(leftTypeMissMatch)
               else Left(rightTypeMissMatch)
           }
         }
@@ -555,34 +530,18 @@ object HPBound {
       _ <- verifyBound(bound.bounds)
     } yield ()
   }
+  */
 
-  def verifyAllForms(bounds: Vector[HPBoundTree])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Unit] = {
-    val (errs, _) = bounds.map(HPBound.verifyForm).partitionMap(identity)
-
-    if (errs.isEmpty) Right(())
-    else Left(Error.MultipleErrors(errs: _*))
-  }
-
-  def swapBounds(
-    swapped: Vector[HPBound],
-    table: Map[Symbol.HardwareParamSymbol, HPExpr]
-  ): Vector[HPBound] = {
-    def swap(expr: HPExpr): HPExpr = expr.swap(table)
-    def sort(expr: HPExpr): HPExpr = expr.sort
-
+  def swapBounds(swapped: Vector[HPBound], table: Map[Symbol.HardwareParamSymbol, HPExpr]): Vector[HPBound] = {
     def swapBound(hpBound: HPBound): HPBound = {
       val target = hpBound.target.swap(table).sort
       val bound = hpBound.bound match {
-        case HPRange.Eq(HPRange.ExprEqual(expr)) =>
-          (HPRange.Eq compose HPRange.ExprEqual compose sort compose swap)(expr)
-        case eqn @ HPRange.Eq(_: HPRange.ConstantEqual) => eqn
-        case HPRange.Range(eRange, cRange) =>
-          val f = sort _ compose swap
-          val max = eRange.max.map(f)
-          val min = eRange.min.map(f)
-          val ne = eRange.ne.map(f)
+        case HPConstraint.Eqn(exprs) => HPConstraint.Eqn(exprs.map(_.swap(table).sort.combine))
+        case HPConstraint.Range(max, min) =>
+          val swappedMax = max.map(_.swap(table).sort.combine)
+          val swappedMin = min.map(_.swap(table).sort.combine)
 
-          HPRange.Range(HPRange.ExprRange(max, min, ne), cRange)
+          HPConstraint.Range(swappedMax, swappedMin)
       }
 
       HPBound(target, bound)
@@ -591,16 +550,248 @@ object HPBound {
     swapped.map(swapBound)
   }
 
+  trait DerivedResult {
+    def negate: DerivedResult
+  }
+
+  object DerivedResult {
+    case class Const(const: IInt.Integer) extends DerivedResult {
+      override def negate: DerivedResult = {
+        val f = DerivedResult.Const.apply _ compose IInt.Integer.apply
+        f(-const.value)
+      }
+    }
+
+    case class Infs(infs: Vector[IInt.Inf]) extends DerivedResult {
+      override def negate: DerivedResult = {
+        val negated = infs.map(inf => inf.sign -> inf.expr.negate).map { case (sign, expr) => IInt.Inf(sign, expr) }
+        DerivedResult.Infs(negated)
+      }
+    }
+
+    def combine(results: Vector[DerivedResult])(cmp: (Int, Int) => Boolean): DerivedResult = {
+      val iints = results.flatMap {
+        case DerivedResult.Infs(infs) => infs
+        case DerivedResult.Const(const) => Vector(const)
+      }
+
+      iints.foldLeft[DerivedResult](DerivedResult.Infs(Vector.empty)) {
+        case (DerivedResult.Infs(_), iint: IInt.Integer) => DerivedResult.Const(iint)
+        case (c: DerivedResult.Const, _: IInt.Inf) => c
+        case (DerivedResult.Infs(infs), iint: IInt.Inf) =>
+          val accCount = infs.head.expr.countLeafs
+          val curCount = iint.expr.countLeafs
+
+          if (accCount > curCount) DerivedResult.Infs(Vector(iint))
+          else if (accCount == curCount) DerivedResult.Infs(infs :+ iint)
+          else DerivedResult.Infs(infs)
+        case (DerivedResult.Const(IInt.Integer(v0)), IInt.Integer(v1)) =>
+          if (cmp(v1, v0)) DerivedResult.Const(IInt.Integer(v1))
+          else DerivedResult.Const(IInt.Integer(v0))
+      }
+    }
+  }
+
+  trait DeriveTool {
+    def cmp(a: Int, b: Int): Boolean
+    def getEdge(edges: Vector[Int]): Option[Int]
+    def select(maxs: Vector[HPExpr], mins: Vector[HPExpr]): Vector[HPExpr]
+    val sign: Sign
+  }
+
+  val forMax = new DeriveTool {
+    override def cmp(a: Int, b: Int): Boolean = a < b
+    override def getEdge(edges: Vector[Int]): Option[Int] = edges.minOption
+    override def select(maxs: Vector[HPExpr], mins: Vector[HPExpr]): Vector[HPExpr] = maxs
+    override val sign: Sign = Sign.Pos
+  }
+
+  val forMin = new DeriveTool {
+    override def cmp(a: Int, b: Int): Boolean = a > b
+    override def getEdge(edges: Vector[Int]): Option[Int] = edges.maxOption
+    override def select(maxs: Vector[HPExpr], mins: Vector[HPExpr]): Vector[HPExpr] = mins
+    override val sign: Sign = Sign.Neg
+  }
+
+  def deriveMax(expr: HPExpr, hpBounds: Vector[HPBound]): IInt = deriveIInt(expr, hpBounds, Sign.Pos, forMax, forMin)
+  def deriveMin(expr: HPExpr, hpBounds: Vector[HPBound]): IInt = deriveIInt(expr, hpBounds, Sign.Neg, forMin, forMax)
+  private def deriveIInt(expr: HPExpr, hpBounds: Vector[HPBound], infSign: Sign, tool: DeriveTool, negTool: DeriveTool): IInt = {
+    def makeAllPatterns(exprss: Vector[Vector[HPExpr]]): Vector[Vector[HPExpr]] = {
+      def appendHead(heads: Vector[HPExpr], tails: Vector[Vector[HPExpr]]): Vector[Vector[HPExpr]] = {
+        for {
+          head <- heads
+          tail <- tails
+        } yield head +: tail
+      }
+
+      exprss.headOption match {
+        case None => Vector(Vector.empty)
+        case Some(heads) => appendHead(heads, makeAllPatterns(exprss.tail))
+      }
+    }
+
+    def deriveFromExpr(expr: HPExpr, const: Option[Int]): IInt = {
+      val table = deriveEdge(expr, hpBounds, Map.empty, tool, negTool)
+
+      table.get(expr) match {
+        case Some(DerivedResult.Infs(_)) => IInt.Inf(infSign, expr)
+        case Some(DerivedResult.Const(IInt.Integer(v0))) => IInt.Integer(v0 + const.getOrElse(0))
+        case None =>
+          val (signs, idents) = expr.collectLeafs.collect {
+            case ident: Ident => Sign.Pos -> ident
+            case HPUnaryOp(ident) => Sign.Neg -> ident
+          }.unzip
+
+          val exprss = idents.map(table(_)).map {
+            case DerivedResult.Infs(infs) => infs.map(_.expr)
+            case DerivedResult.Const(IInt.Integer(const)) => Vector(IntLiteral(const))
+          }
+
+          val signedExprss = (exprss zip signs).map {
+            case (exprs, Sign.Pos) => exprs
+            case (exprs, Sign.Neg) => exprs.map(_.negate)
+          }
+
+          val exprs = makeAllPatterns(signedExprss).map {
+            pattern =>
+              val expr = pattern.foldRight[HPExpr](IntLiteral(const.getOrElse(0))) {
+                case (left, right) => HPBinOp(left, right)
+              }
+              expr.sort.combine
+          }
+
+          tool.getEdge(exprs.collect { case IntLiteral(value) => value }) match {
+            case None => IInt.Inf(infSign, expr)
+            case Some(value) => IInt.Integer(value + const.getOrElse(0))
+          }
+      }
+    }
+
+    expr.sort.combine match {
+      case IntLiteral(value) => IInt.Integer(value)
+      case _ =>
+        val (split, const) = expr.extractConstant
+        deriveFromExpr(split, const)
+    }
+  }
+
+  private def deriveEdge(expr: HPExpr, hpBounds: Vector[HPBound], table: Map[HPExpr, DerivedResult], tool: DeriveTool, negTool: DeriveTool): Map[HPExpr, DerivedResult] = {
+    hpBounds.find(_.target.isSameExpr(expr)) match {
+      case None =>
+        val negExpr = expr.negate
+        hpBounds.find(_.target.isSameExpr(negExpr)) match {
+          case None => expr match {
+            case ident: Ident =>
+              val inf = IInt.Inf(tool.sign, ident)
+              val result = DerivedResult.Infs(Vector(inf))
+              table.updated(ident, result)
+            case unary: HPUnaryOp =>
+              val inf = IInt.Inf(tool.sign, unary)
+              val result = DerivedResult.Infs(Vector(inf))
+              table.updated(unary, result)
+            case expr =>
+              expr.collectLeafs.foldLeft(table) {
+                case (table, expr) if table.contains(expr) => table
+                case (table, expr) => deriveEdge(expr, hpBounds, table, tool, negTool)
+              }
+          }
+          case Some(_) =>
+            val derivedTable = deriveEdge(negExpr, hpBounds, table, negTool, tool)
+            val negated = derivedTable(negExpr).negate
+            derivedTable.updated(expr, negated)
+        }
+      case Some(bound) =>
+        val edgeExprs = bound.bound match {
+          case HPConstraint.Eqn(expr) => expr
+          case HPConstraint.Range(max, min) => tool.select(max, min)
+        }
+
+        val (splits, extractConsts) = edgeExprs.map(_.extractConstant).unzip
+        val exprConst = tool.getEdge _ apply splits.collect { case IntLiteral(v) => v }
+        val (exprs, consts) = (splits zip extractConsts).filterNot { case (expr, _) => expr.isInstanceOf[Literal] }.unzip
+        val derivedTable = exprs.foldLeft(table) {
+          case (table, expr) if table.contains(expr) => table
+          case (table, expr) => deriveEdge(expr, hpBounds, table, tool, negTool)
+        }
+        val results = (exprs zip consts)
+          .map { case (expr, c) => (derivedTable(expr), c) }
+          .map {
+            case (DerivedResult.Const(IInt.Integer(v0)), const) => DerivedResult.Const(IInt.Integer(v0 + const.getOrElse(0)))
+            case (infs: DerivedResult.Infs, None) => infs
+            case (DerivedResult.Infs(infs), Some(v)) =>
+              val newInfs = infs.map(inf => IInt.Inf(inf.sign, HPBinOp(inf.expr, IntLiteral(v)).sort.combine))
+              DerivedResult.Infs(newInfs)
+          }
+
+        val constTemplate = (num: Int) => DerivedResult.Const(IInt.Integer(num))
+        val constResult = exprConst map constTemplate
+        val result = DerivedResult.combine(results ++ constResult)(negTool.cmp)
+        derivedTable.updated(expr, result)
+    }
+  }
+
+
   def verifyMeetBound(swapped: HPBound, callerHPBounds: Vector[HPBound]): Either[Error, Unit] = {
+    val targetMax = deriveMax(swapped.target, callerHPBounds)
+    val targetMin = deriveMin(swapped.target, callerHPBounds)
+
+    swapped.bound match {
+      case HPConstraint.Eqn(exprs) =>
+        val (consts, others) = exprs.collectPartition { case IntLiteral(value) => value }
+        val errs = others.filterNot(_.isSameExpr(swapped.target)).map(Error.HPBoundNotEqualExpr(_, swapped.target))
+
+        lazy val targetConst = (targetMax, targetMin) match {
+          case (IInt.Integer(max), IInt.Integer(min)) if max == min => Right(max)
+          case _ => Left(Error.HPBoundNotDeriveEqualConst(swapped.target))
+        }
+
+        def verifyConstEq(targetConst: Int): Either[Error, Unit] = {
+          val errs = consts
+            .filter(_ != targetConst)
+            .map(Error.HPBoundEqualConstNotMatch(_, targetConst))
+
+          if (errs.isEmpty) Right(())
+          else Left(Error.MultipleErrors(errs: _*))
+        }
+
+        if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+        else for {
+          eqn <- targetConst
+          _ <- verifyConstEq(eqn)
+        } yield ()
+      case HPConstraint.Range(max, min) =>
+        def getEdge(iints: Vector[IInt], infSign: Sign)(edge: Vector[Int] => Option[Int]): IInt = {
+          val consts = iints.collect { case IInt.Integer(value) => value }
+          edge(consts) match {
+            case Some(const) => IInt.Integer(const)
+            case None => IInt.Inf(infSign, IntLiteral(0))
+          }
+        }
+
+        val rangeMax = getEdge(max.map(deriveMax(_, callerHPBounds)), Sign.Pos)(_.minOption)
+        val rangeMin = getEdge(min.map(deriveMin(_, callerHPBounds)), Sign.Neg)(_.maxOption)
+        lazy val isInMax = targetMax <= rangeMax
+        lazy val isInMin = targetMin >= rangeMin
+        lazy val isCrossMaxMin = rangeMax < rangeMin
+        lazy val outOfRange = Left(Error.HPBoundOutOfRange(swapped.target, (rangeMax, rangeMin), (targetMax, targetMin)))
+        lazy val crossRange = Left(Error.HPBoundRangeCross(rangeMax, rangeMin))
+
+        if (!isInMax) outOfRange
+        else if (!isInMin) outOfRange
+        else if (isCrossMaxMin) crossRange
+        else Right(())
+    }
+
+    /*
     def valueMeetBound(value: Int): Either[Error, Unit] = {
       def error: Left[Error, Unit] = Left(Error.ValueNotMeetHPBound(value, swapped))
 
       swapped.bound match {
-        case HPRange.Eq(HPRange.ExprEqual(_)) => error
-        case HPRange.Eq(HPRange.ConstantEqual(that)) =>
+        case HPConstraint.Eqn(HPConstraint.ExprEqual(_)) => error
+        case HPConstraint.Eqn(HPConstraint.ConstantEqual(that)) =>
           if (value == that) Right(())
           else error
-        case HPRange.Range(eRange, cRange) =>
+        case HPConstraint.Constraint(eRange, cRange) =>
           val v = IInt(value)
 
           def rangeDefinitely(ranges: Vector[HPExpr])(f: (IInt, IInt) => Boolean): Boolean =
@@ -608,9 +799,9 @@ object HPBound {
               callerHPBounds.find(_.target.isSameExpr(expr)) match {
                 case None => false
                 case Some(bound) => bound.bound match {
-                  case HPRange.Eq(_: HPRange.ExprEqual) => false
-                  case HPRange.Eq(HPRange.ConstantEqual(that)) => f(IInt(that), v)
-                  case HPRange.Range(_, cRange) => f(cRange.min, v)
+                  case HPConstraint.Eqn(_: HPConstraint.ExprEqual) => false
+                  case HPConstraint.Eqn(HPConstraint.ConstantEqual(that)) => f(IInt(that), v)
+                  case HPConstraint.Constraint(_, cRange) => f(cRange.min, v)
                 }
               }
             }
@@ -622,9 +813,9 @@ object HPBound {
               callerHPBounds.find(_.target.isSameExpr(expr)) match {
                 case None => false
                 case Some(bound) => bound.bound match {
-                  case HPRange.Eq(_: HPRange.ExprEqual) => false
-                  case HPRange.Eq(HPRange.ConstantEqual(that)) => that != value
-                  case HPRange.Range(_, cRange) => cRange.min > v || cRange.max < v
+                  case HPConstraint.Eqn(_: HPConstraint.ExprEqual) => false
+                  case HPConstraint.Eqn(HPConstraint.ConstantEqual(that)) => that != value
+                  case HPConstraint.Constraint(_, cRange) => cRange.min > v || cRange.max < v
                 }
               }
           }
@@ -654,16 +845,16 @@ object HPBound {
       derivedRange match {
         case Left(err) => Left(err)
         case Right(callerBound) => callerBound.bound match {
-          case HPRange.Eq(HPRange.ExprEqual(callerExpr)) => swapped.bound match {
-            case HPRange.Eq(HPRange.ExprEqual(replacedExpr)) =>
+          case HPConstraint.Eqn(HPConstraint.ExprEqual(callerExpr)) => swapped.bound match {
+            case HPConstraint.Eqn(HPConstraint.ExprEqual(replacedExpr)) =>
               if (replacedExpr.isSameExpr(callerExpr)) Right(())
               else buildError(callerBound)
             case _ => buildError(callerBound)
           }
-          case HPRange.Eq(HPRange.ConstantEqual(callerValue)) => valueMeetBound(callerValue)
-          case HPRange.Range(callerExprRange, callerConstRange) => swapped.bound match {
-            case HPRange.Eq(_) => buildError(callerBound)
-            case HPRange.Range(replacedExprRange, replacedConstRange) =>
+          case HPConstraint.Eqn(HPConstraint.ConstantEqual(callerValue)) => valueMeetBound(callerValue)
+          case HPConstraint.Constraint(callerExprRange, callerConstRange) => swapped.bound match {
+            case HPConstraint.Eqn(_) => buildError(callerBound)
+            case HPConstraint.Constraint(replacedExprRange, replacedConstRange) =>
               def verifyExprRange(replacedRange: Vector[HPExpr], callerRange: Vector[HPExpr]): Boolean =
                 replacedRange.forall {
                   rRangeExpr =>
@@ -688,8 +879,10 @@ object HPBound {
         }
       }
     }
+    */
 
-    def deriveRange(expr: HPExpr, callerHPBounds: Vector[HPBound]): Either[Error, HPRange] = {
+    /*
+    def deriveRange(expr: HPExpr, callerHPBounds: Vector[HPBound]): Either[Error, HPConstraint] = {
       def splitConstant(expr: HPExpr): (HPExpr, Option[(Operation, IntLiteral)]) =
         expr match {
           case ident: Ident => (ident, None)
@@ -698,54 +891,54 @@ object HPBound {
           case binop: HPBinOp => (binop, None)
         }
 
-      def buildFromConstEq(equal: HPRange.ConstantEqual)(f: IInt => IInt): Either[Error, HPRange] = {
+      def buildFromConstEq(equal: HPConstraint.ConstantEqual)(f: IInt => IInt): Either[Error, HPConstraint] = {
         f(IInt(equal.num)) match {
-          case IInt.Integer(value) => Right(HPRange.Eq(HPRange.ConstantEqual(value)))
+          case IInt.Integer(value) => Right(HPConstraint.Eqn(HPConstraint.ConstantEqual(value)))
           case _ => Left(???)
         }
       }
 
-      def buildFronConstRange(range: HPRange.ConstantRange)(f: IInt => IInt): Either[Error, HPRange] = {
+      def buildFronConstRange(range: HPConstraint.ConstantRange)(f: IInt => IInt): Either[Error, HPConstraint] = {
         val range0 = f(range.max)
         val range1 = f(range.min)
 
-        if(range0 == range1) {
+        if (range0 == range1) {
           range0 match {
             case IInt.Integer(value) =>
-              val constEq = HPRange.ConstantEqual(value)
-              Right(HPRange.Eq(constEq))
+              val constEq = HPConstraint.ConstantEqual(value)
+              Right(HPConstraint.Eqn(constEq))
             case _ => Left(???) // Constant Equal but Positive Inf or Negative Inf is error
           }
         } else {
           val (max, min) =
-            if(range0 > range1) (range0, range1)
+            if (range0 > range1) (range0, range1)
             else (range1, range0)
 
           val ne = range.ne
             .map(value => f(IInt(value)))
-            .collect{ case IInt.Integer(value) => value }
+            .collect { case IInt.Integer(value) => value }
 
-          val exprRange = HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty)
-          val constRange = HPRange.ConstantRange(max, min, ne)
-          Right(HPRange.Range(exprRange, constRange))
+          val exprRange = HPConstraint.ExprRange(Vector.empty, Vector.empty, Vector.empty)
+          val constRange = HPConstraint.ConstantRange(max, min, ne)
+          Right(HPConstraint.Constraint(exprRange, constRange))
         }
       }
 
-      def constructRange(expr: HPExpr): Either[Error, HPRange] = {
-        def getOperand(expr: HPRange): Vector[IInt] = expr match {
-          case HPRange.Range(_, HPRange.ConstantRange(max, min, _)) => Vector(max, min)
-          case HPRange.Eq(HPRange.ConstantEqual(value)) => Vector(IInt(value))
+      def constructRange(expr: HPExpr): Either[Error, HPConstraint] = {
+        def getOperand(expr: HPConstraint): Vector[IInt] = expr match {
+          case HPConstraint.Constraint(_, HPConstraint.ConstantRange(max, min, _)) => Vector(max, min)
+          case HPConstraint.Eqn(HPConstraint.ConstantEqual(value)) => Vector(IInt(value))
         }
 
         def selectEdge(values: Vector[IInt])(f: (IInt, IInt) => Boolean): IInt = {
           values.tail.foldLeft(values.head) {
             case (remain, edge) =>
-              if(f(edge, remain)) edge
+              if (f(edge, remain)) edge
               else remain
           }
         }
 
-        def calcRange(left: HPRange, right: HPRange, op: Operation): Either[Error, HPRange] = {
+        def calcRange(left: HPConstraint, right: HPConstraint, op: Operation): Either[Error, HPConstraint] = {
           val lefts = getOperand(left)
           val rights = getOperand(right)
 
@@ -757,30 +950,28 @@ object HPBound {
           val f: (IInt, IInt) => IInt = op match {
             case Operation.Add => _ + _
             case Operation.Sub => _ - _
-            case Operation.Mul => _ * _
-            case Operation.Div => _ / _
           }
 
-          val values = operands.map{ case (l, r) => f(l, r) }
+          val values = operands.map { case (l, r) => f(l, r) }
           val max = selectEdge(values)(_ > _)
           val min = selectEdge(values)(_ < _)
 
-          if(max != min) Right(HPRange.Range(HPRange.ExprRange.empty, HPRange.ConstantRange(max, min, Set.empty)))
+          if (max != min) Right(HPConstraint.Constraint(HPConstraint.Range.empty, HPConstraint.ConstantRange(max, min, Set.empty)))
           else max match {
-            case IInt.Integer(value) => Right(HPRange.Eq(HPRange.ConstantEqual(value)))
+            case IInt.Integer(value) => Right(HPConstraint.Eqn(HPConstraint.ConstantEqual(value)))
             case _ => Left(???)
           }
         }
 
-        def loop(expr: HPExpr): Either[Error, HPRange] = {
+        def loop(expr: HPExpr): Either[Error, HPConstraint] = {
           expr match {
-            case IntLiteral(value) => Right(HPRange.Eq(HPRange.ConstantEqual(value)))
+            case IntLiteral(value) => Right(HPConstraint.Eqn(HPConstraint.ConstantEqual(value)))
             case ident: Ident =>
               val range = callerHPBounds
                 .find(_.target.isSameExpr(ident))
                 .map(_.bound)
-                .filterNot(_.isInstanceOf[HPRange.ExprEqual])
-                .getOrElse(HPRange.Range.empty)
+                .filterNot(_.isInstanceOf[HPConstraint.ExprEqual])
+                .getOrElse(HPConstraint.Constraint.empty)
 
               Right(range)
             case HPBinOp(op, left, right) =>
@@ -815,172 +1006,101 @@ object HPBound {
             }
 
             range match {
-              case HPRange.Eq(eq: HPRange.ConstantEqual) => buildFromConstEq(eq)(f)
-              case HPRange.Eq(_) => Right(HPRange.Range.empty)
-              case HPRange.Range(_, consts) => buildFronConstRange(consts)(f)
+              case HPConstraint.Eqn(eq: HPConstraint.ConstantEqual) => buildFromConstEq(eq)(f)
+              case HPConstraint.Eqn(_) => Right(HPConstraint.Constraint.empty)
+              case HPConstraint.Constraint(_, consts) => buildFronConstRange(consts)(f)
             }
         }
       }
     }
-
     swapped.target match {
       case IntLiteral(value) => valueMeetBound(value)
       case expr: HPExpr => exprMeetBound(expr)
     }
+    */
   }
 }
 
-trait HPRange {
-  def isOverlapped(that: HPRange): Boolean
-  def isOverlapped(value: Int): Boolean
-  def isSubsetOf(that: HPRange): Boolean
-  def isSubsetOf(value: Int): Boolean
-}
+trait HPConstraint
+object HPConstraint {
+  case class Range(max: Vector[HPExpr], min: Vector[HPExpr]) extends HPConstraint {
+    override def equals(obj: Any): Boolean = {
+      def loop(thisExprs: Vector[HPExpr], thatExprs: Vector[HPExpr]): Boolean = {
+        (thisExprs, thatExprs) match {
+          case (Vector(), Vector()) => true
+          case (Vector(), _) => false
+          case (_, Vector()) => false
+          case (exprs0, exprs1) =>
+            val expr = exprs0.head
+            val remains = exprs1.filterNot(_.isSameExpr(expr))
 
-object HPRange {
-  case class ExprRange(max: Vector[HPExpr], min: Vector[HPExpr], ne: Vector[HPExpr]) {
-    override def equals(obj: Any): Boolean = obj match {
-      case that: HPRange.ExprRange =>
-        @tailrec def forall(thisExpr: Vector[HPExpr], thatExpr: Vector[HPExpr]): Boolean =
-          thatExpr.headOption match {
-            case None => true
-            case Some(head) => thisExpr.findRemain(_.isSameExpr(head)) match {
-              case (None, _) => false
-              case (Some(_), remains) => forall(remains, thatExpr.tail)
-            }
-          }
+            loop(exprs0.tail, remains)
+        }
+      }
 
-        this.max.length == that.max.length &&
-        this.min.length == that.min.length &&
-        this.ne.length == that.ne.length &&
-        forall(this.max, that.max) &&
-        forall(this.min, that.min) &&
-        forall(this.ne, that.ne)
-      case _ => false
-    }
-  }
-
-  object ExprRange {
-    def empty: HPRange.ExprRange = HPRange.ExprRange(Vector.empty, Vector.empty, Vector.empty)
-  }
-
-  case class ConstantRange(max: IInt, min: IInt, ne: Set[Int]) {
-    override def equals(obj: Any): Boolean = obj match {
-      case that: HPRange.ConstantRange =>
-        this.max == that.max &&
-        this.min == that.min &&
-        this.ne == that.ne
-      case _ => false
-    }
-  }
-
-  case class Range(eRange: ExprRange, cRange: ConstantRange) extends HPRange {
-    override def isOverlapped(that: HPRange): Boolean = that match {
-      case that: HPRange.Range =>
-        this.cRange.min <= that.cRange.max &&
-        that.cRange.min <= this.cRange.max
-      case HPRange.Eq(ConstantEqual(value)) =>
-        val v = IInt(value)
-        v <= this.cRange.max && v >= this.cRange.min
-      case HPRange.Eq(_: ExprEqual) => true
-    }
-
-    override def isOverlapped(that: Int): Boolean = {
-      val value = IInt(that)
-
-      this.cRange.max >= value && this.cRange.min <= value
-    }
-
-    override def isSubsetOf(that: HPRange): Boolean = that match {
-      case _: HPRange.Eq => false
-      case that: HPRange.Range =>
-        this.cRange.max <= that.cRange.max &&
-          this.cRange.min >= that.cRange.min
-    }
-
-    override def isSubsetOf(value: Int): Boolean = false
-
-    override def equals(obj: Any): Boolean = obj match {
-      case that: HPRange.Range =>
-        this.eRange == that.eRange &&
-        this.cRange == that.cRange
-      case _ => false
+      obj match {
+        case that: HPConstraint.Range => loop(this.max, that.max) && loop(this.min, that.min)
+        case _ => false
+      }
     }
   }
 
   object Range {
-    def empty: HPRange.Range = Range(
-      ExprRange(Vector.empty, Vector.empty, Vector.empty),
-      ConstantRange(IInt.PInf, IInt.NInf, Set.empty)
-    )
+    def empty: HPConstraint.Range = HPConstraint.Range(Vector.empty, Vector.empty)
   }
 
-  trait Equal
-  case class ExprEqual(expr: HPExpr) extends Equal {
-    override def equals(obj: Any): Boolean = obj match {
-      case that: HPRange.ExprEqual => this.expr.isSameExpr(that.expr)
-      case _ => false
-    }
-  }
-  case class ConstantEqual(num: Int) extends Equal {
-    override def equals(obj: Any): Boolean = obj match {
-      case that: HPRange.ConstantEqual => this.num == that.num
-      case _ => false
-    }
-  }
+  case class Eqn(expr: Vector[HPExpr]) extends HPConstraint {
+    override def equals(obj: Any): Boolean = {
+      def loop(thisExprs: Vector[HPExpr], thatExprs: Vector[HPExpr]): Boolean = {
+        (thisExprs, thatExprs) match {
+          case (Vector(), Vector()) => true
+          case (Vector(), _) => false
+          case (_, Vector()) => false
+          case (exprs0, exprs1) =>
+            val expr = exprs0.head
+            val remains = exprs1.filterNot(_.isSameExpr(expr))
 
-  case class Eq(eqn: Equal) extends HPRange {
-    override def isOverlapped(that: HPRange): Boolean = {
-      that match {
-        case that: HPRange.Range => eqn match {
-          case _: ExprEqual => true
-          case ConstantEqual(value) => that.isOverlapped(value)
-        }
-        case HPRange.Eq(ConstantEqual(v0)) => eqn match {
-          case _: ExprEqual => true
-          case ConstantEqual(v1) => v0 == v1
-        }
-        case HPRange.Eq(_: ExprEqual) => true
-      }
-    }
-
-    override def isOverlapped(value: Int): Boolean = this.eqn match {
-      case _: ExprEqual => true
-      case ConstantEqual(v) => v == value
-    }
-
-    override def isSubsetOf(that: HPRange): Boolean =
-      that match {
-        case HPRange.Eq(ConstantEqual(thatValue)) => this.eqn match {
-          case ConstantEqual(thisValue) => thisValue == thatValue
-          case ExprEqual(_) => false
-        }
-        case HPRange.Eq(ExprEqual(_)) => this.eqn match {
-          case ConstantEqual(_) => false
-          case ExprEqual(_) => true
-        }
-        case range: HPRange.Range => this.eqn match {
-          case ConstantEqual(thisValue) =>
-            val value = IInt(thisValue)
-            range.cRange.max >= value &&
-              range.cRange.min <= value &&
-              !range.cRange.ne.contains(thisValue)
-          case ExprEqual(_) =>
-            range.cRange.max.isPInf &&
-              range.cRange.min.isNInf
+            loop(exprs0.tail, remains)
         }
       }
 
-    override def isSubsetOf(value: Int): Boolean = this.eqn match {
-      case ConstantEqual(thisValue) => thisValue == value
-      case ExprEqual(_) => false
-    }
-
-    override def equals(obj: Any): Boolean = obj match {
-      case that: HPRange.Eq => this.eqn == that.eqn
-      case _ => false
+      obj match {
+        case that: HPConstraint.Eqn => loop(this.expr, that.expr)
+        case _ => false
+      }
     }
   }
 
+  def empty: HPConstraint.Range = Range.empty
+  def isOverlapped(constraint0: HPConstraint, constraint1: HPConstraint, bounds0: Vector[HPBound], bounds1: Vector[HPBound]): Boolean = {
+    def deriveEdge(constraint: HPConstraint, bounds: Vector[HPBound]): (IInt, IInt) = {
+      def rangeEdge(exprs: Vector[HPExpr], sign: Sign)(edge: Vector[Int] => Option[Int]): IInt = {
+        val (_, others) = exprs.map(HPBound.deriveMax(_, bounds)).partition(_.isInf)
+        val constEdge = edge apply others.map(_.asInstanceOf[IInt.Integer]).map{ case IInt.Integer(v) => v }
+
+        constEdge match {
+          case None => IInt.Inf(sign, IntLiteral(0)) // use int literal for now, but this is subject to fix
+          case Some(const) => IInt.Integer(const)
+        }
+      }
+
+      val (maxs, mins) = constraint match {
+        case HPConstraint.Range(maxs, mins) => (maxs, mins)
+        case HPConstraint.Eqn(exprs) =>(exprs, exprs)
+      }
+
+      val max = rangeEdge(maxs, Sign.Pos)(_.minOption)
+      val min = rangeEdge(mins, Sign.Neg)(_.maxOption)
+      (max, min)
+    }
+
+    val (max0, min0) = deriveEdge(constraint0, bounds0)
+    val (max1, min1) = deriveEdge(constraint1, bounds1)
+
+    (max0 >= max1 && min0 <= max1) ||
+    (max0 >= min1 && min0 <= min1) ||
+    (max0 >= max1 && min0 <= min1) ||
+    (max0 <= max1 && min0 >= min1)
+  }
 }
 

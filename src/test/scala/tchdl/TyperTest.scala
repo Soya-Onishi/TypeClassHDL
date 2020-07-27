@@ -251,6 +251,12 @@ class TyperTest extends TchdlFunSuite {
     val addThatReal = addReal.expr.collect{ case StdBinOp(_, _, right: Select) => right }.get
     assert(addThisReal.tpe.asRefType =:= addT)
     assert(addThatReal.tpe.asRefType =:= addT)
+
+    val addOp = global.builtin.operators.symbols.find(_.name == "add").get
+    val useAdd = addReal.expr.get
+    assert(useAdd.isInstanceOf[StdBinOp])
+    val addOpTree = useAdd.asInstanceOf[StdBinOp]
+    assert(addOpTree.symbol == addOp)
   }
 
   test("generate non existential stage causes an error") {

@@ -1,5 +1,6 @@
 package tchdl
 
+import scala.annotation.tailrec
 import scala.collection.generic.{CanBuildFrom, MapFactory}
 import scala.util.Try
 
@@ -74,6 +75,41 @@ package object util {
     def combine[B](f: F[T] => B): Either[B, Unit] = {
       if(iter.isEmpty) Right(())
       else Left(f(iter))
+    }
+
+    def unique(implicit ev0: T =:= tchdl.ast.HPExpr, cbf: CanBuildFrom[F[tchdl.ast.HPExpr], tchdl.ast.HPExpr, F[tchdl.ast.HPExpr]]): F[tchdl.ast.HPExpr] = {
+      val casteds = cbf()
+      val builder = cbf()
+
+      @tailrec def loop(remains: F[tchdl.ast.HPExpr]): Unit = {
+        if(remains.nonEmpty) {
+          val head = remains.head
+          val tail = remains.tail
+
+          val filtered = tail.filter(_.isSameExpr(head))
+
+          val tmp = cbf()
+          filtered.foreach(elem => tmp += elem)
+
+          builder += head
+          loop(tmp.result())
+        }
+      }
+
+
+      iter.foreach(elem => casteds += elem.asInstanceOf[tchdl.ast.HPExpr])
+      loop(casteds.result())
+      builder.result()
+    }
+
+    def maxOption(implicit ord: Ordering[T]): Option[T] = {
+      if(iter.isEmpty) None
+      else Some(iter.max)
+    }
+
+    def minOption(implicit ord: Ordering[T]): Option[T] = {
+      if(iter.isEmpty) None
+      else Some(iter.min)
     }
   }
 

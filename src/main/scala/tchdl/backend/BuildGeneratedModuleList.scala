@@ -79,7 +79,7 @@ object BuildGeneratedModuleList {
             tpTable <- Type.RefType.assignTPTable(initTPTable, Vector(refTpe), Vector(impl.targetType))
             swappedHPBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
             swappedTPBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
-            simplifiedHPBound <- HPBound.simplify(swappedHPBound)
+            simplifiedHPBound = HPBound.simplify(swappedHPBound)
             _ <- verifyEachBounds(simplifiedHPBound, swappedTPBound)
           } yield ()
 
@@ -117,14 +117,14 @@ object BuildGeneratedModuleList {
 
         if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
         else {
-          val builtModules = builtModuless.foldLeft[Vector[BuiltModule]](Vector.empty) {
+          val appendedModules = builtModuless.foldLeft[Vector[BuiltModule]](builtModules) {
             case (acc, modules) =>
               val assigns = modules.filterNot(module => acc.exists(_.tpe == module.tpe))
               acc ++ assigns
           }
 
           val thisModule = BuiltModule(module, thisModuleImpls)
-          Right(thisModule +: builtModules)
+          Right(thisModule +: appendedModules)
         }
     }
   }

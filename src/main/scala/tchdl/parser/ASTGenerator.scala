@@ -337,7 +337,6 @@ class ASTGenerator {
   }
 
   def hpExpr(ctx: TP.Hp_exprContext): HPExpr = ctx match {
-    case ctx: TP.MulDivHPExprContext => hpBinOp(ctx.hp_expr(0), ctx.hp_expr(1), ctx.op.getText)
     case ctx: TP.AddSubHPExprContext => hpBinOp(ctx.hp_expr(0), ctx.hp_expr(1), ctx.op.getText)
     case ctx: TP.StrLitHPExprContext => StringLiteral(ctx.STRING.getText.tail.init)
     case ctx: TP.IntLitHPExprContext => IntLiteral(ctx.INT.getText.toInt)
@@ -420,14 +419,20 @@ class ASTGenerator {
   }
 
   def hpBinOp(left: TP.Hp_exprContext, right: TP.Hp_exprContext, op: String): HPBinOp = {
-    val operation = op match {
-      case "+" => Operation.Add
-      case "-" => Operation.Sub
-      case "*" => Operation.Mul
-      case "/" => Operation.Div
+    def neg(expr: HPExpr): HPExpr = expr match {
+      case HPUnaryOp(ident) => ident
+      case ident: Ident => HPUnaryOp(ident)
+      case HPBinOp(left, right) => HPBinOp(neg(left), neg(right))
+      case IntLiteral(value) => IntLiteral(-value)
     }
 
-    HPBinOp(operation, hpExpr(left), hpExpr(right))
+    val l = hpExpr(left)
+    val r = hpExpr(right)
+
+    op match {
+      case "+" => HPBinOp(l, r)
+      case "-" => HPBinOp(l, neg(r))
+    }
   }
 
   def typeTree(ctx: TP.TypeContext): TypeTree = {
@@ -603,7 +608,6 @@ class ASTGenerator {
       case ctx: TP.MaxBoundContext => RangeExpr.Max(hpExpr(ctx.hp_expr))
       case ctx: TP.MinBoundContext => RangeExpr.Min(hpExpr(ctx.hp_expr))
       case ctx: TP.EqBoundContext => RangeExpr.EQ(hpExpr(ctx.hp_expr))
-      case ctx: TP.NeBoundContext => RangeExpr.NE(hpExpr(ctx.hp_expr))
     }
 
     ctx match {
