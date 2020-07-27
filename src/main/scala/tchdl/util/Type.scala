@@ -689,6 +689,14 @@ object Type {
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
     )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+      def targetTypeCheck(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr], tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]): Either[Error, Unit] = {
+        val replacedTpe = impl.targetType.replaceWithMap(hpTable, tpTable)
+        val accessorTpe = Type.RefType(accessor.origin, accessor.hardwareParam, accessor.typeParam)
+
+        if(replacedTpe == accessorTpe) Right(())
+        else Left(Error.TypeMismatch(impl.targetType, accessorTpe))
+      }
+
       val (implHPTable, implTPTable) = RefType.buildTable(impl)
       val lookupResult = impl.lookup[Symbol.MethodSymbol](methodName) match {
         case None => Left(Error.SymbolNotFound(methodName))
@@ -708,6 +716,7 @@ object Type {
         swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
         simplifiedHPBound = HPBound.simplify(swappedHpBound)
         _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, callerHPBound, callerTPBound, impl, accessor)
+        _ <- targetTypeCheck(hpTable, tpTable)
         (methodHpTable, methodTpTable) = RefType.buildSymbolTable(method, callerHP, callerTP)
         appendHpTable = hpTable ++ methodHpTable
         appendTpTable = tpTable ++ methodTpTable

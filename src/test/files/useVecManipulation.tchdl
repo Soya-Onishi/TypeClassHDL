@@ -1,0 +1,17 @@
+package test
+
+import std::traits:::From
+
+module Top
+impl Top {
+  input def vec(in: Vector[4, Bit[8]]) -> Unit {
+    val a: Vector[5, Bit[8]] = in.append(Bit[8]:::from(32))
+    val b: Vector[2, Bit[8]] = in.truncate[2, 1]()
+    val c: Vector[3, Bit[8]] = in.tail()
+    val d: Vector[3, Bit[8]] = in.init()
+    val e: Bit[8] = in.head()
+    val f: Bit[8] = in.last()
+    val g: Vector[1, Bit[8]] = Vector[1, Bit[8]]:::new(Bit[8]:::from(16))
+    val h: Vector[0, Bit[8]] = Vector[0, Bit[8]]:::empty()
+  }
+}

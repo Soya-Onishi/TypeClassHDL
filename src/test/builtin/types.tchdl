@@ -109,6 +109,27 @@ impl[T] Vector[1, T]
   static def new(head: T) -> Vector[1, T] {
     Vector[0, T]:::empty().append(head)
   }
+
+  def tail() -> Vector[0, T] {
+    Vector[0, T]:::empty()
+  }
+
+  def init() -> Vector[0, T] {
+    Vector[0, T]:::empty()
+  }
+}
+
+impl[m: Num, T] Vector[m, T]
+  where T: HW,
+        m: min 2
+{
+  def tail() -> Vector[m - 1, T] {
+    this.truncate[m - 2, 0]()
+  }
+
+  def init() -> Vector[m - 1, T] {
+    this.truncate[m - 1, 1]()
+  }
 }
 
 module Memory[depth: Num, width: Num, T]

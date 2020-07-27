@@ -176,7 +176,7 @@ object FirrtlCodeGen {
     def next(key: String): Name = {
       assert(!locked(key), s"[$key] is locked")
 
-      table.get(key) orElse eachMax.get(key) match {
+      eachMax.get(key) match {
         case Some(count) =>
           table(key) = count + 1
           eachMax(key) = count + 1
@@ -1313,6 +1313,9 @@ object FirrtlCodeGen {
       case "idxDynVec" => builtin.vecIdxDyn(insts(0), insts(1), global)
       case "updatedVec" => builtin.vecUpdated(insts(0), insts(1), call.hargs(0))
       case "updatedDynVec" => builtin.vecUpdatedDyn(insts(0), insts(1), insts(2))
+      case "truncateVec" => builtin.vecTruncate(insts(0), call.hargs(0), call.hargs(1))
+      case "appendVec" => builtin.vecAppend(insts(0), insts(1))
+      case "emptyVec" => builtin.vecEmpty(call.accessorTpe.get)
       case "fromIntBit" => builtin.bitFromInt(call.accessorTpe.get, insts(0))
       case "fromBoolBit" => builtin.bitFromBool(call.accessorTpe.get, insts(0))
       case "fromBitBit" => builtin.bitFromBit(call.accessorTpe.get, insts(0))

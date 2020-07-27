@@ -789,4 +789,9 @@ class TyperTest extends TchdlFunSuite {
     val (_, global) = untilTyper("builderPattern.tchdl")
     expectNoError(global)
   }
+
+  test("use some vector manipulation") {
+    val (_, global) = untilTyper("useVecManipulation.tchdl")
+    expectNoError(global)
+  }
 }

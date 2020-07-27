@@ -213,6 +213,57 @@ package object builtin {
     RunResult(Future.empty, stmts, instance)
   }
 
+  def vecAppend(accessor: Instance, elem: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
+    val name = stack.next("_GEN")
+    val DataInstance(tpe, accessorRef) = accessor
+    val DataInstance(_, elemRef) = elem
+
+    val HPElem.Num(accessorLength) = tpe.hargs.head
+    val retTpe = BackendType(tpe.symbol, Vector(HPElem.Num(accessorLength + 1)), tpe.targs)
+    val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(retTpe))
+    val wireRef = ir.Reference(wire.name, ir.UnknownType)
+    val init = ir.PartialConnect(ir.NoInfo, wireRef, accessorRef)
+    val last = ir.Connect(ir.NoInfo, ir.SubIndex(wireRef, accessorLength, ir.UnknownType), elemRef)
+
+    val instance = DataInstance(retTpe, wireRef)
+    val stmts = Vector(wire, init, last)
+    RunResult(Future.empty, stmts, instance)
+  }
+
+  def vecTruncate(accessor: Instance, hpHi: HPElem, hpLo: HPElem)(implicit stack: StackFrame, global: GlobalData): RunResult = {
+    val name = stack.next("_GEN")
+    val DataInstance(tpe, accessorRef) = accessor
+    val HPElem.Num(hi) = hpHi
+    val HPElem.Num(lo) = hpLo
+    val elemTpe = tpe.targs.head
+    val wireTpe = BackendType(tpe.symbol, Vector(HPElem.Num(hi - lo + 1)), Vector(elemTpe))
+
+    val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(wireTpe))
+    val wireRef = ir.Reference(wire.name, ir.UnknownType)
+    val locRef = (idx: Int) => ir.SubIndex(wireRef, idx, ir.UnknownType)
+    val fromRef = (idx: Int) => ir.SubIndex(accessorRef, idx, ir.UnknownType)
+
+    val connects = (lo to hi).zipWithIndex
+      .map{ case (fromIdx, locIdx) => ir.Connect(ir.NoInfo, locRef(locIdx), fromRef(fromIdx)) }
+      .toVector
+
+    val instance = DataInstance(wireTpe, wireRef)
+    val stmts = wire +: connects
+
+    RunResult(Future.empty, stmts, instance)
+  }
+
+  def vecEmpty(vecTpe: BackendType)(implicit stack: StackFrame, global: GlobalData): RunResult = {
+    val name = stack.next("_GEN")
+    val elemTpe = vecTpe.targs.head
+    val retTpe = BackendType(vecTpe.symbol, Vector(HPElem.Num(0)), Vector(elemTpe))
+    val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(retTpe))
+    val wireRef = ir.Reference(wire.name, ir.UnknownType)
+    val instance = DataInstance(retTpe, wireRef)
+
+    RunResult(Future.empty, Vector(wire), instance)
+  }
+
   def bitFromInt(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
     val HPElem.Num(toWidth) = bitTpe.hargs.head
     val DataInstance(_, refer) = from

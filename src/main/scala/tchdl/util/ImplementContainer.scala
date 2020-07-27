@@ -268,11 +268,15 @@ object ImplementClassContainer {
       hpBounds0: Vector[HPBound],
       hpBounds1: Vector[HPBound]
     ): Boolean = {
-      def findRange(target: HPExpr, bounds: Vector[HPBound]): HPConstraint =
-        bounds
-          .find(_.target.isSameExpr(target))
-          .map(_.bound)
-          .getOrElse(HPConstraint.empty)
+      def findRange(target: HPExpr, bounds: Vector[HPBound]): HPConstraint = target match {
+        case IntLiteral(value) => HPConstraint.Eqn(Vector(IntLiteral(value)))
+        case expr =>
+          bounds
+            .find(_.target.isSameExpr(expr))
+            .map(_.bound)
+            .getOrElse(HPConstraint.empty)
+      }
+
 
       (tpe0.origin, tpe1.origin) match {
         case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>
