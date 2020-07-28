@@ -511,6 +511,27 @@ object Operation {
     override def isCommutative: Boolean = false
   }
 
+  case object Or extends Operation {
+    override def toInterface: String = "Or"
+    override def toMethod: String = "or"
+    override def toOperator: String = "|"
+    override def isCommutative: Boolean = true
+  }
+
+  case object And extends Operation {
+    override def toInterface: String = "And"
+    override def toMethod: String = "and"
+    override def toOperator: String = "&"
+    override def isCommutative: Boolean = true
+  }
+
+  case object Xor extends Operation {
+    override def toInterface: String = "Xor"
+    override def toMethod: String = "xor"
+    override def toOperator: String = "^"
+    override def isCommutative: Boolean = true
+  }
+
   case object Eq extends Operation {
     override def toInterface: String = "Eq"
     override def toMethod: String = "equal"

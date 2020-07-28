@@ -405,6 +405,9 @@ class ASTGenerator {
       case "-"  => Operation.Sub
       case "*"  => Operation.Mul
       case "/"  => Operation.Div
+      case "|"  => Operation.Or
+      case "&"  => Operation.And
+      case "^"  => Operation.Xor
       case ">>" => Operation.Shr
       case "<<" => Operation.Shl
       case ">>>" => Operation.DynShr

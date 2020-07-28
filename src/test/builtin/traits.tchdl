@@ -58,6 +58,78 @@ impl[m: Num] Div for Bit[m]
   def div(that: Bit[m]) -> Bit[m] { this / that }
 }
 
+trait Or {
+  def or(that: This) -> This
+}
+
+impl Or for Int {
+  def or(that: Int) -> Int {
+    this | that
+  }
+}
+
+impl[m: Num] Or for Bit[m]
+  where m: min 1
+{
+  def or(that: Bit[m]) -> Bit[m] {
+    this | that
+  }
+}
+
+impl Or for Bool {
+  def or(that: Bool) -> Bool {
+    this | that
+  }
+}
+
+trait And {
+  def and(that: This) -> This
+}
+
+impl And for Int {
+  def and(that: Int) -> Int {
+    this & that
+  }
+}
+
+impl[m: Num] And for Bit[m]
+  where m: min 1
+{
+  def and(that: Bit[m]) -> Bit[m] {
+    this & that
+  }
+}
+
+impl And for Bool {
+  def and(that: Bool) -> Bool {
+    this & that
+  }
+}
+
+trait Xor {
+  def xor(that: This) -> This
+}
+
+impl Xor for Int {
+  def xor(that: Int) -> Int {
+    this ^ that
+  }
+}
+
+impl[m: Num] Xor for Bit[m]
+  where m: min 1
+{
+  def xor(that: Bit[m]) -> Bit[m] {
+    this ^ that
+  }
+}
+
+impl Xor for Bool {
+  def xor(that: Bool) -> Bool {
+    this ^ that
+  }
+}
+
 trait Shl {
   def shl(shamt: Int) -> This
 }

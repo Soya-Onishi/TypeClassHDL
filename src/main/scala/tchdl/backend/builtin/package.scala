@@ -8,20 +8,32 @@ import firrtl.PrimOps
 import tchdl.backend.FirrtlCodeGen.StackFrame
 
 package object builtin {
-  def intAdd(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intBinOps(left, right, PrimOps.Add, global)(_ + _)
+  def intAdd(left: Instance, right: Instance): RunResult = {
+    intBinOps(left, right, PrimOps.Add)(_ + _)
   }
 
-  def intSub(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intBinOps(left, right, PrimOps.Sub, global)(_ - _)
+  def intSub(left: Instance, right: Instance): RunResult = {
+    intBinOps(left, right, PrimOps.Sub)(_ - _)
   }
 
-  def intMul(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intBinOps(left, right, PrimOps.Mul, global)(_ * _)
+  def intMul(left: Instance, right: Instance): RunResult = {
+    intBinOps(left, right, PrimOps.Mul)(_ * _)
   }
 
-  def intDiv(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intBinOps(left, right, PrimOps.Div, global)(_ / _)
+  def intDiv(left: Instance, right: Instance): RunResult = {
+    intBinOps(left, right, PrimOps.Div)(_ / _)
+  }
+
+  def intOr(left: Instance, right: Instance): RunResult = {
+    intBinOps(left, right, PrimOps.Or)(_ | _)
+  }
+
+  def intAnd(left: Instance, right: Instance): RunResult = {
+    intBinOps(left, right, PrimOps.And)(_ & _)
+  }
+
+  def intXor(left: Instance, right: Instance): RunResult = {
+    intBinOps(left, right, PrimOps.Xor)(_ ^ _)
   }
 
   def intShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
@@ -72,12 +84,24 @@ package object builtin {
     intUnaryOps(operand, PrimOps.Not, global)(value => ~value)
   }
 
+  def boolAnd(left: Instance, right: Instance): RunResult = {
+    boolBinOps(left, right, PrimOps.And)(_ & _)
+  }
+
+  def boolOr(left: Instance, right: Instance): RunResult = {
+    boolBinOps(left, right, PrimOps.Or)(_ | _)
+  }
+
+  def boolXor(left: Instance, right: Instance): RunResult = {
+    boolBinOps(left, right, PrimOps.Xor)(_ ^ _)
+  }
+
   def boolEq(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    boolBinOps(left, right, PrimOps.Eq, global)(_ == _)
+    boolBinOps(left, right, PrimOps.Eq)(_ == _)
   }
 
   def boolNe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    boolBinOps(left, right, PrimOps.Neq, global)(_ != _)
+    boolBinOps(left, right, PrimOps.Neq)(_ != _)
   }
 
   def boolNot(operand: Instance, global: GlobalData): RunResult = {
@@ -98,6 +122,18 @@ package object builtin {
 
   def bitDiv(left: Instance, right: Instance): RunResult = {
     bitBinOps(left, right, PrimOps.Div)
+  }
+
+  def bitOr(left: Instance, right: Instance): RunResult = {
+    bitBinOps(left, right, PrimOps.Or)
+  }
+
+  def bitAnd(left: Instance, right: Instance): RunResult = {
+    bitBinOps(left, right, PrimOps.And)
+  }
+
+  def bitXor(left: Instance, right: Instance): RunResult = {
+    bitBinOps(left, right, PrimOps.Xor)
   }
 
   def bitShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
@@ -333,7 +369,7 @@ package object builtin {
     RunResult(Future.empty, Vector.empty, retInstance)
   }
 
-  private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => BigInt): RunResult = {
+  private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp)(f: (BigInt, BigInt) => BigInt): RunResult = {
     val DataInstance(tpe, l) = left
     val DataInstance(_, r) = right
 
@@ -371,7 +407,7 @@ package object builtin {
     RunResult.inst(DataInstance(operand.tpe, ret))
   }
 
-  private def boolBinOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (Boolean, Boolean) => Boolean): RunResult = {
+  private def boolBinOps(left: Instance, right: Instance, ops: ir.PrimOp)(f: (Boolean, Boolean) => Boolean): RunResult = {
     def toBool(lit: BigInt): Boolean = {
       lit.toInt match {
         case 0 => false

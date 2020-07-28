@@ -19,5 +19,8 @@ impl Top {
     val n = x <<< z
     val o = x >> y
     val p = x << y
+    val q = x | y
+    val r = x & y
+    val s = x ^ y
   }
 }

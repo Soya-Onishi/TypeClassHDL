@@ -4,6 +4,9 @@ import std::traits:::Add
 import std::traits:::Sub
 import std::traits:::Mul
 import std::traits:::Div
+import std::traits:::Or
+import std::traits:::And
+import std::traits:::Xor
 import std::traits:::Shl
 import std::traits:::Shr
 import std::traits:::DynShl
@@ -37,6 +40,27 @@ def mul[T](a: T, b: T) -> T where T: Mul {
 @built_in[divBit: (Bit, Bit) => Bit]
 def div[T](a: T, b: T) -> T where T: Div {
   a.div(b)
+}
+
+@built_in[orInt: (Int, Int) => Int]
+@built_in[orBit: (Bit, Bit) => Bit]
+@built_in[orBool: (Bool, Bool) => Bool]
+def or[T](a: T, b: T) -> T where T: Or {
+  a.or(b)
+}
+
+@built_in[andInt: (Int, Int) => Int]
+@built_in[andBit: (Bit, Bit) => Bit]
+@built_in[andBool: (Bool, Bool) => Bool]
+def and[T](a: T, b: T) -> T where T: And {
+  a.and(b)
+}
+
+@built_in[xorInt: (Int, Int) => Int]
+@built_in[xorBit: (Bit, Bit) => Bit]
+@built_in[xorBool: (Bool, Bool) => Bool]
+def xor[T](a: T, b: T) -> T where T: Xor {
+  a.xor(b)
 }
 
 @built_in[shlInt: (Int, Int) => Int]
