@@ -423,17 +423,20 @@ object FirrtlCodeGen {
   def runMemory(memory: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[Unit] = {
     val dataType = toFirrtlType(memory.tpe.targs.head)
     val HPElem.Num(depth) = memory.tpe.hargs(0)
+    val HPElem.Num(readPort) = memory.tpe.hargs(2)
+    val HPElem.Num(writePort) = memory.tpe.hargs(3)
+    val HPElem.Num(readLatency) = memory.tpe.hargs(4)
+    val HPElem.Num(writeLatency) = memory.tpe.hargs(5)
 
-    val readFlagRegName = memory.label.toString + "$" + "_reading"
-    val readFlagReg = ir.DefRegister(ir.NoInfo, readFlagRegName, ir.UIntType(ir.IntWidth(1)), clockRef, resetRef, ir.UIntLiteral(0))
     val memDef = ir.DefMemory(
       ir.NoInfo,
       memory.label.toString,
-      dataType, depth,
-      1,
-      1,
-      Seq("read"),
-      Seq("write"),
+      dataType,
+      depth,
+      writeLatency,
+      readLatency,
+      (0 until readPort).map(idx => s"read$idx"),
+      (0 until writePort).map(idx => s"write$idx"),
       Seq.empty,
       ir.ReadUnderWrite.Undefined
     )
@@ -443,7 +446,7 @@ object FirrtlCodeGen {
         case (accessor, name) => ir.SubField(accessor, name, ir.UnknownType)
       }
 
-    def buildWriteMaskInit(tpe: ir.Type): Vector[ir.Connect] = {
+    def buildWriteMaskInit(tpe: ir.Type, idx: Int): Vector[ir.Connect] = {
       def loop(fieldTpe: ir.Type, accessor: ir.SubField): Vector[ir.SubField] = {
         fieldTpe match {
           case ir.UIntType(_) => Vector(accessor.copy(tpe = ir.UIntType(ir.IntWidth(1))))
@@ -454,8 +457,8 @@ object FirrtlCodeGen {
         }
       }
 
-      val subField = memSubField("write", "mask").asInstanceOf[ir.SubField]
-
+      val port = s"write$idx"
+      val subField = memSubField(port, "mask").asInstanceOf[ir.SubField]
       val leafs = tpe match {
         case ir.UIntType(_) => Vector(subField.copy(tpe = ir.UIntType(ir.IntWidth(1))))
         case bundle: ir.BundleType => loop(bundle, subField)
@@ -464,42 +467,72 @@ object FirrtlCodeGen {
       leafs.map(loc => ir.Connect(ir.NoInfo, loc, ir.UIntLiteral(0)))
     }
 
-    val readingRegDefault = ir.Connect(ir.NoInfo, ir.Reference(readFlagRegName, ir.UnknownType), ir.UIntLiteral(0))
-    val readEnable = ir.Connect(ir.NoInfo, memSubField("read", "en"), ir.UIntLiteral(0))
-    val readAddr = ir.IsInvalid(ir.NoInfo, memSubField("read", "addr"))
-    val readClk = ir.Connect(ir.NoInfo, memSubField("read", "clk"), clockRef)
+    def buildReadStmts(idx: Int): Vector[ir.Statement] = {
+      val readFlagRegNames = (0 until readLatency).map(latency => memory.label.toString + "$" + s"_reading${latency}_$idx").toVector
+      val readFlagRegs = readFlagRegNames.map(ir.DefRegister(ir.NoInfo, _, ir.UIntType(ir.IntWidth(1)), clockRef, resetRef, ir.UIntLiteral(0)))
+      val readingRegDefault = readFlagRegNames.headOption.map(name => ir.Connect(ir.NoInfo, ir.Reference(name, ir.UnknownType), ir.UIntLiteral(0)))
+      val port = s"read$idx"
+      val readEnable = ir.Connect(ir.NoInfo, memSubField(port, "en"), ir.UIntLiteral(0))
+      val readAddr = ir.IsInvalid(ir.NoInfo, memSubField(port, "addr"))
+      val readClk = ir.Connect(ir.NoInfo, memSubField(port, "clk"), clockRef)
 
-    val readDataName = memory.toFirrtlString + "$" + "_read_data"
-    val readDataFuture = ir.BundleType(Seq(
-      ir.Field("_member", ir.Default, ir.UIntType(ir.IntWidth(1))),
-      ir.Field("_data", ir.Default, dataType)
-    ))
+      val readDataName = memory.toFirrtlString + "$" + s"_${port}_data"
+      val readDataFuture = ir.BundleType(Seq(
+        ir.Field("_member", ir.Default, ir.UIntType(ir.IntWidth(1))),
+        ir.Field("_data", ir.Default, dataType)
+      ))
 
-    val readDataWire = ir.DefWire(ir.NoInfo, readDataName, readDataFuture)
-    val readDataMemberConnect = ir.Connect(
-      ir.NoInfo,
-      ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_member", ir.UnknownType),
-      ir.Reference(readFlagRegName, ir.UnknownType)
-    )
-    val readDataDataConnect = ir.Connect(
-      ir.NoInfo,
-      ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_data", ir.UnknownType),
-      memSubField("read", "data")
-    )
+      val readDataWire = ir.DefWire(ir.NoInfo, readDataName, readDataFuture)
+      def memberConnect(from: ir.Expression): ir.Connect = ir.Connect(
+        ir.NoInfo,
+        ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_member", ir.UnknownType),
+        from
+      )
 
-    val writeMask = buildWriteMaskInit(dataType)
-    val writeEnable = ir.Connect(ir.NoInfo, memSubField("write", "en"), ir.UIntLiteral(0))
-    val writeAddr = ir.IsInvalid(ir.NoInfo, memSubField("write", "addr"))
-    val writeData = ir.IsInvalid(ir.NoInfo, memSubField("write", "data"))
-    val writeClk = ir.Connect(ir.NoInfo, memSubField("write", "clk"), clockRef)
+      val readingRegConnects = readFlagRegNames match {
+        case Vector() => Vector.empty
+        case names => (names zip names.tail).map{
+          case (from, loc) =>
+            val fromRef = ir.Reference(from, ir.UnknownType)
+            val locRef = ir.Reference(loc, ir.UnknownType)
 
-    val stmts = Vector(
-      readFlagReg, memDef, readingRegDefault,
-      readEnable, readAddr, readClk, readDataWire, readDataMemberConnect, readDataDataConnect,
-      writeEnable, writeAddr, writeData, writeClk
-    )
+            ir.Connect(ir.NoInfo, locRef, fromRef)
+        }
+      }
 
-    BuildResult(stmts ++ writeMask, Future.empty, ())
+      val readDataMemberConnect = readFlagRegNames.lastOption match {
+        case None => memberConnect(ir.UIntLiteral(0))
+        case Some(name) => memberConnect(ir.Reference(name, ir.UnknownType))
+      }
+
+      val readDataDataConnect = ir.Connect(
+        ir.NoInfo,
+        ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_data", ir.UnknownType),
+        memSubField(port, "data")
+      )
+
+      val stmts = Vector(readEnable, readAddr, readClk, readDataWire)
+      val connects = Vector(readDataMemberConnect, readDataDataConnect)
+
+      readFlagRegs ++ readingRegDefault ++ stmts ++ readingRegConnects ++ connects
+    }
+
+    def buildWriteStmts(idx: Int): Vector[ir.Statement] = {
+      val port = s"write$idx"
+
+      val writeMask = buildWriteMaskInit(dataType, idx)
+      val writeEnable = ir.Connect(ir.NoInfo, memSubField(port, "en"), ir.UIntLiteral(0))
+      val writeAddr = ir.IsInvalid(ir.NoInfo, memSubField(port, "addr"))
+      val writeData = ir.IsInvalid(ir.NoInfo, memSubField(port, "data"))
+      val writeClk = ir.Connect(ir.NoInfo, memSubField(port, "clk"), clockRef)
+
+      writeMask ++ Vector(writeEnable, writeAddr, writeData, writeClk)
+    }
+
+    val readStmts = (0 until readPort).flatMap(buildReadStmts).toVector
+    val writeStmts = (0 until writePort).flatMap(buildWriteStmts).toVector
+
+    BuildResult(memDef +: (readStmts ++ writeStmts), Future.empty, ())
   }
 
   def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[Vector[ir.Statement with ir.IsDeclaration]] = {
@@ -1328,7 +1361,7 @@ object FirrtlCodeGen {
       case backend.Term.Temp(id, _) => stack.refer(id)
     }
 
-    val ModuleInstance(_, location) = stack.lookup(getName(read.accessor))
+    val ModuleInstance(tpe, location) = stack.lookup(getName(read.accessor))
     val ModuleLocation.Sub(memory @ ir.Reference(memName, _)) = location
     val DataInstance(_, addrRef) = stack.lookup(getName(read.addr))
 
@@ -1339,11 +1372,19 @@ object FirrtlCodeGen {
       }
     }
 
-    val enable = ir.Connect(ir.NoInfo, memSubField("read", "en"), ir.UIntLiteral(1))
-    val addr = ir.Connect(ir.NoInfo, memSubField("read", "addr"), addrRef)
+    val port = s"read${read.port}"
+    val enable = ir.Connect(ir.NoInfo, memSubField(port, "en"), ir.UIntLiteral(1))
+    val addr = ir.Connect(ir.NoInfo, memSubField(port, "addr"), addrRef)
 
-    val stmts = Vector(enable, addr)
-    val readDataName = ir.Reference(memName + "$" + "_read_data", ir.UnknownType)
+    val readDataName = ir.Reference(memName + "$" + s"_${port}_data", ir.UnknownType)
+    val readingRegName = ir.Reference(memName + "$" + s"_reading0_${read.port}", ir.UnknownType)
+    val readLatency = tpe.hargs(4)
+    val readingConnect = readLatency match {
+      case HPElem.Num(0) => ir.Connect(ir.NoInfo, ir.SubField(readDataName, "_member", ir.UnknownType), ir.UIntLiteral(1))
+      case _ => ir.Connect(ir.NoInfo, readingRegName, ir.UIntLiteral(1))
+    }
+
+    val stmts = Vector(enable, addr, readingConnect)
     val future = BackendType(Symbol.future, Vector.empty, Vector(read.tpe))
     val instance = DataInstance(future, readDataName)
 
@@ -1368,9 +1409,10 @@ object FirrtlCodeGen {
       }
     }
 
-    val enable = ir.Connect(ir.NoInfo, memSubField("write", "en"), ir.UIntLiteral(1))
-    val addr = ir.Connect(ir.NoInfo, memSubField("write", "addr"), addrRef)
-    val data = ir.Connect(ir.NoInfo, memSubField("write", "data"), dataRef)
+    val port = s"write${write.port}"
+    val enable = ir.Connect(ir.NoInfo, memSubField(port, "en"), ir.UIntLiteral(1))
+    val addr = ir.Connect(ir.NoInfo, memSubField(port, "addr"), addrRef)
+    val data = ir.Connect(ir.NoInfo, memSubField(port, "data"), dataRef)
     val stmts = Vector(enable, addr, data)
     val instance = DataInstance(BackendType(Symbol.unit, Vector.empty, Vector.empty), ir.UIntLiteral(0))
 

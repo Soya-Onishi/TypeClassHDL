@@ -132,18 +132,28 @@ impl[m: Num, T] Vector[m, T]
   }
 }
 
-module Memory[depth: Num, width: Num, T]
+module Memory[depth: Num, width: Num, readPort: Num, writePort: Num, readLatency: Num, writeLatency: Num, T]
   where depth: min 1,
         width: min 1,
+        readPort: min 1,
+        writePort: min 1,
+        readLatency: min 0,
+        writeLatency: min 1,
         T: HW
 
-impl[depth: Num, width: Num, T] Memory[depth, width, T]
+impl[depth: Num, width: Num, readPort: Num, writePort: Num, readLatency: Num, writeLatency: Num, T] Memory[depth, width, readPort, writePort, readLatency, writeLatency, T]
   where depth: min 1,
         width: min 1,
+        readPort: min 1,
+        writePort: min 1,
+        readLatency: min 0,
+        writeLatency: min 1,
         T: HW
 {
   @built_in[readMem: (Bit) => Future]
-  input def read(addr: Bit[width]) -> Future[T] {
+  input def read[port: Num](addr: Bit[width]) -> Future[T]
+    where port: max readPort - 1 & min 0
+  {
     this.reading(addr)
   }
 
@@ -152,7 +162,9 @@ impl[depth: Num, width: Num, T] Memory[depth, width, T]
   }
 
   @built_in[writeMem: (Bit, *) => Unit]
-  input def write(addr: Bit[width], data: T) -> Unit {
+  input def write[port: Num](addr: Bit[width], data: T) -> Unit
+    where port: max writePort - 1 & min 0
+  {
     this.writing(addr, data)
   }
 

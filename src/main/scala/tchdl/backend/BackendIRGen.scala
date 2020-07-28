@@ -501,12 +501,16 @@ object BackendIRGen {
         }
         */
 
-        lazy val readMem = backend.ReadMemory(accessor, argSummary.terms.head, retTpe)
-        lazy val writeMem = backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1))
+        def readMem(idx: Int) = backend.ReadMemory(accessor, argSummary.terms.head, idx, retTpe)
+        def writeMem(idx: Int) = backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1), idx)
 
         val (call, label) = getBuiltIn(referredMethodSymbol, Some(accessor), Some(accessor.tpe), argSummary.terms, hargs, retTpe) match {
-          case Some(_) if isMemRead => (readMem, None)
-          case Some(_) if isMemWrite => (writeMem, None)
+          case Some(_) if isMemRead =>
+            val HPElem.Num(idx) = hargs.head
+            (readMem(idx), None)
+          case Some(_) if isMemWrite =>
+            val HPElem.Num(idx) = hargs.head
+            (writeMem(idx), None)
           case Some(method) => (method, None)
           case _ =>
             val label = makeLabel(referredMethodSymbol, Some(accessor.tpe), argSummary.terms.map(_.tpe), hargs, targs)

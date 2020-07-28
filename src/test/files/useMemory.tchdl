@@ -2,13 +2,14 @@ package test
 
 module Top
 impl Top {
-  mod mem: Memory[256, 8, Bit[32]] = Memory[256, 8, Bit[32]]{}
+  mod mem: Memory[256, 8, 2, 1, 1, 1, Bit[32]] = Memory[256, 8, 2, 1, 1, 1, Bit[32]]{}
 
   input def read(addr: Bit[8]) -> Future[Bit[32]] {
-    this.mem.read(addr)
+    this.mem.read[0](addr)
+    this.mem.read[1](addr + 1)
   }
 
   input def write(addr: Bit[8], data: Bit[32]) -> Unit {
-    this.mem.write(addr, data)
+    this.mem.write[0](addr, data)
   }
 }
