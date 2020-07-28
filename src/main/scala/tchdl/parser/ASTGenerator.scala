@@ -429,6 +429,7 @@ class ASTGenerator {
       case ident: Ident => HPUnaryOp(ident)
       case HPBinOp(left, right) => HPBinOp(neg(left), neg(right))
       case IntLiteral(value) => IntLiteral(-value)
+      case others => others
     }
 
     val l = hpExpr(left)

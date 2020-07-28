@@ -598,6 +598,7 @@ object BackendIRGen {
     val returnedLabels = call match {
       case call: backend.CallMethod => leftLabels ++ rightLabels + call.label
       case _: backend.CallBuiltIn => leftLabels ++ rightLabels
+      case tree => throw new ImplementationErrorException(s"[$tree] must not be here")
     }
 
     BuildResult(nodes, Some(call), returnedLabels)
@@ -669,6 +670,7 @@ object BackendIRGen {
     val returnedLabels = call match {
       case call: backend.CallMethod => operandLabels + call.label
       case _: backend.CallBuiltIn => operandLabels
+      case _ => throw new ImplementationErrorException(s"[$call] must not be here")
     }
 
     BuildResult(operandStmts, Some(call), returnedLabels)
@@ -701,6 +703,7 @@ object BackendIRGen {
         val interfaceTpe = toBackendType(interface, hpTable, tpTable)
 
         (hpTable, tpTable, Some(interfaceTpe))
+      case Some(_) => throw new ImplementationErrorException("implement class or implement interface must be here")
       case None => (ListMap.empty, ListMap.empty, None)
     }
 
@@ -1047,6 +1050,7 @@ object BackendIRGen {
         def buildLoc(expr: frontend.Expression): Vector[String] = expr match {
           case frontend.Select(prefix, name) => buildLoc(prefix) :+ name
           case frontend.This() => Vector.empty
+          case tree => throw new ImplementationErrorException(s"[$tree] must not be at here")
         }
 
         val BuildResult(stmts, Some(expr), labels) = buildExpr(assign.right)
@@ -1055,7 +1059,7 @@ object BackendIRGen {
         BuildResult(stmts :+ backendAssign, None, labels)
     }
 
-  trait SigArg
+  sealed trait SigArg
   object SigArg {
     case class Sym(symbol: Symbol.TypeSymbol) extends SigArg
     case object Any extends SigArg

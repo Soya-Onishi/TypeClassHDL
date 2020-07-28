@@ -16,8 +16,7 @@ package object backend {
     def toFirrtlString: String
   }
 
-  trait HPElem extends ToFirrtlString
-
+  sealed trait HPElem extends ToFirrtlString
   object HPElem {
     case class Num(n: Int) extends HPElem {
       override def hashCode(): Int = this.n.hashCode
@@ -149,6 +148,7 @@ package object backend {
         val interfaceHPTable = (interface.hps zip cast.hardwareParam).map{
           case (hparam, frontend.IntLiteral(value)) => hparam -> HPElem.Num(value)
           case (hparam, frontend.StringLiteral(value)) => hparam -> HPElem.Str(value)
+          case (_, tree) => throw new ImplementationErrorException(s"[$tree] must not appear at hardware expression")
         }.toMap
 
         val interfaceTPTable = (interface.tps zip cast.typeParam)
@@ -263,6 +263,10 @@ package object backend {
         val HPElem.Num(leftValue) = evalHPExpr(left, hpTable)
         val HPElem.Num(rightValue) = evalHPExpr(right, hpTable)
         HPElem.Num(leftValue + rightValue)
+      case frontend.HPUnaryOp(ident) =>
+        val HPElem.Num(value) = evalHPExpr(ident, hpTable)
+        HPElem.Num(-value)
+      case frontend.BoolLiteral(_) => throw new ImplementationErrorException("boolean literal must not appear at hardware expression")
     }
 
   def calculateFieldLength(tpe: BackendType)(implicit global: GlobalData): BigInt = {
@@ -279,7 +283,8 @@ package object backend {
         val tpTable = (enum.tps zip tpe.targs).toMap
 
         enum.tpe.declares.toMap
-          .map { case (_, symbol: Symbol.EnumMemberSymbol) => symbol.tpe }
+          .values
+          .map { _.asInstanceOf[Symbol.EnumMemberSymbol].tpe }
           .map {
             _.declares.toMap.values.view
               .map(_.tpe.asRefType)

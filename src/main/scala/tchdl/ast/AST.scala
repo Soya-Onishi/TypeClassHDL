@@ -262,12 +262,14 @@ sealed trait HPExpr extends Expression {
       case ident: Ident => Vector(ident)
       case HPUnaryOp(_) => Vector.empty
       case HPBinOp(left, right) => collectPosLeafs(left) ++ collectPosLeafs(right)
+      case _: Literal => Vector.empty
     }
 
     def collectNegLeafs(expr: HPExpr): Vector[Ident] = expr match {
       case _: Ident => Vector.empty
       case HPUnaryOp(ident) => Vector(ident)
       case HPBinOp(left, right) => collectNegLeafs(left) ++ collectNegLeafs(right)
+      case _: Literal => Vector.empty
     }
 
     def execSubtract(lefts: Vector[Ident], rights: Vector[Ident]): (Vector[Ident], Vector[Ident]) = {
@@ -392,7 +394,7 @@ object RangeExpr {
 case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr with ApplyPrefix
 case class Apply(prefix: ApplyPrefix, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
 
-abstract class UnaryOp extends Expression with HasSymbol {
+sealed abstract class UnaryOp extends Expression with HasSymbol {
   type Expr <: Expression
 
   val op: Operation
@@ -408,7 +410,7 @@ case class HPUnaryOp(operand: Ident) extends UnaryOp with HPExpr {
   val op = Operation.Neg
 }
 
-abstract class BinOp extends Expression with HasSymbol {
+sealed abstract class BinOp extends Expression with HasSymbol {
   type Expr <: Expression
 
   val op: Operation
