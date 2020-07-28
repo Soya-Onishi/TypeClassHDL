@@ -113,17 +113,10 @@ object Error {
   case class MustNotCastFromTrait(from: Type.RefType) extends Error
   case class MustCastToTrait(to: Type.RefType) extends Error
   case class CannotCast(from: Type.RefType, to: Type.RefType) extends Error
-
-  case class CyclicModuleInstantiation(module: BackendType, route: Vector[BackendType]) extends Error
-
-  case class NotExhaustiveEnum(remains: Vector[Symbol.EnumMemberSymbol]) extends Error
-  case class CannotUseBitLitForSWPattern(tpe: Type) extends Error
-
   case class RequireCastToLookup(tpe: Type.RefType) extends Error
 
+  case class CyclicModuleInstantiation(module: BackendType, route: Vector[BackendType]) extends Error
   case class RequireLiteral(actual: AST) extends Error
-
-  case class TopModuleHasNoImpl(tpe: Type.RefType) extends Error
 
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
