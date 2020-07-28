@@ -567,6 +567,20 @@ object Operation {
     override def isCommutative: Boolean = false
   }
 
+  case object DynShr extends Operation {
+    override def toInterface: String = "DynShr"
+    override def toMethod: String = "dynShr"
+    override def toOperator: String = ">>>"
+    override def isCommutative: Boolean = false
+  }
+
+  case object DynShl extends Operation {
+    override def toInterface: String = "DynShl"
+    override def toMethod: String = "dynShl"
+    override def toOperator: String = "<<<"
+    override def isCommutative: Boolean = false
+  }
+
   case object Neg extends Operation {
     override def toInterface: String = "Neg"
     override def toMethod: String = "neg"

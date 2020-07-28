@@ -407,6 +407,8 @@ class ASTGenerator {
       case "/"  => Operation.Div
       case ">>" => Operation.Shr
       case "<<" => Operation.Shl
+      case ">>>" => Operation.DynShr
+      case "<<<" => Operation.DynShl
       case "==" => Operation.Eq
       case "!=" => Operation.Ne
       case "<"  => Operation.Lt

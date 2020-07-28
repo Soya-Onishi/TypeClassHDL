@@ -12,8 +12,6 @@ object Bound {
     tpBounds: Vector[TPBound],
     callerHPBound: Vector[HPBound],
     callerTPBound: Vector[TPBound],
-    impl: ImplementContainer,
-    target: Type.RefType
   )(implicit global: GlobalData): Either[Error, Unit] = {
     val (hpErrs, _) = hpBounds
       .map(HPBound.verifyMeetBound(_, callerHPBound))
@@ -25,7 +23,7 @@ object Bound {
 
     val errs = hpErrs ++ tpErrs
     if (errs.isEmpty) Right(())
-    else Left(Error.ImplTargetTypeMismatch(impl, target))
+    else Left(Error.MultipleErrors(errs: _*))
   }
 }
 

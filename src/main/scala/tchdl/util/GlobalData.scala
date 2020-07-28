@@ -148,11 +148,6 @@ class BuiltInInterfaces extends BuiltInSymbols[Symbol.InterfaceSymbol] {
   import scala.collection.mutable
 
   protected val builtin: mutable.Map[String, Symbol.InterfaceSymbol] = mutable.Map[String, Symbol.InterfaceSymbol](
-    "Add" -> null,
-    "Sub" -> null,
-    "Mul" -> null,
-    "Div" -> null,
-    "Eq" -> null,
     "HW" -> null,
     "Module" -> null,
   )
@@ -166,6 +161,10 @@ class BuiltInOperators extends BuiltInSymbols[Symbol.MethodSymbol] {
     "sub" -> null,
     "mul" -> null,
     "div" -> null,
+    "shl" -> null,
+    "shr" -> null,
+    "dynShl" -> null,
+    "dynShr" -> null,
     "equal" -> null,
     "notEqual" -> null,
     "greaterThan" -> null,

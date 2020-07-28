@@ -540,7 +540,7 @@ object BackendIRGen {
       val leftTpe = toRefType(leftExpr.tpe)
       val rightTpe = toRefType(rightExpr.tpe)
 
-      val (operator, _) = leftTpe.lookupOperator(binop.op, Some(rightTpe), Vector.empty, Vector.empty)
+      val (operator, _) = leftTpe.lookupOperator(binop.op, Vector(leftTpe, rightTpe), Vector.empty, Vector.empty)
         .toEither
         .getOrElse(throw new ImplementationErrorException(s"operator[${binop.op}] for [$leftTpe] and [$rightTpe] should be found"))
 
@@ -637,7 +637,7 @@ object BackendIRGen {
 
     def buildCallMethod: backend.CallMethod = {
       val operandTpe = toRefType(operandExpr.tpe)
-      val (operator, _) = operandTpe.lookupOperator(unaryOp.op, None, Vector.empty, Vector.empty)
+      val (operator, _) = operandTpe.lookupOperator(unaryOp.op, Vector(operandTpe), Vector.empty, Vector.empty)
         .toEither
         .getOrElse(throw new ImplementationErrorException(s"operator[${unaryOp.op}] for [$operandTpe] should be found"))
 

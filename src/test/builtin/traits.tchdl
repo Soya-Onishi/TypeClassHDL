@@ -58,6 +58,82 @@ impl[m: Num] Div for Bit[m]
   def div(that: Bit[m]) -> Bit[m] { this / that }
 }
 
+trait Shl {
+  def shl(shamt: Int) -> This
+}
+
+impl Shl for Int {
+  def shl(shamt: Int) -> Int {
+    this << shamt
+  }
+}
+
+impl[m: Num] Shl for Bit[m] where m: min 1 {
+  def shl(shamt: Int) -> Bit[m] {
+    this << shamt
+  }
+}
+
+trait Shr {
+  def shr(shamt: Int) -> This
+}
+
+impl Shr for Int {
+  def shr(shamt: Int) -> Int {
+    this >> shamt
+  }
+}
+
+impl[m: Num] Shr for Bit[m] where m: min 1 {
+  def shr(shamt: Int) -> Bit[m] {
+    this >> shamt
+  }
+}
+
+trait DynShl {
+  def dynShl[m: Num](shamt: Bit[m]) -> This where m: min 1
+}
+
+impl DynShl for Int {
+  def dynShl[m: Num](shamt: Bit[m]) -> Int
+    where m: min 1
+  {
+    this <<< shamt
+  }
+}
+
+impl[m: Num] DynShl for Bit[m]
+  where m: min 1
+{
+  def dynShl[n: Num](shamt: Bit[n]) -> Bit[m]
+    where n: min 1
+  {
+    this <<< shamt
+  }
+}
+
+trait DynShr {
+  def dynShr[m: Num](shamt: Bit[m]) -> This where m: min 1
+}
+
+impl DynShr for Int {
+  def dynShr[m: Num](shamt: Bit[m]) -> Int
+    where m: min 1
+  {
+    this >>> shamt
+  }
+}
+
+impl[m: Num] DynShr for Bit[m]
+  where m: min 1
+{
+  def dynShr[n: Num](shamt: Bit[n]) -> Bit[m]
+    where n: min 1
+  {
+    this >>> shamt
+  }
+}
+
 trait Eq {
   def equals(that: This) -> Bool
 }

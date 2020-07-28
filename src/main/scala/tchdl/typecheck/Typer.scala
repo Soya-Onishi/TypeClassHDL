@@ -866,7 +866,7 @@ object Typer {
       case (Type.ErrorType, _) => LookupResult.LookupFailure(Error.DummyError)
       case (_, Type.ErrorType) => LookupResult.LookupFailure(Error.DummyError)
       case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
-        leftTpe.lookupOperator(binop.op, Some(rightTpe), ctx.hpBounds, ctx.tpBounds)
+        leftTpe.lookupOperator(binop.op, Vector(leftTpe, rightTpe), ctx.hpBounds, ctx.tpBounds)
     }
 
     result match {
@@ -886,7 +886,7 @@ object Typer {
 
     val result = typedOperand.tpe match {
       case Type.ErrorType => LookupResult.LookupFailure(Error.DummyError)
-      case operand: Type.RefType => operand.lookupOperator(unaryOp.op, None, ctx.hpBounds, ctx.tpBounds)
+      case operand: Type.RefType => operand.lookupOperator(unaryOp.op, Vector(operand), ctx.hpBounds, ctx.tpBounds)
     }
 
     result match {

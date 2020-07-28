@@ -4,6 +4,10 @@ import std::traits:::Add
 import std::traits:::Sub
 import std::traits:::Mul
 import std::traits:::Div
+import std::traits:::Shl
+import std::traits:::Shr
+import std::traits:::DynShl
+import std::traits:::DynShr
 import std::traits:::Eq
 import std::traits:::Ord
 import std::traits:::Not
@@ -33,6 +37,36 @@ def mul[T](a: T, b: T) -> T where T: Mul {
 @built_in[divBit: (Bit, Bit) => Bit]
 def div[T](a: T, b: T) -> T where T: Div {
   a.div(b)
+}
+
+@built_in[shlInt: (Int, Int) => Int]
+@built_in[shlBit: (Bit, Int) => Bit]
+def shl[T](value: T, shamt: Int) -> T where T: Shl {
+  value.shl(shamt)
+}
+
+@built_in[shrInt: (Int, Int) => Int]
+@built_in[shrBit: (Bit, Int) => Bit]
+def shr[T](value: T, shamt: Int) -> T where T: Shr {
+  value.shr(shamt)
+}
+
+@built_in[dynShlInt: (Int, Bit) => Int]
+@built_in[dynShlBit: (Bit, Bit) => Bit]
+def dynShl[m: Num, T](value: T, shamt: Bit[m]) -> T
+  where T: DynShl,
+        m: min 1
+{
+  value.dynShl[m](shamt)
+}
+
+@built_in[dynShrInt: (Int, Bit) => Int]
+@built_in[dynShrBit: (Bit, Bit) => Bit]
+def dynShr[m: Num, T](value: T, shamt: Bit[m]) -> T
+  where T: DynShr,
+        m: min 1
+{
+  value.dynShr[m](shamt)
 }
 
 @built_in[eqInt: (Int, Int) => Bool]

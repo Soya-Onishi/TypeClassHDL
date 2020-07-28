@@ -173,33 +173,33 @@ hp_bound_expr
     | 'eq' hp_expr  # EqBound
     ;
 
-expr: expr '.' (apply | EXPR_ID)             # SelectExpr
-    | op=('-' | '!') expr                    # UnaryExpr
-    | expr op=('*' | '/') expr               # MulDivExpr
-    | expr op=('+' | '-') expr               # AddSubExpr
-    | expr op=('<<' | '>>') expr             # ShiftExpr
-    | expr op=('<' | '<=' | '>=' | '>') expr # CmpExpr
-    | expr op=('==' | '!=') expr             # EqExpr
-    | expr '&' expr                          # AndExpr
-    | expr '^' expr                          # XorExpr
-    | expr '|' expr                          # OrExpr
-    | apply                                  # ApplyExpr
-    | block                                  # BlockExpr
-    | construct_struct                       # ConstructStructExpr
-    | construct_module                       # ConstructModuleExpr
-    | construct_enum                         # ConstructEnumExpr
-    | IF '(' expr ')' expr (ELSE expr)?      # IfExpr
-    | MATCH expr '{' case_def+ '}'           # MatchExpr
-    | FINISH                                 # Finish
-    | goto_expr                              # GotoExpr
-    | relay                                  # RelayExpr
-    | generate                               # GenerateExpr
-    | RETURN expr                            # Return
-    | literal                                # LitExpr
-    | '(' expr AS type ')'                   # CastExpr
-    | '(' expr ')'                           # ParenthesesExpr
-    | THIS                                   # SelfExpr
-    | EXPR_ID                                # ExprID
+expr: expr '.' (apply | EXPR_ID)                 # SelectExpr
+    | <assoc=right> op=('-' | '!') expr          # UnaryExpr
+    | expr op=('*' | '/') expr                   # MulDivExpr
+    | expr op=('+' | '-') expr                   # AddSubExpr
+    | expr op=('<<' | '>>' | '<<<' | '>>>') expr # ShiftExpr
+    | expr op=('<' | '<=' | '>=' | '>') expr     # CmpExpr
+    | expr op=('==' | '!=') expr                 # EqExpr
+    | expr '&' expr                              # AndExpr
+    | expr '^' expr                              # XorExpr
+    | expr '|' expr                              # OrExpr
+    | apply                                      # ApplyExpr
+    | block                                      # BlockExpr
+    | construct_struct                           # ConstructStructExpr
+    | construct_module                           # ConstructModuleExpr
+    | construct_enum                             # ConstructEnumExpr
+    | IF '(' expr ')' expr (ELSE expr)?          # IfExpr
+    | MATCH expr '{' case_def+ '}'               # MatchExpr
+    | FINISH                                     # Finish
+    | goto_expr                                  # GotoExpr
+    | relay                                      # RelayExpr
+    | generate                                   # GenerateExpr
+    | RETURN expr                                # Return
+    | literal                                    # LitExpr
+    | '(' expr AS type ')'                       # CastExpr
+    | '(' expr ')'                               # ParenthesesExpr
+    | THIS                                       # SelfExpr
+    | EXPR_ID                                    # ExprID
     ;
 
 hp_expr

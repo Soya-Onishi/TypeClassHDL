@@ -91,8 +91,8 @@ object Error {
   case class RequireImplementMethod(require: Symbol.MethodSymbol) extends Error
   case class RequireImplementType(require: Symbol.TypeSymbol) extends Error
   case class AmbiguousSymbols(symbols: Vector[Symbol]) extends Error
-  case class AmbiguousTypeParam(symbol: Symbol.TypeParamSymbol) extends Error
-  case class AmbiguousHardwareParam(symbol: Symbol.HardwareParamSymbol) extends Error
+  case class AmbiguousTypeParam(symbol: Symbol.TypeParamSymbol*) extends Error
+  case class AmbiguousHardwareParam(symbol: Symbol.HardwareParamSymbol*) extends Error
   case object AttachTPToPackageSymbol extends Error
   case class InvalidTypeForHP(tpe: Type.RefType) extends Error
   case class TryDivisionByZero(expr: HPExpr) extends Error

@@ -166,7 +166,8 @@ object ImplMethodSigTyper {
         val interfaceTpes = (interfaceMethod.params :+ interfaceMethod.returnType).map(replaceThisType(_, implThisType))
         val results = (implTpes zip interfaceTpes).map {
           case (impl, interface) if impl == interface => Right(())
-          case (impl, interface) => interface.origin match { case symbol: Symbol.FieldTypeSymbol if implFieldTypes(symbol.name).tpe == impl => Right(())
+          case (impl, interface) => interface.origin match {
+            case symbol: Symbol.FieldTypeSymbol if implFieldTypes(symbol.name).tpe == impl => Right(())
             case _ => Left(Error.TypeMismatch(interface, impl))
           }
         }
