@@ -1,6 +1,7 @@
 package tchdl.backend
 
 import tchdl.util.Type
+import tchdl.util.Symbol
 import tchdl.util.GlobalData
 import firrtl.ir
 import firrtl.PrimOps
@@ -21,6 +22,22 @@ package object builtin {
 
   def intDiv(left: Instance, right: Instance, global: GlobalData): RunResult = {
     intBinOps(left, right, PrimOps.Div, global)(_ / _)
+  }
+
+  def intShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shl, PrimOps.Dshl)
+  }
+
+  def intShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shr, PrimOps.Dshr)
+  }
+
+  def intDynShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shl, PrimOps.Dshl)
+  }
+
+  def intDynShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shr, PrimOps.Dshr)
   }
 
   def intEq(left: Instance, right: Instance, global: GlobalData): RunResult = {
@@ -81,6 +98,22 @@ package object builtin {
 
   def bitDiv(left: Instance, right: Instance): RunResult = {
     bitBinOps(left, right, PrimOps.Div)
+  }
+
+  def bitShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shl, PrimOps.Dshl)
+  }
+
+  def bitShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shr, PrimOps.Dshr)
+  }
+
+  def bitDynShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shl, PrimOps.Dshl)
+  }
+
+  def bitDynShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+    shift(left, right, PrimOps.Shr, PrimOps.Dshr)
   }
 
   def bitEq(left: Instance, right: Instance, global: GlobalData): RunResult = {
@@ -408,5 +441,26 @@ package object builtin {
     val DataInstance(tpe, ref) = operand
 
     RunResult.inst(DataInstance(tpe, ir.DoPrim(ops, Seq(ref), Seq.empty, ir.UnknownType)))
+  }
+
+  private def shift(left: Instance, right: Instance, ops: ir.PrimOp, dynOps: ir.PrimOp)(implicit global: GlobalData): RunResult = {
+    val DataInstance(tpe, leftRef) = left
+    val calc = right match {
+      case DataInstance(_, ir.UIntLiteral(shamt, _)) => ir.DoPrim(ops, Seq(leftRef), Seq(shamt), toFirrtlType(tpe))
+      case DataInstance(shamtTpe, rightRef) if shamtTpe == toBackendType(Type.intTpe) =>
+        val truncate = ir.DoPrim(PrimOps.Bits, Seq(rightRef), Seq(18, 0), ir.UnknownType)
+        ir.DoPrim(dynOps, Seq(leftRef, truncate), Seq.empty, toFirrtlType(tpe))
+      case DataInstance(shamtTpe, rightRef) if shamtTpe.symbol == Symbol.bit =>
+        val HPElem.Num(width) = shamtTpe.hargs.head
+
+        if(width < 20) ir.DoPrim(dynOps, Seq(leftRef, rightRef), Seq.empty, toFirrtlType(tpe))
+        else {
+          val truncate = ir.DoPrim(PrimOps.Bits, Seq(rightRef), Seq(18, 0), ir.UnknownType)
+          ir.DoPrim(dynOps, Seq(leftRef, truncate), Seq.empty, toFirrtlType(tpe))
+        }
+    }
+
+    val instance = DataInstance(tpe, calc)
+    RunResult(Future.empty, Vector.empty, instance)
   }
 }

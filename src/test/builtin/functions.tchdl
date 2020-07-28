@@ -55,7 +55,7 @@ def shr[T](value: T, shamt: Int) -> T where T: Shr {
 @built_in[dynShlBit: (Bit, Bit) => Bit]
 def dynShl[m: Num, T](value: T, shamt: Bit[m]) -> T
   where T: DynShl,
-        m: min 1
+        m: max 20 & min 1
 {
   value.dynShl[m](shamt)
 }

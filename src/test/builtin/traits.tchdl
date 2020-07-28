@@ -91,12 +91,12 @@ impl[m: Num] Shr for Bit[m] where m: min 1 {
 }
 
 trait DynShl {
-  def dynShl[m: Num](shamt: Bit[m]) -> This where m: min 1
+  def dynShl[m: Num](shamt: Bit[m]) -> This where m: max 20 & min 1
 }
 
 impl DynShl for Int {
   def dynShl[m: Num](shamt: Bit[m]) -> Int
-    where m: min 1
+    where m: max 20 & min 1
   {
     this <<< shamt
   }
@@ -106,7 +106,7 @@ impl[m: Num] DynShl for Bit[m]
   where m: min 1
 {
   def dynShl[n: Num](shamt: Bit[n]) -> Bit[m]
-    where n: min 1
+    where n: max 20 & min 1
   {
     this <<< shamt
   }
