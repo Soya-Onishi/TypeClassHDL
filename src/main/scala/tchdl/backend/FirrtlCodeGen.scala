@@ -1051,6 +1051,7 @@ object FirrtlCodeGen {
       case generate: backend.Generate => runGenerate(generate)
       case ret: backend.Return => runReturn(ret)
       case backend.IntLiteral(value) => RunResult(Future.empty, Vector.empty, DataInstance(value))
+      case backend.BoolLiteral(value) => RunResult(Future.empty, Vector.empty, DataInstance(value))
       case backend.UnitLiteral() => RunResult(Future.empty, Vector.empty, DataInstance())
       case bit @ backend.BitLiteral(value, HPElem.Num(width)) =>
         val future = Future.empty
