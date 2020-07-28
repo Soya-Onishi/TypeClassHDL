@@ -1,0 +1,3 @@
+package test
+
+def function[n: Int, m: Bool]() -> Unit {}

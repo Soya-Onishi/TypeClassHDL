@@ -331,4 +331,16 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(method.retTpe.symbol == output.symbol)
     assert(method.retTpe.tpe.asRefType.origin == output.symbol)
   }
+
+  test("use Str type in where clause causes an error") {
+    val (_, global) = untilThisPhase("constraintStrParam.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequireSpecificType])
+    val e = err.asInstanceOf[Error.RequireSpecificType]
+
+    assert(e.actual == Type.strTpe(global))
+    assert(e.requires == Vector(Type.numTpe(global)))
+  }
 }

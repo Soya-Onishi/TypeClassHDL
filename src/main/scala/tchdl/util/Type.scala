@@ -131,14 +131,14 @@ object Type {
       def verifyHPTpes(hps: Vector[ValDef]): Either[Error, Unit] =
         hps.map(_.symbol.tpe).map {
           case Type.ErrorType => Left(Error.DummyError)
-          case _ => Right(())
+          case _: Type.RefType => Right(())
         }.combine(errs => Error.MultipleErrors(errs: _*))
 
 
       val signatureCtx = Context(ctx, methodDef.symbol)
       signatureCtx.reAppend(
         methodDef.symbol.asMethodSymbol.hps ++
-          methodDef.symbol.asMethodSymbol.tps: _*
+        methodDef.symbol.asMethodSymbol.tps: _*
       )(global)
 
       val method = methodDef.symbol.asMethodSymbol
@@ -156,6 +156,7 @@ object Type {
           val (minErrs, typedMin) = min.map(HPBound.typed(_)(signatureCtx, global)).partitionMap(identity)
           val errs = maxErrs ++ minErrs
 
+
           if (errs.isEmpty) Right(HPConstraint.Range(typedMax, typedMin))
           else Left(Error.MultipleErrors(errs: _*))
       }
@@ -163,13 +164,14 @@ object Type {
       val result = for {
         _ <- verifyHPTpes(methodDef.hp)
         bounds = hpBoundTrees.map(HPBound.build)
-        typedTargets = bounds.map(_.target).map(HPBound.typed(_)(signatureCtx, global).flatMap(HPBound.verifyTarget))
+        typedTargets = bounds.map(_.target).map(HPBound.typed(_)(signatureCtx, global))
         typedConstraints = bounds.map(_.bound).map(typedHPConstraint)
         (targetErrs, targetExprs) = typedTargets.partitionMap(identity)
         (constraintErrs, constraints) = typedConstraints.partitionMap(identity)
         boundErrs = targetErrs ++ constraintErrs
         _ <- if (boundErrs.isEmpty) Right(()) else Left(Error.MultipleErrors(boundErrs: _*))
         hpBounds = (targetExprs zip constraints).map { case (t, c) => HPBound(t, c) }
+        _ <- HPBound.verifyForm(hpBounds)(global)
         (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget(_)(signatureCtx, global)).toVector.unzip
         (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds(_)(signatureCtx, global)).toVector.unzip
         errs = (targetErrs ++ boundsErrs).flatten
@@ -615,7 +617,7 @@ object Type {
               methods match {
                 case Vector() => Left(Error.MultipleErrors(errs: _*))
                 case Vector(method) => Right(method)
-                case methods => Left(Error.AmbiguousSymbols(methods.map(_._1)))
+                case methods => Left(Error.AmbiguousMethods(methods.map(_._1)))
               }
           }
         case _: Symbol.EntityTypeSymbol =>

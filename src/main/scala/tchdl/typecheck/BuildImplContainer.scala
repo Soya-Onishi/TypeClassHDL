@@ -32,7 +32,7 @@ object BuildImplContainer {
       val (boundsErrs, bounds) = TPBound.buildBounds(bound.bounds)
 
       val errs = Vector(targetErrs, boundsErrs).flatten
-      if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+      if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
       else Right(TPBound(TPBoundTree(target, bounds)))
     }
 
@@ -45,19 +45,19 @@ object BuildImplContainer {
           val (minErr, minExpr) = min.map(HPBound.typed).partitionMap(identity)
           val errs = maxErr ++ minErr
 
-          if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
+          if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
           else Right(HPConstraint.Range(maxExpr, minExpr))
         case HPConstraint.Eqn(exprs) =>
           val (errs, eqns) = exprs.map(HPBound.typed).partitionMap(identity)
-          if(errs.isEmpty) Right(HPConstraint.Eqn(eqns))
+          if (errs.isEmpty) Right(HPConstraint.Eqn(eqns))
           else Left(Error.MultipleErrors(errs: _*))
       }
 
       (typedTarget, typedBounds) match {
-        case (Right(t), Right(bs)) => Right(HPBound(t, bs))
         case (Left(targetErr), Left(boundsErr)) => Left(Error.MultipleErrors(targetErr, boundsErr))
         case (Left(err), _) => Left(err)
         case (_, Left(err)) => Left(err)
+        case (Right(t), Right(bs)) => Right(HPBound(t, bs))
       }
     }
 
@@ -73,12 +73,19 @@ object BuildImplContainer {
     val signatureCtx = Context(ctx, definition.symbol)
     signatureCtx.reAppend(
       definition.hp.map(_.symbol) ++
-      definition.tp.map(_.symbol) : _*
+        definition.tp.map(_.symbol): _*
     )
 
-    val (errs, bounds) = definition.bounds
+    val (builtErrs, bounds) = definition.bounds
       .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
+
+    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }) match {
+      case Right(()) => Vector.empty
+      case Left(err) => Vector(err)
+    }
+
+    val errs = builtErrs ++ verifyErrs
 
     errs match {
       case Vector() => definition.symbol.asTypeSymbol.setBound(bounds)
@@ -109,10 +116,10 @@ object BuildImplContainer {
           val isInterfaceBounds = bounds.forall(_.origin.flag.hasFlag(Modifier.Interface)) && bounds.nonEmpty
           val isTraitBounds = bounds.forall(_.origin.flag.hasFlag(Modifier.Trait)) && bounds.nonEmpty
 
-          if(!hasConsistency) Left(Error.TypeParameterMustHasConsistency(bounds))
+          if (!hasConsistency) Left(Error.TypeParameterMustHasConsistency(bounds))
           else {
-            if(isInterfaceBounds && flag.hasFlag(Modifier.Trait)) Left(Error.TryImplTraitByModule(impl))
-            else if(isTraitBounds && flag.hasFlag(Modifier.Interface)) Left(Error.TryImplInterfaceByStruct(impl))
+            if (isInterfaceBounds && flag.hasFlag(Modifier.Trait)) Left(Error.TryImplTraitByModule(impl))
+            else if (isTraitBounds && flag.hasFlag(Modifier.Interface)) Left(Error.TryImplInterfaceByStruct(impl))
             else Right(())
           }
       }
@@ -137,12 +144,22 @@ object BuildImplContainer {
     )
 
     val signatureErr = Vector(interfaceErr, targetErr).flatten
-    val (errs, bounds) = impl.bounds
+    val (buildErrs, bounds) = impl.bounds
       .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
-    (errs ++ signatureErr) match {
-      case Vector() => verifyTypeValidity(interface.tpe.asRefType, target.tpe.asRefType, signatureCtx) match {
+    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }) match {
+      case Right(()) => Vector.empty
+      case Left(err) => Vector(err)
+    }
+
+    val errs = signatureErr ++ buildErrs ++ verifyErrs
+    val result =
+      if (errs.isEmpty) Right(bounds)
+      else Left(Error.MultipleErrors(errs: _*))
+
+    result match {
+      case Right(bounds) => verifyTypeValidity(interface.tpe.asRefType, target.tpe.asRefType, signatureCtx) match {
         case Left(err) => global.repo.error.append(err)
         case Right(_) =>
           val implContext = Context(signatureCtx, target.tpe.asRefType)
@@ -161,8 +178,7 @@ object BuildImplContainer {
           interfaceSymbol.appendImpl(impl, container)
           global.buffer.traits.append(interfaceSymbol)
       }
-      case errs =>
-        errs.foreach(global.repo.error.append)
+      case Left(err) => global.repo.error.append(err)
     }
   }
 
@@ -182,7 +198,12 @@ object BuildImplContainer {
       .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
-    val errs = boundErrs ++ signatureErr.toVector
+    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }) match {
+      case Right(()) => Vector.empty
+      case Left(err) => Vector(err)
+    }
+
+    val errs = boundErrs ++ verifyErrs ++ signatureErr.toVector
 
     errs match {
       case Vector() =>

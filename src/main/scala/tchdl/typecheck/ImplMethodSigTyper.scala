@@ -311,6 +311,7 @@ object ImplMethodSigTyper {
     signatureCtx.reAppend(methodSymbol.hps ++ methodSymbol.tps: _*)
 
     for {
+      _ <- TyperUtil.verifyHPBoundType(methodSymbol)(global)
       _ <- TyperUtil.verifyTPBoundType(methodSymbol)(signatureCtx, global)
       _ <- verifyModifierValidity
       _ <- verifyMethodTpe

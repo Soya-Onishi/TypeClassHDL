@@ -607,7 +607,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.AmbiguousSymbols])
+    assert(err.isInstanceOf[Error.AmbiguousMethods])
   }
 
   test("calling same name method between Call0 and Call1 with cast causes no error") {

@@ -27,15 +27,12 @@ object Error {
   case class TypeMismatch(expect: Type, actual: Type) extends Error
   case class SymbolNotFound(name: String) extends Error
   case object SelfTypeNotFound extends Error
-  case class OperationNotFound(op: Operation) extends Error
 
   case class ParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class TypeParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class HardParameterLengthMismatch(expect: Int, actual: Int) extends Error
   case class PatternLengthMismatch(expect: Int, actual: Int) extends Error
 
-  case class LiteralOnTarget(lit: Literal) extends Error
-  case class EqAndOthersInSameBound(eqs: Vector[RangeExpr], others: Vector[RangeExpr]) extends Error
   case class ReferMethodAsNormal(symbol: Symbol.MethodSymbol) extends Error
   case class ReferMethodAsStatic(symbol: Symbol.MethodSymbol) extends Error
   case object RequireTypeTree extends Error
@@ -46,31 +43,25 @@ object Error {
   case class RequireFlag(require: Modifier, actual: Symbol) extends Error
   case class RequireStateSpecify(candidates: Vector[Symbol.StateSymbol]) extends Error
 
-  case object RejectSelfType extends Error
-  case object RejectHigherKind extends Error
-  case object RejectTPFromSelf extends Error
-  case object RejectPackage extends Error
-  case class RejectEntityTypeFromLookup(symbol: Symbol.TypeSymbol) extends Error
-  case class RejectTypeParam[From <: Symbol : TypeTag]() extends Error
   case class RejectHeapType(tpe: Type.RefType) extends Error
 
-  case object RejectPolyParams extends Error
-  case class NoNeedTypeParameter(method: Type.MethodType) extends Error
+  case class HPConstraintSetMultitime(target: HPExpr) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type]) extends Error
   case class NotMeetHPBound(require: HPBound, caller: Option[HPBound]) extends Error
+  case class LiteralOnTarget(lit: Literal) extends Error
   case class HPBoundNotEqualExpr(expect: HPExpr, actual: HPExpr) extends Error
   case class HPBoundNotDeriveEqualConst(expr: HPExpr) extends Error
   case class HPBoundEqualConstNotMatch(expect: Int, actual: Int) extends Error
   case class HPBoundOutOfRange(expr: HPExpr, expect: (IInt, IInt), actual: (IInt, IInt)) extends Error
   case class HPBoundRangeCross(max: IInt, min: IInt) extends Error
   case class HPBoundConstraintMismatch(expect: HPConstraint, actual: HPConstraint) extends Error
-
-  case class NotMeetPartialTPBound(target: Type.RefType, require: Type.RefType) extends Error
-  case class ValueNotMeetHPBound(value: Int, require: HPBound) extends Error
   case class NotEnoughHPBound(require: HPBound) extends Error
   case class ExcessiveHPBound(remains: Vector[HPBound]) extends Error
+
+  case class NotMeetPartialTPBound(target: Type.RefType, require: Type.RefType) extends Error
   case class NotEnoughTPBound(remains: TPBound) extends Error
   case class ExcessiveTPBound(remains: Vector[TPBound]) extends Error
+
   case object UsingSelfOutsideClass extends Error
   case object UsingSelfInsideStatic extends Error
 
@@ -90,13 +81,10 @@ object Error {
   case class ImplementMethodInterfaceNotHas(method: Symbol.MethodSymbol, interface: Symbol.InterfaceSymbol) extends Error
   case class RequireImplementMethod(require: Symbol.MethodSymbol) extends Error
   case class RequireImplementType(require: Symbol.TypeSymbol) extends Error
-  case class AmbiguousSymbols(symbols: Vector[Symbol]) extends Error
+  case class AmbiguousMethods(symbols: Vector[Symbol]) extends Error
   case class AmbiguousTypeParam(symbol: Symbol.TypeParamSymbol*) extends Error
   case class AmbiguousHardwareParam(symbol: Symbol.HardwareParamSymbol*) extends Error
-  case object AttachTPToPackageSymbol extends Error
-  case class InvalidTypeForHP(tpe: Type.RefType) extends Error
-  case class TryDivisionByZero(expr: HPExpr) extends Error
-  case class RangeAlreadyAssigned[T <: RangeExpr : TypeTag](value: Int) extends Error
+
   case class ImplTargetTypeMismatch(impl: ImplementContainer, actual: Type.RefType) extends Error
   case class RequireParentOrSiblingIndicator(construct: ConstructClass) extends Error
   case class RejectParentOrSiblingIndicator(construct: ConstructModule) extends Error

@@ -334,6 +334,65 @@ object HPBound {
     }
   }
 
+  def verifyForm(trees: Vector[HPBound])(implicit global: GlobalData): Either[Error, Unit] = {
+    def verifyTarget: Either[Error, Unit] = {
+      val errs = trees.map(bound => bound.target)
+        .map(_.extractConstant)
+        .collect{ case (_, Some(int)) => Error.LiteralOnTarget(IntLiteral(int)) }
+
+      if(errs.isEmpty) Right(())
+      else Left(Error.MultipleErrors(errs: _*))
+    }
+
+    def verifyEachType: Either[Error, Unit] = {
+      val targetErrs = trees.map(tree => tree.target)
+        .filterNot(_.tpe.isErrorType)
+        .filter(_.tpe != Type.numTpe)
+        .map(_.tpe.asRefType)
+        .map(tpe => Error.RequireSpecificType(tpe, Type.numTpe))
+
+      val constraintExprs = trees
+        .map(_.bound)
+        .flatMap {
+          case HPConstraint.Eqn(exprs) => exprs
+          case HPConstraint.Range(max, min) => max ++ min
+        }
+
+      val constraintErrs = constraintExprs
+        .filterNot(_.tpe.isErrorType)
+        .map(_.tpe.asRefType)
+        .filter(_ != Type.numTpe)
+        .map(tpe => Error.RequireSpecificType(tpe, Type.numTpe))
+
+      val errs = targetErrs ++ constraintErrs
+
+      if(errs.isEmpty) Right(())
+      else Left(Error.MultipleErrors(errs: _*))
+    }
+
+    def verifyMultipleRangeSet: Either[Error, Unit] = {
+      @tailrec def loop(targets: Vector[HPExpr]): Either[Error, Unit] = {
+        targets.headOption match {
+          case None => Right(())
+          case Some(head) =>
+            targets.tail.find(_.isSameExpr(head)) match {
+              case None => loop(targets.tail)
+              case Some(expr) => Left(Error.HPConstraintSetMultitime(expr))
+            }
+        }
+      }
+
+      val targets = trees.map(_.target)
+      loop(targets)
+    }
+
+    for {
+      _ <- verifyTarget
+      _ <- verifyEachType
+      _ <- verifyMultipleRangeSet
+    } yield ()
+  }
+
   def typed(expr: HPExpr)(implicit ctx: Context, global: GlobalData): Either[Error, HPExpr] = expr match {
     case HPBinOp(left, right) => (typed(left), typed(right)) match {
       case (Right(l), Right(r)) => Right(HPBinOp(l, r).setTpe(Type.numTpe).setID(expr.id))
