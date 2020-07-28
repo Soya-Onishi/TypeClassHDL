@@ -1,0 +1,20 @@
+package riscv
+
+import std::traits:::From
+
+module ALU
+impl ALU {
+  input def lessThan(v0: Bit[32], v1: Bit[32]) -> Bit[32] {
+    val hash = v0.last.concat[1](v1.last)
+    val result = match hash {
+      case 0b01 => false
+      case 0b10 => true
+      case _ => 
+        val res = v0 - v1
+        if(res.last == 0b1) true
+        else                false
+    }
+
+    Bit[32]:::from(result)
+  }
+}
