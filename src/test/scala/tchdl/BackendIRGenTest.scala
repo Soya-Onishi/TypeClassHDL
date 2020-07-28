@@ -320,4 +320,9 @@ class BackendIRGenTest extends TchdlFunSuite {
     val names = body.interfaces.map(_.label.symbol.name)
     assert(names.contains("f"))
   }
+
+  test("generate Bit[32] from Bool") {
+    val (modules, _, global) = untilThisPhase(Vector("riscv"), "ALU", "RiscvALU.tchdl")
+    expectNoError(global)
+  }
 }

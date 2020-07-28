@@ -794,4 +794,9 @@ class TyperTest extends TchdlFunSuite {
     val (_, global) = untilTyper("useVecManipulation.tchdl")
     expectNoError(global)
   }
+
+  test("riscv alu test") {
+    val (_, global) = untilTyper("RiscvALU.tchdl")
+    expectNoError(global)
+  }
 }

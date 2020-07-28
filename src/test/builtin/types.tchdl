@@ -22,7 +22,7 @@ impl[m: Num] Bit[m] where m: min 1 {
 
   @built_in[bitBit: () => Bit]
   def bit[x: Num]() -> Bit[1]
-    where x: min 1 & max m - 1
+    where x: min 0 & max m - 1
   {
     this.bit[x]()
   }
@@ -32,6 +32,22 @@ impl[m: Num] Bit[m] where m: min 1 {
     where n: min 1
   {
     this.concat[n](that)
+  }
+
+  def head() -> Bit[1] {
+    this.bit[0]()
+  }
+
+  def last() -> Bit[1] {
+    this.bit[m - 1]()
+  }
+
+  def msb() -> Bit[1] {
+    this.last()
+  }
+
+  def lsb() -> Bit[1] {
+    this.head()
   }
 }
 

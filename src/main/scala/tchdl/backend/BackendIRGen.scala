@@ -302,6 +302,7 @@ object BackendIRGen {
       case frontend.IntLiteral(value) => BuildResult(backend.IntLiteral(value))
       case frontend.BitLiteral(value, length) => BuildResult(backend.BitLiteral(value, HPElem.Num(length)))
       case frontend.UnitLiteral() => BuildResult(backend.UnitLiteral())
+      case frontend.BoolLiteral(value) => BuildResult(backend.BoolLiteral(value))
     }
 
   def buildIdent(ident: frontend.Ident)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
