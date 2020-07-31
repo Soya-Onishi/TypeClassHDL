@@ -57,17 +57,17 @@ object ImplMethodSigTyper {
           .declares
           .lookup(name)
           .map(symbol => Right(symbol.asMethodSymbol))
-          .getOrElse(Left(Error.ImplementMethodInterfaceNotHas(implMethod, interface)))
+          .getOrElse(Left(Error.ImplementMethodInterfaceNotHas(implMethod, interface, impl.position)))
 
       def verifyModifier(implMethod: Symbol.MethodSymbol, interfaceMethod: Symbol.MethodSymbol): Either[Error, Unit] = {
         if (implMethod.flag == interfaceMethod.flag) Right(())
-        else Left(Error.ModifierMismatch(interfaceMethod.flag, implMethod.flag))
+        else Left(Error.ModifierMismatch(interfaceMethod.flag, implMethod.flag, impl.position))
       }
 
       def verifySignatureLength(implMethod: Symbol.MethodSymbol, interfaceMethod: Symbol.MethodSymbol): Either[Error, Unit] = {
-        def verify(expect: Int, actual: Int, err: (Int, Int) => Error): Either[Error, Unit] =
+        def verify(expect: Int, actual: Int, err: (Int, Int, Position) => Error): Either[Error, Unit] =
           if (expect == actual) Right(())
-          else Left(err(expect, actual))
+          else Left(err(expect, actual, impl.position))
 
         val results = Vector(
           verify(interfaceMethod.hps.length, implMethod.hps.length, Error.HardParameterLengthMismatch.apply),
@@ -87,15 +87,15 @@ object ImplMethodSigTyper {
         def verifyBounds(impls: Vector[HPBound], interfaces: Vector[HPBound]): Either[Error, Unit] =
           (impls zip interfaces)
             .filter { case (impl, interface) => impl.bound != interface.bound }
-            .map{ case (impl, interface) => Error.HPBoundConstraintMismatch(impl.bound, interface.bound) }
+            .map{ case (implBound, interface) => Error.HPBoundConstraintMismatch(implBound.bound, interface.bound, impl.position) }
             .combine(errs => Error.MultipleErrors(errs: _*))
 
         def buildPairs(implBounds: Vector[HPBound], interfaceBounds: Vector[HPBound]): Either[Error, Vector[(HPBound, HPBound)]] =
           interfaceBounds.headOption match {
-            case None if implBounds.nonEmpty => Left(Error.ExcessiveHPBound(implBounds))
+            case None if implBounds.nonEmpty => Left(Error.ExcessiveHPBound(implBounds, impl.position))
             case None => Right(Vector.empty)
             case Some(interface) => implBounds.findRemain(_.target.isSameExpr(interface.target)) match {
-              case (None, _) => Left(Error.NotEnoughHPBound(interface))
+              case (None, _) => Left(Error.NotEnoughHPBound(interface, impl.position))
               case (Some(impl), remains) => buildPairs(remains, interfaceBounds.tail).map((impl, interface) +: _)
             }
           }
@@ -113,10 +113,10 @@ object ImplMethodSigTyper {
       ): Either[Error, Unit] = {
         def buildPairs(impls: Vector[TPBound], interfaces: Vector[TPBound]): Either[Error, Vector[(TPBound, TPBound)]] = {
           interfaces.headOption match {
-            case None if impls.nonEmpty => Left(Error.ExcessiveTPBound(impls))
+            case None if impls.nonEmpty => Left(Error.ExcessiveTPBound(impls, impl.position))
             case None => Right(Vector.empty)
             case Some(interface) => impls.findRemain(_.target =:= interface.target) match {
-              case (None, _) => Left(Error.NotEnoughTPBound(interface))
+              case (None, _) => Left(Error.NotEnoughTPBound(interface, impl.position))
               case (Some(impl), remains) => buildPairs(remains, interfaces.tail).map((impl, interface) +: _)
             }
           }
@@ -128,19 +128,19 @@ object ImplMethodSigTyper {
             .combine(errs => Error.MultipleErrors(errs: _*))
         }
 
-        def verifyBound(impl: TPBound, interface: TPBound): Either[Error, Unit] = {
+        def verifyBound(implBound: TPBound, interface: TPBound): Either[Error, Unit] = {
           @tailrec def loop(implBounds: Vector[Type.RefType], interfaceBounds: Vector[Type.RefType]): Either[Error, Unit] = {
             interfaceBounds.headOption match {
-              case None if implBounds.nonEmpty => Left(Error.ExcessiveTPBound(Vector(impl)))
+              case None if implBounds.nonEmpty => Left(Error.ExcessiveTPBound(Vector(implBound), impl.position))
               case None => Right(())
               case Some(interfaceBound) => implBounds.findRemain(_ == interfaceBound) match {
-                case (None, _) => Left(Error.NotEnoughTPBound(interface))
+                case (None, _) => Left(Error.NotEnoughTPBound(interface, impl.position))
                 case (Some(_), remains) => loop(remains, interfaceBounds.tail)
               }
             }
           }
 
-          loop(impl.bounds, interface.bounds)
+          loop(implBound.bounds, interface.bounds)
         }
 
         for {
@@ -166,9 +166,9 @@ object ImplMethodSigTyper {
         val interfaceTpes = (interfaceMethod.params :+ interfaceMethod.returnType).map(replaceThisType(_, implThisType))
         val results = (implTpes zip interfaceTpes).map {
           case (impl, interface) if impl == interface => Right(())
-          case (impl, interface) => interface.origin match {
-            case symbol: Symbol.FieldTypeSymbol if implFieldTypes(symbol.name).tpe == impl => Right(())
-            case _ => Left(Error.TypeMismatch(interface, impl))
+          case (implTpe, interface) => interface.origin match {
+            case symbol: Symbol.FieldTypeSymbol if implFieldTypes(symbol.name).tpe == implTpe => Right(())
+            case _ => Left(Error.TypeMismatch(interface, implTpe, impl.position))
           }
         }
 
@@ -194,7 +194,7 @@ object ImplMethodSigTyper {
         tpTable = methodTPTable ++ interfaceTPTable
         replacedTPBounds = TPBound.swapBounds(interfaceMethod.tpBound, hpTable, tpTable)
         _ <- verifyTPValidity(implMethod.tpBound, replacedTPBounds)
-        replacedMethodTpe = interfaceMethod.tpe.asMethodType.replaceWithMap(hpTable, tpTable)
+        replacedMethodTpe = interfaceMethod.tpe.asMethodType.replaceWithMap(hpTable, tpTable, impl.position)
         _ <- compareMethodSignature(implMethod.tpe.asMethodType, replacedMethodTpe, fieldTypes)
       } yield ()
     }
@@ -234,12 +234,12 @@ object ImplMethodSigTyper {
 
     val methodResults = interfaceMethods.toVector.map {
       case (name, _) if impl.methods.exists(_.name == name) => Right(())
-      case (_, method) => Left(Error.RequireImplementMethod(method))
+      case (_, method) => Left(Error.RequireImplementMethod(method, impl.position))
     }
 
     val typeResults = interfaceTypes.toVector.map {
       case (name, _) if impl.types.exists(_.name == name) => Right(())
-      case (_, tpe) => Left(Error.RequireImplementType(tpe))
+      case (_, tpe) => Left(Error.RequireImplementType(tpe, impl.position))
     }
 
     (methodResults ++ typeResults)
@@ -268,7 +268,7 @@ object ImplMethodSigTyper {
       }
 
       if (validModifiers.contains(methodDef.flag)) Right(())
-      else Left(Error.InvalidModifier(validModifiers, methodDef.flag))
+      else Left(Error.InvalidModifier(validModifiers, methodDef.flag, methodDef.position))
     }
 
     def verifyMethodTpe: Either[Error, Unit] = {
@@ -285,16 +285,16 @@ object ImplMethodSigTyper {
 
       val paramResults = paramTpes.map {
         case Type.ErrorType => Left(Error.DummyError)
-        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds) => Right(())
-        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe))
+        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds)(methodDef.position, global) => Right(())
+        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe, methodDef.position))
         case _ => Right(())
       }
 
       val retResult = retTpe match {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType if tpe =:= Type.unitTpe => Right(())
-        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds) => Right(())
-        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe))
+        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds)(methodDef.retTpe.position, global) => Right(())
+        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe, methodDef.retTpe.position))
         case _ => Right(())
       }
 
@@ -320,7 +320,7 @@ object ImplMethodSigTyper {
 
   def verifyStageDef(stageDef: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.StageSymbol] = {
     def verifyDefinitionPositionValidity(self: Type.RefType, stage: Symbol.StageSymbol): Either[Error, Type.MethodType] = self.origin match {
-      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self))
+      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self, stageDef.position))
       case _: Symbol.ModuleSymbol => stage.tpe match {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.MethodType => Right(tpe)
@@ -328,11 +328,11 @@ object ImplMethodSigTyper {
     }
 
     def verifySignature(stage: Type.MethodType): Either[Error, Unit] = {
-      val errs = stage.params.filterNot(_.isHardwareType(ctx.tpBounds)).map(Error.RequireHardwareType.apply).map(Left.apply[Error, Unit])
+      val errs = stage.params.filterNot(_.isHardwareType(ctx.tpBounds)(stageDef.position, global)).map(Error.RequireHardwareType(_, stageDef.position)).map(Left.apply[Error, Unit])
       val err =
         if (stage.returnType == Type.unitTpe) Right(())
         else if (stage.returnType.origin == global.builtin.types.lookup("Future")) Right(())
-        else Left(Error.RequireSpecificType(stage.returnType, Type.unitTpe))
+        else Left(Error.RequireSpecificType(stage.returnType, Seq(Type.unitTpe), stageDef.position))
 
       (errs :+ err).combine(errs => Error.MultipleErrors(errs: _*))
     }
@@ -350,9 +350,9 @@ object ImplMethodSigTyper {
   def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, globla: GlobalData): Either[Error, Symbol.VariableSymbol] = {
     val self = ctx.self.getOrElse(throw new ImplementationErrorException("this type should be there"))
     self.origin match {
-      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self))
+      case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self, vdef.position))
       case _: Symbol.ModuleSymbol => vdef.tpeTree match {
-        case None => Left(Error.RequireTypeTree)
+        case None => Left(Error.RequireTypeTree(vdef.position))
         case Some(_) => vdef.symbol.tpe match {
           case Type.ErrorType => Left(Error.DummyError)
           case _: Type.RefType => Right(vdef.symbol.asVariableSymbol)

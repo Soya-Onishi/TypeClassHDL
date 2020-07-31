@@ -12,13 +12,14 @@ object Bound {
     tpBounds: Vector[TPBound],
     callerHPBound: Vector[HPBound],
     callerTPBound: Vector[TPBound],
+    position: Position
   )(implicit global: GlobalData): Either[Error, Unit] = {
     val (hpErrs, _) = hpBounds
       .map(HPBound.verifyMeetBound(_, callerHPBound))
       .partitionMap(identity)
 
     val (tpErrs, _) = tpBounds
-      .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+      .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound, position))
       .partitionMap(identity)
 
     val errs = hpErrs ++ tpErrs
@@ -109,31 +110,33 @@ object TPBound {
   def verifyMeetBound(
     swapped: TPBound,
     callerHPBound: Vector[HPBound],
-    callerTPBound: Vector[TPBound]
+    callerTPBound: Vector[TPBound],
+    position: Position
   )(implicit global: GlobalData): Either[Error, Unit] =
     swapped.target.origin match {
-      case _: Symbol.EntityTypeSymbol => verifyEntityTarget(swapped, callerHPBound, callerTPBound)
-      case _: Symbol.TypeParamSymbol => verifyTypeParamTarget(swapped, callerHPBound, callerTPBound)
+      case _: Symbol.EntityTypeSymbol => verifyEntityTarget(swapped, callerHPBound, callerTPBound, position)
+      case _: Symbol.TypeParamSymbol => verifyTypeParamTarget(swapped, callerTPBound, position)
     }
 
   private def verifyEntityTarget(
     tpBound: TPBound,
     callerHPBound: Vector[HPBound],
-    callerTPBound: Vector[TPBound]
+    callerTPBound: Vector[TPBound],
+    position: Position
   )(implicit global: GlobalData): Either[Error, Unit] = {
     lazy val hwSymbol = global.builtin.interfaces.lookup("HW")
     lazy val modSymbol = global.builtin.interfaces.lookup("Module")
 
-    def verify(impl: ImplementInterfaceContainer, bound: Type.RefType): Boolean = {
+    def verify(impl: ImplementInterfaceContainer, bound: Type.RefType, position: Position): Boolean = {
       val initHPTable = impl.hardwareParam.map(_ -> Option.empty[HPExpr]).toMap
       val initTPTable = impl.typeParam.map(_ -> Option.empty[Type.RefType]).toMap
       val targets = Vector(impl.targetType, impl.targetInterface)
       val referer = Vector(tpBound.target, bound)
 
       val result = for {
-        _ <- Type.RefType.verifySuperSets(referer, targets)
-        hpTable <- Type.RefType.assignHPTable(initHPTable, referer, targets)
-        tpTable <- Type.RefType.assignTPTable(initTPTable, referer, targets)
+        _ <- Type.RefType.verifySuperSets(referer, targets, Vector.fill(referer.length)(position))
+        hpTable <- Type.RefType.assignHPTable(initHPTable, referer, targets, position)
+        tpTable <- Type.RefType.assignTPTable(initTPTable, referer, targets, position)
         swappedHPBounds = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
         swappedTPBounds = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
         _ <- {
@@ -142,7 +145,7 @@ object TPBound {
             .partitionMap(identity)
 
           val (tpErrs, _) = swappedTPBounds
-            .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+            .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound, position))
             .partitionMap(identity)
 
           val errs = hpErrs ++ tpErrs
@@ -152,29 +155,6 @@ object TPBound {
       } yield ()
 
       result.isRight
-    }
-
-    def isHardwareType(tpe: Type.RefType): Boolean = {
-      val builtinSymbols = global.builtin.types.symbols
-      tpe.origin match {
-        case _: Symbol.ModuleSymbol => false
-        case _: Symbol.InterfaceSymbol => false
-        case tp: Symbol.TypeParamSymbol => callerTPBound.find(_.target.origin == tp) match {
-          case None => false
-          case Some(tpBound) =>
-            val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
-            tpBound.bounds.exists(_ =:= hardwareInterface)
-        }
-        case struct: Symbol.StructSymbol if struct == global.builtin.types.lookup("Bit") => true
-        case struct: Symbol.StructSymbol if builtinSymbols.contains(struct) => false
-        case struct: Symbol.StructSymbol if struct.tpe.declares.toMap.isEmpty => false
-        case struct: Symbol.StructSymbol =>
-          val hpTable = (struct.hps zip tpe.hardwareParam).toMap
-          val tpTable = (struct.tps zip tpe.typeParam).toMap
-          val fields = struct.tpe.declares.toMap.values.toVector
-          val fieldTpes = fields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
-          fieldTpes.forall(isHardwareType)
-      }
     }
 
     def isModuleType(tpe: Type.RefType): Boolean = tpe.origin match {
@@ -191,17 +171,17 @@ object TPBound {
     val results = tpBound.bounds.map { bound =>
       bound.origin match {
         case hw if hw == hwSymbol =>
-          if (tpBound.target.isHardwareType(callerTPBound)) Right(())
-          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+          if (tpBound.target.isHardwareType(callerTPBound)(position, global)) Right(())
+          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound, position))
         case mod if mod == modSymbol =>
           if (isModuleType(tpBound.target)) Right(())
-          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound, position))
         case interface: Symbol.InterfaceSymbol =>
           val impls = interface.impls
-          val isValid = impls.exists(impl => verify(impl, bound))
+          val isValid = impls.exists(impl => verify(impl, bound, position))
 
           if (isValid) Right(())
-          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound))
+          else Left(Error.NotMeetPartialTPBound(tpBound.target, bound, position))
       }
     }
 
@@ -213,15 +193,15 @@ object TPBound {
 
   private def verifyTypeParamTarget(
     swappedTPBound: TPBound,
-    callerHPBound: Vector[HPBound],
-    callerTPBound: Vector[TPBound]
+    callerTPBound: Vector[TPBound],
+    position: Position
   ): Either[Error, Unit] = {
     callerTPBound.find(_.target.origin == swappedTPBound.target.origin) match {
       case Some(bound) =>
         val results = swappedTPBound.bounds.map {
           calledBound =>
-            if (bound.bounds.exists(_ =:= calledBound)) Right(())
-            else Left(Error.NotMeetPartialTPBound(swappedTPBound.target, calledBound))
+            if (bound.bounds.contains(calledBound)) Right(())
+            else Left(Error.NotMeetPartialTPBound(swappedTPBound.target, calledBound, position))
         }
 
         val (errs, _) = results.partitionMap(identity)
@@ -231,7 +211,7 @@ object TPBound {
         val isValid = swappedTPBound.bounds.isEmpty
         lazy val errs = swappedTPBound
           .bounds
-          .map(Error.NotMeetPartialTPBound(swappedTPBound.target, _))
+          .map(Error.NotMeetPartialTPBound(swappedTPBound.target, _, position))
 
         if (isValid) Right(())
         else Left(Error.MultipleErrors(errs: _*))
@@ -334,11 +314,11 @@ object HPBound {
     }
   }
 
-  def verifyForm(trees: Vector[HPBound])(implicit global: GlobalData): Either[Error, Unit] = {
+  def verifyForm(trees: Vector[HPBound], position: Position)(implicit global: GlobalData): Either[Error, Unit] = {
     def verifyTarget: Either[Error, Unit] = {
       val errs = trees.map(bound => bound.target)
         .map(_.extractConstant)
-        .collect{ case (_, Some(lit)) => Error.LiteralOnTarget(lit) }
+        .collect{ case (_, Some(lit)) => Error.LiteralOnTarget(lit, position) }
 
       if(errs.isEmpty) Right(())
       else Left(Error.MultipleErrors(errs: _*))
@@ -349,7 +329,7 @@ object HPBound {
         .filterNot(_.tpe.isErrorType)
         .filter(_.tpe != Type.numTpe)
         .map(_.tpe.asRefType)
-        .map(tpe => Error.RequireSpecificType(tpe, Type.numTpe))
+        .map(tpe => Error.RequireSpecificType(tpe, Seq(Type.numTpe), position))
 
       val constraintExprs = trees
         .map(_.bound)
@@ -362,7 +342,7 @@ object HPBound {
         .filterNot(_.tpe.isErrorType)
         .map(_.tpe.asRefType)
         .filter(_ != Type.numTpe)
-        .map(tpe => Error.RequireSpecificType(tpe, Type.numTpe))
+        .map(tpe => Error.RequireSpecificType(tpe, Seq(Type.numTpe), position))
 
       val errs = targetErrs ++ constraintErrs
 
@@ -377,7 +357,7 @@ object HPBound {
           case Some(head) =>
             targets.tail.find(_.isSameExpr(head)) match {
               case None => loop(targets.tail)
-              case Some(expr) => Left(Error.HPConstraintSetMultitime(expr))
+              case Some(expr) => Left(Error.HPConstraintSetMultitime(expr, position))
             }
         }
       }
@@ -406,18 +386,18 @@ object HPBound {
         case Type.ErrorType => Right(ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
         case tpe: Type.RefType =>
           if (tpe == Type.numTpe) Right(ident.setSymbol(symbol).setTpe(Type.numTpe))
-          else Left(Error.RequireSpecificType(tpe, Type.numTpe))
+          else Left(Error.RequireSpecificType(tpe, Seq(Type.numTpe), ident.position))
       }
       case LookupResult.LookupFailure(err) =>
         ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
         Left(err)
     }
     case lit: IntLiteral => Right(lit.setTpe(Type.numTpe))
-    case _: StringLiteral => Left(Error.RequireSpecificType(Type.strTpe, Type.numTpe))
+    case lit: StringLiteral => Left(Error.RequireSpecificType(Type.strTpe, Seq(Type.numTpe), lit.position))
   }
 
   def verifyTarget(target: HPExpr): Either[Error, HPExpr] = target match {
-    case lit: Literal => Left(Error.LiteralOnTarget(lit))
+    case lit: Literal => Left(Error.LiteralOnTarget(lit, lit.position))
     case HPUnaryOp(expr) => verifyTarget(expr)
     case ident: Ident => Right(ident)
     case bin @ HPBinOp(left, right) =>
@@ -796,17 +776,19 @@ object HPBound {
     swapped.bound match {
       case HPConstraint.Eqn(exprs) =>
         val (consts, others) = exprs.collectPartition { case IntLiteral(value) => value }
-        val errs = others.filterNot(_.isSameExpr(swapped.target)).map(Error.HPBoundNotEqualExpr(_, swapped.target))
+        val errs = others
+          .filterNot(_.isSameExpr(swapped.target))
+          .map(expr => Error.HPBoundNotEqualExpr(expr, swapped.target, expr.position))
 
         lazy val targetConst = (targetMax, targetMin) match {
           case (IInt.Integer(max), IInt.Integer(min)) if max == min => Right(max)
-          case _ => Left(Error.HPBoundNotDeriveEqualConst(swapped.target))
+          case _ => Left(Error.HPBoundNotDeriveEqualConst(swapped.target, exprs.head.position))
         }
 
         def verifyConstEq(targetConst: Int): Either[Error, Unit] = {
-          val errs = consts
-            .filter(_ != targetConst)
-            .map(Error.HPBoundEqualConstNotMatch(_, targetConst))
+          val errs = (consts zip exprs)
+            .filter{ case (const, _) => const != targetConst }
+            .map{ case (const, expr) => Error.HPBoundEqualConstNotMatch(const, targetConst, expr.position) }
 
           if (errs.isEmpty) Right(())
           else Left(Error.MultipleErrors(errs: _*))
@@ -831,8 +813,8 @@ object HPBound {
         lazy val isInMax = targetMax <= rangeMax
         lazy val isInMin = targetMin >= rangeMin
         lazy val isCrossMaxMin = rangeMax < rangeMin
-        lazy val outOfRange = Left(Error.HPBoundOutOfRange(swapped.target, (rangeMax, rangeMin), (targetMax, targetMin)))
-        lazy val crossRange = Left(Error.HPBoundRangeCross(rangeMax, rangeMin))
+        lazy val outOfRange = Left(Error.HPBoundOutOfRange(swapped.target, (rangeMax, rangeMin), (targetMax, targetMin), swapped.target.position))
+        lazy val crossRange = Left(Error.HPBoundRangeCross(rangeMax, rangeMin, swapped.target.position))
 
         if (!isInMax) outOfRange
         else if (!isInMin) outOfRange

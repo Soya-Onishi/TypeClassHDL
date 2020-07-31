@@ -137,7 +137,7 @@ package object backend {
         }
         val replaced = accessor.replaceWithMap(accessorHPTable, accessorTPTable)
 
-        val fieldTpe = replaced.lookupType(tpe.origin.name)
+        val fieldTpe = replaced.lookupType(tpe.origin.name)(Position.empty)
           .toOption
           .getOrElse(throw new ImplementationErrorException(s"type ${tpe.origin.name} should be found"))
           .tpe

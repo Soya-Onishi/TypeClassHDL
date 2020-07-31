@@ -78,7 +78,7 @@ object TopDefTyper {
 
       interfaceDef.methods
         .filterNot(method => validModifiers.contains(method.flag))
-        .map(method => Error.InvalidModifier(validModifiers, method.flag))
+        .map(method => Error.InvalidModifier(validModifiers, method.flag, interfaceDef.position))
         .map(Left.apply[Error, Unit])
         .combine(errs => Error.MultipleErrors(errs: _*))
     }

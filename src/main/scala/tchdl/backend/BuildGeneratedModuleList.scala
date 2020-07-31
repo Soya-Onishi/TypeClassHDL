@@ -59,13 +59,13 @@ object BuildGeneratedModuleList {
 
         val route = buildRoute(parentModules)
 
-        Left(Error.CyclicModuleInstantiation(module, route))
+        Left(Error.CyclicModuleInstantiation(module, route, Position.empty))
       }
     }
 
     def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
       val hpResults = hpBounds.map(bound => HPBound.verifyMeetBound(bound, Vector.empty))
-      val tpResults = tpBounds.map(bound => TPBound.verifyMeetBound(bound, Vector.empty, Vector.empty))
+      val tpResults = tpBounds.map(bound => TPBound.verifyMeetBound(bound, Vector.empty, Vector.empty, Position.empty))
       (hpResults ++ tpResults).combine(errs => Error.MultipleErrors(errs: _*))
     }
 
@@ -75,8 +75,8 @@ object BuildGeneratedModuleList {
         impl =>
           val (initHPTable, initTPTable) = Type.RefType.buildTable(impl)
           val result = for {
-            hpTable <- Type.RefType.assignHPTable(initHPTable, Vector(refTpe), Vector(impl.targetType))
-            tpTable <- Type.RefType.assignTPTable(initTPTable, Vector(refTpe), Vector(impl.targetType))
+            hpTable <- Type.RefType.assignHPTable(initHPTable, Vector(refTpe), Vector(impl.targetType), impl.position)
+            tpTable <- Type.RefType.assignTPTable(initTPTable, Vector(refTpe), Vector(impl.targetType), impl.position)
             swappedHPBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
             swappedTPBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
             simplifiedHPBound = HPBound.simplify(swappedHPBound)

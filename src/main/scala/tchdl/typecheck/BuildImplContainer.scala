@@ -67,7 +67,7 @@ object BuildImplContainer {
     }
   }
 
-  def setBoundsForTopDefinition(definition: TopLevelDefinition)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
+  def setBoundsForTopDefinition(definition: TopLevelDefinition with AST)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {
     definition.symbol.tpe // run Namer for hardwareParam, typeParam and components
 
     val signatureCtx = Context(ctx, definition.symbol)
@@ -80,7 +80,7 @@ object BuildImplContainer {
       .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
-    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }) match {
+    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }, definition.position) match {
       case Right(()) => Vector.empty
       case Left(err) => Vector(err)
     }
@@ -99,9 +99,9 @@ object BuildImplContainer {
         case (flag, _: Symbol.ModuleSymbol) if flag.hasFlag(Modifier.Interface) => Right(())
         case (flag, _: Symbol.StructSymbol) if flag.hasFlag(Modifier.Trait) => Right(())
         case (flag, _: Symbol.EnumSymbol) if flag.hasFlag(Modifier.Trait) => Right(())
-        case (_, _: Symbol.ModuleSymbol) => Left(Error.TryImplTraitByModule(impl))
-        case (_, _: Symbol.StructSymbol) => Left(Error.TryImplInterfaceByStruct(impl))
-        case (_, _: Symbol.EnumSymbol) => Left(Error.TryImplInterfaceByStruct(impl))
+        case (_, _: Symbol.ModuleSymbol) => Left(Error.TryImplTraitByModule(impl, impl.position))
+        case (_, _: Symbol.StructSymbol) => Left(Error.TryImplInterfaceByStruct(impl, impl.position))
+        case (_, _: Symbol.EnumSymbol) => Left(Error.TryImplInterfaceByStruct(impl, impl.position))
         case (flag, tp: Symbol.TypeParamSymbol) =>
           val bounds = ctx.tpBounds.find(_.target.origin == tp).map(_.bounds).getOrElse(Vector.empty)
 
@@ -116,10 +116,10 @@ object BuildImplContainer {
           val isInterfaceBounds = bounds.forall(_.origin.flag.hasFlag(Modifier.Interface)) && bounds.nonEmpty
           val isTraitBounds = bounds.forall(_.origin.flag.hasFlag(Modifier.Trait)) && bounds.nonEmpty
 
-          if (!hasConsistency) Left(Error.TypeParameterMustHasConsistency(bounds))
+          if (!hasConsistency) Left(Error.TypeParameterMustHasConsistency(bounds, impl.position))
           else {
-            if (isInterfaceBounds && flag.hasFlag(Modifier.Trait)) Left(Error.TryImplTraitByModule(impl))
-            else if (isTraitBounds && flag.hasFlag(Modifier.Interface)) Left(Error.TryImplInterfaceByStruct(impl))
+            if (isInterfaceBounds && flag.hasFlag(Modifier.Trait)) Left(Error.TryImplTraitByModule(impl, impl.position))
+            else if (isTraitBounds && flag.hasFlag(Modifier.Interface)) Left(Error.TryImplInterfaceByStruct(impl, impl.position))
             else Right(())
           }
       }
@@ -148,7 +148,7 @@ object BuildImplContainer {
       .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
-    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }) match {
+    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }, impl.position) match {
       case Right(()) => Vector.empty
       case Left(err) => Vector(err)
     }
@@ -198,7 +198,7 @@ object BuildImplContainer {
       .map(buildBounds(_)(signatureCtx, global))
       .partitionMap(identity)
 
-    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }) match {
+    val verifyErrs = HPBound.verifyForm(bounds.collect { case bound: HPBound => bound }, impl.position) match {
       case Right(()) => Vector.empty
       case Left(err) => Vector(err)
     }

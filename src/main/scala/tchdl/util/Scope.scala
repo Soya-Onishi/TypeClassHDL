@@ -1,5 +1,7 @@
 package tchdl.util
 
+import tchdl.ast.Position
+
 import scala.collection.mutable
 
 class Scope {
@@ -7,7 +9,7 @@ class Scope {
 
   def append(symbol: Symbol): Either[Error, Unit] = {
     if (table.contains(symbol.name))
-      Left(Error.DefinitionNameConflict(symbol.name))
+      Left(Error.DefinitionNameConflict(symbol.name, Position.empty))
     else {
       table(symbol.name) = symbol
       Right(())

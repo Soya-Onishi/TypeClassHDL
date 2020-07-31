@@ -42,7 +42,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
 
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.TypeMismatch])
-    val Error.TypeMismatch(expect, actual) = err
+    val Error.TypeMismatch(expect, actual, _) = err
     assert(expect == Type.intTpe(global))
     assert(actual == Type.stringTpe(global))
   }

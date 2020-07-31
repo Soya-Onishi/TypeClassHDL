@@ -16,6 +16,7 @@ abstract class ImplementContainer {
   val id: Int
   val typeParam: Vector[Symbol.TypeParamSymbol]
   val hardwareParam: Vector[Symbol.HardwareParamSymbol]
+  val position: Position
 
   final def lookup[T <: Symbol : ClassTag : TypeTag](name: String): Option[T] =
     scope.lookup(name).collect{ case symbol: T => symbol }
@@ -50,6 +51,7 @@ object ImplementInterfaceContainer {
       override val id: Int = implTree.id
       override val typeParam: Vector[Symbol.TypeParamSymbol] = implTree.tp.map(_.symbol.asTypeParamSymbol)
       override val hardwareParam: Vector[Symbol.HardwareParamSymbol] = implTree.hp.map(_.symbol.asHardwareParamSymbol)
+      override val position = implTree.position
     }
 
   def isConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer)(implicit global: GlobalData): Boolean = {
@@ -117,7 +119,7 @@ object ImplementInterfaceContainer {
             }
 
             verifiedBounds.forall {
-              TPBound.verifyMeetBound(_, hpBounds, combinedTPBounds).isRight
+              TPBound.verifyMeetBound(_, hpBounds, combinedTPBounds, impl0.position).isRight
             }
           }
 
@@ -210,6 +212,7 @@ object ImplementClassContainer {
       override val id: Int = implTree.id
       override val typeParam: Vector[Symbol.TypeParamSymbol] = implTree.tp.map(_.symbol.asTypeParamSymbol)
       override val hardwareParam: Vector[Symbol.HardwareParamSymbol] = implTree.hp.map(_.symbol.asHardwareParamSymbol)
+      override val position = implTree.position
     }
 
   def isConflict(impl0: ImplementClassContainer, impl1: ImplementClassContainer)(implicit global: GlobalData): Boolean = {
@@ -309,7 +312,7 @@ object ImplementClassContainer {
         }
 
         verifiedBounds.forall {
-          TPBound.verifyMeetBound(_, hpBounds, combinedTPBounds).isRight
+          TPBound.verifyMeetBound(_, hpBounds, combinedTPBounds, impl0.position).isRight
         }
       }
 

@@ -39,7 +39,6 @@ object Typer {
         implSigCtx.reAppend(implSymbol.hps ++ implSymbol.tps: _*)
 
         val implBodyCtx = Context(implSigCtx, impl.target.tpe.asRefType)
-
         val typedMethods = impl.methods.map(typedMethodDef(_)(implBodyCtx, global))
 
         val typedImpl = impl.copy(methods = typedMethods).setSymbol(impl.symbol).setID(impl.id)
@@ -63,7 +62,7 @@ object Typer {
     val typedBody = typedBlock(body)(methodSigCtx, global)
 
     if (!typedBody.tpe.isErrorType && typedBody.tpe.asRefType != methodTpe.returnType) {
-      global.repo.error.append(Error.TypeMismatch(methodTpe.returnType, typedBody.tpe.asRefType))
+      global.repo.error.append(Error.TypeMismatch(methodTpe.returnType, typedBody.tpe.asRefType, typedBody.last.position))
     }
 
     methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
@@ -103,8 +102,8 @@ object Typer {
     if (!vdefTpe.isErrorType) {
       def typecheck(tree: Option[AST with HasType]): Unit = {
         tree.filterNot(_.tpe.isErrorType)
-          .filterNot(_.tpe =:= vdefTpe)
-          .foreach(t => global.repo.error.append(Error.TypeMismatch(vdefTpe, t.tpe)))
+          .filter(_.tpe != vdefTpe)
+          .foreach(t => global.repo.error.append(Error.TypeMismatch(vdefTpe, t.tpe, t.position)))
       }
 
       typecheck(typedTpeTree)
@@ -128,8 +127,8 @@ object Typer {
     typedTpeTree.map(_.tpe)
       .filterNot(tpe => tpe.isErrorType)
       .filterNot(_ => typedConstruct.tpe.isErrorType)
-      .filterNot(_ =:= typedConstruct.tpe.asRefType)
-      .map(tpe => Error.TypeMismatch(tpe, typedConstruct.tpe.asRefType))
+      .filter(_ != typedConstruct.tpe.asRefType)
+      .map(tpe => Error.TypeMismatch(tpe, typedConstruct.tpe.asRefType, typedConstruct.position))
       .foreach(global.repo.error.append)
 
     val typedValDef = ValDef(valDef.flag, name, typedTpeTree, Some(typedConstruct), valDef.position)
@@ -155,7 +154,7 @@ object Typer {
 
         typedExpr.tpe match {
           case Type.ErrorType => Left(Error.DummyError)
-          case exprTpe: Type.RefType if exprTpe =!= vdefTpe => Left(Error.TypeMismatch(vdefTpe, exprTpe))
+          case exprTpe: Type.RefType if exprTpe != vdefTpe => Left(Error.TypeMismatch(vdefTpe, exprTpe, typedExpr.position))
           case _: Type.RefType => Right(typedExpr)
         }
     }
@@ -265,10 +264,10 @@ object Typer {
         }
       }
 
-      def verifyLength(methodSymbol: Symbol.MethodSymbol, methodType: Type.MethodType): Either[Error, Unit] = {
-        def verify(builder: (Int, Int) => Error)(expect: Int, actual: Int, errs: Vector[Error]): Vector[Error] =
+      def verifyLength(methodSymbol: Symbol.MethodSymbol, methodType: Type.MethodType, signaturePos: Position): Either[Error, Unit] = {
+        def verify(builder: (Int, Int, Position) => Error)(expect: Int, actual: Int, errs: Vector[Error]): Vector[Error] =
           if (expect == actual) errs
-          else errs :+ builder(expect, actual)
+          else errs :+ builder(expect, actual, signaturePos)
 
         val expectArgLength = methodType.params.length
         val actualArgLength = typedArgs.length
@@ -291,11 +290,12 @@ object Typer {
       }
 
       def verifyHPType(methodSymbol: Symbol.MethodSymbol): Either[Error, Unit] = {
-        val results = (methodSymbol.hps.map(_.tpe) zip typedHPs.map(_.tpe)).map {
-          case (p: Type.RefType, a: Type.RefType) =>
-            if (p =:= a) Right(())
-            else Left(Error.TypeMismatch(p, a))
-        }
+        val results = (methodSymbol.hps.map(_.tpe) zip typedHPs)
+          .map {
+            case (p: Type.RefType, a) =>
+              if (p == a.tpe) Right(())
+              else Left(Error.TypeMismatch(p, a.tpe, a.position))
+          }
 
         val (errs, _) = results.partitionMap(identity)
         if (errs.isEmpty) Right(())
@@ -304,27 +304,31 @@ object Typer {
 
       def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
         val (hpErrs, _) = hpBounds.map(HPBound.verifyMeetBound(_, ctx.hpBounds)).partitionMap(identity)
-        val (tpErrs, _) = tpBounds.map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds)).partitionMap(identity)
+        val (tpErrs, _) = tpBounds.map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds, apply.position)).partitionMap(identity)
         val errs = hpErrs ++ tpErrs
 
         if (errs.isEmpty) Right(())
         else Left(Error.MultipleErrors(errs: _*))
       }
 
+      val signatureStart = apply.prefix.position.end
+      val signatureEnd = apply.prefix.position.end
+      val signaturePos = Position(apply.position.filename, signatureStart, signatureEnd)
+
       ctx.root.lookup[Symbol.MethodSymbol](ident.name) match {
         case LookupResult.LookupFailure(err) => Left(err)
         case LookupResult.LookupSuccess(methodSymbol) => for {
           _ <- verifyMethodValidity(methodSymbol)
           methodType = methodSymbol.tpe.asMethodType
-          _ <- verifyLength(methodSymbol, methodType)
+          _ <- verifyLength(methodSymbol, methodType, signaturePos)
           _ <- verifyHPType(methodSymbol)
           hpTable = (methodSymbol.hps zip typedHPs).toMap
           tpTable = (methodSymbol.tps zip typedTPs.map(_.tpe.asRefType)).toMap
           swappedHPBound = HPBound.swapBounds(methodSymbol.hpBound, hpTable)
           swappedTPBound = TPBound.swapBounds(methodSymbol.tpBound, hpTable, tpTable)
           _ <- verifyEachBounds(swappedHPBound, swappedTPBound)
-          replacedTpe = methodType.replaceWithMap(hpTable, tpTable)
-          _ <- Type.RefType.verifyMethodType(replacedTpe, typedArgs.map(_.tpe.asRefType))
+          replacedTpe = methodType.replaceWithMap(hpTable, tpTable, apply.position)
+          _ <- Type.RefType.verifyMethodType(replacedTpe, typedArgs.map(_.tpe.asRefType), apply.position)
           typedApply = Apply(
             ident.setTpe(replacedTpe).setSymbol(methodSymbol),
             typedHPs,
@@ -345,7 +349,7 @@ object Typer {
         ctx.hpBounds,
         ctx.tpBounds,
         requireStatic
-      )
+      )(ctx, apply.position, global)
 
       method.toEither
     }
@@ -420,15 +424,15 @@ object Typer {
   }
 
   def typedExprSelect(select: Select)(implicit ctx: Context.NodeContext, global: GlobalData): Select = {
-    val typedSuffix = typedExpr(select.prefix)
-    typedSuffix.tpe match {
+    val typedPrefix = typedExpr(select.prefix)
+    typedPrefix.tpe match {
       case refTpe: Type.RefType =>
         // This method only for reference to field of struct or module.
         // That's why this method does not look up method.
-        refTpe.lookupField(select.name, ctx.hpBounds, ctx.tpBounds) match {
+        refTpe.lookupField(select.name, ctx.hpBounds, ctx.tpBounds)(select.position, global) match {
           case LookupResult.LookupFailure(err) =>
             global.repo.error.append(err)
-            select.copy(typedSuffix, select.name)
+            select.copy(typedPrefix, select.name)
               .setTpe(Type.ErrorType)
               .setSymbol(Symbol.ErrorSymbol)
               .setID(select.id)
@@ -453,17 +457,17 @@ object Typer {
 
             val selectTpe = symbol.tpe match {
               case tpe: Type.RefType => tpe.replaceWithMap(hpTable, tpTable)
-              case tpe: Type.MethodType => tpe.replaceWithMap(hpTable, tpTable)
+              case tpe: Type.MethodType => tpe.replaceWithMap(hpTable, tpTable, select.position)
               case Type.ErrorType => Type.ErrorType
             }
 
-            select.copy(typedSuffix, select.name)
+            select.copy(typedPrefix, select.name)
               .setTpe(selectTpe)
               .setSymbol(symbol)
               .setID(select.id)
         }
       case Type.ErrorType =>
-        select.copy(typedSuffix, select.name)
+        select.copy(typedPrefix, select.name)
           .setTpe(Type.ErrorType)
           .setSymbol(Symbol.ErrorSymbol)
           .setID(select.id)
@@ -479,15 +483,15 @@ object Typer {
     val typedInit = typedExpr(pair.init)
     val typedPair = pair.copy(init = typedInit).setID(pair.id)
 
-    val err = targetTpe.lookupField(pair.name, ctx.hpBounds, ctx.tpBounds) match {
+    val err = targetTpe.lookupField(pair.name, ctx.hpBounds, ctx.tpBounds)(pair.position, global) match {
       case LookupResult.LookupFailure(err) => Some(err)
       case LookupResult.LookupSuccess(symbol) => (symbol.tpe, typedInit.tpe) match {
         case (Type.ErrorType, _) => Some(Error.DummyError)
         case (_, Type.ErrorType) => Some(Error.DummyError)
         case (fieldTpe: Type.RefType, exprTpe: Type.RefType) =>
           val replacedFieldTpe = fieldTpe.replaceWithMap(hpTable, tpTable)
-          if (replacedFieldTpe =:= exprTpe) None
-          else Some(Error.TypeMismatch(fieldTpe, exprTpe))
+          if (replacedFieldTpe == exprTpe) None
+          else Some(Error.TypeMismatch(fieldTpe, exprTpe, pair.position))
       }
     }
 
@@ -506,7 +510,7 @@ object Typer {
       case construct: ConstructClass => (None, typedConstructClass(construct))
       case construct: ConstructModule => (None, typedConstructModule(construct))
       case expr =>
-        val err = Error.InvalidFormatForModuleConstruct(expr)
+        val err = Error.InvalidFormatForModuleConstruct(expr, expr.position)
         val typedExpr = expr match {
           case e: Expression with HasSymbol => e.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
           case e => e.setTpe(Type.ErrorType)
@@ -517,15 +521,15 @@ object Typer {
 
     val typedPair = ConstructPair(pair.name, typedInit, pair.position).setID(pair.id)
 
-    val pairErr = targetTpe.lookupField(pair.name, ctx.hpBounds, ctx.tpBounds) match {
+    val pairErr = targetTpe.lookupField(pair.name, ctx.hpBounds, ctx.tpBounds)(pair.position, global) match {
       case LookupResult.LookupFailure(err) => Some(err)
       case LookupResult.LookupSuccess(symbol) => (symbol.tpe, typedInit.tpe) match {
         case (Type.ErrorType, _) => Some(Error.DummyError)
         case (_, Type.ErrorType) => Some(Error.DummyError)
         case (fieldTpe: Type.RefType, exprTpe: Type.RefType) =>
           val replacedFieldTpe = fieldTpe.replaceWithMap(hpTable, tpTable)
-          if (replacedFieldTpe =:= exprTpe) None
-          else Some(Error.TypeMismatch(fieldTpe, exprTpe))
+          if (replacedFieldTpe == exprTpe) None
+          else Some(Error.TypeMismatch(fieldTpe, exprTpe, pair.position))
       }
     }
 
@@ -553,9 +557,9 @@ object Typer {
     }
 
     def typedPattern(pattern: MatchPattern, matchedTpe: Type.RefType, ctx: Context.NodeContext): Either[Error, MatchPattern] = pattern match {
-      case enum: EnumPattern => typedEnumPattern(enum, matchedTpe, ctx)
+      case enum: EnumPattern => typedEnumPattern(enum, matchedTpe, ctx, pattern.position)
       case ident: IdentPattern => typedIdentPattern(ident, matchedTpe, ctx)
-      case lit: LiteralPattern => typedLiteralPattern(lit, matchedTpe, ctx)
+      case lit: LiteralPattern => typedLiteralPattern(lit, matchedTpe)
       case wild: WildCardPattern => Right(WildCardPattern(wild.position).setTpe(matchedTpe).setID(wild.id))
     }
 
@@ -573,49 +577,49 @@ object Typer {
       Right(IdentPattern(ident, pattern.position))
     }
 
-    def typedLiteralPattern(pattern: LiteralPattern, matchedTpe: Type.RefType, ctx: Context.NodeContext): Either[Error, LiteralPattern] = {
+    def typedLiteralPattern(pattern: LiteralPattern, matchedTpe: Type.RefType): Either[Error, LiteralPattern] = {
       val result = pattern.lit match {
         case lit: IntLiteral =>
           if(Type.intTpe == matchedTpe) Right(lit.setTpe(Type.intTpe))
-          else Left(Error.TypeMismatch(matchedTpe, Type.intTpe))
+          else Left(Error.TypeMismatch(matchedTpe, Type.intTpe, lit.position))
         case lit @ BitLiteral(_, length) =>
           if(Type.bitTpe(length) == matchedTpe) Right(lit.setTpe(Type.bitTpe(length)))
-          else Left(Error.TypeMismatch(matchedTpe, Type.bitTpe(length)))
+          else Left(Error.TypeMismatch(matchedTpe, Type.bitTpe(length), lit.position))
         case lit: BoolLiteral =>
           if(Type.boolTpe == matchedTpe) Right(lit.setTpe(Type.boolTpe))
-          else Left(Error.TypeMismatch(matchedTpe, Type.boolTpe))
+          else Left(Error.TypeMismatch(matchedTpe, Type.boolTpe, lit.position))
         case lit: UnitLiteral =>
           if(Type.unitTpe == matchedTpe) Right(lit.setTpe(Type.unitTpe))
-          else Left(Error.TypeMismatch(matchedTpe, Type.unitTpe))
+          else Left(Error.TypeMismatch(matchedTpe, Type.unitTpe, lit.position))
       }
 
       result.map(LiteralPattern(_, pattern.position))
     }
 
-    def typedEnumPattern(enum: EnumPattern, matchedTpe: Type.RefType, ctx: Context.NodeContext): Either[Error, EnumPattern] = {
+    def typedEnumPattern(enum: EnumPattern, matchedTpe: Type.RefType, ctx: Context.NodeContext, position: Position): Either[Error, EnumPattern] = {
       val typedVariant = typedTypeTree(enum.variant)(ctx, global)
       def requireRefType(tpe: Type): Either[Error, Type.RefType] = tpe match {
         case tpe: Type.RefType => Right(tpe)
         case Type.ErrorType => Left(Error.DummyError)
       }
 
-      def requireSameEnumType(tpe: Type.RefType): Either[Error, Unit] =
+      def requireSameEnumType(tpe: Type.RefType, pos: Position): Either[Error, Unit] =
         if(tpe == matchedTpe) Right(())
-        else Left(Error.TypeMismatch(matchedTpe, tpe))
+        else Left(Error.TypeMismatch(matchedTpe, tpe, pos))
 
-      def requireEnumVariant(symbol: Symbol): Either[Error, Symbol.EnumMemberSymbol] = symbol match {
+      def requireEnumVariant(symbol: Symbol, pos: Position): Either[Error, Symbol.EnumMemberSymbol] = symbol match {
         case Symbol.ErrorSymbol => Left(Error.DummyError)
         case symbol: Symbol.EnumMemberSymbol => Right(symbol)
-        case symbol => Left(Error.RequireSymbol[Symbol.EnumMemberSymbol](symbol))
+        case symbol => Left(Error.RequireSymbol[Symbol.EnumMemberSymbol](symbol, pos))
       }
 
-      def verifyFieldLength(symbol: Symbol.EnumMemberSymbol): Either[Error, Unit] = {
+      def verifyFieldLength(symbol: Symbol.EnumMemberSymbol, pos: Position): Either[Error, Unit] = {
         val tpe = symbol.tpe.asEnumMemberType
         val expect = tpe.fields.length
         val actual = enum.patterns.length
 
         if(expect == actual) Right(())
-        else Left(Error.PatternLengthMismatch(expect, actual))
+        else Left(Error.PatternLengthMismatch(expect, actual, pos))
       }
 
       def typedPatterns(fieldTpes: Vector[Type.RefType]): Either[Error, Vector[MatchPattern]] = {
@@ -632,9 +636,9 @@ object Typer {
 
       for {
         tpe <- requireRefType(typedVariant.tpe)
-        _ <- requireSameEnumType(tpe)
-        variant <- requireEnumVariant(typedVariant.symbol)
-        _ <- verifyFieldLength(variant)
+        _ <- requireSameEnumType(tpe, typedVariant.position)
+        variant <- requireEnumVariant(typedVariant.symbol, typedVariant.position)
+        _ <- verifyFieldLength(variant, typedVariant.position)
         variantFields = variant.tpe.asEnumMemberType.fields
         fieldTpes = variantFields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
         patterns <- typedPatterns(fieldTpes)
@@ -655,18 +659,20 @@ object Typer {
 
         def typeMismatches: Either[Error, Unit] = {
           val retTpes = typedCases.map(_.tpe.asRefType)
-          val errs = retTpes.filter(_ != retTpes.last).map(Error.TypeMismatch(retTpes.last, _))
+          val caseErrs = typedCases.filterNot(_.tpe.isErrorType)
+            .filter(_.tpe.asRefType != retTpes.last)
+            .map(c => Error.TypeMismatch(retTpes.last, c.tpe, c.position))
 
-          if (errs.isEmpty) Right(())
-          else Left(Error.MultipleErrors(errs: _*))
+          if (caseErrs.isEmpty) Right(())
+          else Left(Error.MultipleErrors(caseErrs: _*))
         }
 
         def requireSizedType: Either[Error, Unit] = {
           val tpe = typedCases.head.tpe.asRefType
-          val isHardwareType = tpe.isHardwareType(ctx.tpBounds)
+          val isHardwareType = tpe.isHardwareType(ctx.tpBounds)(typedCases.head.position, global)
 
           if(isHardwareType) Right(())
-          else Left(Error.RequireHardwareType(tpe))
+          else Left(Error.RequireHardwareType(tpe, typedMatched.position))
         }
 
         val result = for {
@@ -713,13 +719,13 @@ object Typer {
               .setTpe(tpe)
               .setID(construct.id)
           case _: Symbol.ModuleSymbol =>
-            global.repo.error.append(Error.RequireParentOrSiblingIndicator(construct))
+            global.repo.error.append(Error.RequireParentOrSiblingIndicator(construct, construct.position))
             ConstructClass(typedTarget, typedPairs, construct.position)
               .setSymbol(Symbol.ErrorSymbol)
               .setTpe(Type.ErrorType)
               .setID(construct.id)
           case _: Symbol.InterfaceSymbol =>
-            global.repo.error.append(Error.TryToConstructInterface(construct))
+            global.repo.error.append(Error.TryToConstructInterface(construct, construct.position))
             ConstructClass(typedTarget, typedPairs, construct.position)
               .setSymbol(Symbol.ErrorSymbol)
               .setTpe(Type.ErrorType)
@@ -744,10 +750,10 @@ object Typer {
         val returnType = tpe.origin match {
           case _: Symbol.ModuleSymbol => tpe
           case _: Symbol.StructSymbol =>
-            global.repo.error.append(Error.RejectParentOrSiblingIndicator(construct))
+            global.repo.error.append(Error.RejectParentOrSiblingIndicator(construct, construct.target.position))
             Type.ErrorType
           case _: Symbol.InterfaceSymbol =>
-            global.repo.error.append(Error.TryToConstructInterface(construct))
+            global.repo.error.append(Error.TryToConstructInterface(construct, construct.target.position))
             Type.ErrorType
         }
 
@@ -767,7 +773,7 @@ object Typer {
 
       def verifyLength =
         if (declares.length == fields.length) Right(())
-        else Left(Error.ParameterLengthMismatch(declares.length, fields.length))
+        else Left(Error.ParameterLengthMismatch(declares.length, fields.length, construct.position))
 
       def verifyFieldExprType =
         if (fields.exists(_.tpe.isErrorType)) Left(Error.DummyError)
@@ -782,10 +788,10 @@ object Typer {
           .map(_.tpe.asRefType)
           .map(_.replaceWithMap(hpTable, tpTable))
 
-        expectTpes
-          .zip(fields.map(_.tpe.asRefType))
-          .filter { case (field, expr) => field != expr }
-          .map { case (field, expr) => Error.TypeMismatch(field, expr) }
+        (expectTpes zip fields)
+            .filterNot { case (_, expr) => expr.tpe.isErrorType }
+            .filter { case (field, expr) => field != expr.tpe }
+            .map { case (field, expr) => Error.TypeMismatch(field, expr.tpe.asRefType, expr.position) }
       }
 
       def verifyTypeMatching: Either[Error, Unit] = {
@@ -813,7 +819,7 @@ object Typer {
         verifyFields(typedTarget.tpe.asRefType, member, typedFields)
           .map(_ => typedTarget.tpe.asRefType)
       case _ => typedTarget.tpe match {
-        case tpe: Type.RefType => Left(Error.ConstructEnumForm(tpe))
+        case tpe: Type.RefType => Left(Error.ConstructEnumForm(tpe, typedTarget.position))
         case Type.ErrorType => Left(Error.DummyError)
       }
     }
@@ -845,7 +851,7 @@ object Typer {
     val result = for {
       from <- verifyType(typedPrefix)
       to <- verifyType(typedTpeTree)
-      castTpe <- castVerification(from, to)
+      castTpe <- castVerification(from, to, cast.position, cast.expr.position, cast.to.position)
     } yield castTpe
 
     val tpe = result match {
@@ -867,7 +873,7 @@ object Typer {
       case (Type.ErrorType, _) => LookupResult.LookupFailure(Error.DummyError)
       case (_, Type.ErrorType) => LookupResult.LookupFailure(Error.DummyError)
       case (leftTpe: Type.RefType, rightTpe: Type.RefType) =>
-        leftTpe.lookupOperator(binop.op, Vector(leftTpe, rightTpe), ctx.hpBounds, ctx.tpBounds)
+        leftTpe.lookupOperator(binop.op, Vector(leftTpe, rightTpe), ctx.hpBounds, ctx.tpBounds, binop.position)
     }
 
     result match {
@@ -887,7 +893,7 @@ object Typer {
 
     val result = typedOperand.tpe match {
       case Type.ErrorType => LookupResult.LookupFailure(Error.DummyError)
-      case operand: Type.RefType => operand.lookupOperator(unaryOp.op, Vector(operand), ctx.hpBounds, ctx.tpBounds)
+      case operand: Type.RefType => operand.lookupOperator(unaryOp.op, Vector(operand), ctx.hpBounds, ctx.tpBounds,typedOperand.position)
     }
 
     result match {
@@ -918,10 +924,10 @@ object Typer {
   def typedThis(self: This)(implicit ctx: Context.NodeContext, global: GlobalData): This = {
     val tpe = ctx.self match {
       case None =>
-        global.repo.error.append(Error.UsingSelfOutsideClass)
+        global.repo.error.append(Error.UsingSelfOutsideClass(self.position))
         Type.ErrorType
       case Some(_) if ctx.isStatic =>
-        global.repo.error.append(Error.UsingSelfInsideStatic)
+        global.repo.error.append(Error.UsingSelfInsideStatic(self.position))
         Type.ErrorType
       case Some(tpe) =>
         tpe
@@ -938,9 +944,9 @@ object Typer {
       case Select(prefix, name) => prefix match {
         case self: This => Right(typedThis(self), name)
         case select @ Select(_: This, _) => Right(typedExprSelect(select), name)
-        case tree => Left(Error.InvalidLHSForm(tree))
+        case tree => Left(Error.InvalidLHSForm(tree, assign.right.position))
       }
-      case tree => Left(Error.InvalidLHSForm(tree))
+      case tree => Left(Error.InvalidLHSForm(tree, assign.right.position))
     }
 
     def rejectErrorType(prefix: Expression): Either[Error, Type.RefType] = prefix.tpe match {
@@ -948,17 +954,17 @@ object Typer {
       case tpe: Type.RefType => Right(tpe)
     }
 
-    def requireModuleType(prefix: Type.RefType): Either[Error, Unit] = prefix.origin match {
+    def requireModuleType(prefix: Type.RefType, position: Position): Either[Error, Unit] = prefix.origin match {
       case _: Symbol.ModuleSymbol => Right(())
-      case symbol => Left(Error.RequireSymbol[Symbol.ModuleSymbol](symbol))
+      case symbol => Left(Error.RequireSymbol[Symbol.ModuleSymbol](symbol, position))
     }
 
     val typedLoc = for {
       pair <- verifyTreeForm
       (prefixTree, name) = pair
       prefixTpe <- rejectErrorType(prefixTree)
-      _ <- requireModuleType(prefixTpe)
-      symbol <- prefixTpe.lookupField(name, ctx.hpBounds, ctx.tpBounds).toEither
+      _ <- requireModuleType(prefixTpe, prefixTree.position)
+      symbol <- prefixTpe.lookupField(name, ctx.hpBounds, ctx.tpBounds)(prefixTree.position, global).toEither
     } yield Select(prefixTree, name, loc.position)
       .setSymbol(symbol)
       .setTpe(symbol.tpe)
@@ -977,7 +983,7 @@ object Typer {
     def isErrorTpe = typedCond.tpe.isErrorType
 
     if (!isErrorTpe && !isBoolTpe)
-      global.repo.error.append(Error.RequireSpecificType(typedCond.tpe.asRefType, Type.boolTpe))
+      global.repo.error.append(Error.RequireSpecificType(typedCond.tpe.asRefType, Seq(Type.boolTpe), ifexpr.cond.position))
 
     typedAlt match {
       case None =>
@@ -988,10 +994,10 @@ object Typer {
           case (tpe, Type.ErrorType) => tpe
           case (altTpe: Type.RefType, conseqTpe: Type.RefType) =>
             if (altTpe != conseqTpe)
-              global.repo.error.append(Error.TypeMismatch(altTpe, conseqTpe))
+              global.repo.error.append(Error.TypeMismatch(altTpe, conseqTpe, ifexpr.cond.position))
 
-            if (!altTpe.isHardwareType(ctx.tpBounds))
-              global.repo.error.append(Error.RejectHeapType(altTpe))
+            if (!altTpe.isHardwareType(ctx.tpBounds)(ifexpr.cond.position, global))
+              global.repo.error.append(Error.RejectHeapType(altTpe, ifexpr.cond.position))
 
             altTpe
         }
@@ -1006,7 +1012,7 @@ object Typer {
       val invalidHPLength = symbol.hps.length != typedHPs.length
       val hasError = typedHPs.exists(_.tpe.isErrorType)
 
-      if (invalidHPLength) Left(Error.HardParameterLengthMismatch(symbol.hps.length, typeTree.hp.length))
+      if (invalidHPLength) Left(Error.HardParameterLengthMismatch(symbol.hps.length, typeTree.hp.length, typeTree.position))
       else if (hasError) Left(Error.DummyError)
       else {
         val table = (symbol.hps zip typedHPs).toMap
@@ -1026,14 +1032,14 @@ object Typer {
       lazy val hasError = typedTPs.exists(_.tpe.isErrorType)
       lazy val tpRefTpe = typedTPs.map(_.tpe.asRefType)
 
-      if (invalidTPLength) Left(Error.TypeParameterLengthMismatch(symbol.tps.length, typedTPs.length))
+      if (invalidTPLength) Left(Error.TypeParameterLengthMismatch(symbol.tps.length, typedTPs.length, typeTree.position))
       else if (hasError) Left(Error.DummyError)
       else {
         val hpTable = (symbol.hps zip typedHPs).toMap
         val tpTable = (symbol.tps zip tpRefTpe).toMap
         val swapped = TPBound.swapBounds(symbol.tpBound, hpTable, tpTable)
         val (errs, _) = swapped
-          .map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds))
+          .map(TPBound.verifyMeetBound(_, ctx.hpBounds, ctx.tpBounds, typeTree.position))
           .partitionMap(identity)
 
         if (errs.isEmpty) Right(())
@@ -1073,7 +1079,7 @@ object Typer {
       for {
         fromTpe <- checkType(typedFrom)
         toTpe <- checkType(typedTo)
-        castTpe <- castVerification(fromTpe, toTpe)
+        castTpe <- castVerification(fromTpe, toTpe, cast.position, cast.from.position, cast.to.position)
       } yield {
         val typedCast = CastType(typedFrom, typedTo, cast.position)
           .setTpe(castTpe)
@@ -1099,7 +1105,7 @@ object Typer {
 
       val result = for {
         prefix <- typedPrefix
-        symbol <- prefix.tpe.asRefType.lookupType(select.name).toEither
+        symbol <- prefix.tpe.asRefType.lookupType(select.name)(select.position).toEither
         _ <- verifyHP(symbol, hargs)
         _ <- verifyTP(symbol, hargs, targs)
       } yield (prefix, symbol)
@@ -1151,7 +1157,7 @@ object Typer {
 
     def typedForThisType(thisTree: ThisType): Either[Error, TypeTree] =
       ctx.self match {
-        case None => Left(Error.SelfTypeNotFound)
+        case None => Left(Error.SelfTypeNotFound(thisTree.position))
         case Some(tpe) =>
           val tree = ThisType(thisTree.position).setSymbol(tpe.origin).setTpe(tpe).setID(thisTree.id)
           val tpeTree = TypeTree(tree, Vector.empty, Vector.empty, thisTree.position)
@@ -1186,14 +1192,14 @@ object Typer {
     }
   }
 
-  private def castVerification(from: Type.RefType, to: Type.RefType)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Type.RefType] = {
+  private def castVerification(from: Type.RefType, to: Type.RefType, castPos: Position, fromPos: Position, toPos: Position)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Type.RefType] = {
     def verifyFromType(tpe: Type.RefType): Either[Error, Unit] =
-      if (tpe.origin.isInterfaceSymbol) Left(Error.MustNotCastFromTrait(tpe))
+      if (tpe.origin.isInterfaceSymbol) Left(Error.MustNotCastFromTrait(tpe, fromPos))
       else Right(())
 
     def verifyToType(tpe: Type.RefType): Either[Error, Unit] =
       if (tpe.origin.isInterfaceSymbol) Right(())
-      else Left(Error.MustCastToTrait(tpe))
+      else Left(Error.MustCastToTrait(tpe, toPos))
 
     def verifyCastable(from: Type.RefType, to: Type.RefType): Either[Error, Unit] = {
       val isCastable = from.origin match {
@@ -1209,13 +1215,14 @@ object Typer {
             impl =>
               val targets = Vector(impl.targetType, impl.targetInterface)
               val callers = Vector(from, to)
+              val positions = Vector(fromPos, toPos)
 
-              Type.RefType.verifySuperSets(callers, targets).isRight
+              Type.RefType.verifySuperSets(callers, targets, positions).isRight
           }
       }
 
       if (isCastable) Right(())
-      else Left(Error.CannotCast(from, to))
+      else Left(Error.CannotCast(from, to, castPos))
     }
 
     for {
@@ -1248,7 +1255,7 @@ object Typer {
     ctx.owner match {
       case _: Symbol.StateSymbol =>
       case _: Symbol.StageSymbol =>
-      case _ => global.repo.error.append(Error.FinishOutsideStage)
+      case _ => global.repo.error.append(Error.FinishOutsideStage(finish.position))
     }
 
     finish.setTpe(Type.unitTpe).setID(finish.id)
@@ -1265,7 +1272,7 @@ object Typer {
             Symbol.ErrorSymbol
         }
       case _ =>
-        global.repo.error.append(Error.GotoOutsideState)
+        global.repo.error.append(Error.GotoOutsideState(goto.position))
         Symbol.ErrorSymbol
     }
 
@@ -1274,19 +1281,14 @@ object Typer {
       case tpe: Type.MethodType =>
         lazy val lengthMismatch: Either[Error, Unit] =
           if (tpe.params.length == typedArgs.length) Right(())
-          else Left(Error.ParameterLengthMismatch(tpe.params.length, typedArgs.length))
+          else Left(Error.ParameterLengthMismatch(tpe.params.length, typedArgs.length, goto.position))
 
         lazy val typeMismatches: Either[Error, Unit] =
-          (tpe.params zip typedArgs.map(_.tpe))
-            .collect {
-              case (param: Type.RefType, arg: Type.RefType) => param -> arg
-            }
-            .filter {
-              case (param, arg) => param != arg
-            }
-            .map {
-              case (param, arg) => Error.TypeMismatch(param, arg)
-            }
+          (tpe.params zip typedArgs)
+            .collect { case (param: Type.RefType, arg) => param -> arg }
+            .filterNot { case (_, arg) => arg.tpe.isErrorType }
+            .filter { case (param, arg) => param != arg.tpe.asRefType }
+            .map { case (param, arg) => Error.TypeMismatch(param, arg.tpe.asRefType, arg.position) }
             .combine(errs => Error.MultipleErrors(errs: _*))
 
         for {
@@ -1312,7 +1314,7 @@ object Typer {
 
     val (symbol, tpe) =
       if (typedArgs.exists(_.tpe.isErrorType)) (Symbol.ErrorSymbol, Type.ErrorType)
-      else self.lookupStage(generate.target, typedArgs.map(_.tpe.asRefType), ctx.hpBounds, ctx.tpBounds) match {
+      else self.lookupStage(generate.target, typedArgs.map(_.tpe.asRefType))(generate.position, global) match {
         case LookupResult.LookupFailure(err) =>
           global.repo.error.append(err)
           (Symbol.ErrorSymbol, Type.ErrorType)
@@ -1322,7 +1324,7 @@ object Typer {
 
     val result = symbol match {
       case Symbol.ErrorSymbol => Left(Error.DummyError)
-      case stage: Symbol.StageSymbol => verifyInitState(stage, generate.state)
+      case stage: Symbol.StageSymbol => verifyInitState(stage, generate.state, generate.position)
     }
 
     val (stageSymbol, retTpe, generateState) = result match {
@@ -1338,20 +1340,24 @@ object Typer {
       .setID(generate.id)
   }
 
-  private def verifyInitState(stage: Symbol.StageSymbol, state: Option[StateInfo])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Option[StateInfo]] = {
+  private def verifyInitState(stage: Symbol.StageSymbol, state: Option[StateInfo], generatePos: Position)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Option[StateInfo]] = {
     def noStatePattern(tpe: Type.MethodType): Either[Error, Option[StateInfo]] = {
       val states = tpe.declares.toMap.values.collect {
         case state: Symbol.StateSymbol => state
       }.toVector
 
       if (states.isEmpty) Right(Option.empty)
-      else Left(Error.RequireStateSpecify(states))
+      else Left(Error.RequireStateSpecify(states, generatePos))
     }
 
     def withStatePattern(tpe: Type.MethodType, state: String, args: Vector[Expression], info: StateInfo): Either[Error, Option[StateInfo]] = {
+      val nameStart = info.position.start
+      val nameEndColumn = info.position.start.column + state.length
+      val namePos = Position(info.position.filename, nameStart, Point(nameStart.line, nameEndColumn))
+
       tpe.declares.lookup(state) match {
-        case None => Left(Error.SymbolNotFound(state))
-        case Some(symbol) if !symbol.isStateSymbol => Left(Error.SymbolNotFound(state))
+        case None => Left(Error.SymbolNotFound(state, namePos))
+        case Some(symbol) if !symbol.isStateSymbol => Left(Error.SymbolNotFound(state, namePos))
         case Some(stateSymbol: Symbol.StateSymbol) => stateSymbol.tpe match {
           case Type.ErrorType => Left(Error.DummyError)
           case tpe: Type.MethodType => verifyStatePattern(stateSymbol, tpe, state, args, info)
@@ -1365,19 +1371,14 @@ object Typer {
 
       lazy val sameLength: Either[Error, Unit] =
         if (typedArgs.length == params.length) Right(())
-        else Left(Error.ParameterLengthMismatch(params.length, typedArgs.length))
+        else Left(Error.ParameterLengthMismatch(params.length, typedArgs.length, info.position))
 
       lazy val sameTypes: Either[Error, Unit] =
-        (params zip typedArgs.map(_.tpe))
-          .collect {
-            case (param: Type.RefType, arg: Type.RefType) => param -> arg
-          }
-          .filter {
-            case (param, arg) => param != arg
-          }
-          .map {
-            case (param, arg) => Error.TypeMismatch(param, arg)
-          }
+        (params zip typedArgs)
+          .collect { case (param: Type.RefType, arg) => param -> arg }
+          .filterNot { case (_, arg) => arg.tpe.isErrorType }
+          .filter { case (param, arg) => param != arg.tpe.asRefType }
+          .map { case (param, arg) => Error.TypeMismatch(param, arg.tpe.asRefType, arg.position) }
           .combine(errs => Error.MultipleErrors(errs: _*))
 
       for {
@@ -1404,7 +1405,7 @@ object Typer {
       val (symbol, tpe) =
         if (typedArgs.exists(_.tpe.isErrorType)) (Symbol.ErrorSymbol, Type.ErrorType)
         else {
-          self.lookupStage(relay.target, typedArgs.map(_.tpe.asRefType), ctx.hpBounds, ctx.tpBounds) match {
+          self.lookupStage(relay.target, typedArgs.map(_.tpe.asRefType))(relay.position, global) match {
             case LookupResult.LookupSuccess((symbol, tpe)) => (symbol, tpe.returnType)
             case LookupResult.LookupFailure(err) =>
               global.repo.error.append(err)
@@ -1414,7 +1415,7 @@ object Typer {
 
       val result = symbol match {
         case Symbol.ErrorSymbol => Left(Error.DummyError)
-        case stage: Symbol.StageSymbol => verifyInitState(stage, relay.state)
+        case stage: Symbol.StageSymbol => verifyInitState(stage, relay.state, relay.position)
       }
 
       val (relaySymbol, relayTpe, stateInfo) = result match {
@@ -1434,7 +1435,7 @@ object Typer {
       case _: Symbol.StageSymbol => verifyRelayTarget
       case _: Symbol.StateSymbol => verifyRelayTarget
       case _ =>
-        global.repo.error.append(Error.RelayOutsideStage)
+        global.repo.error.append(Error.RelayOutsideStage(relay.position))
         relay.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
     }
   }
@@ -1447,7 +1448,7 @@ object Typer {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType =>
           if (tpe == retTpe) Right(())
-          else Left(Error.TypeMismatch(tpe, retTpe))
+          else Left(Error.TypeMismatch(tpe, retTpe, expr.position))
       }
     }
 
@@ -1460,7 +1461,7 @@ object Typer {
         val stage = ctx.owners(1).asInstanceOf[Symbol.StageSymbol]
         typecheck(stage, typedRetExpr)
       case _ =>
-        Left(Error.ReturnOutsideStage)
+        Left(Error.ReturnOutsideStage(ret.position))
     }
 
     result.left.foreach(global.repo.error.append)
@@ -1485,7 +1486,7 @@ object Typer {
       case Type.ErrorType => Left(Error.DummyError)
       case tpe: Type.RefType if tpe =:= Type.numTpe => Right(())
       case tpe: Type.RefType if tpe =:= Type.strTpe => Right(())
-      case tpe: Type.RefType => Left(Error.RequireSpecificType(tpe, Type.numTpe, Type.strTpe))
+      case tpe: Type.RefType => Left(Error.RequireSpecificType(tpe, Seq(Type.numTpe, Type.strTpe), ident.position))
     }
 
     val symbol = for {
@@ -1506,12 +1507,16 @@ object Typer {
     val typedLeft = typedHPExpr(binop.left)
     val typedRight = typedHPExpr(binop.right)
 
+    val opStart = binop.left.position.end
+    val opEnd = binop.right.position.start
+    val opPos = Position(binop.left.position.filename, opStart, opEnd)
+
     val isValid = (typedLeft.tpe =:= Type.numTpe) && (typedRight.tpe =:= Type.numTpe)
     val hasStrTpe = (typedLeft.tpe =:= Type.strTpe) || (typedRight.tpe =:= Type.strTpe)
     val tpe =
       if (isValid) Type.numTpe
       else if (hasStrTpe) {
-        global.repo.error.append(Error.SymbolNotFound("+"));
+        global.repo.error.append(Error.SymbolNotFound("+", opPos))
         Type.ErrorType
       }
       else Type.ErrorType
@@ -1527,6 +1532,7 @@ object Typer {
     str.setTpe(Type.strTpe)
   }
 
+  /*
   def verifyParamTypes(expect: Vector[Type], actual: Vector[Type])(implicit ctx: Context.NodeContext, global: GlobalData): Vector[Error] = {
     if (expect.length != actual.length)
       return Vector(Error.ParameterLengthMismatch(expect.length, actual.length))
@@ -1539,9 +1545,10 @@ object Typer {
         case (e, a) => a =:= e
       }
       .map {
-        case (e, a) => Error.TypeMismatch(e, a)
+        case (e, a) => Error.TypeMismatch(e, a, )
       }
   }
+  */
 
   def typedFieldTypeParam(tpeDef: TypeDef)(implicit ctx: Context.NodeContext, global: GlobalData): TypeDef = {
     tpeDef.symbol.tpe

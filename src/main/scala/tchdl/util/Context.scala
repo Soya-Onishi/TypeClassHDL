@@ -1,5 +1,6 @@
 package tchdl.util
 
+import tchdl.ast.Position
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.reflect.ClassTag
@@ -60,13 +61,13 @@ object Context {
 
     override def lookup[T <: Symbol](name: String)(implicit global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): LookupResult[T] = scope.lookup(name) match {
       case Some(elem: T) => LookupResult.LookupSuccess(elem)
-      case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
+      case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem, Position.empty))
       case None => importedSymbols.lookup(name) match {
         case Some(elem: T) => LookupResult.LookupSuccess(elem)
-        case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
+        case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem, Position.empty))
         case None => preludeSymbols.lookup(name) match {
           case Some(elem: T) => LookupResult.LookupSuccess(elem)
-          case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
+          case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem, Position.empty))
           case None =>
             global.rootPackage.search(pkgName)
               .getOrElse(throw new ImplementationErrorException(s"package symbol[${pkgName.mkString("::")}] must be found"))
@@ -128,7 +129,7 @@ object Context {
       lookingUp[T](name) {
         parent match {
           case p: Context.NodeContext if p.owner == this.owner => p.lookupDirectLocal[T](name)
-          case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+          case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name, Position.empty))
         }
       }
     }
@@ -137,14 +138,14 @@ object Context {
       lookingUp[T](name){
         parent match {
           case p: Context.NodeContext if p.owner.isTermSymbol => p.lookupLocal[T](name)
-          case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+          case _ => LookupResult.LookupFailure(Error.SymbolNotFound(name, Position.empty))
         }
       }
 
     private def lookingUp[T <: Symbol : ClassTag : TypeTag](name: String)(forNone: => LookupResult[T]): LookupResult[T] =
       scope.lookup(name) match {
         case Some(elem: T) => LookupResult.LookupSuccess(elem)
-        case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem))
+        case Some(elem) => LookupResult.LookupFailure(Error.RequireSymbol[T](elem, Position.empty))
         case None => forNone
       }
 

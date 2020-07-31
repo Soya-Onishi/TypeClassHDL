@@ -171,7 +171,7 @@ object Type {
         boundErrs = targetErrs ++ constraintErrs
         _ <- if (boundErrs.isEmpty) Right(()) else Left(Error.MultipleErrors(boundErrs: _*))
         hpBounds = (targetExprs zip constraints).map { case (t, c) => HPBound(t, c) }
-        _ <- HPBound.verifyForm(hpBounds)(global)
+        _ <- HPBound.verifyForm(hpBounds, methodDef.position)(global)
         (targetErrs, targets) = tpBoundTrees.view.map(_.target).map(TPBound.buildTarget(_)(signatureCtx, global)).toVector.unzip
         (boundsErrs, bounds) = tpBoundTrees.view.map(_.bounds).map(TPBound.buildBounds(_)(signatureCtx, global)).toVector.unzip
         errs = (targetErrs ++ boundsErrs).flatten
@@ -207,7 +207,7 @@ object Type {
 
       (tpeTree, expr) match {
         case (None, None) =>
-          global.repo.error.append(Error.RequireTypeTree)
+          global.repo.error.append(Error.RequireTypeTree(vdef.position))
           Type.ErrorType
         case (None, Some(expr)) =>
           val typedExpr = Typer.typedExpr(expr)(ctx, global)
@@ -270,7 +270,7 @@ object Type {
             case Vector("std", "types", "Num") => tpe
             case Vector("std", "types", "Str") => tpe
             case _ =>
-              global.repo.error.append(Error.RequireSpecificType(tpe, Type.numTpe, Type.strTpe))
+              global.repo.error.append(Error.RequireSpecificType(tpe, Seq(Type.numTpe, Type.strTpe), vdef.position))
               Type.ErrorType
           }
       }
@@ -390,7 +390,7 @@ object Type {
     val namespace: NameSpace = NameSpace.empty
     val declares: Scope = Scope.empty
 
-    def replaceWithMap(hpMap: Map[Symbol.HardwareParamSymbol, HPExpr], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.MethodType = {
+    def replaceWithMap(hpMap: Map[Symbol.HardwareParamSymbol, HPExpr], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType], position: Position): Type.MethodType = {
       def replace: PartialFunction[Type, Type.RefType] = {
         case tpe: Type.RefType => tpe.replaceWithMap(hpMap, tpMap)
       }
@@ -523,13 +523,13 @@ object Type {
 
     override def declares: Scope = origin.tpe.declares
 
-    def lookupField(name: String, callerHPBounds: Vector[HPBound], callerTPBounds: Vector[TPBound])(implicit global: GlobalData): LookupResult[Symbol.TermSymbol] = {
+    def lookupField(name: String, callerHPBounds: Vector[HPBound], callerTPBounds: Vector[TPBound])(implicit position: Position, global: GlobalData): LookupResult[Symbol.TermSymbol] = {
       def lookupToClass: LookupResult[Symbol.TermSymbol] =
         origin.tpe.declares.lookup(name) match {
           // TODO: verify whether this logic needs to replace type parameter into actual type or not
           case Some(symbol: Symbol.TermSymbol) => LookupResult.LookupSuccess(symbol)
-          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TermSymbol](symbol))
-          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TermSymbol](symbol, position))
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name, position))
         }
 
       def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
@@ -538,12 +538,12 @@ object Type {
           .partitionMap(identity)
 
         val (tpErrs, _) = tpBounds
-          .map(TPBound.verifyMeetBound(_, callerHPBounds, callerTPBounds))
+          .map(TPBound.verifyMeetBound(_, callerHPBounds, callerTPBounds, position))
           .partitionMap(identity)
 
         val errs = hpErrs ++ tpErrs
         if (errs.isEmpty) Right(())
-        else Left(Error.SymbolNotFound(name))
+        else Left(Error.SymbolNotFound(name, position))
       }
 
       def lookupFromImpl(clazz: Symbol.ClassTypeSymbol): LookupResult[Symbol.TermSymbol] = {
@@ -553,8 +553,8 @@ object Type {
             val implSymbol = impl.symbol.asImplementSymbol
             val (initHPTable, initTPTable) = RefType.buildTable(impl)
             val result = for {
-              hpTable <- RefType.assignHPTable(initHPTable, Vector(this), Vector(impl.targetType))
-              tpTable <- RefType.assignTPTable(initTPTable, Vector(this), Vector(impl.targetType))
+              hpTable <- RefType.assignHPTable(initHPTable, Vector(this), Vector(impl.targetType), position)
+              tpTable <- RefType.assignTPTable(initTPTable, Vector(this), Vector(impl.targetType), position)
               swappedHPBounds = HPBound.swapBounds(implSymbol.hpBound, hpTable)
               swappedTPBounds = TPBound.swapBounds(implSymbol.tpBound, hpTable, tpTable)
               simplifiedHPBounds = HPBound.simplify(swappedHPBounds)
@@ -564,7 +564,7 @@ object Type {
             result.flatMap(
               _.lookup[Symbol.VariableSymbol](name)
                 .map(Right.apply)
-                .getOrElse(Left(Error.SymbolNotFound(name)))
+                .getOrElse(Left(Error.SymbolNotFound(name, position)))
             )
         }
 
@@ -579,7 +579,7 @@ object Type {
           case success @ LookupResult.LookupSuccess(_) => success
           case LookupResult.LookupFailure(_) => lookupFromImpl(clazz)
         }
-        case symbol => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.ClassTypeSymbol](symbol))
+        case symbol => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.ClassTypeSymbol](symbol, position))
       }
     }
 
@@ -591,7 +591,7 @@ object Type {
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound],
       requireStatic: Boolean
-    )(implicit ctx: Context.NodeContext, globalData: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit ctx: Context.NodeContext, position: Position, globalData: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
       val result = this.origin match {
         case entity: Symbol.EntityTypeSymbol if castedAs.isEmpty =>
           lookupFromImpls(
@@ -605,7 +605,7 @@ object Type {
             requireStatic
           ) match {
             case success @ Right(_) => success
-            case Left(_) if ctx.interfaceTable.isEmpty => Left(Error.SymbolNotFound(methodName))
+            case Left(_) if ctx.interfaceTable.isEmpty => Left(Error.SymbolNotFound(methodName, position))
             case Left(_) =>
               val (errs, methods) = ctx.interfaceTable
                 .values.view
@@ -617,7 +617,7 @@ object Type {
               methods match {
                 case Vector() => Left(Error.MultipleErrors(errs: _*))
                 case Vector(method) => Right(method)
-                case methods => Left(Error.AmbiguousMethods(methods.map(_._1)))
+                case methods => Left(Error.AmbiguousMethods(methods.map(_._1), position))
               }
           }
         case _: Symbol.EntityTypeSymbol =>
@@ -628,16 +628,16 @@ object Type {
               val callers = Vector(this, interface)
               val targets = Vector(impl.targetType, impl.targetInterface)
 
-              RefType.verifySuperSets(callers, targets).isRight
+              RefType.verifySuperSets(callers, targets, Vector.fill(callers.length)(position)).isRight
           }
 
           impl match {
-            case None => Left(Error.SymbolNotFound(methodName))
+            case None => Left(Error.SymbolNotFound(methodName, position))
             case Some(impl) => lookupFromImpls(Vector(impl), methodName, args, callerHP, callerTP, callerHPBound, callerTPBound, requireStatic)
           }
         case tp: Symbol.TypeParamSymbol =>
           callerTPBound.find(_.target.origin == tp) match {
-            case None => Left(Error.SymbolNotFound(methodName))
+            case None => Left(Error.SymbolNotFound(methodName, position))
             case Some(bound) =>
               val bounds = castedAs match {
                 case None => Right(bound.bounds)
@@ -645,7 +645,7 @@ object Type {
                   .find(_ == tpe)
                   .map(Vector(_))
                   .map(Right.apply)
-                  .getOrElse(Left(Error.SymbolNotFound(methodName)))
+                  .getOrElse(Left(Error.SymbolNotFound(methodName, position)))
               }
 
               bounds match {
@@ -691,34 +691,34 @@ object Type {
       callerTP: Vector[Type.RefType],
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound]
-    )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit position: Position, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       def targetTypeCheck(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr], tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]): Either[Error, Unit] = {
         val replacedTpe = impl.targetType.replaceWithMap(hpTable, tpTable)
         val accessorTpe = Type.RefType(accessor.origin, accessor.hardwareParam, accessor.typeParam)
 
         if (replacedTpe == accessorTpe) Right(())
-        else Left(Error.TypeMismatch(impl.targetType, accessorTpe))
+        else Left(Error.TypeMismatch(impl.targetType, accessorTpe, position))
       }
 
       val (implHPTable, implTPTable) = RefType.buildTable(impl)
       val lookupResult = impl.lookup[Symbol.MethodSymbol](methodName) match {
-        case None => Left(Error.SymbolNotFound(methodName))
+        case None => Left(Error.SymbolNotFound(methodName, position))
         case Some(symbol) => Right(symbol)
       }
 
       for {
         method <- lookupResult
-        _ <- RefType.verifySignatureLength(method, args, callerHP, callerTP)
+        _ <- RefType.verifySignatureLength(method, args, callerHP, callerTP, position)
         methodTpe = method.tpe.asMethodType
         callers = accessor +: args
         targets = impl.targetType +: methodTpe.params
-        _ <- RefType.verifySuperSets(Vector(accessor), Vector(impl.targetType))
-        hpTable <- RefType.assignHPTable(implHPTable, callers, targets)
-        tpTable <- RefType.assignTPTable(implTPTable, callers, targets)
+        _ <- RefType.verifySuperSets(Vector(accessor), Vector(impl.targetType), Vector(position))
+        hpTable <- RefType.assignHPTable(implHPTable, callers, targets, position)
+        tpTable <- RefType.assignTPTable(implTPTable, callers, targets, position)
         swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
         swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
         simplifiedHPBound = HPBound.simplify(swappedHpBound)
-        _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, callerHPBound, callerTPBound)
+        _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, callerHPBound, callerTPBound, position)
         _ <- targetTypeCheck(hpTable, tpTable)
         (methodHpTable, methodTpTable) = RefType.buildSymbolTable(method, callerHP, callerTP)
         appendHpTable = hpTable ++ methodHpTable
@@ -726,9 +726,9 @@ object Type {
         swappedMethodHpBound = HPBound.swapBounds(method.hpBound, appendHpTable)
         methodTpBound = TPBound.swapBounds(method.tpBound, appendHpTable, appendTpTable)
         methodHpBound = HPBound.simplify(swappedMethodHpBound)
-        _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound)
+        _ <- Bound.verifyEachBounds(methodHpBound, methodTpBound, callerHPBound, callerTPBound, position)
         swappedTpe = RefType.assignMethodTpe(methodTpe, appendHpTable, appendTpTable, callerTPBound, this)
-        _ <- RefType.verifyMethodType(swappedTpe, args)
+        _ <- RefType.verifyMethodType(swappedTpe, args, position)
       } yield (method, swappedTpe)
     }
 
@@ -743,15 +743,15 @@ object Type {
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound],
       requireStatic: Boolean
-    )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit position: Position, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val (initHpTable, initTpTable) = RefType.buildSymbolTable(interface, interfaceHPs, interfaceTPs)
       val lookupResult: Either[Error, Symbol.MethodSymbol] = interface.tpe.declares.lookup(methodName) match {
         case Some(symbol: Symbol.MethodSymbol) if requireStatic && symbol.hasFlag(Modifier.Static) => Right(symbol)
-        case Some(symbol: Symbol.MethodSymbol) if symbol.hasFlag(Modifier.Static) => Left(Error.ReferMethodAsNormal(symbol))
-        case Some(symbol: Symbol.MethodSymbol) if requireStatic => Left(Error.ReferMethodAsStatic(symbol))
+        case Some(symbol: Symbol.MethodSymbol) if symbol.hasFlag(Modifier.Static) => Left(Error.ReferMethodAsNormal(symbol, position))
+        case Some(symbol: Symbol.MethodSymbol) if requireStatic => Left(Error.ReferMethodAsStatic(symbol, position))
         case Some(symbol: Symbol.MethodSymbol) => Right(symbol)
-        case Some(_) => Left(Error.SymbolNotFound(methodName))
-        case None => Left(Error.SymbolNotFound(methodName))
+        case Some(_) => Left(Error.SymbolNotFound(methodName, position))
+        case None => Left(Error.SymbolNotFound(methodName, position))
       }
 
       def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
@@ -760,7 +760,7 @@ object Type {
           .partitionMap(identity)
 
         val (tpErrs, _) = tpBounds
-          .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound))
+          .map(TPBound.verifyMeetBound(_, callerHPBound, callerTPBound, position))
           .partitionMap(identity)
 
         val errs = hpErrs ++ tpErrs
@@ -779,7 +779,7 @@ object Type {
         _ <- verifyEachBounds(simplifiedHPBounds, swappedTPBounds)
         methodTpe = method.tpe.asMethodType
         swappedTpe = RefType.assignMethodTpe(methodTpe, hpTable, tpTable, callerTPBound, this)
-        _ <- RefType.verifyMethodType(swappedTpe, args)
+        _ <- RefType.verifyMethodType(swappedTpe, args, position)
       } yield (method, swappedTpe)
     }
 
@@ -792,7 +792,7 @@ object Type {
       callerHPBound: Vector[HPBound],
       callerTPBound: Vector[TPBound],
       requireStatic: Boolean
-    )(implicit global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
+    )(implicit position: Position, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       val result = impls.foldLeft[Either[Error, (Symbol.MethodSymbol, Type.MethodType)]](Left(Error.DummyError)) {
         case (right @ Right(_), _) => right
         case (Left(errs), impl) =>
@@ -807,8 +807,8 @@ object Type {
             callerTPBound
           ) match {
             case Right((symbol, tpe)) if requireStatic && symbol.hasFlag(Modifier.Static) => Right(symbol, tpe)
-            case Right((symbol, _)) if requireStatic => Left(Error.ReferMethodAsStatic(symbol))
-            case Right((symbol, _)) if symbol.hasFlag(Modifier.Static) => Left(Error.ReferMethodAsNormal(symbol))
+            case Right((symbol, _)) if requireStatic => Left(Error.ReferMethodAsStatic(symbol, position))
+            case Right((symbol, _)) if symbol.hasFlag(Modifier.Static) => Left(Error.ReferMethodAsNormal(symbol, position))
             case Right((symbol, tpe)) => Right(symbol, tpe)
             case Left(err) => Left(Error.MultipleErrors(err, errs))
           }
@@ -816,29 +816,24 @@ object Type {
 
       result match {
         case right @ Right(_) => right
-        case Left(Error.DummyError) => Left(Error.SymbolNotFound(methodName))
+        case Left(Error.DummyError) => Left(Error.SymbolNotFound(methodName, position))
         case other @ Left(_) => other
       }
     }
 
-    def lookupStage(
-      stageName: String,
-      args: Vector[Type.RefType],
-      callerHPBounds: Vector[HPBound],
-      callerTPBounds: Vector[TPBound]
-    )(implicit global: GlobalData): LookupResult[(Symbol.StageSymbol, Type.MethodType)] = {
+    def lookupStage(stageName: String, args: Vector[Type.RefType])(implicit position: Position, global: GlobalData): LookupResult[(Symbol.StageSymbol, Type.MethodType)] = {
       def verifySignatureLength(stage: Symbol.StageSymbol): Either[Error, Unit] = {
         val paramLength = stage.tpe.asMethodType.params.length
         val argLength = args.length
 
         if (paramLength == argLength) Right(())
-        else Left(Error.ParameterLengthMismatch(paramLength, argLength))
+        else Left(Error.ParameterLengthMismatch(paramLength, argLength, position))
       }
 
       def lookupFromImpl(impl: ImplementContainer): Either[Error, (Symbol.StageSymbol, Type.MethodType)] = {
         val (initHPTable, initTPTable) = RefType.buildTable(impl)
         val lookupResult = impl.lookup[Symbol.StageSymbol](stageName) match {
-          case None => Left(Error.SymbolNotFound(stageName))
+          case None => Left(Error.SymbolNotFound(stageName, position))
           case Some(symbol) => Right(symbol)
         }
 
@@ -848,15 +843,15 @@ object Type {
           stageTpe = stage.tpe.asMethodType
           callers = this +: args
           targets = impl.targetType +: stageTpe.params
-          _ <- RefType.verifySuperSets(callers, targets)
-          hpTable <- RefType.assignHPTable(initHPTable, callers, targets)
-          tpTable <- RefType.assignTPTable(initTPTable, callers, targets)
+          _ <- RefType.verifySuperSets(callers, targets, Vector.fill(callers.length)(position))
+          hpTable <- RefType.assignHPTable(initHPTable, callers, targets, position)
+          tpTable <- RefType.assignTPTable(initTPTable, callers, targets, position)
           swappedHpBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
           swappedTpBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
           simplifiedHPBound = HPBound.simplify(swappedHpBound)
-          _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, Vector.empty, Vector.empty)
+          _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, Vector.empty, Vector.empty, position)
           swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable, swappedTpBound, this)
-          _ <- RefType.verifyMethodType(swappedTpe, args)
+          _ <- RefType.verifyMethodType(swappedTpe, args, position)
         } yield (stage, stageTpe)
       }
 
@@ -879,7 +874,8 @@ object Type {
       op: Operation,
       args: Vector[Type.RefType],
       callerHPBounds: Vector[HPBound],
-      callerTPBounds: Vector[TPBound]
+      callerTPBounds: Vector[TPBound],
+      position: Position
     )(implicit global: GlobalData): LookupResult[(Symbol.MethodSymbol, Type.MethodType)] = {
       val method = global.builtin.operators.lookup(op.toMethod)
       val params = method.tpe.asMethodType.params
@@ -887,17 +883,17 @@ object Type {
       val initTPTable = method.tps.map(_ -> Option.empty[Type.RefType]).toMap
 
       val result = for {
-        hpTable <- Type.RefType.assignHPTable(initHPTable, args, params)
-        tpTable <- Type.RefType.assignTPTable(initTPTable, args, params)
+        hpTable <- Type.RefType.assignHPTable(initHPTable, args, params, Position.empty)
+        tpTable <- Type.RefType.assignTPTable(initTPTable, args, params, Position.empty)
         swappedHPBounds = HPBound.swapBounds(method.hpBound, hpTable)
         swappedTPBounds = TPBound.swapBounds(method.tpBound, hpTable, tpTable)
-        _ <- Bound.verifyEachBounds(swappedHPBounds, swappedTPBounds, callerHPBounds, callerTPBounds)
+        _ <- Bound.verifyEachBounds(swappedHPBounds, swappedTPBounds, callerHPBounds, callerTPBounds, position)
       } yield (hpTable, tpTable)
 
       result match {
         case Left(err) => LookupResult.LookupFailure(err)
         case Right((hpTable, tpTable)) =>
-          val methodTpe = method.tpe.asMethodType.replaceWithMap(hpTable, tpTable)
+          val methodTpe = method.tpe.asMethodType.replaceWithMap(hpTable, tpTable, position)
           LookupResult.LookupSuccess(method, methodTpe)
       }
     }
@@ -909,7 +905,7 @@ object Type {
       bounds: Vector[Type.RefType],
       methodName: String,
       requireStatic: Boolean
-    )(implicit global: GlobalData): (Symbol.MethodSymbol, Type.MethodType) = {
+    )(implicit position: Position, global: GlobalData): (Symbol.MethodSymbol, Type.MethodType) = {
       val impls = bounds.view
         .map(_.origin.asInterfaceSymbol)
         .flatMap(_.impls)
@@ -930,12 +926,12 @@ object Type {
     }
 
     // TODO: lookup type that is defined at implementation
-    def lookupType(name: String): LookupResult[Symbol.TypeSymbol] = {
+    def lookupType(name: String)(implicit position: Position): LookupResult[Symbol.TypeSymbol] = {
       def lookupFromEnum(symbol: Symbol.EnumSymbol): LookupResult[Symbol.TypeSymbol] = {
         symbol.tpe.declares.lookup(name) match {
-          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name, position))
           case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
-          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol, position))
         }
       }
 
@@ -945,22 +941,22 @@ object Type {
             val targets = Vector(impl.targetInterface, impl.targetType)
             val callers = Vector(interface, this)
 
-            Type.RefType.verifySuperSets(callers, targets).isRight
+            Type.RefType.verifySuperSets(callers, targets, Vector.fill(callers.length)(Position.empty)).isRight
         }
 
         val impl = implOpt.getOrElse(throw new ImplementationErrorException("interface's impl must be found"))
         impl.scope.lookup(name) match {
           case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
-          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
-          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol, position))
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name, position))
         }
       }
 
       def lookupFieldTypeFromTypeParameter(interface: Type.RefType): LookupResult[Symbol.TypeSymbol] =
         interface.declares.lookup(name) match {
           case Some(symbol: Symbol.TypeSymbol) => LookupResult.LookupSuccess(symbol)
-          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol))
-          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+          case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.TypeSymbol](symbol, position))
+          case None => LookupResult.LookupFailure(Error.SymbolNotFound(name, position))
         }
 
       this.origin match {
@@ -968,11 +964,11 @@ object Type {
         case _: Symbol.EntityTypeSymbol =>
           this.castedAs
             .map(lookupFieldTypeFromEntity)
-            .getOrElse(LookupResult.LookupFailure(Error.RequireCastToLookup(this)))
+            .getOrElse(LookupResult.LookupFailure(Error.RequireCastToLookup(this, position)))
         case _: Symbol.TypeParamSymbol =>
           this.castedAs
             .map(lookupFieldTypeFromTypeParameter)
-            .getOrElse(LookupResult.LookupFailure(Error.RequireCastToLookup(this)))
+            .getOrElse(LookupResult.LookupFailure(Error.RequireCastToLookup(this, position)))
       }
     }
 
@@ -992,7 +988,7 @@ object Type {
           val accessedSymbol = accessor match {
             case None => this.origin
             case Some(accessor) =>
-              accessor.lookupType(symbol.name)
+              accessor.lookupType(symbol.name)(Position.empty)
                 .toOption
                 .getOrElse(throw new ImplementationErrorException("lookup type should be found"))
           }
@@ -1071,7 +1067,7 @@ object Type {
       }
     }
 
-    def isHardwareType(tpBounds: Vector[TPBound])(implicit global: GlobalData): Boolean = {
+    def isHardwareType(tpBounds: Vector[TPBound])(implicit position: Position, global: GlobalData): Boolean = {
       val builtinSymbols = global.builtin.types.symbols
 
       def loop(verified: Type.RefType, types: Set[Type.RefType]): Boolean = {
@@ -1181,15 +1177,16 @@ object Type {
       method: Symbol.MethodSymbol,
       args: Vector[Type.RefType],
       callerHP: Vector[HPExpr],
-      callerTP: Vector[Type.RefType]
+      callerTP: Vector[Type.RefType],
+      signaturePos: Position
     ): Either[Error, Unit] = {
       val params = method.tpe.asMethodType.params
       val hps = method.hps
       val tps = method.tps
 
-      lazy val paramMissMatch = Error.ParameterLengthMismatch(params.length, args.length)
-      lazy val hpsMissMatch = Error.HardParameterLengthMismatch(hps.length, callerHP.length)
-      lazy val tpsMissMatch = Error.TypeParameterLengthMismatch(tps.length, callerTP.length)
+      lazy val paramMissMatch = Error.ParameterLengthMismatch(params.length, args.length, signaturePos)
+      lazy val hpsMissMatch = Error.HardParameterLengthMismatch(hps.length, callerHP.length, signaturePos)
+      lazy val tpsMissMatch = Error.TypeParameterLengthMismatch(tps.length, callerTP.length, signaturePos)
 
       if (params.length != args.length) Left(paramMissMatch)
       else if (hps.length != callerHP.length) Left(hpsMissMatch)
@@ -1197,10 +1194,7 @@ object Type {
       else Right(())
     }
 
-    def verifySuperSets(
-      caller: Vector[Type.RefType],
-      target: Vector[Type.RefType]
-    ): Either[Error, Unit] = {
+    def verifySuperSets(caller: Vector[Type.RefType], target: Vector[Type.RefType], sigPoss: Vector[Position]): Either[Error, Unit] = {
       def isHpSuperSet(caller: HPExpr, target: HPExpr): Boolean =
         (caller, target) match {
           case (_: Ident, _: IntLiteral) => false
@@ -1210,10 +1204,10 @@ object Type {
           case _ => true
         }
 
-      def verify(caller: Type.RefType, target: Type.RefType): Either[Error, Unit] = {
+      def verify(caller: Type.RefType, target: Type.RefType, pos: Position): Either[Error, Unit] = {
         (caller.origin, target.origin) match {
           case (e0: Symbol.EntityTypeSymbol, e1: Symbol.EntityTypeSymbol) =>
-            if (e0 != e1) Left(Error.TypeMismatch(target, caller))
+            if (e0 != e1) Left(Error.TypeMismatch(target, caller, pos))
             else {
               val validHPs = caller.hardwareParam
                 .zip(target.hardwareParam)
@@ -1221,19 +1215,19 @@ object Type {
 
               val validTPs = caller.typeParam
                 .zip(target.typeParam)
-                .map { case (c, t) => verify(c, t) }
+                .map { case (c, t) => verify(c, t, pos) }
                 .forall(_.isRight)
 
               if (validHPs && validTPs) Right(())
-              else Left(Error.TypeMismatch(target, caller))
+              else Left(Error.TypeMismatch(target, caller, pos))
             }
           case (_, _: Symbol.TypeParamSymbol) => Right(())
-          case (_: Symbol.TypeParamSymbol, _) => Left(Error.TypeMismatch(target, caller))
+          case (_: Symbol.TypeParamSymbol, _) => Left(Error.TypeMismatch(target, caller, pos))
         }
       }
 
-      val (errs, _) = (caller zip target)
-        .map { case (c, t) => verify(c, t) }
+      val (errs, _) = (caller, target, sigPoss).zipped
+        .map { case (c, t, pos) => verify(c, t, pos) }
         .partitionMap(identity)
 
       if (errs.isEmpty) Right(())
@@ -1254,7 +1248,8 @@ object Type {
     def assignHPTable(
       table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]],
       caller: Vector[Type.RefType],
-      targets: Vector[Type.RefType]
+      targets: Vector[Type.RefType],
+      position: Position
     ): Either[Error, Map[Symbol.HardwareParamSymbol, HPExpr]] = {
       def assign(
         caller: HPExpr,
@@ -1297,13 +1292,14 @@ object Type {
         case (acc, (caller, target)) => update(caller, target, acc)
       }
 
-      unwrapTable(assigned)(err => Error.AmbiguousHardwareParam(err))
+      unwrapTable(assigned)(err => Error.AmbiguousHardwareParam(Seq(err), position))
     }
 
     def assignTPTable(
       table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]],
       callers: Vector[Type.RefType],
-      targets: Vector[Type.RefType]
+      targets: Vector[Type.RefType],
+      position: Position
     ): Either[Error, Map[Symbol.TypeParamSymbol, Type.RefType]] = {
       def update(
         caller: Type.RefType,
@@ -1331,7 +1327,7 @@ object Type {
             case (acc, (caller, target)) => update(caller, target, acc)
           }
 
-      unwrapTable(assignedTable)(err => Error.AmbiguousTypeParam(err))
+      unwrapTable(assignedTable)(err => Error.AmbiguousTypeParam(Seq(err), position))
     }
 
     def verifyHPBounds(
@@ -1405,95 +1401,16 @@ object Type {
       Type.MethodType(params, retTpe)
     }
 
-    def verifyMethodType(
-      method: Type.MethodType,
-      args: Vector[Type.RefType]
-    ): Either[Error, Unit] = {
-      if (method.params.length != args.length) Left(Error.ParameterLengthMismatch(method.params.length, args.length))
+    def verifyMethodType(method: Type.MethodType, args: Vector[Type.RefType], position: Position): Either[Error, Unit] = {
+      if (method.params.length != args.length) Left(Error.ParameterLengthMismatch(method.params.length, args.length, position))
       else {
         val (errs, _) = method.params.zip(args).map {
           case (p, a) if p =:= a => Right(())
-          case (p, a) => Left(Error.TypeMismatch(p, a))
+          case (p, a) => Left(Error.TypeMismatch(p, a, position))
         }.partitionMap(identity)
 
         if (errs.isEmpty) Right(())
         else Left(Error.MultipleErrors(errs: _*))
-      }
-    }
-
-    private def assignTPsFromArgs(args: Vector[Type.RefType], method: Symbol.MethodSymbol): Either[Error, Map[Symbol.TypeParamSymbol, Type.RefType]] = {
-      def assign(param: Type.RefType, arg: Type.RefType, table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]]): Either[Error, Map[Symbol.TypeParamSymbol, Option[Type.RefType]]] = {
-        def loop(p: Type.RefType, a: Type.RefType, table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]]): Either[Error, Map[Symbol.TypeParamSymbol, Option[Type.RefType]]] = {
-          p.origin match {
-            case tp: Symbol.TypeParamSymbol if table.contains(tp) => Right(table.updated(tp, Some(a)))
-            case _: Symbol.TypeParamSymbol => Right(table)
-            case symbol if symbol != a.origin => Left(Error.TypeMismatch(p, a))
-            case _ => (p.typeParam zip a.typeParam).foldLeft[Either[Error, Map[Symbol.TypeParamSymbol, Option[Type.RefType]]]](Right(table)) {
-              case (Right(table), (p, a)) => loop(p, a, table)
-              case (Left(err), _) => Left(err)
-            }
-          }
-        }
-
-        loop(param, arg, table) match {
-          case Right(table) => Right(table)
-          case Left(_) => Left(Error.TypeMismatch(param, arg))
-        }
-      }
-
-      val initTable = method.tps.map(_ -> Option.empty[Type.RefType]).toMap
-      val methodTpe = method.tpe.asMethodType
-
-      val result = (methodTpe.params zip args).foldLeft[Either[Error, Map[Symbol.TypeParamSymbol, Option[Type.RefType]]]](Right(initTable)) {
-        case (Right(table), (p, a)) => assign(p, a, table)
-        case (Left(err), _) => Left(err)
-      }
-
-      result match {
-        case Left(err) => Left(err)
-        case Right(table) if table.values.exists(_ == Option.empty) =>
-          val ambiguouses = table.collect { case (tp, None) => tp }.toVector
-          Left(Error.AmbiguousTypeParam(ambiguouses: _*))
-        case Right(table) => Right(table.map { case (tp, tpe) => tp -> tpe.get })
-      }
-    }
-
-    private def assignHPsFromArgs(args: Vector[Type.RefType], method: Symbol.MethodSymbol): Either[Error, Map[Symbol.HardwareParamSymbol, HPExpr]] = {
-      def assign(param: Type.RefType, arg: Type.RefType, table: Map[Symbol.HardwareParamSymbol, Option[HPExpr]]): Either[Error, Map[Symbol.HardwareParamSymbol, Option[HPExpr]]] = {
-        param.origin match {
-          case _: Symbol.TypeParamSymbol => Right(table)
-          case symbol if symbol != arg.origin => Left(Error.TypeMismatch(param, arg))
-          case _ =>
-            val newTable = (param.hardwareParam zip arg.hardwareParam).foldLeft(table) {
-              case (table, (p: Ident, a)) =>
-                val hp = p.symbol.asHardwareParamSymbol
-
-                if (table.contains(hp)) table.updated(hp, Some(a))
-                else table
-              case _ => table
-            }
-
-            (param.typeParam zip arg.typeParam).foldLeft[Either[Error, Map[Symbol.HardwareParamSymbol, Option[HPExpr]]]](Right(newTable)) {
-              case (Right(table), (p, a)) => assign(p, a, table)
-              case (Left(err), _) => Left(err)
-            }
-        }
-      }
-
-      val initTable = method.hps.map(_ -> Option.empty[HPExpr]).toMap
-      val methodTpe = method.tpe.asMethodType
-
-      val result = (methodTpe.params zip args).foldLeft[Either[Error, Map[Symbol.HardwareParamSymbol, Option[HPExpr]]]](Right(initTable)) {
-        case (Left(err), _) => Left(err)
-        case (Right(table), (p, a)) => assign(p, a, table)
-      }
-
-      result match {
-        case Left(err) => Left(err)
-        case Right(table) if table.values.exists(_ == Option.empty) =>
-          val ambiguouses = table.collect { case (hp, None) => hp }.toVector
-          Left(Error.AmbiguousHardwareParam(ambiguouses: _*))
-        case Right(table) => Right(table.map { case (hp, expr) => hp -> expr.get })
       }
     }
   }
@@ -1564,9 +1481,9 @@ object Type {
 
   def buildType[T <: Symbol.TypeSymbol](typeTree: TypeTree)(implicit ctx: Context.NodeContext, global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): (Option[Error], TypeTree) = {
     def typeCheckHardArgs(symbol: Symbol.TypeSymbol, hargs: Vector[HPExpr]): Either[Error, Unit] = {
-      val errs = (symbol.hps.map(_.tpe) zip hargs.map(_.tpe))
-        .filterNot { case (e, a) => e == a }
-        .map { case (e, a) => Error.TypeMismatch(e, a) }
+      val errs = (symbol.hps.map(_.tpe) zip hargs)
+        .filterNot { case (e, a) => e == a.tpe }
+        .map { case (e, a) => Error.TypeMismatch(e, a.tpe, a.position) }
 
       if (errs.isEmpty) Right(())
       else Left(Error.MultipleErrors(errs: _*))
@@ -1575,7 +1492,7 @@ object Type {
     def buildForIdent(ident: Ident, hargs: Vector[HPExpr], targs: Vector[TypeTree]): (Option[Error], TypeTree) = {
       val result = for {
         symbol <- ctx.lookup[T](ident.name).toEither
-        polyArgs <- buildParams(symbol, hargs, targs)
+        polyArgs <- buildParams(symbol, hargs, targs, typeTree.position)
         (typedHArgs, typedTArgs) = polyArgs
         _ <- typeCheckHardArgs(symbol, typedHArgs)
       } yield {
@@ -1601,10 +1518,14 @@ object Type {
         case (Right(symbol), name) => symbol.lookup[Symbol.PackageSymbol](name).toEither
       }
 
+      val signatureStart = select.position.end
+      val signatureEnd = (hargs ++ targs).lastOption.map(_.position.end).getOrElse(select.position.end)
+      val signaturePos = Position(select.position.filename, signatureStart, signatureEnd)
+
       val result = for {
         pkgSymbol <- pkgResult
         typeSymbol <- pkgSymbol.lookup[Symbol.TypeSymbol](select.name).toEither
-        args <- buildParams(typeSymbol, hargs, targs)
+        args <- buildParams(typeSymbol, hargs, targs, signaturePos)
         (typedHArgs, typedTArgs) = args
         _ <- typeCheckHardArgs(typeSymbol, typedHArgs)
       } yield {
@@ -1628,12 +1549,12 @@ object Type {
       case ident: Ident => buildForIdent(ident, typeTree.hp, typeTree.tp)
       case select: SelectPackage => buildForSelectPackage(select, typeTree.hp, typeTree.tp)
       case select: StaticSelect =>
-        val err = Some(Error.CannotUseStaticSelect(select))
+        val err = Some(Error.CannotUseStaticSelect(select, select.position))
         val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
         (err, tree)
       case cast: CastType =>
-        val err = Some(Error.CannotUseCast(cast))
+        val err = Some(Error.CannotUseCast(cast, cast.position))
         val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
         (err, tree)
@@ -1654,8 +1575,8 @@ object Type {
 
         val errs0 = Vector(err0, err1).flatten
         val errs1 =
-          if (builtLeft.tpe =!= Type.numTpe && builtLeft.tpe =!= Type.ErrorType) errs0 :+ Error.TypeMismatch(Type.numTpe, builtLeft.tpe)
-          else if (builtRight.tpe =!= Type.numTpe && builtLeft.tpe =!= Type.ErrorType) errs0 :+ Error.TypeMismatch(Type.numTpe, builtRight.tpe)
+          if (builtLeft.tpe != Type.numTpe && builtLeft.tpe != Type.ErrorType) errs0 :+ Error.TypeMismatch(Type.numTpe, builtLeft.tpe, builtLeft.position)
+          else if (builtRight.tpe != Type.numTpe && builtLeft.tpe != Type.ErrorType) errs0 :+ Error.TypeMismatch(Type.numTpe, builtRight.tpe, builtRight.position)
           else errs0
 
         val (errs, tpe) =
@@ -1666,11 +1587,11 @@ object Type {
     }
   }
 
-  private def buildParams(symbol: Symbol.TypeSymbol, hps: Vector[HPExpr], tps: Vector[TypeTree])(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Vector[HPExpr], Vector[TypeTree])] = {
+  private def buildParams(symbol: Symbol.TypeSymbol, hps: Vector[HPExpr], tps: Vector[TypeTree], signaturePos: Position)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, (Vector[HPExpr], Vector[TypeTree])] = {
     def verifyLength: Either[Error, Unit] = {
-      def verify(expect: Int, actual: Int, builder: (Int, Int) => Error): Either[Error, Unit] =
+      def verify(expect: Int, actual: Int, builder: (Int, Int, Position) => Error): Either[Error, Unit] =
         if (expect == actual) Right(())
-        else Left(builder(expect, actual))
+        else Left(builder(expect, actual, signaturePos))
 
       Vector(
         verify(symbol.hps.length, hps.length, Error.HardParameterLengthMismatch.apply),

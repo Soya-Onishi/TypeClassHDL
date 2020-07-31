@@ -337,8 +337,8 @@ object Symbol {
     private val scope = Scope.empty
     def lookup[T <: Symbol : ClassTag : TypeTag](name: String): LookupResult[T] = scope.lookup(name) match {
       case Some(symbol: T) => LookupResult.LookupSuccess(symbol)
-      case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[T](symbol))
-      case None => LookupResult.LookupFailure(Error.SymbolNotFound(name))
+      case Some(symbol) => LookupResult.LookupFailure(Error.RequireSymbol[T](symbol, Position.empty))
+      case None => LookupResult.LookupFailure(Error.SymbolNotFound(name, Position.empty))
     }
     def append(symbol: Symbol): Either[Error, Unit] = scope.append(symbol)
 
@@ -382,7 +382,7 @@ object Symbol {
           val searchedName = (symbol.path.pkgName :+ name).mkString("::")
           symbol.lookup[Symbol.PackageSymbol](name)
             .toEither
-            .left.map(_ => Error.SymbolNotFound(searchedName))
+            .left.map(_ => Error.SymbolNotFound(searchedName, Position.empty))
       }
     }
   }

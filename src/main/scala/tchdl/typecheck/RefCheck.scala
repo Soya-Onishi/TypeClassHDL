@@ -92,21 +92,21 @@ object RefCheck {
 
   def verifySelect(select: Select)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
     def publicPattern(symbol: Symbol.TermSymbol): Either[Error, Unit] = select.prefix match {
-      case _: This if symbol.hasFlag(Modifier.Output) => Left(Error.ReadOutputFromInner(symbol))
-      case _ if symbol.hasFlag(Modifier.Input) => Left(Error.ReadInputFromOuter(symbol))
+      case _: This if symbol.hasFlag(Modifier.Output) => Left(Error.ReadOutputFromInner(symbol, select.position))
+      case _ if symbol.hasFlag(Modifier.Input) => Left(Error.ReadInputFromOuter(symbol, select.position))
       case _ => Right(())
     }
 
     def privatePattern(symbol: Symbol.TermSymbol): Either[Error, Unit] = select.prefix match {
-      case _: This if symbol.hasFlag(Modifier.Output) => Left(Error.ReadOutputFromInner(symbol))
+      case _: This if symbol.hasFlag(Modifier.Output) => Left(Error.ReadOutputFromInner(symbol, select.position))
       case _: This => Right(())
-      case _ => Left(Error.ReferPrivate(symbol))
+      case _ => Left(Error.ReferPrivate(symbol, select.position))
     }
 
     verifyExpr(select.prefix)
 
     val prefixTpe = select.prefix.tpe.asRefType
-    prefixTpe.lookupField(select.name, ctx.hpBounds, ctx.tpBounds) match {
+    prefixTpe.lookupField(select.name, ctx.hpBounds, ctx.tpBounds)(select.position, global) match {
       case LookupResult.LookupSuccess(symbol) =>
         symbol.accessibility match {
           case Accessibility.Public => publicPattern(symbol)
@@ -122,22 +122,22 @@ object RefCheck {
     verifyExpr(ifExpr.conseq)
     ifExpr.alt.foreach(verifyExpr)
 
-    val isRetUnit = ifExpr.tpe =:= Type.unitTpe
-    val isRetHWTpe = ifExpr.tpe.asRefType.isHardwareType(ctx.tpBounds)
+    val isRetUnit = ifExpr.tpe == Type.unitTpe
+    val isRetHWTpe = ifExpr.tpe.asRefType.isHardwareType(ctx.tpBounds)(ifExpr.cond.position, global)
 
     if (!isRetHWTpe && !isRetUnit)
-      global.repo.error.append(Error.RequireHardwareType(ifExpr.tpe.asRefType))
+      global.repo.error.append(Error.RequireHardwareType(ifExpr.tpe.asRefType, ifExpr.cond.position))
   }
 
   def verifyApply(apply: Apply)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
     def verifyCallWithSymbolPrefix(prefix: Symbol.TermSymbol, method: Symbol.MethodSymbol): Either[Error, Unit] = {
       method.accessibility match {
-        case Accessibility.Private => Left(Error.CallPrivate(method))
+        case Accessibility.Private => Left(Error.CallPrivate(method, apply.position))
         case Accessibility.Public if prefix.hasFlag(method.flag) => Right(())
         case Accessibility.Public if prefix.hasFlag(Modifier.Child) && method.hasFlag(Modifier.Input) => Right(())
-        case Accessibility.Public if method.hasFlag(Modifier.Input) => Left(Error.CallInvalid(method))
-        case Accessibility.Public if method.hasFlag(Modifier.Sibling) => Left(Error.CallInvalid(method))
-        case Accessibility.Public if method.hasFlag(Modifier.Parent) => Left(Error.CallInvalid(method))
+        case Accessibility.Public if method.hasFlag(Modifier.Input) => Left(Error.CallInvalid(method, apply.position))
+        case Accessibility.Public if method.hasFlag(Modifier.Sibling) => Left(Error.CallInvalid(method, apply.position))
+        case Accessibility.Public if method.hasFlag(Modifier.Parent) => Left(Error.CallInvalid(method, apply.position))
         case Accessibility.Public => Right(())
       }
     }
@@ -159,7 +159,7 @@ object RefCheck {
             lazy val isParent = select.symbol.hasFlag(Modifier.Parent)
             lazy val isSibling = select.symbol.hasFlag(Modifier.Sibling)
 
-            if (isInput || isParent || isSibling) Left(Error.CallInterfaceFromInternal(method))
+            if (isInput || isParent || isSibling) Left(Error.CallInterfaceFromInternal(method, select.position))
             else Right(())
         }
       case select @ Select(prefix: Ident, _) =>
@@ -171,8 +171,8 @@ object RefCheck {
       case select @ Select(prefix, _) =>
         val method = select.symbol.asMethodSymbol
         method.accessibility match {
-          case _ if prefix.tpe.asRefType.isModuleType => Left(Error.CallInterfaceMustBeDirect(prefix.tpe.asRefType))
-          case Accessibility.Private => Left(Error.CallPrivate(method))
+          case _ if prefix.tpe.asRefType.isModuleType => Left(Error.CallInterfaceMustBeDirect(prefix.tpe.asRefType, select.position))
+          case Accessibility.Private => Left(Error.CallPrivate(method, select.position))
           case _ => Right(())
         }
     }
@@ -183,12 +183,12 @@ object RefCheck {
   def verifyAssignLoc(loc: Expression)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
     def verifyInnerPattern(symbol: Symbol.TermSymbol): Unit = {
       if(symbol.hasFlag(Modifier.Input))
-        global.repo.error.append(Error.WriteInputFromInner(symbol))
+        global.repo.error.append(Error.WriteInputFromInner(symbol, loc.position))
     }
 
     def verifyOuterPattern(symbol: Symbol.TermSymbol): Unit = {
       if(symbol.hasFlag(Modifier.Output))
-        global.repo.error.append(Error.WriteOutputFromOuter(symbol))
+        global.repo.error.append(Error.WriteOutputFromOuter(symbol, loc.position))
     }
 
     loc match {

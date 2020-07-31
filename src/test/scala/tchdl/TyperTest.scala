@@ -277,7 +277,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.GotoOutsideState.type])
+    assert(err.isInstanceOf[Error.GotoOutsideState])
   }
 
   test("use relay outside of stage or state causes an error") {
@@ -285,7 +285,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.RelayOutsideStage.type])
+    assert(err.isInstanceOf[Error.RelayOutsideStage])
   }
 
   test("valid sequence circuit") {
@@ -344,7 +344,7 @@ class TyperTest extends TchdlFunSuite {
 
     val error = global.repo.error.elems.head
     assert(error.isInstanceOf[Error.TypeMismatch])
-    val Error.TypeMismatch(expect, actual) = error
+    val Error.TypeMismatch(expect, actual, _) = error
     assert(expect =:= Type.unitTpe(global))
     assert(actual =:= Type.bitTpe(IntLiteral(8, Position.empty))(global))
   }
@@ -459,7 +459,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err == Error.UsingSelfInsideStatic)
+    assert(err.isInstanceOf[Error.UsingSelfInsideStatic])
   }
 
   test("use This as accessor of static method") {

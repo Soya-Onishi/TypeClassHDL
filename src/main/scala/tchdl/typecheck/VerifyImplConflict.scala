@@ -19,7 +19,7 @@ object VerifyImplConflict {
       def verify(impl0: ImplementClassContainer, impl1: ImplementClassContainer): Either[Error, Unit] = {
         val hasConflict = ImplementClassContainer.isConflict(impl0, impl1)
 
-        if(hasConflict) Left(Error.ImplementClassConflict(impl0, impl1))
+        if(hasConflict) Left(Error.ImplementClassConflict(impl0, impl1, impl0.position, impl1.position))
         else Right(())
       }
 
@@ -38,7 +38,7 @@ object VerifyImplConflict {
       def verify(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer): Either[Error, Unit] = {
         val isConflict = ImplementInterfaceContainer.isConflict(impl0, impl1)
 
-        if(isConflict) Left(Error.ImplementInterfaceConflict(impl0, impl1))
+        if(isConflict) Left(Error.ImplementInterfaceConflict(impl0, impl1, impl0.position, impl1.position))
         else Right(())
       }
 
