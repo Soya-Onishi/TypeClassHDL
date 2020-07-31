@@ -4,13 +4,14 @@ import tchdl.util._
 import tchdl.ast._
 import tchdl.typecheck._
 import tchdl.backend._
+import tchdl.parser.Filename
 
 class BuildModuleListTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
   def untilThisPhase(pkgRoute: Vector[String], module: String, names: String*): (Seq[CompilationUnit], Vector[BuiltModule], GlobalData) = {
-    val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree))(module).asInstanceOf[TypeTree]
+    val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree)(Filename("")))(module).asInstanceOf[TypeTree]
 
     val files = names.map(buildName(rootDir, filePath, _))
     val filenames = files ++ builtInFiles
@@ -44,7 +45,7 @@ class BuildModuleListTest extends TchdlFunSuite {
 
     val newGlobal = global.assignCompilationUnits(trees1.toVector)
     val list = BuildGeneratedModuleList.exec(newGlobal)
-    val cus = trees1.filter(cu => files.contains(cu.filename.get))
+    val cus = trees1.filter(cu => files.contains(cu.filename))
     (cus, list, newGlobal)
   }
 

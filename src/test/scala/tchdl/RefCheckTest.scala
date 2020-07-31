@@ -37,7 +37,7 @@ class RefCheckTest extends TchdlFunSuite {
 
     trees1.foreach(RefCheck.exec)
 
-    val cus = trees1.filter(cu => files.contains(cu.filename.get))
+    val cus = trees1.filter(cu => files.contains(cu.filename))
     (cus, global)
   }
 

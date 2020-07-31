@@ -32,7 +32,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
 
     trees0.foreach(ImplMethodSigTyper.exec)
 
-    val cus = trees0.filter(cu => files.contains(cu.filename.get))
+    val cus = trees0.filter(cu => files.contains(cu.filename))
     (cus, global)
   }
 
@@ -240,7 +240,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
       .components
       .collectFirst{ case stage: StageDef => stage }.get
 
-    assert(stage.symbol.tpe.asMethodType.returnType == Type.futureTpe(Type.bitTpe(IntLiteral(8))(global))(global))
+    assert(stage.symbol.tpe.asMethodType.returnType == Type.futureTpe(Type.bitTpe(IntLiteral(8, Position.empty))(global))(global))
   }
 
   test("use This type as signature") {

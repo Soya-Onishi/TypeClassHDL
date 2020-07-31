@@ -1,9 +1,13 @@
 package tchdl
 
 import tchdl.ast._
+import tchdl.parser.Filename
 import tchdl.util._
 
 class ParseTest extends TchdlFunSuite {
+  def pos = Position.empty
+  def file = Filename("")
+
   test("binary operation test") {
     def binop(left: Expression, right: Expression, op: String): StdBinOp = {
       val operator = op match {
@@ -13,35 +17,35 @@ class ParseTest extends TchdlFunSuite {
         case "/" => Operation.Div
       }
 
-      StdBinOp(operator, left, right)
+      StdBinOp(operator, left, right, pos)
     }
 
-    val parser = parseString(_.expr)((gen, tree) => gen.expr(tree))_
-    assert(parser("1 + 10") == binop(IntLiteral(1), IntLiteral(10), "+"))
-    assert(parser("10 - d") == binop(IntLiteral(10), Ident("d"), "-"))
-    assert(parser("a * 10") == binop(Ident("a"), IntLiteral(10), "*"))
-    assert(parser("b / c") == binop(Ident("b"), Ident("c"), "/"))
+    val parser = parseString(_.expr)((gen, tree) => gen.expr(tree)(file))_
+    assert(parser("1 + 10") == binop(IntLiteral(1, pos), IntLiteral(10, pos), "+"))
+    assert(parser("10 - d") == binop(IntLiteral(10, pos), Ident("d", pos), "-"))
+    assert(parser("a * 10") == binop(Ident("a", pos), IntLiteral(10, pos), "*"))
+    assert(parser("b / c") == binop(Ident("b", pos), Ident("c", pos), "/"))
   }
 
   test("apply parse test") {
     def apply(name: String)(hps: HPExpr*)(tps: TypeTree*)(args: Expression*) =
-      Apply(Ident(name), hps.toVector, tps.toVector, args.toVector)
+      Apply(Ident(name, pos), hps.toVector, tps.toVector, args.toVector, pos)
 
-    def typeTree(name: String) = TypeTree(Ident(name), Vector.empty, Vector.empty)
+    def typeTree(name: String) = TypeTree(Ident(name, pos), Vector.empty, Vector.empty, pos)
 
-    val parser = parseString(_.expr)((gen, tree) => gen.expr(tree))_
+    val parser = parseString(_.expr)((gen, tree) => gen.expr(tree)(file))_
 
-    assert(parser("a(b, 10)") == apply("a")()()(Ident("b"), IntLiteral(10)))
-    assert(parser("a[Int, String](b)") == apply("a")()(typeTree("Int"), typeTree("String"))(Ident("b")))
-    assert(parser("a[1](b)") == apply("a")(IntLiteral(1))()(Ident("b")))
-    assert(parser("a[b, Int]()") == apply("a")(Ident("b"))(typeTree("Int"))())
+    assert(parser("a(b, 10)") == apply("a")()()(Ident("b", pos), IntLiteral(10, pos)))
+    assert(parser("a[Int, String](b)") == apply("a")()(typeTree("Int"), typeTree("String"))(Ident("b", pos)))
+    assert(parser("a[1](b)") == apply("a")(IntLiteral(1, pos))()(Ident("b", pos)))
+    assert(parser("a[b, Int]()") == apply("a")(Ident("b", pos))(typeTree("Int"))())
   }
 
   test("struct definitions test") {
     def field(name: String, tpe: TypeTree): ValDef =
-      ValDef(Modifier.Field, name, Some(tpe), None)
+      ValDef(Modifier.Field, name, Some(tpe), None, pos)
 
-    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)) _
+    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)(file)) _
 
     assert(
       parser("struct A { a: Int, b: Bit[3] }") ==
@@ -51,15 +55,16 @@ class ParseTest extends TchdlFunSuite {
         Vector.empty,
         Vector.empty,
         Vector(
-          field("a", TypeTree(Ident("Int"), Vector.empty, Vector.empty)),
-          field("b", TypeTree(Ident("Bit"), Vector(IntLiteral(3)), Vector.empty))
-        )
+          field("a", TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos)),
+          field("b", TypeTree(Ident("Bit", pos), Vector(IntLiteral(3, pos)), Vector.empty, pos))
+        ),
+        pos
       )
     )
   }
 
   test("module definition test") {
-    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)) _
+    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)(file)) _
 
     assert(
       parser("module Mod {}") ==
@@ -70,6 +75,7 @@ class ParseTest extends TchdlFunSuite {
           Vector.empty,
           Vector.empty,
           Vector.empty,
+          pos
         )
     )
 
@@ -80,8 +86,9 @@ class ParseTest extends TchdlFunSuite {
         Vector.empty,
         Vector.empty,
         Vector.empty,
-        Vector(ValDef(Modifier.Parent | Modifier.Field, "p", Some(TypeTree(Ident("M1"), Vector.empty, Vector.empty)), None)),
-        Vector(ValDef(Modifier.Sibling | Modifier.Field, "s", Some(TypeTree(Ident("M2"), Vector.empty, Vector.empty)), None)),
+        Vector(ValDef(Modifier.Parent | Modifier.Field, "p", Some(TypeTree(Ident("M1", pos), Vector.empty, Vector.empty, pos)), None, pos)),
+        Vector(ValDef(Modifier.Sibling | Modifier.Field, "s", Some(TypeTree(Ident("M2", pos), Vector.empty, Vector.empty, pos)), None, pos)),
+        pos
       )
     )
 
@@ -89,39 +96,42 @@ class ParseTest extends TchdlFunSuite {
       parser("module Mod[m: Num, T] where m: min 1 & max 3, T: I0 + I1") ==
       ModuleDef (
         "Mod",
-        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
-        Vector(TypeDef(Modifier.Param, "T", None)),
+        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num", pos), Vector.empty, Vector.empty, pos)), None, pos)),
+        Vector(TypeDef(Modifier.Param, "T", None, pos)),
         Vector(
           HPBoundTree(
-            Ident("m"),
+            Ident("m", pos),
             Vector(
-              RangeExpr.Min(IntLiteral(1)),
-              RangeExpr.Max(IntLiteral(3))
-            )
+              RangeExpr.Min(IntLiteral(1, pos)),
+              RangeExpr.Max(IntLiteral(3, pos))
+            ),
+            pos
           ),
           TPBoundTree(
-            TypeTree(Ident("T"), Vector.empty, Vector.empty),
+            TypeTree(Ident("T", pos), Vector.empty, Vector.empty, pos),
             Vector(
-              TypeTree(Ident("I0"), Vector.empty, Vector.empty),
-              TypeTree(Ident("I1"), Vector.empty, Vector.empty)
-            )
+              TypeTree(Ident("I0", pos), Vector.empty, Vector.empty, pos),
+              TypeTree(Ident("I1", pos), Vector.empty, Vector.empty, pos)
+            ),
+            pos
           )
         ),
         Vector.empty,
         Vector.empty,
+        pos
       )
     )
   }
 
   test("impl class test") {
-    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)) _
+    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)(file)) _
 
     assert(
       parser("impl[T] C[T] { def f() -> Unit {} }") ==
       ImplementClass(
-        TypeTree(Ident("C"), Vector.empty, Vector(TypeTree(Ident("T"), Vector.empty, Vector.empty))),
+        TypeTree(Ident("C", pos), Vector.empty, Vector(TypeTree(Ident("T", pos), Vector.empty, Vector.empty, pos)), pos),
         Vector.empty,
-        Vector(TypeDef(Modifier.Param, "T", None)),
+        Vector(TypeDef(Modifier.Param, "T", None, pos)),
         Vector.empty,
         Vector(MethodDef(
           Vector.empty,
@@ -131,26 +141,29 @@ class ParseTest extends TchdlFunSuite {
           Vector.empty,
           Vector.empty,
           Vector.empty,
-          TypeTree(Ident("Unit"), Vector.empty, Vector.empty),
-          Some(Block(Vector.empty, UnitLiteral()))
-        ))
+          TypeTree(Ident("Unit", pos), Vector.empty, Vector.empty, pos),
+          Some(Block(Vector.empty, UnitLiteral(pos), pos)),
+          pos
+        )),
+        pos
       )
     )
   }
 
   test("impl interface test") {
-    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)) _
+    val parser = parseString(_.top_definition)((gen, tree) => gen.topDefinition(tree)(file)) _
 
     assert(
       parser("impl[m: Num, T] I[m] for Type[T] { }") ==
       ImplementInterface(
-        TypeTree(Ident("I"), Vector(Ident("m")), Vector.empty),
-        TypeTree(Ident("Type"), Vector.empty, Vector(TypeTree(Ident("T"), Vector.empty, Vector.empty))),
-        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num"), Vector.empty, Vector.empty)), None)),
-        Vector(TypeDef(Modifier.Param, "T", None)),
+        TypeTree(Ident("I", pos), Vector(Ident("m", pos)), Vector.empty, pos),
+        TypeTree(Ident("Type", pos), Vector.empty, Vector(TypeTree(Ident("T", pos), Vector.empty, Vector.empty, pos)), pos),
+        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num", pos), Vector.empty, Vector.empty, pos)), None, pos)),
+        Vector(TypeDef(Modifier.Param, "T", None, pos)),
         Vector.empty,
         Vector.empty,
-        Vector.empty
+        Vector.empty,
+        pos
       )
     )
   }
@@ -194,7 +207,7 @@ class ParseTest extends TchdlFunSuite {
   }
 
   test ("parse sibling and input method") {
-    val tree = parseString(_.method_def)((gen, tree) => gen.methodDef(tree)) {
+    val tree = parseString(_.method_def)((gen, tree) => gen.methodDef(tree)(file)) {
       "sibling input def f(a: Bit[4]) -> Bit[4] { a }"
     }
 
@@ -245,7 +258,7 @@ class ParseTest extends TchdlFunSuite {
     val some = fields.tail.head
     assert(some.name == "Some")
     assert(some.fields.length == 1)
-    assert(some.fields.head.expr == Ident("T"))
+    assert(some.fields.head.expr == Ident("T", pos))
   }
 
   test("access Type from another package") {
@@ -258,17 +271,17 @@ class ParseTest extends TchdlFunSuite {
       .fields
       .find(_.name == "a").get
 
-    assert(structA.tpeTree.get == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
+    assert(structA.tpeTree.get == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, pos))
 
     val method = topDefs
       .collectFirst{ case impl: ImplementClass if impl.target.expr.isInstanceOf[Ident] => impl }.get
       .components
       .collectFirst{ case method: MethodDef => method }.get
 
-    assert(method.retTpe == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
+    assert(method.retTpe == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, pos))
 
     val construct = method.blk.get.last.asInstanceOf[ConstructClass]
-    assert(construct.target == TypeTree(SelectPackage(Vector("test1"), "ST1"), Vector.empty, Vector.empty))
+    assert(construct.target == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, pos))
   }
 
   test("construct enum") {
@@ -288,14 +301,14 @@ class ParseTest extends TchdlFunSuite {
     assert(construct.target.expr.isInstanceOf[StaticSelect])
     val select = construct.target.expr.asInstanceOf[StaticSelect]
 
-    assert(select.prefix == TypeTree(Ident("Opt"), Vector.empty, Vector(TypeTree(Ident("Bit"), Vector(IntLiteral(2)), Vector.empty))))
+    assert(select.prefix == TypeTree(Ident("Opt", pos), Vector.empty, Vector(TypeTree(Ident("Bit", pos), Vector(IntLiteral(2, pos)), Vector.empty, pos)), pos))
     assert(select.name == "Some")
     assert(construct.target.hp.isEmpty)
     assert(construct.target.tp.isEmpty)
   }
 
   test("pattern matching test") {
-    val Match(expr, cases) = parseString(_.expr)((gen, tree) => gen.expr(tree))(
+    val Match(expr, cases) = parseString(_.expr)((gen, tree) => gen.expr(tree)(file))(
       """
         |match expr {
         |  case Pattern:::A(a, b) =>
@@ -307,20 +320,21 @@ class ParseTest extends TchdlFunSuite {
 
     def pattern(name: String, expr: MatchPattern*): EnumPattern = {
       val typeTree = TypeTree(
-        StaticSelect(TypeTree(Ident("Pattern"), Vector.empty, Vector.empty), name),
+        StaticSelect(TypeTree(Ident("Pattern", pos), Vector.empty, Vector.empty, pos), name, pos),
         Vector.empty,
-        Vector.empty
+        Vector.empty,
+        pos
       )
 
-      EnumPattern(typeTree, expr.toVector)
+      EnumPattern(typeTree, expr.toVector, pos)
     }
 
-    def ident(name: String) = IdentPattern(Ident(name))
-    def int(value: Int) = LiteralPattern(IntLiteral(value))
-    def bit(value: Int, width: Int) = LiteralPattern(BitLiteral(value, width))
-    def unit() = LiteralPattern(UnitLiteral())
+    def ident(name: String) = IdentPattern(Ident(name, pos), pos)
+    def int(value: Int) = LiteralPattern(IntLiteral(value, pos), pos)
+    def bit(value: Int, width: Int) = LiteralPattern(BitLiteral(value, width, pos), pos)
+    def unit() = LiteralPattern(UnitLiteral(pos), pos)
 
-    assert(expr == Ident("expr"))
+    assert(expr == Ident("expr", pos))
     assert(cases(0).pattern == pattern("A", ident("a"), ident("b")))
     assert(cases(1).pattern == pattern("B", int(0), bit(0, 2)))
     assert(cases(2).pattern == pattern("C", unit()))
@@ -333,8 +347,8 @@ class ParseTest extends TchdlFunSuite {
     val traits = tree.topDefs.collectFirst{ case traits: InterfaceDef if traits.flag.hasFlag(Modifier.Trait) => traits }.get
     val interface = tree.topDefs.collectFirst{ case traits: InterfaceDef if traits.flag.hasFlag(Modifier.Interface) => traits }.get
 
-    val st = TypeTree(Ident("ST"), Vector.empty, Vector.empty)
-    val mod = TypeTree(Ident("Mod"), Vector.empty, Vector.empty)
+    val st = TypeTree(Ident("ST", pos), Vector.empty, Vector.empty, pos)
+    val mod = TypeTree(Ident("Mod", pos), Vector.empty, Vector.empty, pos)
 
     val traitImpl = tree.topDefs.collectFirst{ case impl: ImplementInterface if impl.target == st => impl }.get
     val interfaceImpl = tree.topDefs.collectFirst { case impl: ImplementInterface if impl.target == mod => impl }.get
@@ -351,16 +365,16 @@ class ParseTest extends TchdlFunSuite {
   }
 
   test("parse static method call") {
-    val Apply(prefix, hargs, targs, args) = parseString(_.expr)((gen, tree) => gen.expr(tree)) {
+    val Apply(prefix, hargs, targs, args) = parseString(_.expr)((gen, tree) => gen.expr(tree)(file)) {
       """Int:::from(true)"""
     }
 
-    val int = TypeTree(Ident("Int"), Vector.empty, Vector.empty)
+    val int = TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos)
 
     assert(hargs == Vector.empty)
     assert(targs == Vector.empty)
-    assert(args == Vector(BoolLiteral(true)))
-    assert(prefix == StaticSelect(int, "from"))
+    assert(args == Vector(BoolLiteral(value = true, pos)))
+    assert(prefix == StaticSelect(int, "from", pos))
   }
 
   test("parse top level method definition") {
@@ -369,19 +383,19 @@ class ParseTest extends TchdlFunSuite {
   }
 
   test("parse generate stage") {
-    parseString(_.generate)((gen, tree) => gen.generate(tree)) {
+    parseString(_.generate)((gen, tree) => gen.generate(tree)(file)) {
       "generate s1(a, b) # st1(c, d)"
     }
   }
 
   test("parse type tree") {
-    val tpe = parseString(_.`type`)((gen, tree) => gen.typeTree(tree))_
+    val tpe = parseString(_.`type`)((gen, tree) => gen.typeTree(tree)(file))_
 
-    def tt(name: String) = TypeTree(Ident(name), Vector.empty, Vector.empty)
-    def ttPoly(name: String, hargs: Vector[HPExpr], targs: Vector[TypeTree]) = TypeTree(Ident(name), hargs, targs)
-    def cast(from: TypeTree, to: TypeTree): TypeTree = TypeTree(CastType(from, to), Vector.empty, Vector.empty)
-    def select(prefix: TypeTree, name: String): TypeTree = TypeTree(StaticSelect(prefix, name), Vector.empty, Vector.empty)
-    def pkg(name: String, pkg: String*) = TypeTree(SelectPackage(pkg.toVector, name), Vector.empty, Vector.empty)
+    def tt(name: String) = TypeTree(Ident(name, pos), Vector.empty, Vector.empty, pos)
+    def ttPoly(name: String, hargs: Vector[HPExpr], targs: Vector[TypeTree]) = TypeTree(Ident(name, pos), hargs, targs, pos)
+    def cast(from: TypeTree, to: TypeTree): TypeTree = TypeTree(CastType(from, to, pos), Vector.empty, Vector.empty, pos)
+    def select(prefix: TypeTree, name: String): TypeTree = TypeTree(StaticSelect(prefix, name, pos), Vector.empty, Vector.empty, pos)
+    def pkg(name: String, pkg: String*) = TypeTree(SelectPackage(pkg.toVector, name, pos), Vector.empty, Vector.empty, pos)
 
     val tree0 = tpe("A")
     val tree1 = tpe("A[1]")
@@ -396,9 +410,9 @@ class ParseTest extends TchdlFunSuite {
     val tree10 = tpe("(A as B):::C as D")
 
     assert(tree0 == tt("A"))
-    assert(tree1 == ttPoly("A", Vector(IntLiteral(1)), Vector.empty))
+    assert(tree1 == ttPoly("A", Vector(IntLiteral(1, pos)), Vector.empty))
     assert(tree2 == ttPoly("A", Vector.empty, Vector(tt("B"))))
-    assert(tree3 == ttPoly("A", Vector(Ident("m")), Vector(tt("B"))))
+    assert(tree3 == ttPoly("A", Vector(Ident("m", pos)), Vector(tt("B"))))
     assert(tree4 == cast(
       tt("A"),
       tt("B")
@@ -441,39 +455,41 @@ class ParseTest extends TchdlFunSuite {
   }
 
   test("parse casting variable") {
-    val expr = parseString(_.expr)((gen, tree) => gen.expr(tree))_
+    val expr = parseString(_.expr)((gen, tree) => gen.expr(tree)(file))_
 
     val tree0 = expr("(a as Int)")
     val tree1 = expr("(a as Int).f(2)")
 
-    assert(tree0 == CastExpr(Ident("a"), TypeTree(Ident("Int"), Vector.empty, Vector.empty)))
+    assert(tree0 == CastExpr(Ident("a", pos), TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos), pos))
     assert(tree1 == Apply(
       Select(
-        CastExpr(Ident("a"), TypeTree(Ident("Int"), Vector.empty, Vector.empty)),
-        "f"
+        CastExpr(Ident("a", pos), TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos), pos),
+        "f",
+        pos
       ),
       Vector.empty,
       Vector.empty,
-      Vector(IntLiteral(2))
+      Vector(IntLiteral(2, pos)),
+      pos
     ))
   }
 
   test("parse assign statement") {
-    val assign = parseString(_.block_elem)((gen, tree) => gen.blockElem(tree))_
+    val assign = parseString(_.block_elem)((gen, tree) => gen.blockElem(tree)(Filename("")))_
 
     val tree0 = assign("this.a = 1")
     val tree1 = assign("this.mem.d = 2")
     val tree2 = assign("this.b = f(1, 2)")
 
     def select(head: String, name: String*): Select = {
-      val headSelect = Select(This(), head)
+      val headSelect = Select(This(pos), head, pos)
 
       name.foldLeft(headSelect) {
-        case (accessor, name) => Select(accessor, name)
+        case (accessor, name) => Select(accessor, name, pos)
       }
     }
-    assert(tree0 == Assign(select("a"), IntLiteral(1)))
-    assert(tree1 == Assign(select("mem", "d"), IntLiteral(2)))
-    assert(tree2 == Assign(select("b"), Apply(Ident("f"), Vector.empty, Vector.empty, Vector(IntLiteral(1), IntLiteral(2)))))
+    assert(tree0 == Assign(select("a"), IntLiteral(1, pos), pos))
+    assert(tree1 == Assign(select("mem", "d"), IntLiteral(2, pos), pos))
+    assert(tree2 == Assign(select("b"), Apply(Ident("f", pos), Vector.empty, Vector.empty, Vector(IntLiteral(1, pos), IntLiteral(2, pos)), pos), pos))
   }
 }

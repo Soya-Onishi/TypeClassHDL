@@ -62,7 +62,7 @@ class VerifyImplConflictTest extends TchdlFunSuite {
     val (trees, global) = untilThisPhase("impl3.tchdl")
 
     assert(global.repo.error.counts == 0, showErrors(global))
-    val tree = trees.find(_.filename.get == buildName(rootDir, filePath, "impl3.tchdl")).get
+    val tree = trees.find(_.filename == buildName(rootDir, filePath, "impl3.tchdl")).get
     val interface = tree.topDefs.find(_.symbol.isInterfaceSymbol).get
     val impls = interface.symbol.asInterfaceSymbol.impls
 
@@ -128,7 +128,7 @@ class VerifyImplConflictTest extends TchdlFunSuite {
     expectNoError(global)
 
     val filename = buildName(rootDir, filePath, "enumDef2.tchdl")
-    val tree = trees.find(_.filename.get == filename).get
+    val tree = trees.find(_.filename == filename).get
 
     val enumDef = tree.topDefs.collectFirst{ case enum: EnumDef => enum }.get
     val traitDef = tree.topDefs.collectFirst{ case traitDef: InterfaceDef => traitDef }.get
@@ -148,7 +148,7 @@ class VerifyImplConflictTest extends TchdlFunSuite {
     expectNoError(global)
 
     val filename = buildName(rootDir, filePath, "enumDef3.tchdl")
-    val tree = trees.find(_.filename.get == filename).get
+    val tree = trees.find(_.filename == filename).get
 
     val enumDef = tree.topDefs.collectFirst{ case enum: EnumDef => enum }.get
     val impls = tree.topDefs.collect{ case impl: ImplementClass => impl }

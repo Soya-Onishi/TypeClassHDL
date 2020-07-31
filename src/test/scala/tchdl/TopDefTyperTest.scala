@@ -28,7 +28,7 @@ class TopDefTyperTest extends TchdlFunSuite {
     expectNoError
 
     val trees1 = trees0.map(TopDefTyper.exec)
-    val cus = trees1.filter(cu => files.contains(cu.filename.get))
+    val cus = trees1.filter(cu => files.contains(cu.filename))
 
     (cus, global)
   }
@@ -104,8 +104,8 @@ class TopDefTyperTest extends TchdlFunSuite {
     verifyBounds(
       g,
       Vector(HPBound(
-        Ident("m").setSymbol(g.hps.head).setTpe(Type.numTpe(global)),
-        HPConstraint.Range(Vector.empty, Vector(IntLiteral(0)))
+        Ident("m", Position.empty).setSymbol(g.hps.head).setTpe(Type.numTpe(global)),
+        HPConstraint.Range(Vector.empty, Vector(IntLiteral(0, Position.empty)))
       )),
       Vector.empty
     )
@@ -113,8 +113,8 @@ class TopDefTyperTest extends TchdlFunSuite {
     verifyBounds(
       h,
       Vector(HPBound(
-        Ident("m").setSymbol(h.hps.head).setTpe(Type.numTpe(global)),
-        HPConstraint.Range(Vector.empty, Vector(IntLiteral(0)))
+        Ident("m", Position.empty).setSymbol(h.hps.head).setTpe(Type.numTpe(global)),
+        HPConstraint.Range(Vector.empty, Vector(IntLiteral(0, Position.empty)))
       )),
       Vector(TPBound(Type.RefType(h.tps.head), Vector(Type.RefType(interface.symbol.asInterfaceSymbol))))
     )

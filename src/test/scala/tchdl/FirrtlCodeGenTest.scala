@@ -10,6 +10,7 @@ import java.nio.file.Files
 import firrtl.annotations.CircuitTarget
 import firrtl.options.Dependency
 import firrtl.stage.FirrtlStageUtils
+import tchdl.parser.Filename
 
 import sys.process._
 import scala.language.postfixOps
@@ -32,7 +33,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val filenames = fullnames ++ builtInFiles
 
     val trees = filenames.map(parse)
-    val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree))(module).asInstanceOf[TypeTree]
+    val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree)(Filename("")))(module).asInstanceOf[TypeTree]
     implicit val global: GlobalData = GlobalData(pkgName, moduleTree)
 
     trees.foreach(Namer.exec)

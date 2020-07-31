@@ -6,6 +6,7 @@ import tchdl.{ast => frontend}
 import tchdl.util._
 import tchdl.backend._
 import tchdl.backend.ast._
+import tchdl.parser.Filename
 import tchdl.typecheck._
 
 import scala.collection.immutable.ListMap
@@ -19,7 +20,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val filenames = fullnames ++ builtInFiles
 
     val trees = filenames.map(parse)
-    val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree))(module).asInstanceOf[TypeTree]
+    val moduleTree = parseString(_.`type`)((gen, tree) => gen.typeTree(tree)(Filename("")))(module).asInstanceOf[TypeTree]
     implicit val global: GlobalData = GlobalData(pkgName, moduleTree)
 
     trees.foreach(Namer.exec)
@@ -57,7 +58,7 @@ class BackendIRGenTest extends TchdlFunSuite {
   test("simple module structure should be generate two module containers") {
     val (modules, methods, global) = untilThisPhase(Vector("test"), "Top", "simpleStructure.tchdl")
     val filename = buildName(rootDir, filePath, "simpleStructure.tchdl")
-    val tree = global.compilationUnits.find(_.filename.get == filename).get
+    val tree = global.compilationUnits.find(_.filename == filename).get
 
     assert(modules.length == 2)
     assert(methods.isEmpty)
@@ -85,7 +86,7 @@ class BackendIRGenTest extends TchdlFunSuite {
   test("modules that have hardware parameters make two module containers with concrete hp values") {
     val (modules, methods, global) = untilThisPhase(Vector("test"), "Top[4]", "moduleWithHP0.tchdl")
     val filename = buildName(rootDir, filePath, "moduleWithHP0.tchdl")
-    val tree = global.compilationUnits.find(_.filename.get == filename).get
+    val tree = global.compilationUnits.find(_.filename == filename).get
 
     assert(modules.length == 2)
     assert(methods.isEmpty)
@@ -128,7 +129,7 @@ class BackendIRGenTest extends TchdlFunSuite {
   test("build ALU circuit description should generate code correctly") {
     val (modules, methods, global) = untilThisPhase(Vector("test", "alu"), "Top", "ALU.tchdl")
     val aluFile = buildName(rootDir, filePath, "ALU.tchdl")
-    val aluCU = global.compilationUnits.find(_.filename.get == aluFile).get
+    val aluCU = global.compilationUnits.find(_.filename == aluFile).get
 
     assert(modules.length == 2)
     assert(methods.length == 4)
@@ -314,11 +315,16 @@ class BackendIRGenTest extends TchdlFunSuite {
 
     assert(modules.length == 1)
     assert(modules.head.bodies.length == 2)
-    val body = modules.head.bodies.head
-    assert(body.interfaces.length == 1)
 
-    val names = body.interfaces.map(_.label.symbol.name)
-    assert(names.contains("f"))
+    val body0 = modules.head.bodies.head
+    assert(body0.interfaces.length == 1)
+    val names0 = body0.interfaces.map(_.label.symbol.name)
+    assert(names0.contains("f") || names0.contains("g"))
+
+    val body1 = modules.head.bodies.head
+    assert(body1.interfaces.length == 1)
+    val names1 = body1.interfaces.map(_.label.symbol.name)
+    assert(names1.contains("f") || names1.contains("g"))
   }
 
   test("generate Bit[32] from Bool") {

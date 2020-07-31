@@ -34,7 +34,7 @@ class TyperTest extends TchdlFunSuite {
 
     val typedTrees = trees0.map(Typer.exec)
     val returnedTrees = typedTrees
-      .filter(tt => specifiedFileNames.contains(tt.filename.get))
+      .filter(tt => specifiedFileNames.contains(tt.filename))
       .toVector
 
     (returnedTrees, global)
@@ -195,7 +195,7 @@ class TyperTest extends TchdlFunSuite {
 
     val vdef0 = vdef.asInstanceOf[ValDef]
     val bitSymbol = global.builtin.types.lookup("Bit")
-    val expectBitTpe = Type.RefType(bitSymbol, Vector(Ident("m").setSymbol(m)), Vector.empty)
+    val expectBitTpe = Type.RefType(bitSymbol, Vector(Ident("m", Position.empty).setSymbol(m)), Vector.empty)
 
     assert(vdef0.symbol.tpe =:= expectBitTpe)
     assert(add.tpe =:= expectBitTpe)
@@ -213,7 +213,7 @@ class TyperTest extends TchdlFunSuite {
     val aluImpl = implClass.find(_.target.symbol.name == "ALU").get
 
     val complex = struct.symbol.asStructSymbol
-    val complexBit8 = Type.RefType(complex, Vector.empty, Vector(Type.bitTpe(IntLiteral(8))(global)))
+    val complexBit8 = Type.RefType(complex, Vector.empty, Vector(Type.bitTpe(IntLiteral(8, Position.empty))(global)))
 
     val always = topImpl.components.collectFirst{ case always: AlwaysDef => always }.get
     val alwaysA = always.blk.elems.collectFirst{ case vdef @ ValDef(_, "a", _, _) => vdef }.get
@@ -300,7 +300,7 @@ class TyperTest extends TchdlFunSuite {
     val st3 = stages.find(_.name == "st3").get
 
     val unitSymbol = global.builtin.types.lookup("Unit")
-    val bit8 = Type.bitTpe(IntLiteral(8))(global)
+    val bit8 = Type.bitTpe(IntLiteral(8, Position.empty))(global)
 
     assert(input.blk.get.last.isInstanceOf[Generate])
     val inputGenerate = input.blk.get.last.asInstanceOf[Generate]
@@ -346,7 +346,7 @@ class TyperTest extends TchdlFunSuite {
     assert(error.isInstanceOf[Error.TypeMismatch])
     val Error.TypeMismatch(expect, actual) = error
     assert(expect =:= Type.unitTpe(global))
-    assert(actual =:= Type.bitTpe(IntLiteral(8))(global))
+    assert(actual =:= Type.bitTpe(IntLiteral(8, Position.empty))(global))
   }
 
   test("construct enum") {
@@ -363,7 +363,7 @@ class TyperTest extends TchdlFunSuite {
     assert(construct.tpe.asRefType.origin == opt.symbol)
     assert(construct.target.expr.tpe.asRefType.origin == opt.symbol)
     assert(construct.tpe.asRefType.hardwareParam.isEmpty)
-    assert(construct.tpe.asRefType.typeParam == Vector(Type.bitTpe(IntLiteral(2))(global)))
+    assert(construct.tpe.asRefType.typeParam == Vector(Type.bitTpe(IntLiteral(2, Position.empty))(global)))
   }
 
   test("simple pattern match") {
@@ -377,10 +377,10 @@ class TyperTest extends TchdlFunSuite {
       .blk.get
       .last
 
-    assert(matchExpr.tpe == Type.bitTpe(IntLiteral(2))(global))
+    assert(matchExpr.tpe == Type.bitTpe(IntLiteral(2, Position.empty))(global))
     val Match(_, Vector(some, _)) = matchExpr
-    assert(some.exprs.last == Ident("bit"))
-    assert(some.exprs.last.asInstanceOf[Ident].tpe == Type.bitTpe(IntLiteral(2))(global))
+    assert(some.exprs.last == Ident("bit", Position.empty))
+    assert(some.exprs.last.asInstanceOf[Ident].tpe == Type.bitTpe(IntLiteral(2, Position.empty))(global))
 
     val bitSymbol = some.pattern.asInstanceOf[EnumPattern].patterns.head.asInstanceOf[IdentPattern].ident.symbol
     assert(some.exprs.last.asInstanceOf[Ident].symbol == bitSymbol)
@@ -441,8 +441,8 @@ class TyperTest extends TchdlFunSuite {
     val (Seq(tree), global) = untilTyper("callStaticMethod.tchdl")
     expectNoError(global)
 
-    val st = TypeTree(Ident("ST"), Vector.empty, Vector.empty)
-    val mod = TypeTree(Ident("Mod"), Vector.empty, Vector.empty)
+    val st = TypeTree(Ident("ST", Position.empty), Vector.empty, Vector.empty, Position.empty)
+    val mod = TypeTree(Ident("Mod", Position.empty), Vector.empty, Vector.empty, Position.empty)
 
     val stImpl = tree.topDefs.collectFirst{ case impl: ImplementClass if impl.target == st => impl }.get
     val modImpl = tree.topDefs.collectFirst{ case impl: ImplementClass if impl.target == mod => impl }.get
@@ -580,7 +580,9 @@ class TyperTest extends TchdlFunSuite {
     expectNoError(global)
 
     val staticMethod = tree.topDefs
-      .collectFirst{ case impl: ImplementInterface if impl.interface.expr == Ident("StaticCall0") => impl }.get
+      .collect{ case impl: ImplementInterface => impl }
+      .find(impl => impl.interface.expr == Ident("StaticCall0", impl.interface.expr.position))
+      .get
       .methods.head
 
     val call = tree.topDefs
@@ -615,7 +617,7 @@ class TyperTest extends TchdlFunSuite {
     expectNoError(global)
 
     val staticMethod = tree.topDefs
-      .collectFirst{ case impl: ImplementInterface if impl.interface.expr == Ident("Call0") => impl }.get
+      .collectFirst{ case impl: ImplementInterface if impl.interface.expr == Ident("Call0", impl.interface.expr.position) => impl }.get
       .methods.head
 
     val call @ Apply(select: Select, _, _, _) = tree.topDefs
