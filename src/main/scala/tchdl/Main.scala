@@ -22,7 +22,7 @@ object Main extends App {
       val tree = parser.`type`()
 
       val generator = new ASTGenerator
-      val typeTree = generator.typeTree(tree)
+      val typeTree = generator.typeTree(tree)(Filename(""))
 
       if(parser.getNumberOfSyntaxErrors == 0) Right(typeTree)
       else Left(???)

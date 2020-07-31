@@ -6,11 +6,11 @@ import tchdl.util._
 
 object Typer {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
-    implicit val ctx: Context.RootContext = getContext(cu.pkgName, cu.filename.get)
+    implicit val ctx: Context.RootContext = getContext(cu.pkgName, cu.filename)
 
     val topDefs = cu.topDefs.map(diveIntoExpr)
 
-    CompilationUnit(cu.filename, cu.pkgName, cu.imports, topDefs)
+    CompilationUnit(cu.filename, cu.pkgName, cu.imports, topDefs, cu.position)
   }
 
   def diveIntoExpr(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Definition = {
@@ -132,7 +132,7 @@ object Typer {
       .map(tpe => Error.TypeMismatch(tpe, typedConstruct.tpe.asRefType))
       .foreach(global.repo.error.append)
 
-    val typedValDef = ValDef(valDef.flag, name, typedTpeTree, Some(typedConstruct))
+    val typedValDef = ValDef(valDef.flag, name, typedTpeTree, Some(typedConstruct), valDef.position)
       .setSymbol(valDef.symbol)
       .setID(valDef.id)
 
@@ -250,7 +250,7 @@ object Typer {
       typedTPs.exists(_.tpe.isErrorType)
 
     lazy val errorApply =
-      Apply(apply.prefix, typedHPs, typedTPs, typedArgs)
+      Apply(apply.prefix, typedHPs, typedTPs, typedArgs, apply.position)
         .setTpe(Type.ErrorType)
         .setID(apply.id)
 
@@ -329,7 +329,8 @@ object Typer {
             ident.setTpe(replacedTpe).setSymbol(methodSymbol),
             typedHPs,
             typedTPs,
-            typedArgs
+            typedArgs,
+            apply.position
           ).setTpe(replacedTpe.returnType).setID(apply.id)
         } yield typedApply
       }
@@ -363,12 +364,12 @@ object Typer {
         typedApply = {
           val (symbol, tpe) = result
           val typedSelect =
-            Select(typedPrefix, select.name)
+            Select(typedPrefix, select.name, select.position)
               .setSymbol(symbol)
               .setTpe(tpe)
               .setID(select.id)
 
-          Apply(typedSelect, typedHPs, typedTPs, typedArgs)
+          Apply(typedSelect, typedHPs, typedTPs, typedArgs, apply.position)
             .setTpe(tpe.returnType)
             .setID(apply.id)
         }
@@ -390,12 +391,12 @@ object Typer {
       } yield {
         val (symbol, tpe) = result
         val typedSelect =
-          StaticSelect(prefixTree, select.name)
+          StaticSelect(prefixTree, select.name, select.position)
             .setTpe(tpe)
             .setSymbol(symbol)
             .setID(select.id)
 
-        Apply(typedSelect, typedHPs, typedTPs, typedArgs)
+        Apply(typedSelect, typedHPs, typedTPs, typedArgs, apply.position)
           .setTpe(tpe.returnType)
           .setID(apply.id)
       }
@@ -514,7 +515,7 @@ object Typer {
         (Some(err), typedExpr)
     }
 
-    val typedPair = ConstructPair(pair.name, typedInit).setID(pair.id)
+    val typedPair = ConstructPair(pair.name, typedInit, pair.position).setID(pair.id)
 
     val pairErr = targetTpe.lookupField(pair.name, ctx.hpBounds, ctx.tpBounds) match {
       case LookupResult.LookupFailure(err) => Some(err)
@@ -542,12 +543,12 @@ object Typer {
       typedPattern(caseDef.pattern, matchedTpe, caseCtx) match {
         case Left(err) =>
           global.repo.error.append(err)
-          Case(caseDef.pattern, caseDef.exprs).setTpe(Type.ErrorType).setID(caseDef.id)
+          Case(caseDef.pattern, caseDef.exprs, caseDef.position).setTpe(Type.ErrorType).setID(caseDef.id)
         case Right(pattern) =>
           val blockElems = caseDef.exprs.map(typedBlockElem(_)(caseCtx, global))
           val retTpe = blockElems.last.asInstanceOf[Expression].tpe
 
-          Case(pattern, blockElems).setTpe(retTpe).setID(caseDef.id)
+          Case(pattern, blockElems, caseDef.position).setTpe(retTpe).setID(caseDef.id)
       }
     }
 
@@ -555,7 +556,7 @@ object Typer {
       case enum: EnumPattern => typedEnumPattern(enum, matchedTpe, ctx)
       case ident: IdentPattern => typedIdentPattern(ident, matchedTpe, ctx)
       case lit: LiteralPattern => typedLiteralPattern(lit, matchedTpe, ctx)
-      case wild: WildCardPattern => Right(WildCardPattern().setTpe(matchedTpe).setID(wild.id))
+      case wild: WildCardPattern => Right(WildCardPattern(wild.position).setTpe(matchedTpe).setID(wild.id))
     }
 
     def typedIdentPattern(pattern: IdentPattern, matchedTpe: Type.RefType, ctx: Context.NodeContext): Either[Error, IdentPattern] = {
@@ -569,7 +570,7 @@ object Typer {
 
       ctx.append(symbol)
       val ident = pattern.ident.setSymbol(symbol).setTpe(matchedTpe)
-      Right(IdentPattern(ident))
+      Right(IdentPattern(ident, pattern.position))
     }
 
     def typedLiteralPattern(pattern: LiteralPattern, matchedTpe: Type.RefType, ctx: Context.NodeContext): Either[Error, LiteralPattern] = {
@@ -588,7 +589,7 @@ object Typer {
           else Left(Error.TypeMismatch(matchedTpe, Type.unitTpe))
       }
 
-      result.map(LiteralPattern.apply)
+      result.map(LiteralPattern(_, pattern.position))
     }
 
     def typedEnumPattern(enum: EnumPattern, matchedTpe: Type.RefType, ctx: Context.NodeContext): Either[Error, EnumPattern] = {
@@ -637,14 +638,14 @@ object Typer {
         variantFields = variant.tpe.asEnumMemberType.fields
         fieldTpes = variantFields.map(_.tpe.asRefType.replaceWithMap(hpTable, tpTable))
         patterns <- typedPatterns(fieldTpes)
-      } yield EnumPattern(typedVariant, patterns)
+      } yield EnumPattern(typedVariant, patterns, matchExpr.position)
     }
 
     val Match(matched, cases) = matchExpr
     val typedMatched = typedExpr(matched)
 
     typedMatched.tpe match {
-      case Type.ErrorType => Match(typedMatched, cases).setTpe(Type.ErrorType).setID(matchExpr.id)
+      case Type.ErrorType => Match(typedMatched, cases, matchExpr.position).setTpe(Type.ErrorType).setID(matchExpr.id)
       case tpe: Type.RefType =>
         val typedCases = cases.map(typedCase(_, tpe))
 
@@ -672,7 +673,7 @@ object Typer {
           _ <- hasError
           _ <- typeMismatches
           _ <- requireSizedType
-        } yield Match(typedMatched, typedCases)
+        } yield Match(typedMatched, typedCases, matchExpr.position)
           .setTpe(typedCases.head.tpe)
           .setID(matchExpr.id)
 
@@ -680,7 +681,7 @@ object Typer {
           case Right(matchExpr) => matchExpr
           case Left(err) =>
             global.repo.error.append(err)
-            Match(typedMatched, typedCases)
+            Match(typedMatched, typedCases, matchExpr.position)
               .setTpe(Type.ErrorType)
               .setID(matchExpr.id)
         }
@@ -702,24 +703,24 @@ object Typer {
 
         tpe.origin match {
           case _: Symbol.StructSymbol =>
-            ConstructClass(typedTarget, typedPairs)
+            ConstructClass(typedTarget, typedPairs, construct.position)
               .setSymbol(typedTarget.symbol)
               .setTpe(tpe)
               .setID(construct.id)
           case _: Symbol.ModuleSymbol if construct.fields.isEmpty =>
-            ConstructModule(typedTarget, Vector.empty, Vector.empty)
+            ConstructModule(typedTarget, Vector.empty, Vector.empty, construct.position)
               .setSymbol(typedTarget.symbol)
               .setTpe(tpe)
               .setID(construct.id)
           case _: Symbol.ModuleSymbol =>
             global.repo.error.append(Error.RequireParentOrSiblingIndicator(construct))
-            ConstructClass(typedTarget, typedPairs)
+            ConstructClass(typedTarget, typedPairs, construct.position)
               .setSymbol(Symbol.ErrorSymbol)
               .setTpe(Type.ErrorType)
               .setID(construct.id)
           case _: Symbol.InterfaceSymbol =>
             global.repo.error.append(Error.TryToConstructInterface(construct))
-            ConstructClass(typedTarget, typedPairs)
+            ConstructClass(typedTarget, typedPairs, construct.position)
               .setSymbol(Symbol.ErrorSymbol)
               .setTpe(Type.ErrorType)
               .setID(construct.id)
@@ -750,7 +751,7 @@ object Typer {
             Type.ErrorType
         }
 
-        ConstructModule(typedTarget, typedParents, typedSiblings)
+        ConstructModule(typedTarget, typedParents, typedSiblings, construct.position)
           .setSymbol(typedTarget.symbol)
           .setTpe(returnType)
           .setID(construct.id)
@@ -824,7 +825,7 @@ object Typer {
         Type.ErrorType
     }
 
-    ConstructEnum(typedTarget, typedFields)
+    ConstructEnum(typedTarget, typedFields, construct.position)
       .setSymbol(typedTarget.symbol)
       .setTpe(tpe)
       .setID(construct.id)
@@ -854,7 +855,7 @@ object Typer {
         Type.ErrorType
     }
 
-    CastExpr(typedPrefix, typedTpeTree).setTpe(tpe).setID(cast.id)
+    CastExpr(typedPrefix, typedTpeTree, cast.position).setTpe(tpe).setID(cast.id)
   }
 
 
@@ -874,7 +875,7 @@ object Typer {
         global.repo.error.append(err)
         binop.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
       case LookupResult.LookupSuccess((methodSymbol, methodTpe)) =>
-        StdBinOp(binop.op, typedLeft, typedRight)
+        StdBinOp(binop.op, typedLeft, typedRight, binop.position)
           .setSymbol(methodSymbol)
           .setTpe(methodTpe.returnType)
           .setID(binop.id)
@@ -904,7 +905,7 @@ object Typer {
     val typedElems = blk.elems.map(typedBlockElem(_)(blkCtx, global))
     val typedLast = typedExpr(blk.last)(blkCtx, global)
 
-    Block(typedElems, typedLast).setTpe(typedLast.tpe).setID(blk.id)
+    Block(typedElems, typedLast, blk.position).setTpe(typedLast.tpe).setID(blk.id)
   }
 
   def typedBlockElem(elem: BlockElem)(implicit ctx: Context.NodeContext, global: GlobalData): BlockElem =
@@ -926,7 +927,7 @@ object Typer {
         tpe
     }
 
-    This().setTpe(tpe).setID(self.id)
+    This(self.position).setTpe(tpe).setID(self.id)
   }
 
   def typedAssign(assign: Assign)(implicit ctx: Context.NodeContext, global: GlobalData): Assign = {
@@ -958,13 +959,13 @@ object Typer {
       prefixTpe <- rejectErrorType(prefixTree)
       _ <- requireModuleType(prefixTpe)
       symbol <- prefixTpe.lookupField(name, ctx.hpBounds, ctx.tpBounds).toEither
-    } yield Select(prefixTree, name)
+    } yield Select(prefixTree, name, loc.position)
       .setSymbol(symbol)
       .setTpe(symbol.tpe)
       .setID(loc.id)
 
     typedLoc.left.foreach(global.repo.error.append)
-    Assign(typedLoc.getOrElse(loc), typedRhs).setID(assign.id)
+    Assign(typedLoc.getOrElse(loc), typedRhs, assign.position).setID(assign.id)
   }
 
   def typedIfExpr(ifexpr: IfExpr)(implicit ctx: Context.NodeContext, global: GlobalData): IfExpr = {
@@ -980,7 +981,7 @@ object Typer {
 
     typedAlt match {
       case None =>
-        IfExpr(typedCond, typedConseq, typedAlt).setTpe(Type.unitTpe).setID(ifexpr.id)
+        IfExpr(typedCond, typedConseq, typedAlt, ifexpr.position).setTpe(Type.unitTpe).setID(ifexpr.id)
       case Some(alt) =>
         val retTpe = (alt.tpe, typedConseq.tpe) match {
           case (Type.ErrorType, tpe) => tpe
@@ -996,7 +997,7 @@ object Typer {
         }
 
 
-        IfExpr(typedCond, typedConseq, typedAlt).setTpe(retTpe).setID(ifexpr.id)
+        IfExpr(typedCond, typedConseq, typedAlt, ifexpr.position).setTpe(retTpe).setID(ifexpr.id)
     }
   }
 
@@ -1052,7 +1053,7 @@ object Typer {
           } yield {
             val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType))
 
-            TypeTree(ident.setTpe(symbol.tpe).setSymbol(symbol), hargs, targs)
+            TypeTree(ident.setTpe(symbol.tpe).setSymbol(symbol), hargs, targs, typeTree.position)
               .setTpe(tpe)
               .setSymbol(symbol)
               .setID(typeTree.id)
@@ -1074,12 +1075,12 @@ object Typer {
         toTpe <- checkType(typedTo)
         castTpe <- castVerification(fromTpe, toTpe)
       } yield {
-        val typedCast = CastType(typedFrom, typedTo)
+        val typedCast = CastType(typedFrom, typedTo, cast.position)
           .setTpe(castTpe)
           .setSymbol(castTpe.origin)
           .setID(cast.id)
 
-        TypeTree(typedCast, Vector.empty, Vector.empty)
+        TypeTree(typedCast, Vector.empty, Vector.empty, typeTree.position)
           .setTpe(castTpe)
           .setSymbol(castTpe.origin)
           .setID(cast.id)
@@ -1111,12 +1112,12 @@ object Typer {
             case (_, symbol) => (symbol, Type.RefType.accessed(prefixTree.tpe.asRefType, symbol.tpe.asRefType))
           }
 
-          val typedSelect = StaticSelect(prefixTree, select.name)
+          val typedSelect = StaticSelect(prefixTree, select.name, select.position)
             .setSymbol(symbol)
             .setTpe(tpe)
             .setID(select.id)
 
-          Right(TypeTree(typedSelect, hargs, targs).setTpe(tpe).setSymbol(symbol).setID(typeTree.id))
+          Right(TypeTree(typedSelect, hargs, targs, typeTree.position).setTpe(tpe).setSymbol(symbol).setID(typeTree.id))
       }
     }
 
@@ -1141,7 +1142,7 @@ object Typer {
         val typedSelect = select.setSymbol(typeSymbol).setTpe(typeSymbol.tpe)
         val tpe = Type.RefType(typeSymbol, hargs, targs.map(_.tpe.asRefType))
 
-        TypeTree(typedSelect, hargs, targs)
+        TypeTree(typedSelect, hargs, targs, typeTree.position)
           .setSymbol(typeSymbol)
           .setTpe(tpe)
           .setID(typeTree.id)
@@ -1152,8 +1153,8 @@ object Typer {
       ctx.self match {
         case None => Left(Error.SelfTypeNotFound)
         case Some(tpe) =>
-          val tree = ThisType().setSymbol(tpe.origin).setTpe(tpe).setID(thisTree.id)
-          val tpeTree = TypeTree(tree, Vector.empty, Vector.empty)
+          val tree = ThisType(thisTree.position).setSymbol(tpe.origin).setTpe(tpe).setID(thisTree.id)
+          val tpeTree = TypeTree(tree, Vector.empty, Vector.empty, thisTree.position)
             .setSymbol(tree.symbol)
             .setTpe(tree.tpe)
 
@@ -1178,7 +1179,7 @@ object Typer {
         global.repo.error.append(err)
         val prefix = typeTree.expr.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
-        TypeTree(prefix, typedHArgs, typedTArgs)
+        TypeTree(prefix, typedHArgs, typedTArgs, typeTree.position)
           .setTpe(Type.ErrorType)
           .setSymbol(Symbol.ErrorSymbol)
           .setID(typeTree.id)
@@ -1225,7 +1226,7 @@ object Typer {
   }
 
   def typedBitLiteral(bit: BitLiteral)(implicit ctx: Context.NodeContext, global: GlobalData): BitLiteral = {
-    val length = IntLiteral(bit.length).setTpe(Type.numTpe)
+    val length = IntLiteral(bit.length, Position.empty).setTpe(Type.numTpe)
     val bitTpe = Type.bitTpe(length)
 
     bit.setTpe(bitTpe).setID(bit.id)
@@ -1331,7 +1332,7 @@ object Typer {
         (Symbol.ErrorSymbol, Type.ErrorType, generate.state)
     }
 
-    Generate(generate.target, typedArgs, generateState)
+    Generate(generate.target, typedArgs, generateState, generate.position)
       .setSymbol(stageSymbol)
       .setTpe(retTpe)
       .setID(generate.id)
@@ -1347,18 +1348,18 @@ object Typer {
       else Left(Error.RequireStateSpecify(states))
     }
 
-    def withStatePattern(tpe: Type.MethodType, state: String, args: Vector[Expression]): Either[Error, Option[StateInfo]] = {
+    def withStatePattern(tpe: Type.MethodType, state: String, args: Vector[Expression], info: StateInfo): Either[Error, Option[StateInfo]] = {
       tpe.declares.lookup(state) match {
         case None => Left(Error.SymbolNotFound(state))
         case Some(symbol) if !symbol.isStateSymbol => Left(Error.SymbolNotFound(state))
         case Some(stateSymbol: Symbol.StateSymbol) => stateSymbol.tpe match {
           case Type.ErrorType => Left(Error.DummyError)
-          case tpe: Type.MethodType => verifyStatePattern(stateSymbol, tpe, state, args)
+          case tpe: Type.MethodType => verifyStatePattern(stateSymbol, tpe, state, args, info)
         }
       }
     }
 
-    def verifyStatePattern(symbol: Symbol.StateSymbol, tpe: Type.MethodType, state: String, args: Vector[Expression]): Either[Error, Option[StateInfo]] = {
+    def verifyStatePattern(symbol: Symbol.StateSymbol, tpe: Type.MethodType, state: String, args: Vector[Expression], info: StateInfo): Either[Error, Option[StateInfo]] = {
       val params = tpe.params
       val typedArgs = args.map(typedExpr)
 
@@ -1382,14 +1383,14 @@ object Typer {
       for {
         _ <- sameLength
         _ <- sameTypes
-      } yield Some(StateInfo(state, typedArgs).setSymbol(symbol))
+      } yield Some(StateInfo(state, typedArgs, info.position).setSymbol(symbol))
     }
 
     stage.tpe match {
       case Type.ErrorType => Left(Error.DummyError)
       case tpe: Type.MethodType => state match {
         case None => noStatePattern(tpe)
-        case Some(StateInfo(stateName, args)) => withStatePattern(tpe, stateName, args)
+        case Some(info @ StateInfo(stateName, args)) => withStatePattern(tpe, stateName, args, info)
       }
     }
   }
@@ -1423,7 +1424,7 @@ object Typer {
           (Symbol.ErrorSymbol, Type.ErrorType, relay.state)
       }
 
-      Relay(relay.target, typedArgs, stateInfo)
+      Relay(relay.target, typedArgs, stateInfo, relay.position)
         .setSymbol(relaySymbol)
         .setTpe(relayTpe)
         .setID(relay.id)
@@ -1463,7 +1464,7 @@ object Typer {
     }
 
     result.left.foreach(global.repo.error.append)
-    Return(typedRetExpr).setTpe(Type.unitTpe).setID(ret.id)
+    Return(typedRetExpr, ret.position).setTpe(Type.unitTpe).setID(ret.id)
   }
 
   def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): HPExpr = expr match {
@@ -1473,7 +1474,7 @@ object Typer {
     case literal: StringLiteral => typedHPStrLit(literal)
     case unary @ HPUnaryOp(ident) =>
       val typedIdent = typedHPIdent(ident)
-      HPUnaryOp(typedIdent)
+      HPUnaryOp(typedIdent, expr.position)
         .setSymbol(typedIdent.symbol)
         .setTpe(typedIdent.tpe)
         .setID(unary.id)
@@ -1515,7 +1516,7 @@ object Typer {
       }
       else Type.ErrorType
 
-    HPBinOp(typedLeft, typedRight).setTpe(tpe).setID(binop.id)
+    HPBinOp(typedLeft, typedRight, binop.position).setTpe(tpe).setID(binop.id)
   }
 
   def typedHPIntLit(int: IntLiteral)(implicit global: GlobalData): IntLiteral = {

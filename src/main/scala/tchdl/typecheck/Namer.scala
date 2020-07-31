@@ -17,7 +17,7 @@ object Namer {
 
     val root = Context.root(cu.pkgName)
     cu.topDefs.map(topLevelNamed(_)(root, global))
-    packageSymbol.appendCtx(cu.filename.get, root)
+    packageSymbol.appendCtx(cu.filename, root)
   }
 
   def namedAlways(always: AlwaysDef)(implicit ctx: Context.NodeContext, global: GlobalData): AlwaysDef = {

@@ -6,7 +6,7 @@ import tchdl.util.TchdlException.ImplementationErrorException
 
 object RefCheck {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
-    val ctx = getContext(cu.pkgName, cu.filename.get)
+    val ctx = getContext(cu.pkgName, cu.filename)
 
     cu.topDefs.foreach(verify(_)(ctx, global))
   }

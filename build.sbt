@@ -9,11 +9,8 @@ lazy val antlr4Settings = Seq(
   javaSource in Antlr4 := (sourceManaged in Compile).value,
 )
 
-lazy val commonSettings = Seq(
-  version := "0.1",
-  scalaVersion := "2.12.11",
+lazy val compilerSettings = Seq(
   libraryDependencies ++= Seq(
-    "org.scala-lang" % "scala-reflect" % scalaVersion.value,
     "edu.berkeley.cs" %% "firrtl" % "1.3.2",
     "org.scalatest" %% "scalatest" % "3.1.0" % "test",
   ),
@@ -25,9 +22,18 @@ lazy val commonSettings = Seq(
   test in assembly := {}
 )
 
+lazy val commonSettings = Seq(
+  version := "0.1",
+  scalaVersion := "2.12.11",
+  libraryDependencies ++= Seq(
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value,
+  ),
+)
+
 lazy val compiler = (project in file("."))
   .settings(
     name := "compiler",
     commonSettings,
+    compilerSettings,
     antlr4Settings,
   )

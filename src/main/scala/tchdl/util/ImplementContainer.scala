@@ -135,7 +135,7 @@ object ImplementInterfaceContainer {
             val isOverlapped = (tpe0.hardwareParam zip tpe1.hardwareParam).forall {
               case (hp0, hp1) =>
                 def findRange(target: HPExpr, bounds: Vector[HPBound]): HPConstraint = target match {
-                  case IntLiteral(value) => HPConstraint.Eqn(Vector(IntLiteral(value)))
+                  case IntLiteral(value) => HPConstraint.Eqn(Vector(IntLiteral(value, Position.empty)))
                   case expr => bounds
                     .find(_.target.isSameExpr(expr))
                     .map(_.bound)
@@ -269,14 +269,13 @@ object ImplementClassContainer {
       hpBounds1: Vector[HPBound]
     ): Boolean = {
       def findRange(target: HPExpr, bounds: Vector[HPBound]): HPConstraint = target match {
-        case IntLiteral(value) => HPConstraint.Eqn(Vector(IntLiteral(value)))
+        case IntLiteral(value) => HPConstraint.Eqn(Vector(IntLiteral(value, Position.empty)))
         case expr =>
           bounds
             .find(_.target.isSameExpr(expr))
             .map(_.bound)
             .getOrElse(HPConstraint.empty)
       }
-
 
       (tpe0.origin, tpe1.origin) match {
         case (_: Symbol.EntityTypeSymbol, _: Symbol.EntityTypeSymbol) =>

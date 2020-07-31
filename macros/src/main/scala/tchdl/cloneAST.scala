@@ -74,47 +74,44 @@ object CloneASTMacro {
   def makeCopyMethod(c: whitebox.Context)(clazz: c.universe.ClassDef): c.Expr[c.universe.DefDef] = {
     import c.universe._
 
-    def hasSpecificTrait(exts: List[Tree], name: TypeName*): Boolean = {
+    def hasSpecificTrait(exts: List[Tree], name: String*): Boolean = {
+      val tpeName = name.map(TypeName.apply)
+
       exts.exists {
-        case Select(_, tpe) => name.contains(tpe)
-        case Ident(tpe) => name.contains(tpe)
+        case Select(_, tpe) => tpeName.contains(tpe)
+        case Ident(tpe) => tpeName.contains(tpe)
       }
     }
 
-    val ClassDef(mods, className, tps, template) = clazz
-    val Template(exts, self, defs) = template
-    val hasTypeTrait = hasSpecificTrait(exts, TypeName("HasType"), TypeName("Expression"))
-    val hasSymbolTrait = hasSpecificTrait(exts, TypeName("HasSymbol"), TypeName("Definition"))
+    val ClassDef(_, className, _, template) = clazz
+    val Template(exts, _, defs) = template
+    val hasTypeTrait = hasSpecificTrait(exts, "HasType", "Expression")
+    val hasSymbolTrait = hasSpecificTrait(exts, "HasSymbol", "Definition")
 
-    val constructor = defs.find {
-      case DefDef(_, name, _, _, _, _) if name == termNames.CONSTRUCTOR => true
-      case _ => false
-    }.get.asInstanceOf[DefDef]
+    val constructor = defs
+      .collect{ case method: DefDef => method }
+      .find { method => method.name == termNames.CONSTRUCTOR}
+      .get
 
-    val cloneParams = constructor.vparamss.map(_.map {
+    val params = constructor.vparamss.map(_.map {
       case ValDef(_, name, tpe, _) =>
         val expr = Select(This(typeNames.EMPTY), name)
         ValDef(Modifiers(Flag.PARAM | Flag.DEFAULTPARAM), name, tpe, expr)
     })
 
-    val idents = constructor.vparamss.map(_.map {
-      case ValDef(_, name, _, _) =>
-        Ident(TermName(name.toString))
-    })
+    val idents = constructor.vparamss.map(_.map { vdef => Ident(TermName(vdef.name.toString)) })
 
     val cloneExpr = {
       val root =
         q"""
            new $className(...$idents) {
-             val id = originID
+             override val position = oldPos
+             _id = oldID
            }
           """
       val symAttached =
-        if(hasSymbolTrait) {
-          q"$root.setSymbol(this.symbol)"
-        } else {
-          root
-        }
+        if(hasSymbolTrait) q"$root.setSymbol(this.symbol)"
+        else root
 
       val typeAttached =
         if(hasTypeTrait) {
@@ -129,8 +126,9 @@ object CloneASTMacro {
 
     c.Expr[DefDef](
       q"""
-          def copy(...$cloneParams): $className = {
-            val originID = this.id
+          def copy(...$params): $className = {
+            val oldPos = this.position
+            val oldID = this._id
             $cloneExpr
           }"""
     )

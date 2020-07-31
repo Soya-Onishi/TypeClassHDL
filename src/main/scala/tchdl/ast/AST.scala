@@ -1,17 +1,20 @@
 package tchdl.ast
 
+import tchdl.parser.Filename
 import tchdl.util.TchdlException.ImplementationErrorException
 import tchdl.util._
 
 sealed trait AST {
-  private var _id: Int = TreeID.id
+  var _id = TreeID.id()
   def id: Int = this._id
-  def setID(num: Int): this.type = {_id = num; this}
+  def setID(id: Int): this.type = { this._id = id; this }
+
+  val position: Position
 }
 
 object TreeID {
   var _id: Int = 0
-  def id: Int = {
+  def id(): Int = {
     val id = _id
     _id += 1
     id
@@ -33,9 +36,14 @@ sealed trait HPExpr extends Expression {
   // This method organizes an expression when an expression is sortable format.
   def sort: HPExpr = {
     def exec(binop: HPBinOp): HPExpr = {
-      def reConstruct(leafs: Vector[HPExpr], op: Operation): HPExpr = {
+      def reConstruct(leafs: Vector[HPExpr]): HPExpr = {
         val binop = leafs.reduceRight[HPExpr]{
-          case (expr, leaf) => HPBinOp(expr, leaf)
+          case (expr, leaf) =>
+            val start = expr.position.start
+            val end = leaf.position.end
+            val pos = Position(expr.position.filename, start, end)
+
+            HPBinOp(expr, leaf, pos)
         }
 
         binop._sortedExpr = Some(binop)
@@ -67,7 +75,7 @@ sealed trait HPExpr extends Expression {
         case (StringLiteral(left), StringLiteral(right)) => left < right
       }
 
-      reConstruct(sortedLeafs, binop.op)
+      reConstruct(sortedLeafs)
     }
 
     _sortedExpr match {
@@ -101,20 +109,28 @@ sealed trait HPExpr extends Expression {
       case leaf => Vector(leaf)
     }
 
-    def reConstruct(leafs: Vector[HPExpr], ops: Operation): HPExpr = leafs match {
+    def reConstruct(leafs: Vector[HPExpr]): HPExpr = leafs match {
       case Vector(leaf) => leaf
-      case leafs => HPBinOp(reConstruct(leafs.init, ops), leafs.last)
+      case leafs =>
+        val left = reConstruct(leafs.init)
+        val pos = Position(left, leafs.last)
+        HPBinOp(left, leafs.last, pos)
     }
 
     def exec(binop: HPBinOp): HPExpr = {
       val leafs = collectLeafs(binop)
-      val nums = leafs.collect { case IntLiteral(value) => value }
+      val lits = leafs.collect { case lit: IntLiteral => lit }
       val others = leafs.filterNot(_.isInstanceOf[IntLiteral])
 
-      if(nums.isEmpty) binop
+      if(lits.isEmpty) binop
       else {
-        val combined = IntLiteral(nums.reduce[Int]{ case (l, r) => calc(binop.op, l, r) })
-        reConstruct(others :+ combined, binop.op)
+        val litStart = others.lastOption.getOrElse(binop).position.start
+        val litEnd = lits.last.position.end
+        val litPos = Position(binop.position.filename, litStart, litEnd)
+        val nums = lits.map(_.value)
+
+        val combined = IntLiteral(nums.reduce[Int]{ case (l, r) => calc(binop.op, l, r) }, litPos)
+        reConstruct(others :+ combined)
       }
     }
 
@@ -140,7 +156,7 @@ sealed trait HPExpr extends Expression {
 
   def replaceWithMap(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
     def loop(expr: HPExpr): HPExpr = expr match {
-      case HPBinOp(left, right) => HPBinOp(loop(left), loop(right))
+      case bin @ HPBinOp(left, right) => bin.copy(left = loop(left), right = loop(right))
       case ident: Ident => hpTable.getOrElse(ident.symbol.asHardwareParamSymbol, ident)
       case e => e
     }
@@ -148,96 +164,9 @@ sealed trait HPExpr extends Expression {
     loop(this).sort
   }
 
-
-  /*
-  def disassemble(exprs: Vector[HPExpr]): (Vector[HPExpr], Option[HPExpr]) = {
-    def countLeaf(expr: HPExpr): Int = expr match {
-      case HPBinOp(_, left, right) => countLeaf(left) + countLeaf(right)
-      case _ => 1
-    }
-
-    def collectLeaf(expr: HPExpr): Vector[Int] = expr match {
-      case HPBinOp(_, left, right) => collectLeaf(left) ++ collectLeaf(right)
-      case leaf => Vector(leaf.hashCode)
-    }
-
-    def lessThan(v0: Vector[Int], v1: Vector[Int]): Boolean = {
-      v0.zip(v1).find{ case (v0, v1) => v0 != v1 } match {
-        case Some((v0, v1)) => v0 < v1
-        case None => false
-      }
-    }
-
-
-    def impl(purged: HPExpr, table: Vector[HPExpr]): (Vector[HPExpr], Option[HPExpr]) = {
-      val (hit, remain) = table.foldLeft((Option.empty[HPExpr], Option.empty[HPExpr])) {
-        case ((Some(tree), remain), _) => (Some(tree), remain)
-        case ((None, None), expr) =>  purged.purge(expr) match {
-          case Left(_) => (None, None)
-          case Right(remain) => (Some(expr), remain)
-        }
-      }
-
-      (hit, remain) match {
-        case (Some(expr), None) => (Vector(expr), None)
-        case (Some(expr), Some(remain)) =>
-          val (purgeds, remainExpr) = impl(remain, table)
-          (expr +: purgeds, remainExpr)
-        case (None, _) => (Vector.empty, Some(purged))
-      }
-    }
-
-
-    val (simples, complexes) = exprs.partition(_.isSimpleExpr)
-    lazy val simplesTable = simples.sortWith {
-      case (e0, e1) =>
-        val e0LeafCount = countLeaf(e0)
-        val e1LeafCount = countLeaf(e1)
-        lazy val e0LeafHashes = collectLeaf(e0)
-        lazy val e1LeafHashes = collectLeaf(e1)
-
-        if(e0LeafCount != e1LeafCount) e0LeafCount < e1LeafCount
-        else lessThan(e0LeafHashes, e1LeafHashes)
-    }.reverse
-
-    if(this.isSimpleExpr) impl(this, complexes ++ simplesTable)
-    else (Vector.empty, Some(this))
-  }
-  */
-  /*
-  private def purge(expr: HPExpr): Either[Unit, Option[HPExpr]] = {
-    def purging(e0: HPExpr, e1: HPExpr): Either[Unit, Option[HPExpr]] = (e0, e1) match {
-      case (HPBinOp(_, _), HPBinOp(_, _)) if op0 != op1 => Left(())
-      case (HPBinOp(op, left0, right0: Ident), e1 @ HPBinOp(_, left1, right1: Ident)) =>
-        if(right0.symbol == right1.symbol) purging(left0, left1) match {
-          case Left(()) => Left(())
-          case Right(None) => Right(None)
-          case Right(Some(remain)) => Right(Some(remain))
-        }
-        else purging(left0, e1) match {
-          case Left(()) => Left(())
-          case Right(None) => Right(Some(right0))
-          case Right(Some(left)) => Right(Some(HPBinOp(left, right0)))
-        }
-      case (HPBinOp(left, right: Ident), ident: Ident) =>
-        if(right.symbol == ident.symbol) Right(Some(left))
-        else purging(left, ident)
-      case (id0: Ident, id1: Ident) =>
-        if(id0.symbol == id1.symbol) Right(None)
-        else Left(())
-    }
-
-    if(!expr.isSimpleExpr || !this.isSimpleExpr)
-      if(this.isSameExpr(expr)) Right(None)
-      else Left(())
-    else
-      purging(this, expr)
-  }
-  */
-
   def swap(table: Map[Symbol.HardwareParamSymbol, HPExpr]): HPExpr = {
     def loop(expr: HPExpr): HPExpr = expr match {
-      case HPBinOp(left, right) => HPBinOp(loop(left), loop(right))
+      case bin @ HPBinOp(left, right) => bin.copy(left = loop(left), right = loop(right))
       case ident: Ident => table(ident.symbol.asHardwareParamSymbol)
       case lit => lit
     }
@@ -245,70 +174,16 @@ sealed trait HPExpr extends Expression {
     loop(this).sort
   }
 
-  def extractConstant:(HPExpr, Option[Int]) = this.sort.combine match {
-    case HPBinOp(left, IntLiteral(right)) => (left, Some(right))
+  def extractConstant:(HPExpr, Option[IntLiteral]) = this.sort.combine match {
+    case HPBinOp(left, right: IntLiteral) => (left, Some(right))
     case expr => (expr, None)
   }
 
   def negate: HPExpr = this match {
-    case HPBinOp(left, right) => HPBinOp(left.negate, right.negate)
-    case ident: Ident => HPUnaryOp(ident)
+    case bin @ HPBinOp(left, right) => HPBinOp(left.negate, right.negate, bin.position)
+    case ident: Ident => HPUnaryOp(ident, ident.position)
     case HPUnaryOp(ident) => ident
-    case IntLiteral(value) => IntLiteral(-value)
-  }
-
-  def subtract(that: HPExpr): HPExpr = {
-    def collectPosLeafs(expr: HPExpr): Vector[Ident] = expr match {
-      case ident: Ident => Vector(ident)
-      case HPUnaryOp(_) => Vector.empty
-      case HPBinOp(left, right) => collectPosLeafs(left) ++ collectPosLeafs(right)
-      case _: Literal => Vector.empty
-    }
-
-    def collectNegLeafs(expr: HPExpr): Vector[Ident] = expr match {
-      case _: Ident => Vector.empty
-      case HPUnaryOp(ident) => Vector(ident)
-      case HPBinOp(left, right) => collectNegLeafs(left) ++ collectNegLeafs(right)
-      case _: Literal => Vector.empty
-    }
-
-    def execSubtract(lefts: Vector[Ident], rights: Vector[Ident]): (Vector[Ident], Vector[Ident]) = {
-      val leftSymbols = lefts.map(_.symbol)
-      val rightSymbols = rights.map(_.symbol)
-      val leftRemains = lefts.filterNot(left => rightSymbols.contains(left.symbol))
-      val rightRemains = rights.filterNot(right => leftSymbols.contains(right.symbol))
-
-      (leftRemains, rightRemains)
-    }
-
-    val (left, leftConst) = this.sort.combine.extractConstant
-    val (right, rightConst) = that.sort.combine.extractConstant
-    val leftPosLeafs = collectPosLeafs(left)
-    val leftNegLeafs = collectNegLeafs(left)
-    val rightPosLeafs = collectPosLeafs(right)
-    val rightNegLeafs = collectNegLeafs(right)
-
-    val (leftPosRemains, rightPosRemains) = execSubtract(leftPosLeafs, rightPosLeafs)
-    val (leftNegRemains, rightNegRemains) = execSubtract(leftNegLeafs, rightNegLeafs)
-
-    val const = (leftConst, rightConst) match {
-      case (Some(left), Some(right)) => Some(IntLiteral(left - right))
-      case (Some(left), None)  => Some(IntLiteral(left))
-      case (None, Some(right)) => Some(IntLiteral(right))
-      case (None, None) => None
-    }
-
-    val leafs = leftPosRemains ++ leftNegRemains ++ (rightPosRemains ++ rightNegRemains).map(HPUnaryOp.apply)
-    val binop = leafs.reduceLeftOption[HPExpr]{ case (acc, right) => HPBinOp(acc, right) }
-
-    val expr = (binop, const) match {
-      case (None, None) => IntLiteral(0)
-      case (None, Some(const)) => const
-      case (Some(expr), None) => expr
-      case (Some(expr), Some(const)) => HPBinOp(expr, const)
-    }
-
-    expr.sort.combine
+    case int @ IntLiteral(value) => IntLiteral(-value, int.position)
   }
 
   def countLeafs: Int = this match {
@@ -334,65 +209,1156 @@ sealed trait HPExpr extends Expression {
 }
 
 trait HasType {
-  private var _tpe: Option[Type] = None
+  protected var _tpe: Option[Type] = None
   def tpe: Type = _tpe.get
   def setTpe(tpe: Type): this.type = { _tpe = Some(tpe); this }
 }
 
 trait HasSymbol {
-  private var _symbol: Option[Symbol] = None
+  protected var _symbol: Option[Symbol] = None
   def symbol: Symbol = _symbol.get
   def setSymbol(symbol: Symbol): this.type = { _symbol = Some(symbol); this }
 }
 
-case class CompilationUnit(filename: Option[String], pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition]) extends AST {
-  override def toString: String = s"CU[${filename.get}, ${pkgName.mkString("::")}]"
-}
+abstract case class CompilationUnit private (filename: String, pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition]) extends AST {
+  override def toString: String = s"CU[$filename, ${pkgName.mkString("::")}]"
+  def copy(
+    filename: String = this.filename,
+    pkgName: Vector[String] = this.pkgName,
+    imports: Vector[Vector[String]] = this.imports,
+    topDefs: Vector[Definition] = this.topDefs
+  ): CompilationUnit = {
+    val oldPos = this.position
+    val oldID = this._id
 
-case class ModuleDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], parents: Vector[ValDef], siblings: Vector[ValDef]) extends Definition
-case class StructDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], fields: Vector[ValDef]) extends Definition
-case class InterfaceDef(flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], types: Vector[TypeDef]) extends Definition
-case class EnumDef(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], members: Vector[EnumMemberDef]) extends Definition
-case class EnumMemberDef(name: String, fields: Vector[TypeTree]) extends Definition
-case class ImplementClass(target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], components: Vector[Component]) extends Definition
-case class ImplementInterface(interface: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], types: Vector[TypeDef]) extends Definition
-case class AlwaysDef(name: String, blk: Block) extends Component
-case class MethodDef(annons: Vector[Annotation], flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component
-case class ValDef(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Component with BlockElem
-case class StageDef(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component
-case class StateDef(name: String, params: Vector[ValDef], blk: Block) extends Definition
-case class TypeDef(flag: Modifier, name: String, tpe: Option[TypeTree]) extends Definition
-
-trait ImplicitHPRange
-object ImplicitHPRange {
-  case object NotInit extends ImplicitHPRange
-  case object Invalid extends ImplicitHPRange
-  case class Range(max: Option[Int], min: Option[Int]) extends ImplicitHPRange
-}
-
-trait BoundTree extends AST
-case class TPBoundTree(target: TypeTree, bounds: Vector[TypeTree]) extends BoundTree
-case class HPBoundTree(target: HPExpr, bounds: Vector[RangeExpr]) extends BoundTree
-
-trait RangeExpr {
-  val expr: HPExpr
-
-  def map(f: HPExpr => HPExpr): RangeExpr = {
-    this match {
-      case RangeExpr.EQ(expr) => RangeExpr.EQ(f(expr))
-      case RangeExpr.Min(expr) => RangeExpr.Min(f(expr))
-      case RangeExpr.Max(expr) => RangeExpr.Max(f(expr))
+    new CompilationUnit(filename, pkgName, imports, topDefs) {
+      override val position = oldPos
+      this._id = oldID
     }
   }
 }
+
+object CompilationUnit {
+  def apply(filename: String, pkgName: Vector[String], imports: Vector[Vector[String]], topDefs: Vector[Definition], pos: Position): CompilationUnit = {
+    new CompilationUnit(filename, pkgName, imports, topDefs) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ModuleDef private (name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], parents: Vector[ValDef], siblings: Vector[ValDef]) extends Definition {
+  def copy(
+    name: String = this.name,
+    hp: Vector[ValDef] = this.hp,
+    tp: Vector[TypeDef] = this.tp,
+    bounds: Vector[BoundTree] = this.bounds,
+    parents: Vector[ValDef] = this.parents,
+    siblings: Vector[ValDef] = this.siblings
+  ): ModuleDef = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+
+    new ModuleDef(name, hp, tp, bounds, parents, siblings) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+    }
+  }
+}
+
+object ModuleDef {
+  def apply(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], parents: Vector[ValDef], siblings: Vector[ValDef], pos: Position): ModuleDef = {
+    new ModuleDef(name, hp, tp, bounds, parents, siblings) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class StructDef private (name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], fields: Vector[ValDef]) extends Definition {
+  def copy(
+    name: String = this.name,
+    hp: Vector[ValDef] = this.hp,
+    tp: Vector[TypeDef] = this.tp,
+    bounds: Vector[BoundTree] = this.bounds,
+    fields: Vector[ValDef] = this.fields
+  ): StructDef = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+
+    new StructDef(name, hp, tp, bounds, fields) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+    }
+  }
+}
+
+object StructDef {
+  def apply(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], fields: Vector[ValDef], pos: Position): StructDef = {
+    new StructDef(name, hp, tp, bounds, fields) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class InterfaceDef private (flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], types: Vector[TypeDef]) extends Definition {
+  def copy(
+    flag: Modifier = this.flag,
+    name: String = this.name,
+    hp: Vector[ValDef] = this.hp,
+    tp: Vector[TypeDef] = this.tp,
+    bounds: Vector[BoundTree] = this.bounds,
+    methods: Vector[MethodDef] = this.methods,
+    types: Vector[TypeDef] = this.types
+  ): InterfaceDef = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+
+    new InterfaceDef(flag, name, hp, tp, bounds, methods, types) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+    }
+  }
+}
+
+object InterfaceDef {
+  def apply(flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], typed: Vector[TypeDef], pos: Position): InterfaceDef = {
+    new InterfaceDef(flag, name, hp, tp, bounds, methods, typed) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class EnumDef private (name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], members: Vector[EnumMemberDef]) extends Definition {
+  def copy(
+    name: String = this.name,
+    hp: Vector[ValDef] = this.hp,
+    tp: Vector[TypeDef] = this.tp,
+    bounds: Vector[BoundTree] = this.bounds,
+    members: Vector[EnumMemberDef] = this.members
+  ): EnumDef = {
+    val pos = this.position
+    val oldID = this._id
+    val sym = this._symbol
+
+    new EnumDef(name, hp, tp, bounds, members) {
+      override val position = pos
+      this._id = oldID
+      this._symbol = sym
+    }
+  }
+}
+
+object EnumDef {
+  def apply(name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], members: Vector[EnumMemberDef], pos: Position): EnumDef = {
+    new EnumDef(name, hp, tp, bounds, members) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class EnumMemberDef private (name: String, fields: Vector[TypeTree]) extends Definition {
+  def copy(name: String = this.name, fields: Vector[TypeTree] = this.fields): EnumMemberDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldId = this._id
+
+    new EnumMemberDef(name, fields) {
+      override val position = pos
+      _id = oldId
+      _symbol = sym
+    }
+  }
+}
+
+object EnumMemberDef {
+  def apply(name: String, fields: Vector[TypeTree], pos: Position): EnumMemberDef = {
+    new EnumMemberDef(name, fields) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ImplementClass private (target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], components: Vector[Component]) extends Definition {
+  def copy(
+    target: TypeTree = this.target,
+    hp: Vector[ValDef] = this.hp,
+    tp: Vector[TypeDef] = this.tp,
+    bounds: Vector[BoundTree] = this.bounds,
+    components: Vector[Component] = this.components
+  ): ImplementClass = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldId = this._id
+
+    new ImplementClass(target, hp, tp, bounds, components) {
+      override val position = pos
+      _symbol = sym
+      _id = oldId
+    }
+  }
+}
+
+object ImplementClass {
+  def apply(target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], components: Vector[Component], pos: Position): ImplementClass = {
+    new ImplementClass(target, hp, tp, bounds, components) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ImplementInterface private (interface: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], types: Vector[TypeDef]) extends Definition {
+  def copy(
+    interface: TypeTree = this.interface,
+    target: TypeTree = this.target,
+    hp: Vector[ValDef] = this.hp,
+    tp: Vector[TypeDef] = this.tp,
+    bounds: Vector[BoundTree] = this.bounds,
+    methods: Vector[MethodDef] = this.methods,
+    types: Vector[TypeDef] = this.types
+  ): ImplementInterface = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new ImplementInterface(interface, target, hp, tp, bounds, methods, types) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object ImplementInterface {
+  def apply(interface: TypeTree, target: TypeTree, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], methods: Vector[MethodDef], types: Vector[TypeDef], pos: Position): ImplementInterface = {
+    new ImplementInterface(interface, target, hp, tp, bounds, methods, types) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class AlwaysDef private (name: String, blk: Block) extends Component {
+  def copy(name: String = this.name, blk: Block = this.blk): AlwaysDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new AlwaysDef(name, blk) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object AlwaysDef {
+  def apply(name: String, blk: Block, pos: Position): AlwaysDef = {
+    new AlwaysDef(name, blk) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class MethodDef private (annons: Vector[Annotation], flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component {
+  def copy(
+    annons: Vector[Annotation] = this.annons,
+    flag: Modifier = this.flag,
+    name: String = this.name,
+    hp: Vector[ValDef] = this.hp,
+    tp: Vector[TypeDef] = this.tp,
+    bounds: Vector[BoundTree] = this.bounds,
+    params: Vector[ValDef] = this.params,
+    retTpe: TypeTree = this.retTpe,
+    blk: Option[Block] = this.blk
+  ): MethodDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new MethodDef(annons, flag, name, hp, tp, bounds, params, retTpe, blk) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object MethodDef {
+  def apply(annons: Vector[Annotation], flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block], pos: Position): MethodDef = {
+    new MethodDef(annons, flag, name, hp, tp, bounds, params, retTpe, blk) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ValDef private (flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression]) extends Component with BlockElem {
+  def copy(
+    flag: Modifier = this.flag,
+    name: String = this.name,
+    tpeTree: Option[TypeTree] = this.tpeTree,
+    expr: Option[Expression] = this.expr
+  ): ValDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new ValDef(flag, name, tpeTree, expr) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object ValDef {
+  def apply(flag: Modifier, name: String, tpeTree: Option[TypeTree], expr: Option[Expression], pos: Position): ValDef = {
+    new ValDef(flag, name, tpeTree, expr) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class StageDef private (name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component {
+  def copy(
+    name: String = this.name,
+    params: Vector[ValDef] = this.params,
+    retTpe: TypeTree = this.retTpe,
+    states: Vector[StateDef] = this.states,
+    blk: Vector[BlockElem] = this.blk
+  ): StageDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new StageDef(name, params, retTpe, states, blk) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object StageDef {
+  def apply(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem], pos: Position): StageDef = {
+    new StageDef(name, params, retTpe, states, blk) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class StateDef private (name: String, params: Vector[ValDef], blk: Block) extends Definition {
+  def copy(
+    name: String = this.name,
+    params: Vector[ValDef] = this.params,
+    blk: Block = this.blk
+  ): StateDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new StateDef(name, params, blk) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object StateDef {
+  def apply(name: String, params: Vector[ValDef], blk: Block, pos: Position): StateDef = {
+    new StateDef(name, params, blk) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class TypeDef private (flag: Modifier, name: String, tpe: Option[TypeTree]) extends Definition {
+  def copy(
+    flag: Modifier = this.flag,
+    name: String = this.name,
+    tpe: Option[TypeTree] = this.tpe
+  ): TypeDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new TypeDef(flag, name, tpe) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object TypeDef {
+  def apply(flag: Modifier, name: String, tpe: Option[TypeTree], pos: Position): TypeDef = {
+    new TypeDef(flag, name, tpe) {
+      override val position = pos
+    }
+  }
+}
+
+sealed trait BoundTree extends AST
+abstract case class TPBoundTree private (target: TypeTree, bounds: Vector[TypeTree]) extends BoundTree {
+  def copy(target: TypeTree = this.target, bounds: Vector[TypeTree] = this.bounds): TPBoundTree = {
+    val pos = this.position
+    val oldID = this._id
+
+    new TPBoundTree(target, bounds) {
+      override val position = pos
+      _id = oldID
+    }
+  }
+}
+
+object TPBoundTree {
+  def apply(target: TypeTree, bounds: Vector[TypeTree], pos: Position): TPBoundTree = {
+    new TPBoundTree(target, bounds) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class HPBoundTree private (target: HPExpr, bounds: Vector[RangeExpr]) extends BoundTree {
+  def copy(target: HPExpr = this.target, bounds: Vector[RangeExpr] = this.bounds): HPBoundTree = {
+    val pos = this.position
+    val oldID = this._id
+
+    new HPBoundTree(target, bounds) {
+      override val position = pos
+      _id = oldID
+    }
+  }
+}
+
+object HPBoundTree {
+  def apply(target: HPExpr, bounds: Vector[RangeExpr], pos: Position): HPBoundTree = {
+    new HPBoundTree(target, bounds) {
+      override val position = pos
+    }
+  }
+}
+
+sealed trait RangeExpr { val expr: HPExpr }
 object RangeExpr {
   case class EQ(expr: HPExpr) extends RangeExpr
   case class Min(expr: HPExpr) extends RangeExpr
   case class Max(expr: HPExpr) extends RangeExpr
 }
 
-case class Ident(name: String) extends Expression with TypeAST with HasSymbol with HPExpr with ApplyPrefix
-case class Apply(prefix: ApplyPrefix, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression
+abstract case class Ident private (name: String) extends Expression with TypeAST with HasSymbol with HPExpr with ApplyPrefix {
+  def copy(name: String = this.name): Ident = {
+    val pos = this.position
+    val oldTpe = this._tpe
+    val oldSym = this._symbol
+    val oldID = this._id
+    val oldSort = this._sortedExpr
+
+    new Ident(name) {
+      override val position = pos
+      this._tpe = oldTpe
+      this._symbol = oldSym
+      this._id = oldID
+      this._sortedExpr = oldSort
+    }
+  }
+}
+
+object Ident {
+  def apply(name: String, pos: Position): Ident = {
+    new Ident(name) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Apply private (prefix: ApplyPrefix, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression]) extends Expression {
+  def copy(
+    prefix: ApplyPrefix,
+    hps: Vector[HPExpr],
+    tps: Vector[TypeTree],
+    args: Vector[Expression]
+  ): Apply = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new Apply(prefix, hps, tps, args) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Apply {
+  def apply(prefix: ApplyPrefix, hps: Vector[HPExpr], tps: Vector[TypeTree], args: Vector[Expression], pos: Position): Apply = {
+    new Apply(prefix, hps, tps, args) {
+      override val position = pos
+    }
+  }
+}
+
+
+abstract case class Select private (prefix: Expression, name: String) extends Expression with HasSymbol with ApplyPrefix {
+  def copy(prefix: Expression = this.prefix, name: String = this.name): Select = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new Select(prefix, name) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Select {
+  def apply(prefix: Expression, name: String, pos: Position): Select = {
+    new Select(prefix, name) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class StaticSelect private (prefix: TypeTree, name: String) extends Expression with TypeAST with ApplyPrefix {
+  def copy(prefix: TypeTree = this.prefix, name: String = this.name): StaticSelect = {
+    val oldPos = this.position
+    val oldTpe = this._tpe
+    val oldSymbol = this._symbol
+    val oldID = this._id
+
+    new StaticSelect(prefix, name) {
+      override val position = oldPos
+      this._tpe = oldTpe
+      this._symbol = oldSymbol
+      this._id = oldID
+    }
+  }
+}
+
+object StaticSelect {
+  def apply(prefix: TypeTree, name: String, pos: Position): StaticSelect = {
+    new StaticSelect(prefix, name) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class CastExpr private (expr: Expression, to: TypeTree) extends Expression {
+  def copy(expr: Expression = this.expr, to: TypeTree = this.to): CastExpr = {
+    val oldPos = this.position
+    val oldTpe = this._tpe
+    val oldID = this._id
+
+    new CastExpr(expr, to) {
+      override val position = oldPos
+      this._tpe = oldTpe
+      this._id = oldID
+    }
+  }
+}
+
+object CastExpr {
+  def apply(expr: Expression, to: TypeTree, pos: Position): CastExpr = {
+    new CastExpr(expr, to) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class SelectPackage private (packages: Vector[String], name: String) extends AST with TypeAST with Expression {
+  def copy(
+    packages: Vector[String] = this.packages,
+    name: String = this.name
+  ): SelectPackage = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new SelectPackage(packages, name) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object SelectPackage {
+  def apply(packages: Vector[String], name: String, pos: Position): SelectPackage = {
+    new SelectPackage(packages, name) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Block private (elems: Vector[BlockElem], last: Expression) extends Expression {
+  def copy(elems: Vector[BlockElem] = this.elems, last: Expression = this.last): Block = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new Block(elems, last) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Block {
+  def apply(elems: Vector[BlockElem], last: Expression, pos: Position): Block = {
+    new Block(elems, last) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ConstructClass private (target: TypeTree, fields: Vector[ConstructPair]) extends Construct {
+  def copy(target: TypeTree = this.target, fields: Vector[ConstructPair] = this.fields): ConstructClass = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new ConstructClass(target, fields) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object ConstructClass {
+  def apply(target: TypeTree, fields: Vector[ConstructPair], pos: Position): ConstructClass = {
+    new ConstructClass(target, fields) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ConstructModule private (target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair]) extends Construct {
+  def copy(target: TypeTree = this.target, parents: Vector[ConstructPair] = this.parents, siblings: Vector[ConstructPair] = this.siblings): ConstructModule = {
+    val oldPos = this.position
+    val oldTpe = this._tpe
+    val oldSym = this._symbol
+    val oldID = this._id
+
+    new ConstructModule(target, parents, siblings) {
+      override val position = oldPos
+      this._tpe = oldTpe
+      this._symbol = oldSym
+      this._id = oldID
+    }
+  }
+}
+
+object ConstructModule {
+  def apply(target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair], pos: Position): ConstructModule = {
+    new ConstructModule(target, parents, siblings) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ConstructEnum private (target: TypeTree, fields: Vector[Expression]) extends Construct {
+  def copy(target: TypeTree = this.target, fields: Vector[Expression] = this.fields): ConstructEnum = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new ConstructEnum(target, fields) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object ConstructEnum {
+  def apply(target: TypeTree, fields: Vector[Expression], pos: Position): ConstructEnum = {
+    new ConstructEnum(target, fields) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ConstructPair private (name: String, init: Expression) extends AST {
+  def copy(name: String = this.name, init: Expression = this.init): ConstructPair = {
+    val oldPos = this.position
+    val oldID = this._id
+
+    new ConstructPair(name, init) {
+      override val position = oldPos
+      this._id = oldID
+    }
+  }
+}
+
+object ConstructPair {
+  def apply(name: String, init: Expression, pos: Position): ConstructPair = {
+    new ConstructPair(name, init) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Assign private (left: Expression, right: Expression) extends BlockElem {
+  def copy(left: Expression = this.left, right: Expression = this.right): Assign = {
+    val oldPos = this.position
+    val oldID = this._id
+
+    new Assign(left, right) {
+      override val position = oldPos
+      this._id = oldID
+    }
+  }
+}
+
+object Assign {
+  def apply(left: Expression, right: Expression, pos: Position): Assign = {
+    new Assign(left, right) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class This private () extends Expression {
+  def copy(): This = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new This() {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object This {
+  def apply(pos: Position): This = {
+    new This() {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class IfExpr private (cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression {
+  def copy(cond: Expression = this.cond, conseq: Expression = this.conseq, alt: Option[Expression] = this.alt): IfExpr = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new IfExpr(cond, conseq, alt) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object IfExpr {
+  def apply(cond: Expression, conseq: Expression, alt: Option[Expression], pos: Position): IfExpr = {
+    new IfExpr(cond, conseq, alt) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class BitLiteral private (value: BigInt, length: Int) extends Literal {
+  def copy(value: BigInt = this.value, length: Int = this.length): BitLiteral = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new BitLiteral(value, length) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object BitLiteral {
+  def apply(value: BigInt, length: Int, pos: Position): BitLiteral = {
+    new BitLiteral(value, length) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class IntLiteral private (value: Int) extends Literal with HPExpr {
+  def copy(value: Int = this.value): IntLiteral = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+    val oldExpr = this._sortedExpr
+
+    new IntLiteral(value) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+      this._sortedExpr = oldExpr
+    }
+  }
+}
+
+object IntLiteral {
+  def apply(value: Int, pos: Position): IntLiteral = {
+    new IntLiteral(value) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class BoolLiteral private (value: Boolean) extends Literal with HPExpr {
+  def copy(value: Boolean = this.value): BoolLiteral = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+    val oldExpr = this._sortedExpr
+
+    new BoolLiteral(value) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+      this._sortedExpr = oldExpr
+    }
+  }
+}
+
+object BoolLiteral {
+  def apply(value: Boolean, pos: Position): BoolLiteral = {
+    new BoolLiteral(value) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class UnitLiteral private () extends Literal {
+  def copy(): UnitLiteral = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new UnitLiteral {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object UnitLiteral {
+  def apply(pos: Position): UnitLiteral = {
+    new UnitLiteral {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class StringLiteral private (str: String) extends Literal with HPExpr {
+  def copy(str: String = this.str): StringLiteral = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+    val oldExpr = this._sortedExpr
+
+    new StringLiteral(str) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+      this._sortedExpr = oldExpr
+    }
+  }
+}
+
+object StringLiteral {
+  def apply(str: String, pos: Position): StringLiteral = {
+    new StringLiteral(str) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Finish private () extends Expression {
+  def copy(): Finish = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new Finish {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Finish {
+  def apply(pos: Position): Finish = {
+    new Finish {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Goto private (target: String, args: Vector[Expression]) extends Expression with HasSymbol {
+  def copy(target: String = this.target, args: Vector[Expression] = this.args): Goto = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+    val oldSym = this._symbol
+
+    new Goto(target, args) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+      this._symbol = oldSym
+    }
+  }
+}
+
+object Goto {
+  def apply(target: String, args: Vector[Expression], pos: Position): Goto = {
+    new Goto(target, args) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Generate private (target: String, args: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol {
+  def copy(target: String = this.target, args: Vector[Expression] = this.args, state: Option[StateInfo] = this.state): Generate = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+    val oldSym = this._symbol
+
+    new Generate(target, args, state) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+      this._symbol = oldSym
+    }
+  }
+}
+
+object Generate {
+  def apply(target: String, args: Vector[Expression], state: Option[StateInfo], pos: Position): Generate = {
+    new Generate(target, args, state) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Relay private (target: String, params: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol {
+  def copy(target: String = this.target, params: Vector[Expression] = this.params, state: Option[StateInfo] = this.state): Relay = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new Relay(target, params, state) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Relay {
+  def apply(target: String, params: Vector[Expression], state: Option[StateInfo], pos: Position): Relay = {
+    new Relay(target, params, state) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class StateInfo private (target: String, args: Vector[Expression]) extends AST with HasSymbol {
+  def copy(target: String = this.target, args: Vector[Expression] = this.args): StateInfo = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+
+    new StateInfo(target, args) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+    }
+  }
+}
+
+object StateInfo {
+  def apply(target: String, args: Vector[Expression], pos: Position): StateInfo = {
+    new StateInfo(target, args) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Return private (expr: Expression) extends Expression {
+  def copy(expr: Expression = this.expr): Return = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new Return(expr) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Return {
+  def apply(expr: Expression, pos: Position): Return = {
+    new Return(expr) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Match private (expr: Expression, cases: Vector[Case]) extends Expression {
+  def copy(expr: Expression = this.expr, abstracts: Vector[Case] = this.cases): Match = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new Match(expr, abstracts) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Match {
+  def apply(expr: Expression, cases: Vector[Case], pos: Position): Match = {
+    new Match(expr, cases) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class Case private (pattern: MatchPattern, exprs: Vector[BlockElem]) extends AST with HasType {
+  def copy(pattern: MatchPattern = this.pattern, exprs: Vector[BlockElem] = this.exprs): Case = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new Case(pattern, exprs) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object Case {
+  def apply(pattern: MatchPattern, exprs: Vector[BlockElem], pos: Position): Case = {
+    new Case(pattern, exprs) {
+      override val position = pos
+    }
+  }
+}
+
+sealed trait MatchPattern extends AST
+abstract case class EnumPattern private (variant: TypeTree, patterns: Vector[MatchPattern]) extends MatchPattern {
+  def copy(variant: TypeTree = this.variant, patterns: Vector[MatchPattern] = this.patterns): EnumPattern = {
+    val oldPos = this.position
+    val oldID = this._id
+
+    new EnumPattern(variant, patterns) {
+      override val position = oldPos
+      this._id = oldID
+    }
+  }
+}
+
+object EnumPattern {
+  def apply(variant: TypeTree, patterns: Vector[MatchPattern], pos: Position): EnumPattern = {
+    new EnumPattern(variant, patterns) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class LiteralPattern private (lit: Literal) extends MatchPattern {
+  def copy(lit: Literal = this.lit): LiteralPattern = {
+    val oldPos = this.position
+    val oldID = this._id
+
+    new LiteralPattern(lit) {
+      override val position = oldPos
+      this._id = oldID
+    }
+  }
+}
+
+object LiteralPattern {
+  def apply(lit: Literal, pos: Position): LiteralPattern = {
+    new LiteralPattern(lit) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class IdentPattern(ident: Ident) extends MatchPattern {
+  def copy(ident: Ident = this.ident): IdentPattern = {
+    val oldPos = this.position
+    val oldID = this._id
+
+    new IdentPattern(ident) {
+      override val position = oldPos
+      this._id = oldID
+    }
+  }
+}
+
+object IdentPattern {
+  def apply(ident: Ident, pos: Position): IdentPattern = {
+    new IdentPattern(ident) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class WildCardPattern private () extends MatchPattern with HasType {
+  def copy(): WildCardPattern = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new WildCardPattern {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object WildCardPattern {
+  def apply(pos: Position): WildCardPattern = {
+    new WildCardPattern {
+      override val position = pos
+    }
+  }
+}
 
 sealed abstract class UnaryOp extends Expression with HasSymbol {
   type Expr <: Expression
@@ -401,13 +1367,60 @@ sealed abstract class UnaryOp extends Expression with HasSymbol {
   val operand: Expr
 }
 
-case class StdUnaryOp(op: Operation, operand: Expression) extends UnaryOp {
+abstract case class StdUnaryOp private (op: Operation, operand: Expression) extends UnaryOp {
   type Expr = Expression
+
+  def copy(op: Operation = this.op, operand: Expression = this.operand): StdUnaryOp = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new StdUnaryOp(op, operand) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
 }
 
-case class HPUnaryOp(operand: Ident) extends UnaryOp with HPExpr {
+object StdUnaryOp {
+  def apply(op: Operation, operand: Expression, pos: Position): StdUnaryOp = {
+    new StdUnaryOp(op, operand) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class HPUnaryOp private (operand: Ident) extends UnaryOp with HPExpr {
   type Expr = Ident
   val op = Operation.Neg
+
+  def copy(operand: Ident = this.operand): HPUnaryOp = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+    val oldSym = this._symbol
+    val oldExpr = this._sortedExpr
+
+    new HPUnaryOp(operand) {
+      override val position = oldPos
+
+      this._id = oldID
+      this._tpe = oldTpe
+      this._symbol = oldSym
+      this._sortedExpr = oldExpr
+    }
+  }
+}
+
+object HPUnaryOp {
+  def apply(operand: Ident, pos: Position): HPUnaryOp = {
+    new HPUnaryOp(operand) {
+      override val position = pos
+    }
+  }
 }
 
 sealed abstract class BinOp extends Expression with HasSymbol {
@@ -418,208 +1431,180 @@ sealed abstract class BinOp extends Expression with HasSymbol {
   val right: Expr
 }
 
-case class StdBinOp(op: Operation, left: Expression, right: Expression) extends BinOp {
+abstract case class StdBinOp private (op: Operation, left: Expression, right: Expression) extends BinOp {
   type Expr = Expression
+
+  def copy(op: Operation = this.op, left: Expression = this.left, right: Expression = this.right): StdBinOp = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new StdBinOp(op, left, right) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
 }
 
-case class HPBinOp(
-  left: Expression with HPExpr,
-  right: Expression with HPExpr
-) extends BinOp with HPExpr {
+object StdBinOp {
+  def apply(op: Operation, left: Expression, right: Expression, pos: Position): StdBinOp = {
+    new StdBinOp(op, left, right) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class HPBinOp private (left: Expression with HPExpr, right: Expression with HPExpr) extends BinOp with HPExpr {
   type Expr = Expression with HPExpr
   val op: Operation = Operation.Add
-}
 
-case class Select(prefix: Expression, name: String) extends Expression with HasSymbol with ApplyPrefix
-case class StaticSelect(prefix: TypeTree, name: String) extends Expression with TypeAST with ApplyPrefix
-case class CastExpr(expr: Expression, to: TypeTree) extends Expression
-case class SelectPackage(packages: Vector[String], name: String) extends AST with TypeAST with Expression
-case class Block(elems: Vector[BlockElem], last: Expression) extends Expression
-case class ConstructClass(target: TypeTree, fields: Vector[ConstructPair]) extends Construct
-case class ConstructModule(target: TypeTree, parents: Vector[ConstructPair], siblings: Vector[ConstructPair]) extends Construct
-case class ConstructEnum(target: TypeTree, fields: Vector[Expression]) extends Construct
-case class ConstructPair(name: String, init: Expression) extends AST
-case class Assign(left: Expression, right: Expression) extends BlockElem
+  def copy(
+    left: Expression with HPExpr = this.left,
+    right: Expression with HPExpr = this.right
+  ): HPBinOp = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+    val oldExpr = this._sortedExpr
 
-case class This() extends Expression
-case class IfExpr(cond: Expression, conseq: Expression, alt: Option[Expression]) extends Expression
-
-case class BitLiteral(value: BigInt, length: Int) extends Literal
-case class IntLiteral(value: Int) extends Literal with HPExpr
-case class BoolLiteral(value: Boolean) extends Literal with HPExpr
-case class UnitLiteral() extends Literal
-case class StringLiteral(str: String) extends Literal with HPExpr
-
-case class Finish() extends Expression
-case class Goto(target: String, args: Vector[Expression]) extends Expression with HasSymbol
-
-case class Generate(target: String, args: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol
-case class Relay(target: String, params: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol
-case class StateInfo(target: String, args: Vector[Expression]) extends AST with HasSymbol
-
-case class Return(expr: Expression) extends Expression
-
-case class Match(expr: Expression, cases: Vector[Case]) extends Expression
-case class Case(pattern: MatchPattern, exprs: Vector[BlockElem]) extends AST with HasType
-
-trait MatchPattern extends AST
-case class EnumPattern(variant: TypeTree, patterns: Vector[MatchPattern]) extends MatchPattern
-case class LiteralPattern(lit: Literal) extends MatchPattern
-case class IdentPattern(ident: Ident) extends MatchPattern
-case class WildCardPattern() extends MatchPattern with HasType
-
-// To make easier to implement parser,
-// hp's length and tp's length maybe incorrect before Typer.
-// However, hp's length + tp's length is correct if there is no compile error.
-// In Typer, hp and tp are adjust their length
-// (as actual procedures, some hp's elements are translate into TypeTree and moved to `tp`)
-case class TypeTree(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol
-case class ThisType() extends TypeAST with HasType
-case class CastType(from: TypeTree, to: TypeTree) extends TypeAST with HasType
-
-trait Operation {
-  def toInterface: String
-  def toMethod: String
-  def toOperator: String
-  def isCommutative: Boolean
-}
-
-object Operation {
-  case object Add extends Operation {
-    override def toInterface: String = "Add"
-    override def toMethod: String = "add"
-    override def toOperator: String = "+"
-    override def isCommutative: Boolean = true
-  }
-
-  case object Sub extends Operation {
-    override def toInterface: String = "Sub"
-    override def toMethod: String = "sub"
-    override def toOperator: String = "-"
-    override def isCommutative: Boolean = false
-  }
-
-  case object Mul extends Operation {
-    override def toInterface: String = "Mul"
-    override def toMethod: String = "mul"
-    override def toOperator: String = "*"
-    override def isCommutative: Boolean = true
-  }
-
-  case object Div extends Operation {
-    override def toInterface: String = "Div"
-    override def toMethod: String = "div"
-    override def toOperator: String = "/"
-    override def isCommutative: Boolean = false
-  }
-
-  case object Or extends Operation {
-    override def toInterface: String = "Or"
-    override def toMethod: String = "or"
-    override def toOperator: String = "|"
-    override def isCommutative: Boolean = true
-  }
-
-  case object And extends Operation {
-    override def toInterface: String = "And"
-    override def toMethod: String = "and"
-    override def toOperator: String = "&"
-    override def isCommutative: Boolean = true
-  }
-
-  case object Xor extends Operation {
-    override def toInterface: String = "Xor"
-    override def toMethod: String = "xor"
-    override def toOperator: String = "^"
-    override def isCommutative: Boolean = true
-  }
-
-  case object Eq extends Operation {
-    override def toInterface: String = "Eq"
-    override def toMethod: String = "equal"
-    override def toOperator: String = "=="
-    override def isCommutative: Boolean = true
-  }
-
-  case object Ne extends Operation {
-    override def toInterface: String = "Eq"
-    override def toMethod: String = "notEqual"
-    override def toOperator: String = "!="
-    override def isCommutative: Boolean = true
-  }
-
-  case object Ge extends Operation {
-    override def toInterface: String = "Ord"
-    override def toMethod: String = "greaterEqual"
-    override def toOperator: String = "<="
-    override def isCommutative: Boolean = false
-  }
-
-  case object Gt extends Operation {
-    override def toInterface: String = "Ord"
-    override def toMethod: String = "greaterThan"
-    override def toOperator: String = "<"
-    override def isCommutative: Boolean = false
-  }
-
-  case object Le extends Operation {
-    override def toInterface: String = "Ord"
-    override def toMethod: String = "lessEqual"
-    override def toOperator: String = ">="
-    override def isCommutative: Boolean = false
-  }
-
-  case object Lt extends Operation {
-    override def toInterface: String = "Ord"
-    override def toMethod: String = "lessThan"
-    override def toOperator: String = ">"
-    override def isCommutative: Boolean = false
-  }
-
-  case object Shr extends Operation {
-    override def toInterface: String = "Shr"
-    override def toMethod: String = "shr"
-    override def toOperator: String = ">>"
-    override def isCommutative: Boolean = false
-  }
-
-  case object Shl extends Operation {
-    override def toInterface: String = "Shl"
-    override def toMethod: String = "shl"
-    override def toOperator: String = "<<"
-    override def isCommutative: Boolean = false
-  }
-
-  case object DynShr extends Operation {
-    override def toInterface: String = "DynShr"
-    override def toMethod: String = "dynShr"
-    override def toOperator: String = ">>>"
-    override def isCommutative: Boolean = false
-  }
-
-  case object DynShl extends Operation {
-    override def toInterface: String = "DynShl"
-    override def toMethod: String = "dynShl"
-    override def toOperator: String = "<<<"
-    override def isCommutative: Boolean = false
-  }
-
-  case object Neg extends Operation {
-    override def toInterface: String = "Neg"
-    override def toMethod: String = "neg"
-    override def toOperator: String = "-"
-    override def isCommutative: Boolean = false
-  }
-
-  case object Not extends Operation {
-    override def toInterface: String = "Not"
-    override def toMethod: String = "not"
-    override def toOperator: String = "!"
-    override def isCommutative: Boolean = false
+    new HPBinOp(left, right) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+      this._sortedExpr = oldExpr
+    }
   }
 }
 
-trait Annotation
+object HPBinOp {
+  def apply(left: Expression with HPExpr, right: Expression with HPExpr, pos: Position): HPBinOp = {
+    new HPBinOp(left, right) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol {
+  def copy(expr: TypeAST = this.expr, hp: Vector[HPExpr] = this.hp, tp: Vector[TypeTree] = this.tp): TypeTree = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new TypeTree(expr, hp, tp) {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object TypeTree {
+  def apply(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], pos: Position): TypeTree = {
+    new TypeTree(expr, hp, tp) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ThisType private () extends TypeAST with HasType {
+  def copy(): ThisType = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new ThisType {
+      override val position = oldPos
+      this._id = oldID
+      this._symbol = oldSym
+      this._tpe = oldTpe
+    }
+  }
+}
+
+object ThisType {
+  def apply(pos: Position): ThisType = {
+    new ThisType {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class CastType private (from: TypeTree, to: TypeTree) extends TypeAST with HasType {
+  def copy(from: TypeTree = this.from, to: TypeTree = this.to): CastType = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new CastType(from, to) {
+      override val position = oldPos
+      this._id = oldID
+      this._tpe = oldTpe
+      this._symbol = oldSym
+    }
+  }
+}
+
+object CastType {
+  def apply(from: TypeTree, to: TypeTree, pos: Position): CastType = {
+    new CastType(from, to) {
+      override val position = pos
+    }
+  }
+}
+
+sealed trait Annotation
 object Annotation {
   case class BuiltIn(name: String, args: Vector[String], ret: String) extends Annotation
+}
+
+case class Point(line: Int, column: Int) extends Ordered[Point] {
+  override def compare(that: Point): Int = {
+    if(this == that) 0
+    else if (this.line < that.line) -1
+    else if (this.line == that.line && this.column < that.column) -1
+    else 1
+  }
+}
+
+object Point {
+  def empty: Point = Point(0, 0)
+}
+
+
+case class Position(filename: String, start: Point, end: Point)
+object Position {
+  def apply(ctx: org.antlr.v4.runtime.ParserRuleContext)(implicit file: Filename): Position = {
+    val startLine = ctx.getStart.getLine
+    val startColumn = ctx.getStart.getCharPositionInLine + 1
+    val start = Point(startLine, startColumn)
+    val endLine = ctx.getStop.getLine
+    val endColumn = ctx.getStop.getCharPositionInLine + ctx.getStop.getText.length + 1
+    val end = Point(endLine, endColumn)
+
+    Position(file.name, start, end)
+  }
+
+  def apply(start: AST, end: AST): Position = {
+    val filename = start.position.filename
+    val startPos = start.position.start
+    val endPos = end.position.end
+
+    Position(filename, startPos, endPos)
+  }
+
+  def apply(tree: AST): Position = {
+    val pos = tree.position
+    Position(pos.filename, pos.start, pos.end)
+  }
+
+  def empty: Position = Position("", Point.empty, Point.empty)
 }

@@ -5,8 +5,12 @@ import tchdl.backend._
 import tchdl.util._
 import tchdl.typecheck._
 import firrtl._
-
 import java.nio.file.Files
+
+import firrtl.annotations.CircuitTarget
+import firrtl.options.Dependency
+import firrtl.stage.FirrtlStageUtils
+
 import sys.process._
 import scala.language.postfixOps
 
@@ -598,5 +602,16 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
   test("use some vector manipulation methods") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVecManipulation.tchdl")
     runFirrtl(circuit, print = true)
+  }
+
+  test("use annotation to compile firrtl") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAllBinOpBit.tchdl")
+    val emit = EmitCircuitAnnotation(classOf[VerilogEmitter])
+    val compiler = new firrtl.stage.transforms.Compiler(firrtl.stage.Forms.VerilogOptimized)
+    val init = CircuitState(circuit, Seq(emit))
+    val state = compiler.execute(init)
+    val emitter = new VerilogEmitter
+    val result = emitter.execute(state)
+    println(result.getEmittedCircuit.value)
   }
 }

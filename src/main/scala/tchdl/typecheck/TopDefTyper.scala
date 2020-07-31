@@ -8,12 +8,12 @@ object TopDefTyper {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
     val ctx = global.rootPackage.search(cu.pkgName)
       .getOrElse(throw new ImplementationErrorException(s"${cu.pkgName} should be there"))
-      .lookupCtx(cu.filename.get)
-      .getOrElse(throw new ImplementationErrorException(s"${cu.filename.get}'s context should be there'"))
+      .lookupCtx(cu.filename)
+      .getOrElse(throw new ImplementationErrorException(s"${cu.filename}'s context should be there'"))
 
     val topDefs = cu.topDefs.map(verifyTopDefinition(_)(ctx, global))
 
-    CompilationUnit(cu.filename, cu.pkgName, cu.imports, topDefs).setID(cu.id)
+    CompilationUnit(cu.filename, cu.pkgName, cu.imports, topDefs, cu.position).setID(cu.id)
   }
 
   def typedStructDef(structDef: StructDef)(implicit ctx: Context.RootContext, global: GlobalData): StructDef = {

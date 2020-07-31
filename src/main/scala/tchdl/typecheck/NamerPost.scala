@@ -13,8 +13,8 @@ object NamerPost {
   private def getContext(cu: CompilationUnit)(implicit global: GlobalData): Context.RootContext =
     global.rootPackage.search(cu.pkgName)
       .getOrElse(throw new ImplementationErrorException(s"package ${cu.pkgName.mkString("::")} is not found"))
-      .lookupCtx(cu.filename.get)
-      .getOrElse(throw new ImplementationErrorException(s"context for ${cu.filename.get} is not found"))
+      .lookupCtx(cu.filename)
+      .getOrElse(throw new ImplementationErrorException(s"context for ${cu.filename} is not found"))
 
   private def verifyImport(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
     val ctx = getContext(cu)

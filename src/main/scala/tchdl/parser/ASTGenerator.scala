@@ -8,26 +8,29 @@ import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.collection.JavaConverters._
 
+case class Filename(name: String)
+
 class ASTGenerator {
   def apply(ctx: TP.Compilation_unitContext, filename: String): CompilationUnit = {
     val pkgName = ctx.pkg_name.EXPR_ID.asScala.map(_.getText).toVector
+    val file = Filename(filename)
 
     val imports = ctx.import_clause
       .asScala
-      .map(ctx => packageSelect(ctx.pkg_select) :+ ctx.TYPE_ID.getText)
+      .map(ctx => packageSelect(ctx.pkg_select)(file) :+ ctx.TYPE_ID.getText)
       .toVector
 
-    val defs = ctx.top_definition.asScala.map(topDefinition).toVector
+    val defs = ctx.top_definition.asScala.map(topDefinition(_)(file)).toVector
 
-    CompilationUnit(Some(filename), pkgName, imports, defs)
+    CompilationUnit(filename, pkgName, imports, defs, Position(ctx)(file))
   }
 
-  def packageSelect(ctx: TP.Pkg_selectContext): Vector[String] = ctx match {
+  def packageSelect(ctx: TP.Pkg_selectContext)(implicit file: Filename): Vector[String] = ctx match {
     case ctx: TP.PackageIDContext => Vector(ctx.EXPR_ID.getText)
     case ctx: TP.PackageSelectContext => packageSelect(ctx.pkg_select) :+ ctx.EXPR_ID.getText
   }
 
-  def topDefinition(ctx: TP.Top_definitionContext): Definition = {
+  def topDefinition(ctx: TP.Top_definitionContext)(implicit file: Filename): Definition = {
     ctx.getChild(0) match {
       case ctx: TP.Module_defContext => moduleDef(ctx)
       case ctx: TP.Method_defContext => methodDef(ctx)
@@ -40,47 +43,49 @@ class ASTGenerator {
     }
   }
 
-  def moduleDef(ctx: TP.Module_defContext): ModuleDef = {
-    def paramModules[T](params: Option[T], mod: Modifier)(ids: T => java.util.List[TerminalNode])(types: T => java.util.List[TP.TypeContext]): Vector[ValDef] =
-      params.map{ ctx =>
-        val idents = ids(ctx).asScala.map(_.getText)
-        val tpes = types(ctx).asScala.map(typeTree)
-
-        idents zip tpes
-      }.map { _.map {
-        case (ident, tpe) => ValDef(mod, ident, Some(tpe), None)
-      }}.getOrElse(Vector.empty).toVector
-
+  def moduleDef(ctx: TP.Module_defContext)(implicit file: Filename): ModuleDef = {
     val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
 
-    val parents = paramModules(Option(ctx.parents), Modifier.Parent)(_.EXPR_ID)(_.`type`)
-      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Parent | Modifier.Field))
+    def fields[T](ctx: T, flag: Modifier)(ids: T => java.util.List[TerminalNode])(tpes: T => java.util.List[TP.TypeContext]): Vector[ValDef] = {
+      val ctxOpt = Option(ctx)
+      val nodeNames = ctxOpt.map(ctx => ids(ctx)).map(_.asScala.toVector).getOrElse(Vector.empty)
+      val nodeTpes = ctxOpt.map(ctx => tpes(ctx)).map(_.asScala.map(typeTree).toVector).getOrElse(Vector.empty)
 
-    val siblings = paramModules(Option(ctx.siblings), Modifier.Sibling)(_.EXPR_ID)(_.`type`)
-      .map(vdef => vdef.copy(flag = vdef.flag | Modifier.Sibling | Modifier.Field))
+      (nodeNames zip nodeTpes).map{
+        case (name, tpe) =>
+          val start = Point(name.getSymbol.getLine, name.getSymbol.getCharPositionInLine)
+          val end = tpe.position.end
+          val pos = Position(file.name, start, end)
 
-    ModuleDef(name, hp, tp, bound, parents, siblings)
+          ValDef(flag | Modifier.Field, name.getText, Some(tpe), None, pos)
+      }
+    }
+
+    val parents = fields(ctx.parents, Modifier.Parent)(_.EXPR_ID)(_.`type`)
+    val siblings = fields(ctx.siblings, Modifier.Sibling)(_.EXPR_ID)(_.`type`)
+
+    ModuleDef(name, hp, tp, bound, parents, siblings, Position(ctx))
   }
 
-  def structDef(ctx: TP.Struct_defContext): StructDef = {
+  def structDef(ctx: TP.Struct_defContext)(implicit file: Filename): StructDef = {
     val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
     val fields = Option(ctx.field_defs).map(fieldDefs).getOrElse(Vector.empty)
 
-    StructDef(name, hp, tp, bound, fields)
+    StructDef(name, hp, tp, bound, fields, Position(ctx))
   }
 
-  def implementClass(ctx: TP.Implement_classContext): ImplementClass = {
+  def implementClass(ctx: TP.Implement_classContext)(implicit file: Filename): ImplementClass = {
     val target = typeTree(ctx.`type`())
     val (hps, tps) = Option(ctx.type_param).map(polyParam).getOrElse((Vector.empty, Vector.empty))
     val bounds = Option(ctx.bounds).map(_.bound.asScala.map(bound).toVector).getOrElse(Vector.empty)
     val components = ctx.component.asScala.map(component).toVector
 
-    ImplementClass(target, hps, tps, bounds, components)
+    ImplementClass(target, hps, tps, bounds, components, Position(ctx))
   }
 
-  def traitDef(ctx: TP.Trait_defContext): InterfaceDef = {
+  def traitDef(ctx: TP.Trait_defContext)(implicit file: Filename): InterfaceDef = {
     val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param, ctx.bounds)
     val methods = ctx.signature_def
@@ -89,13 +94,13 @@ class ASTGenerator {
       .toVector
 
     val types = ctx.type_dec.asScala
-      .map(ctx => TypeDef(Modifier.Field, ctx.TYPE_ID.getText, None))
+      .map(ctx => TypeDef(Modifier.Field, ctx.TYPE_ID.getText, None, Position(ctx)))
       .toVector
 
-    InterfaceDef(Modifier.Trait, name, hp, tp, bound, methods, types)
+    InterfaceDef(Modifier.Trait, name, hp, tp, bound, methods, types, Position(ctx))
   }
 
-  def interfaceDef(ctx: TP.Interface_defContext): InterfaceDef = {
+  def interfaceDef(ctx: TP.Interface_defContext)(implicit file: Filename): InterfaceDef = {
     val name = ctx.TYPE_ID.getText
     val (hp, tp, bound) = definitionHeader(ctx.type_param, ctx.bounds)
     val methods = ctx.signature_def
@@ -104,44 +109,44 @@ class ASTGenerator {
       .toVector
 
     val types = ctx.type_dec.asScala
-      .map(ctx => TypeDef(Modifier.Field, ctx.TYPE_ID.getText, None))
+      .map(ctx => TypeDef(Modifier.Field, ctx.TYPE_ID.getText, None, Position(ctx)))
       .toVector
 
-    InterfaceDef(Modifier.Interface, name, hp, tp, bound, methods, types)
+    InterfaceDef(Modifier.Interface, name, hp, tp, bound, methods, types, Position(ctx))
   }
 
-  def enumDef(ctx: TP.Enum_defContext): EnumDef = {
+  def enumDef(ctx: TP.Enum_defContext)(implicit file: Filename): EnumDef = {
     def enumFieldDef(ctx: TP.Enum_field_defContext): EnumMemberDef = {
       val fieldName = ctx.TYPE_ID.getText
       val fields = ctx.`type`.asScala.map(typeTree).toVector
 
-      EnumMemberDef(fieldName, fields)
+      EnumMemberDef(fieldName, fields, Position(ctx))
     }
 
     val enumName = ctx.TYPE_ID.getText
     val (hps, tps, bounds) = definitionHeader(ctx.type_param, ctx.bounds)
     val fields = ctx.enum_field_def.asScala.map(enumFieldDef).toVector
 
-    EnumDef(enumName, hps, tps, bounds, fields)
+    EnumDef(enumName, hps, tps, bounds, fields, Position(ctx))
   }
 
-  def implementInterface(ctx: TP.Implement_interfaceContext): ImplementInterface = {
+  def implementInterface(ctx: TP.Implement_interfaceContext)(implicit file: Filename): ImplementInterface = {
     val (hp, tp, bound) = definitionHeader(ctx.type_param(), ctx.bounds())
     val Seq(targetTrait, tpe) = ctx.`type`().asScala.map(typeTree)
     val methods = ctx.method_def.asScala.map(methodDef).toVector
     val tpes = ctx.type_def.asScala.map(typeDef).toVector
 
-    ImplementInterface(targetTrait, tpe, hp, tp, bound, methods, tpes)
+    ImplementInterface(targetTrait, tpe, hp, tp, bound, methods, tpes, Position(ctx))
   }
 
-  def typeDef(ctx: TP.Type_defContext): TypeDef = {
+  def typeDef(ctx: TP.Type_defContext)(implicit file: Filename): TypeDef = {
     val name = ctx.TYPE_ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
 
-    TypeDef(Modifier.Field, name, tpe)
+    TypeDef(Modifier.Field, name, tpe, Position(ctx))
   }
 
-  def methodDef(ctx: TP.Method_defContext): MethodDef = {
+  def methodDef(ctx: TP.Method_defContext)(implicit file: Filename): MethodDef = {
     def builtin(ctx: TP.Builtin_specifierContext): Annotation = {
       val name = ctx.EXPR_ID.getText
       val tpes = ctx.builtin_type.asScala.toVector.map {
@@ -166,10 +171,10 @@ class ASTGenerator {
     val tpe = typeTree(ctx.`type`)
     val blk = block(ctx.block)
 
-    MethodDef(builtins, modifier, name, hps, tps, bounds, params, tpe, Some(blk))
+    MethodDef(builtins, modifier, name, hps, tps, bounds, params, tpe, Some(blk), Position(ctx))
   }
 
-  def signatureDef(ctx: TP.Signature_defContext): MethodDef = {
+  def signatureDef(ctx: TP.Signature_defContext)(implicit file: Filename): MethodDef = {
     val modifier = ctx.signature_accessor.asScala
       .map(_.getText)
       .map(Modifier.apply)
@@ -184,64 +189,60 @@ class ASTGenerator {
       .getOrElse(Vector.empty)
     val tpe = typeTree(ctx.`type`)
 
-    MethodDef(Vector.empty, modifier, name, hps, tps, bounds, params, tpe, None)
+    MethodDef(Vector.empty, modifier, name, hps, tps, bounds, params, tpe, None, Position(ctx))
   }
 
-  def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext): (Vector[ValDef], Vector[TypeDef], Vector[BoundTree]) = {
+  def definitionHeader(tpCtx: TP.Type_paramContext, boundsCtx: TP.BoundsContext)(implicit file: Filename): (Vector[ValDef], Vector[TypeDef], Vector[BoundTree]) = {
     val (hps, tps) = Option(tpCtx)
       .map(polyParam)
       .getOrElse(Vector.empty, Vector.empty)
 
     val bounds = Option(boundsCtx)
-      .map(
-        _.bound
-          .asScala
-          .map(bound)
-          .toVector
-      ).getOrElse(Vector.empty)
+      .map(_.bound.asScala.map(bound).toVector)
+      .getOrElse(Vector.empty)
 
     (hps, tps, bounds)
   }
 
-  def fieldDefs(ctx: TP.Field_defsContext): Vector[ValDef] =
+  def fieldDefs(ctx: TP.Field_defsContext)(implicit file: Filename): Vector[ValDef] =
     ctx.field_def.asScala.map(fieldDef).toVector
 
-  def fieldDef(ctx: TP.Field_defContext): ValDef = {
+  def fieldDef(ctx: TP.Field_defContext)(implicit file: Filename): ValDef = {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(Modifier.Field, name, Some(tpe), None)
+    ValDef(Modifier.Field, name, Some(tpe), None, Position(ctx))
   }
 
-  def paramDefs(ctx: TP.Param_defsContext): Vector[ValDef] = {
+  def paramDefs(ctx: TP.Param_defsContext)(implicit file: Filename): Vector[ValDef] = {
     Option(ctx.param_def)
       .map(_.asScala.map(paramDef).toVector)
       .getOrElse(Vector.empty)
   }
 
-  def paramDef(ctx: TP.Param_defContext): ValDef = {
+  def paramDef(ctx: TP.Param_defContext)(implicit file: Filename): ValDef = {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`())
 
-    ValDef(Modifier.Local, name, Some(tpe), None)
+    ValDef(Modifier.Local, name, Some(tpe), None, Position(ctx))
   }
 
-  def alwaysDef(ctx: TP.Always_defContext): AlwaysDef = {
+  def alwaysDef(ctx: TP.Always_defContext)(implicit file: Filename): AlwaysDef = {
     val name = ctx.EXPR_ID.getText
     val blk = block(ctx.block)
 
-    AlwaysDef(name, blk)
+    AlwaysDef(name, blk, Position(ctx))
   }
 
-  def valDef(ctx: TP.Val_defContext): ValDef = {
+  def valDef(ctx: TP.Val_defContext)(implicit file: Filename): ValDef = {
     val name = ctx.EXPR_ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
     val initExpr = expr(ctx.expr)
 
-    ValDef(Modifier.Local, name, tpe, Some(initExpr))
+    ValDef(Modifier.Local, name, tpe, Some(initExpr), Position(ctx))
   }
 
-  def stageDef(ctx: TP.Stage_defContext): StageDef = {
+  def stageDef(ctx: TP.Stage_defContext)(implicit file: Filename): StageDef = {
     def stageBody(ctx: TP.Stage_bodyContext): (Vector[StateDef], Vector[BlockElem]) = {
       val statedefs = ctx.state_def
         .asScala
@@ -266,53 +267,53 @@ class ASTGenerator {
         .map(stageBody)
         .getOrElse((Vector.empty, Vector.empty))
 
-    StageDef(name, params, tpe, states, blks)
+    StageDef(name, params, tpe, states, blks, Position(ctx))
   }
 
-  def stateDef(ctx: TP.State_defContext): StateDef = {
+  def stateDef(ctx: TP.State_defContext)(implicit file: Filename): StateDef = {
     val name = ctx.EXPR_ID.getText
     val blk = block(ctx.block)
     val params = Option(ctx.param_defs).map(paramDefs).getOrElse(Vector.empty)
 
-    StateDef(name, params, blk)
+    StateDef(name, params, blk, Position(ctx))
   }
 
-  def portDef(ctx: TP.Port_defContext): ValDef = {
+  def portDef(ctx: TP.Port_defContext)(implicit file: Filename): ValDef = {
     val modifier = Modifier(ctx.modifier.getText) | Modifier.Field
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`)
 
-    ValDef(modifier, name, Some(tpe), None)
+    ValDef(modifier, name, Some(tpe), None, Position(ctx))
   }
 
-  def submoduleDef(ctx: TP.Submodule_defContext): ValDef = {
+  def submoduleDef(ctx: TP.Submodule_defContext)(implicit file: Filename): ValDef = {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`)
     val construct = constructModule(ctx.construct_module)
 
-    ValDef(Modifier.Child | Modifier.Field, name, Some(tpe), Some(construct))
+    ValDef(Modifier.Child | Modifier.Field, name, Some(tpe), Some(construct), Position(ctx))
   }
 
-  def regDef(ctx: TP.Reg_defContext): ValDef = {
+  def regDef(ctx: TP.Reg_defContext)(implicit file: Filename): ValDef = {
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`)
     val initExpr = Option(ctx.expr).map(expr)
 
-    ValDef(Modifier.Register | Modifier.Field, name, Some(tpe), initExpr)
+    ValDef(Modifier.Register | Modifier.Field, name, Some(tpe), initExpr, Position(ctx))
   }
 
-  def expr(ctx: TP.ExprContext): Expression = ctx match {
+  def expr(ctx: TP.ExprContext)(implicit file: Filename): Expression = ctx match {
     case ctx: TP.SelectExprContext => selectExpr(ctx)
-    case ctx: TP.CastExprContext => CastExpr(expr(ctx.expr), typeTree(ctx.`type`))
-    case ctx: TP.UnaryExprContext => stdUnaryOp(ctx.op.getText, ctx.expr)
-    case ctx: TP.MulDivExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
-    case ctx: TP.AddSubExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
-    case ctx: TP.ShiftExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
-    case ctx: TP.CmpExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
-    case ctx: TP.EqExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText)
-    case ctx: TP.AndExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "&")
-    case ctx: TP.XorExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "^")
-    case ctx: TP.OrExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "|")
+    case ctx: TP.CastExprContext => CastExpr(expr(ctx.expr), typeTree(ctx.`type`), Position(ctx))
+    case ctx: TP.UnaryExprContext => stdUnaryOp(ctx.op.getText, ctx.expr, Position(ctx))
+    case ctx: TP.MulDivExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText, Position(ctx))
+    case ctx: TP.AddSubExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText, Position(ctx))
+    case ctx: TP.ShiftExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText, Position(ctx))
+    case ctx: TP.CmpExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText, Position(ctx))
+    case ctx: TP.EqExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), ctx.op.getText, Position(ctx))
+    case ctx: TP.AndExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "&", Position(ctx))
+    case ctx: TP.XorExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "^", Position(ctx))
+    case ctx: TP.OrExprContext => stdBinOp(ctx.expr(0), ctx.expr(1), "|", Position(ctx))
     case ctx: TP.ApplyExprContext => applyCall(ctx.apply)
     case ctx: TP.BlockExprContext => block(ctx.block)
     case ctx: TP.ConstructStructExprContext => constructStruct(ctx.construct_struct)
@@ -323,33 +324,36 @@ class ASTGenerator {
       val conseq = expr(ctx.expr(1))
       val alt = Option(ctx.expr(2)).map(expr)
 
-      IfExpr(cond, conseq, alt)
+      IfExpr(cond, conseq, alt, Position(ctx))
     case ctx: TP.MatchExprContext => matchExpr(ctx)
-    case _: TP.FinishContext => Finish()
+    case ctx: TP.FinishContext => Finish(Position(ctx))
     case ctx: TP.GotoExprContext => goto(ctx.goto_expr)
     case ctx: TP.RelayExprContext => relay(ctx.relay)
     case ctx: TP.GenerateExprContext => generate(ctx.generate)
-    case ctx: TP.ReturnContext => Return(expr(ctx.expr))
+    case ctx: TP.ReturnContext => Return(expr(ctx.expr), Position(ctx))
     case ctx: TP.LitExprContext => literal(ctx.literal)
     case ctx: TP.ParenthesesExprContext => expr(ctx.expr)
-    case _: TP.SelfExprContext => This()
-    case ctx: TP.ExprIDContext => Ident(ctx.EXPR_ID.getText)
+    case ctx: TP.SelfExprContext => This(Position(ctx))
+    case ctx: TP.ExprIDContext => Ident(ctx.EXPR_ID.getText, Position(ctx))
   }
 
-  def hpExpr(ctx: TP.Hp_exprContext): HPExpr = ctx match {
+  def hpExpr(ctx: TP.Hp_exprContext)(implicit file: Filename): HPExpr = ctx match {
     case ctx: TP.AddSubHPExprContext => hpBinOp(ctx.hp_expr(0), ctx.hp_expr(1), ctx.op.getText)
-    case ctx: TP.StrLitHPExprContext => StringLiteral(ctx.STRING.getText.tail.init)
-    case ctx: TP.IntLitHPExprContext => IntLiteral(ctx.INT.getText.toInt)
-    case ctx: TP.HPExprIDContext => Ident(ctx.getText)
+    case ctx: TP.StrLitHPExprContext => StringLiteral(ctx.STRING.getText.tail.init, Position(ctx))
+    case ctx: TP.IntLitHPExprContext => IntLiteral(ctx.INT.getText.toInt, Position(ctx))
+    case ctx: TP.HPExprIDContext => Ident(ctx.getText, Position(ctx))
   }
 
-  def selectExpr(ctx: TP.SelectExprContext): Expression = Option(ctx.apply) match {
+  def selectExpr(ctx: TP.SelectExprContext)(implicit file: Filename): Expression = Option(ctx.apply) match {
     case Some(applyCtx) =>
       val prefix = expr(ctx.expr)
 
       applyCall(applyCtx) match {
-        case Apply(Ident(name), hps, tps, args) =>
-          Apply(Select(prefix, name), hps, tps, args)
+        case apply @ Apply(Ident(name), hps, tps, args) =>
+          val selectPos = Position(prefix, apply.prefix)
+          val select = Select(prefix, name, selectPos)
+
+          Apply(select, hps, tps, args, apply.position)
         case Apply(expr, _, _, _) =>
           val msg = s"${expr.getClass} must not appear here"
           throw new ImplementationErrorException(msg)
@@ -357,49 +361,61 @@ class ASTGenerator {
     case None =>
       val prefix = expr(ctx.expr)
       val name = ctx.EXPR_ID.getText
-      Select(prefix, name)
+
+      val startPos = prefix.position.start
+      val endPos = Point(ctx.EXPR_ID.getSymbol.getLine, ctx.EXPR_ID.getSymbol.getCharPositionInLine)
+      val pos = Position(file.name, startPos, endPos)
+
+      Select(prefix, name, pos)
   }
 
-  def matchExpr(ctx: TP.MatchExprContext): Match = {
+  def matchExpr(ctx: TP.MatchExprContext)(implicit file: Filename): Match = {
     def pattern(ctx: TP.PatternContext): MatchPattern = ctx match {
-      case ctx: TP.IdentPatternContext => IdentPattern(Ident(ctx.EXPR_ID.getText))
-      case ctx: TP.LiteralPatternContext => LiteralPattern(literal(ctx.literal))
-      case _: TP.WildcardPatternContext => WildCardPattern()
+      case ctx: TP.IdentPatternContext =>
+        val symbol = ctx.EXPR_ID.getSymbol
+        val line = symbol.getLine
+        val startColumn = symbol.getCharPositionInLine
+        val endColumn = startColumn + ctx.EXPR_ID.getText.length
+        val identPos = Position(file.name, Point(line, startColumn), Point(line, endColumn))
+
+        IdentPattern(Ident(ctx.EXPR_ID.getText, identPos), Position(ctx))
+      case ctx: TP.LiteralPatternContext => LiteralPattern(literal(ctx.literal), Position(ctx))
+      case ctx: TP.WildcardPatternContext => WildCardPattern(Position(ctx))
       case ctx: TP.EnumPatternContext =>
         val variant = typeTree(ctx.`type`)
         val patterns = ctx.pattern.asScala.map(pattern).toVector
 
-        EnumPattern(variant, patterns)
+        EnumPattern(variant, patterns, Position(ctx))
     }
 
     def caseDef(ctx: TP.Case_defContext): Case = {
       val patternExpr = pattern(ctx.pattern)
       val blkElems = ctx.block_elem.asScala.map(blockElem).toVector
       val body = blkElems.lastOption match {
-        case None => blkElems :+ UnitLiteral()
-        case Some(vdef: ValDef) => blkElems.init ++ Vector(vdef, UnitLiteral())
+        case None => Vector(UnitLiteral(Position(ctx)))
+        case Some(vdef: ValDef) => blkElems.init ++ Vector(vdef, UnitLiteral(vdef.position))
         case Some(expr) => blkElems.init :+ expr
       }
 
-      Case(patternExpr, body)
+      Case(patternExpr, body, Position(ctx))
     }
 
     val matched = expr(ctx.expr)
     val cases = ctx.case_def.asScala.map(caseDef).toVector
 
-    Match(matched, cases)
+    Match(matched, cases, Position(ctx))
   }
 
-  def stdUnaryOp(op: String, exp: TP.ExprContext): StdUnaryOp = {
+  def stdUnaryOp(op: String, exp: TP.ExprContext, position: Position)(implicit file: Filename): StdUnaryOp = {
     val operation = op match {
       case "-" => Operation.Neg
       case "!" => Operation.Not
     }
 
-    StdUnaryOp(operation, expr(exp))
+    StdUnaryOp(operation, expr(exp), position)
   }
 
-  def stdBinOp(left: TP.ExprContext, right: TP.ExprContext, op: String): StdBinOp = {
+  def stdBinOp(left: TP.ExprContext, right: TP.ExprContext, op: String, position: Position)(implicit file: Filename): StdBinOp = {
     val operation = op match {
       case "+"  => Operation.Add
       case "-"  => Operation.Sub
@@ -420,34 +436,35 @@ class ASTGenerator {
       case ">=" => Operation.Ge
     }
 
-    StdBinOp(operation, expr(left), expr(right))
+    StdBinOp(operation, expr(left), expr(right), position)
   }
 
-  def hpBinOp(left: TP.Hp_exprContext, right: TP.Hp_exprContext, op: String): HPBinOp = {
+  def hpBinOp(left: TP.Hp_exprContext, right: TP.Hp_exprContext, op: String)(implicit file: Filename): HPBinOp = {
     def neg(expr: HPExpr): HPExpr = expr match {
       case HPUnaryOp(ident) => ident
-      case ident: Ident => HPUnaryOp(ident)
-      case HPBinOp(left, right) => HPBinOp(neg(left), neg(right))
-      case IntLiteral(value) => IntLiteral(-value)
+      case ident: Ident => HPUnaryOp(ident, ident.position)
+      case bin @ HPBinOp(left, right) => HPBinOp(neg(left), neg(right), bin.position)
+      case lit @ IntLiteral(value) => IntLiteral(-value, lit.position)
       case others => others
     }
 
     val l = hpExpr(left)
     val r = hpExpr(right)
 
+    val position = Position(file.name, l.position.start, r.position.end)
     op match {
-      case "+" => HPBinOp(l, r)
-      case "-" => HPBinOp(l, neg(r))
+      case "+" => HPBinOp(l, r, position)
+      case "-" => HPBinOp(l, neg(r), position)
     }
   }
 
-  def typeTree(ctx: TP.TypeContext): TypeTree = {
+  def typeTree(ctx: TP.TypeContext)(implicit file: Filename): TypeTree = {
     def typeCast(ctx: TP.TypeCastContext): TypeTree = {
       val from = typeTree(ctx.`type`(0))
       val to = typeTree(ctx.`type`(1))
-      val cast = CastType(from, to)
+      val cast = CastType(from, to, Position(ctx))
 
-      TypeTree(cast, Vector.empty, Vector.empty)
+      TypeTree(cast, Vector.empty, Vector.empty, Position(ctx))
     }
 
     def typeHead(ctx: TP.TypeHeadContext): TypeTree = {
@@ -456,19 +473,27 @@ class ASTGenerator {
 
       if(pkg.isEmpty) elem
       else {
-        val TypeTree(Ident(name), hargs, targs) = elem
-        val head = SelectPackage(pkg, name)
+        val TypeTree(ident @ Ident(name), hargs, targs) = elem
+        val start = Position(ctx.pkg_select).start
+        val end = ident.position.end
+        val pos = Position(file.name, start, end)
 
-        TypeTree(head, hargs, targs)
+        val head = SelectPackage(pkg, name, pos)
+
+        TypeTree(head, hargs, targs, Position(ctx))
       }
     }
 
     def typeSelect(ctx: TP.TypeSelectContext): TypeTree = {
       val head = typeTree(ctx.`type`)
-      val TypeTree(Ident(name), hargs, targs) = typeElem(ctx.type_elem)
-      val select = StaticSelect(head, name)
+      val tree @ TypeTree(Ident(name), hargs, targs) = typeElem(ctx.type_elem)
+      val endLine = head.position.end.line
+      val endColumn = head.position.end.column + name.length
+      val endPos = Point(endLine, endColumn)
+      val selectPos = Position(file.name, head.position.start, endPos)
+      val select = StaticSelect(head, name, selectPos)
 
-      TypeTree(select, hargs, targs)
+      TypeTree(select, hargs, targs, tree.position)
     }
 
     ctx match {
@@ -479,60 +504,75 @@ class ASTGenerator {
     }
   }
 
-  def typeElem(ctx: TP.Type_elemContext): TypeTree = {
+  def typeElem(ctx: TP.Type_elemContext)(implicit file: Filename): TypeTree = {
     ctx match {
       case ctx: TP.NormalTypeContext =>
-        val id = Ident(ctx.TYPE_ID.getText)
+        val idLine = ctx.TYPE_ID.getSymbol.getLine
+        val idStartColumn = ctx.TYPE_ID.getSymbol.getCharPositionInLine
+        val idEndColumn = ctx.TYPE_ID.getText.length + idStartColumn
+        val idPos = Position(file.name, Point(idLine, idStartColumn), Point(idLine, idEndColumn))
+        val id = Ident(ctx.TYPE_ID.getText, idPos)
+
         Option(ctx.apply_typeparam).map(applyTypeParam) match {
-          case Some((hps, tps)) => TypeTree(id, hps, tps)
-          case None => TypeTree(id, Vector.empty, Vector.empty)
+          case Some((hps, tps)) => TypeTree(id, hps, tps, Position(ctx))
+          case None => TypeTree(id, Vector.empty, Vector.empty, Position(ctx))
         }
-      case _: TP.ThisTypeContext =>
-        TypeTree(ThisType(), Vector.empty, Vector.empty)
+      case ctx: TP.ThisTypeContext =>
+        TypeTree(ThisType(Position(ctx)), Vector.empty, Vector.empty, Position(ctx))
     }
   }
 
-  def applyCall(ctx: TP.ApplyContext): Apply = {
+  def applyCall(ctx: TP.ApplyContext)(implicit file: Filename): Apply = {
     val head = Option(ctx.`type`).map(typeTree)
 
     val name = ctx.EXPR_ID.getText
-    val tpsOpt = Option(ctx.apply_typeparam).map(applyTypeParam)
+    val (hargs, targs) = Option(ctx.apply_typeparam).map(applyTypeParam).getOrElse(Vector.empty, Vector.empty)
     val args = ctx.args.expr.asScala.map(expr).toVector
 
     val prefix = head match {
-      case Some(tree) => StaticSelect(tree, name)
-      case None => Ident(name)
+      case Some(tree) =>
+        val endLine = tree.position.end.line
+        val endColumn = tree.position.end.column + name.length
+        val pos = Position(tree.position.filename, tree.position.start, Point(endLine, endColumn))
+
+        StaticSelect(tree, name, pos)
+      case None =>
+        val line = ctx.EXPR_ID.getSymbol.getLine
+        val startColumn = ctx.EXPR_ID.getSymbol.getCharPositionInLine
+        val endColumn = startColumn + name.length
+        val pos = Position(file.name, Point(line, startColumn), Point(line, endColumn))
+
+        Ident(name, pos)
     }
 
-    tpsOpt match {
-      case Some((hps, tps)) => Apply(prefix, hps, tps, args)
-      case None => Apply(prefix, Vector.empty, Vector.empty, args)
-    }
+    Apply(prefix, hargs, targs, args, Position(ctx))
   }
 
-  def polyParam(ctx: TP.Type_paramContext): (Vector[ValDef], Vector[TypeDef]) = {
+  def polyParam(ctx: TP.Type_paramContext)(implicit file: Filename): (Vector[ValDef], Vector[TypeDef]) = {
+    def tparam(id: TerminalNode): TypeDef = {
+      val line = id.getSymbol.getLine
+      val startColumn = id.getSymbol.getCharPositionInLine
+      val endColumn = startColumn + id.getText.length
+      val start = Point(line, startColumn)
+      val end = Point(line, endColumn)
+
+      TypeDef(Modifier.Param, id.getText, None, Position(file.name, start, end))
+    }
+
     ctx match {
       case ctx: TP.WithDependencyContext =>
         val hps = paramDefs(ctx.param_defs)
-        val tps = ctx.TYPE_ID()
-          .asScala
-          .map(_.getText)
-          .map(TypeDef(Modifier.Param, _, None))
-          .toVector
+        val tps = ctx.TYPE_ID().asScala.map(tparam).toVector
 
         (hps, tps)
       case ctx: TP.WithoutDependencyContext =>
-        val tps = ctx.TYPE_ID()
-          .asScala
-          .map(_.getText)
-          .map(TypeDef(Modifier.Param, _, None))
-          .toVector
+        val tps = ctx.TYPE_ID().asScala.map(tparam).toVector
 
         (Vector.empty, tps)
     }
   }
 
-  def applyTypeParam(ctx: TP.Apply_typeparamContext): (Vector[HPExpr], Vector[TypeTree]) = ctx match {
+  def applyTypeParam(ctx: TP.Apply_typeparamContext)(implicit file: Filename): (Vector[HPExpr], Vector[TypeTree]) = ctx match {
     case ctx: TP.WithHardwareParamsContext =>
       val exprs = hardwareParams(ctx.hardware_params)
       val tpes = Option(ctx.type_params).map(typeParams).getOrElse(Vector.empty)
@@ -544,72 +584,72 @@ class ASTGenerator {
       (Vector.empty, tpes)
   }
 
-  def hardwareParams(ctx: TP.Hardware_paramsContext): Vector[HPExpr] =
+  def hardwareParams(ctx: TP.Hardware_paramsContext)(implicit file: Filename): Vector[HPExpr] =
     ctx.hp_expr.asScala.map(hpExpr).toVector
 
-  def typeParams(ctx: TP.Type_paramsContext): Vector[TypeTree] =
+  def typeParams(ctx: TP.Type_paramsContext)(implicit file: Filename): Vector[TypeTree] =
     ctx.`type`.asScala.map(typeTree).toVector
 
 
-  def block(ctx: TP.BlockContext): Block = {
+  def block(ctx: TP.BlockContext)(implicit file: Filename): Block = {
     val elems = ctx.block_elem
       .asScala
       .map(blockElem)
       .toVector
 
     elems match {
-      case Vector() => Block(Vector.empty, UnitLiteral())
+      case Vector() => Block(Vector.empty, UnitLiteral(Position(ctx)), Position(ctx))
       case elems => elems.last match {
-        case e: Expression => Block(elems.dropRight(1), e)
-        case _: ValDef     => Block(elems, UnitLiteral())
-        case _: Assign     => Block(elems, UnitLiteral())
+        case e: Expression => Block(elems.dropRight(1), e, Position(ctx))
+        case _: ValDef     => Block(elems, UnitLiteral(Position(ctx)), Position(ctx))
+        case _: Assign     => Block(elems, UnitLiteral(Position(ctx)), Position(ctx))
       }
     }
   }
 
-  def blockElem(ctx: TP.Block_elemContext): BlockElem = ctx match {
+  def blockElem(ctx: TP.Block_elemContext)(implicit file: Filename): BlockElem = ctx match {
     case ctx: TP.ValDefPatternContext => valDef(ctx.val_def)
     case ctx: TP.ExprPatternContext => expr(ctx.expr)
     case ctx: TP.AssignPatternContext =>
       val loc = expr(ctx.expr(0))
       val rhs = expr(ctx.expr(1))
 
-      Assign(loc, rhs)
+      Assign(loc, rhs, Position(ctx))
   }
 
-  def constructStruct(ctx: TP.Construct_structContext): ConstructClass = {
+  def constructStruct(ctx: TP.Construct_structContext)(implicit file: Filename): ConstructClass = {
     val tpe = typeTree(ctx.`type`)
     val pairs = Option(ctx.construct_pair)
-      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))).toVector)
+      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr), Position(ctx))).toVector)
       .getOrElse(Vector.empty)
 
-    ConstructClass(tpe, pairs)
+    ConstructClass(tpe, pairs, Position(ctx))
   }
 
-  def constructModule(ctx: TP.Construct_moduleContext): ConstructModule = {
+  def constructModule(ctx: TP.Construct_moduleContext)(implicit file: Filename): ConstructModule = {
     val tpe = typeTree(ctx.`type`)
 
     val parents = Option(ctx.parent_pair)
-      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))))
+      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr), Position(ctx))))
       .getOrElse(Seq.empty)
       .toVector
 
     val siblings = Option(ctx.sibling_pair)
-      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr))))
+      .map(_.asScala.map(ctx => ConstructPair(ctx.EXPR_ID.getText, expr(ctx.expr), Position(ctx))))
       .getOrElse(Seq.empty)
       .toVector
 
-    ConstructModule(tpe, parents, siblings)
+    ConstructModule(tpe, parents, siblings, Position(ctx))
   }
 
-  def constructEnum(ctx: TP.Construct_enumContext): ConstructEnum = {
+  def constructEnum(ctx: TP.Construct_enumContext)(implicit file: Filename): ConstructEnum = {
     val target = typeTree(ctx.`type`)
     val fields = ctx.expr.asScala.map(expr).toVector
 
-    ConstructEnum(target, fields)
+    ConstructEnum(target, fields, Position(ctx))
   }
 
-  def bound(ctx: TP.BoundContext): BoundTree = {
+  def bound(ctx: TP.BoundContext)(implicit file: Filename): BoundTree = {
     def hpBoundExpr(ctx: TP.Hp_bound_exprContext): RangeExpr = ctx match {
       case ctx: TP.MaxBoundContext => RangeExpr.Max(hpExpr(ctx.hp_expr))
       case ctx: TP.MinBoundContext => RangeExpr.Min(hpExpr(ctx.hp_expr))
@@ -618,19 +658,25 @@ class ASTGenerator {
 
     ctx match {
       case ctx: TP.TPBoundContext =>
-        val target = TypeTree(Ident(ctx.TYPE_ID.getText), Vector.empty, Vector.empty)
+        val identSymbol = ctx.TYPE_ID.getSymbol
+        val identLine = identSymbol.getLine
+        val identStart = identSymbol.getCharPositionInLine
+        val identEnd = identStart + ctx.TYPE_ID.getText.length
+        val identPos = Position(file.name, Point(identLine, identStart), Point(identLine, identEnd))
+
+        val target = TypeTree(Ident(ctx.TYPE_ID.getText, identPos), Vector.empty, Vector.empty, identPos)
         val bounds = ctx.`type`.asScala.map(typeTree)
 
-        TPBoundTree(target, bounds.toVector)
+        TPBoundTree(target, bounds.toVector, Position(ctx))
       case ctx: TP.HPBoundContext =>
         val target = hpExpr(ctx.hp_expr)
         val bounds = ctx.hp_bound_expr.asScala.map(hpBoundExpr).toVector
 
-        HPBoundTree(target, bounds)
+        HPBoundTree(target, bounds, Position(ctx))
     }
   }
 
-  def generate(ctx: TP.GenerateContext): Generate = {
+  def generate(ctx: TP.GenerateContext)(implicit file: Filename): Generate = {
     val stageArgs = ctx.args(0).expr.asScala.map(expr).toVector
     val stateArgs = Option(ctx.args(1))
       .map(_.expr.asScala.toVector)
@@ -639,15 +685,23 @@ class ASTGenerator {
 
     val stageName = ctx.EXPR_ID(0).getText
     val stateName = Option(ctx.EXPR_ID(1)).map(_.getText)
+
+    val stateNameLine = Option(ctx.EXPR_ID(1)).map(_.getSymbol.getLine)
+    val stateNameStart = Option(ctx.EXPR_ID(1)).map(_.getSymbol.getCharPositionInLine)
+    val stateInfoEnd = Position(ctx).end
+    val stateInfoPos = (stateNameLine zip stateNameStart)
+      .map{ case (line, start) => Position(file.name, Point(line, start), stateInfoEnd) }
+      .headOption
+
     val state = stateName match {
       case None => None
-      case Some(name) => Some(StateInfo(name, stateArgs))
+      case Some(name) => Some(StateInfo(name, stateArgs, stateInfoPos.get))
     }
 
-    Generate(stageName, stageArgs, state)
+    Generate(stageName, stageArgs, state, Position(ctx))
   }
 
-  def relay(ctx: TP.RelayContext): Relay = {
+  def relay(ctx: TP.RelayContext)(implicit file: Filename): Relay = {
     val stageArgs = ctx.args(0).expr.asScala.map(expr).toVector
     val stateArgs = Option(ctx.args(1))
       .map(_.expr.asScala.toVector)
@@ -656,38 +710,44 @@ class ASTGenerator {
 
     val stageName = ctx.EXPR_ID(0).getText
     val stateName = Option(ctx.EXPR_ID(1)).map(_.getText)
+    val stateNameLine = Option(ctx.EXPR_ID(1)).map(_.getSymbol.getLine)
+    val stateNameStart = Option(ctx.EXPR_ID(1)).map(_.getSymbol.getCharPositionInLine)
+    val stateInfoEnd = Position(ctx).end
+    val stateInfoPos = (stateNameLine zip stateNameStart)
+      .map{ case (line, start) => Position(file.name, Point(line, start), stateInfoEnd) }
+      .headOption
+
     val state = stateName match {
       case None => None
-      case Some(name) => Some(StateInfo(name, stateArgs))
+      case Some(name) => Some(StateInfo(name, stateArgs, stateInfoPos.get))
     }
 
-    Relay(stageName, stageArgs, state)
+    Relay(stageName, stageArgs, state, Position(ctx))
   }
 
-  def goto(ctx: TP.Goto_exprContext): Goto = {
+  def goto(ctx: TP.Goto_exprContext)(implicit file: Filename): Goto = {
     val args = Option(ctx.args)
       .map(_.expr.asScala.map(expr).toVector)
       .getOrElse(Vector.empty)
 
-    Goto(ctx.EXPR_ID.getText, args)
+    Goto(ctx.EXPR_ID.getText, args, Position(ctx))
   }
 
-  def literal(ctx: TP.LiteralContext): Literal = ctx match {
+  def literal(ctx: TP.LiteralContext)(implicit file: Filename): Literal = ctx match {
     case ctx: TP.BitLitContext =>
       val raw = ctx.BIT.getText.substring(2)
-      BitLiteral(BigInt(raw, 2), raw.length)
+      BitLiteral(BigInt(raw, 2), raw.length, Position(ctx))
     case ctx: TP.IntLitContext =>
       ctx.INT.getText.toIntOption match {
-        case Some(value) => IntLiteral(value)
+        case Some(value) => IntLiteral(value, Position(ctx))
         case None => ???
       }
-    case _: TP.TrueLitContext => BoolLiteral(true)
-    case _: TP.FalseLitContext => BoolLiteral(false)
-    case _: TP.UnitLitContext =>
-      UnitLiteral()
+    case ctx: TP.TrueLitContext => BoolLiteral(value = true, Position(ctx))
+    case ctx: TP.FalseLitContext => BoolLiteral(value = false, Position(ctx))
+    case ctx: TP.UnitLitContext => UnitLiteral(Position(ctx))
   }
 
-  def component(ctx: TP.ComponentContext): Component = ctx.getChild(0) match {
+  def component(ctx: TP.ComponentContext)(implicit file: Filename): Component = ctx.getChild(0) match {
     case ctx: TP.Port_defContext   => portDef(ctx)
     case ctx: TP.Submodule_defContext => submoduleDef(ctx)
     case ctx: TP.Reg_defContext    => regDef(ctx)

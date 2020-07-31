@@ -81,7 +81,7 @@ object TPBound {
     def swapHP(expr: HPExpr): HPExpr = expr match {
       case ident: Ident => hpTable(ident.symbol.asHardwareParamSymbol)
       case HPUnaryOp(ident) => swapHP(ident)
-      case HPBinOp(left, right) => HPBinOp(swapHP(left), swapHP(right))
+      case bin @ HPBinOp(left, right) => HPBinOp(swapHP(left), swapHP(right), bin.position)
       case lit => lit
     }
 
@@ -327,8 +327,8 @@ object HPBound {
         val (constMaxs, exprMaxs) = maxs.collectPartition { case IntLiteral(value) => value }
         val (constMins, exprMins) = mins.collectPartition { case IntLiteral(value) => value }
 
-        val max = exprMaxs.unique ++ constMaxs.minOption.map(IntLiteral.apply)
-        val min = exprMins.unique ++ constMins.maxOption.map(IntLiteral.apply)
+        val max = exprMaxs.unique ++ constMaxs.minOption.map(IntLiteral(_, Position.empty))
+        val min = exprMins.unique ++ constMins.maxOption.map(IntLiteral(_, Position.empty))
 
         HPBound(bound.target, HPConstraint.Range(max, min))
     }
@@ -338,7 +338,7 @@ object HPBound {
     def verifyTarget: Either[Error, Unit] = {
       val errs = trees.map(bound => bound.target)
         .map(_.extractConstant)
-        .collect{ case (_, Some(int)) => Error.LiteralOnTarget(IntLiteral(int)) }
+        .collect{ case (_, Some(lit)) => Error.LiteralOnTarget(lit) }
 
       if(errs.isEmpty) Right(())
       else Left(Error.MultipleErrors(errs: _*))
@@ -394,13 +394,13 @@ object HPBound {
   }
 
   def typed(expr: HPExpr)(implicit ctx: Context, global: GlobalData): Either[Error, HPExpr] = expr match {
-    case HPBinOp(left, right) => (typed(left), typed(right)) match {
-      case (Right(l), Right(r)) => Right(HPBinOp(l, r).setTpe(Type.numTpe).setID(expr.id))
+    case bin @ HPBinOp(left, right) => (typed(left), typed(right)) match {
+      case (Right(l), Right(r)) => Right(bin.copy(left = l, right = r).setTpe(Type.numTpe))
       case (Left(err0), Left(err1)) => Left(Error.MultipleErrors(err0, err1))
       case (Left(err), _) => Left(err)
       case (_, Left(err)) => Left(err)
     }
-    case HPUnaryOp(ident) => typed(ident).map(ident => HPUnaryOp(ident.asInstanceOf[Ident]).setTpe(ident.tpe))
+    case unary @ HPUnaryOp(ident) => typed(ident).map(ident => unary.copy(operand = ident.asInstanceOf[Ident]).setTpe(ident.tpe))
     case ident @ Ident(name) => ctx.lookup[Symbol.HardwareParamSymbol](name) match {
       case LookupResult.LookupSuccess(symbol) => symbol.tpe match {
         case Type.ErrorType => Right(ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
@@ -420,11 +420,11 @@ object HPBound {
     case lit: Literal => Left(Error.LiteralOnTarget(lit))
     case HPUnaryOp(expr) => verifyTarget(expr)
     case ident: Ident => Right(ident)
-    case HPBinOp(left, right) =>
+    case bin @ HPBinOp(left, right) =>
       for {
         l <- verifyTarget(left)
         r <- verifyTarget(right)
-      } yield HPBinOp(l, r)
+      } yield bin.copy(left = l, right = r)
   }
 
   def simplify(originalHPBounds: Vector[HPBound]): Vector[HPBound] = {
@@ -439,8 +439,8 @@ object HPBound {
 
           val emaxs = exprMaxs.unique
           val emins = exprMins.unique
-          val cmax = if (constMaxs.isEmpty) None else Some(IntLiteral(constMaxs.min))
-          val cmin = if (constMins.isEmpty) None else Some(IntLiteral(constMins.max))
+          val cmax = if (constMaxs.isEmpty) None else Some(IntLiteral(constMaxs.min, Position.empty))
+          val cmin = if (constMins.isEmpty) None else Some(IntLiteral(constMins.max, Position.empty))
 
           HPConstraint.Range(emaxs ++ cmax, emins ++ cmin)
       }
@@ -476,8 +476,8 @@ object HPBound {
         val (minConsts, minExprs) = ranges.flatMap(_.min).map(_.sort.combine).collectPartition(collectLit)
         val maxConst = maxConsts.minOption
         val minConst = minConsts.maxOption
-        val max = maxExprs.unique ++ maxConst.map(IntLiteral.apply)
-        val min = minExprs.unique ++ minConst.map(IntLiteral.apply)
+        val max = maxExprs.unique ++ maxConst.map(IntLiteral(_, Position.empty))
+        val min = minExprs.unique ++ minConst.map(IntLiteral(_, Position.empty))
 
         HPConstraint.Range(max, min)
       }
@@ -701,7 +701,7 @@ object HPBound {
 
           val exprss = idents.map(table(_)).map {
             case DerivedResult.Infs(infs) => infs.map(_.expr)
-            case DerivedResult.Const(IInt.Integer(const)) => Vector(IntLiteral(const))
+            case DerivedResult.Const(IInt.Integer(const)) => Vector(IntLiteral(const, Position.empty))
           }
 
           val signedExprss = (exprss zip signs).map {
@@ -711,8 +711,9 @@ object HPBound {
 
           val exprs = makeAllPatterns(signedExprss).map {
             pattern =>
-              val expr = pattern.foldRight[HPExpr](IntLiteral(const.getOrElse(0))) {
-                case (left, right) => HPBinOp(left, right)
+              val expr = pattern.foldRight[HPExpr](IntLiteral(const.getOrElse(0), Position.empty)) {
+                case (left, right) if left.position.start >= right.position.start => HPBinOp(left, right, left.position)
+                case (left, right) => HPBinOp(left, right, Position.empty)
               }
               expr.sort.combine
           }
@@ -728,7 +729,7 @@ object HPBound {
       case IntLiteral(value) => IInt.Integer(value)
       case _ =>
         val (split, const) = expr.extractConstant
-        deriveFromExpr(split, const)
+        deriveFromExpr(split, const.map(_.value))
     }
   }
 
@@ -773,10 +774,10 @@ object HPBound {
         val results = (exprs zip consts)
           .map { case (expr, c) => (derivedTable(expr), c) }
           .map {
-            case (DerivedResult.Const(IInt.Integer(v0)), const) => DerivedResult.Const(IInt.Integer(v0 + const.getOrElse(0)))
+            case (DerivedResult.Const(IInt.Integer(v0)), const) => DerivedResult.Const(IInt.Integer(v0 + const.map(_.value).getOrElse(0)))
             case (infs: DerivedResult.Infs, None) => infs
             case (DerivedResult.Infs(infs), Some(v)) =>
-              val newInfs = infs.map(inf => IInt.Inf(inf.sign, HPBinOp(inf.expr, IntLiteral(v)).sort.combine))
+              val newInfs = infs.map(inf => IInt.Inf(inf.sign, HPBinOp(inf.expr, v, Position.empty).sort.combine))
               DerivedResult.Infs(newInfs)
           }
 
@@ -821,7 +822,7 @@ object HPBound {
           val consts = iints.collect { case IInt.Integer(value) => value }
           edge(consts) match {
             case Some(const) => IInt.Integer(const)
-            case None => IInt.Inf(infSign, IntLiteral(0))
+            case None => IInt.Inf(infSign, IntLiteral(0, Position.empty))
           }
         }
 
@@ -1136,7 +1137,7 @@ object HPConstraint {
         val constEdge = edge apply others.map(_.asInstanceOf[IInt.Integer]).map{ case IInt.Integer(v) => v }
 
         constEdge match {
-          case None => IInt.Inf(sign, IntLiteral(0)) // use int literal for now, but this is subject to fix
+          case None => IInt.Inf(sign, IntLiteral(0, Position.empty)) // use int literal for now, but this is subject to fix
           case Some(const) => IInt.Integer(const)
         }
       }

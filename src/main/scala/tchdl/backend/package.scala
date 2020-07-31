@@ -6,6 +6,7 @@ import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.collection.immutable.ListMap
 import firrtl.ir
+import tchdl.ast.Position
 
 package object backend {
   case class BuiltModule(tpe: BackendType, impl: Vector[ImplementClassContainer]) {
@@ -131,8 +132,8 @@ package object backend {
         val accessor = tpe.accessor.getOrElse(throw new ImplementationErrorException(s"$symbol should have accessor"))
         val accessorTPTable = tpTable.map { case (tp, tpe) => tp -> toRefType(tpe)}
         val accessorHPTable = hpTable.map{
-          case (hp, HPElem.Num(value)) => hp -> frontend.IntLiteral(value)
-          case (hp, HPElem.Str(value)) => hp -> frontend.StringLiteral(value)
+          case (hp, HPElem.Num(value)) => hp -> frontend.IntLiteral(value, Position.empty)
+          case (hp, HPElem.Str(value)) => hp -> frontend.StringLiteral(value, Position.empty)
         }
         val replaced = accessor.replaceWithMap(accessorHPTable, accessorTPTable)
 
@@ -163,8 +164,8 @@ package object backend {
 
   def toRefType(sig: BackendType): Type.RefType = {
     def intoLiteral(elem: HPElem): frontend.HPExpr = elem match {
-      case HPElem.Num(value) => frontend.IntLiteral(value)
-      case HPElem.Str(value) => frontend.StringLiteral(value)
+      case HPElem.Num(value) => frontend.IntLiteral(value, Position.empty)
+      case HPElem.Str(value) => frontend.StringLiteral(value, Position.empty)
     }
 
     val hargs = sig.hargs.map(intoLiteral)

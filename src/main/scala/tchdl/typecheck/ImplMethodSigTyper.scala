@@ -8,7 +8,7 @@ import scala.annotation.tailrec
 
 object ImplMethodSigTyper {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
-    val ctx = getContext(cu.pkgName, cu.filename.get)
+    val ctx = getContext(cu.pkgName, cu.filename)
 
     cu.topDefs.collect {
       case impl: ImplementClass => verifyImplClass(impl)(ctx, global)
@@ -182,7 +182,7 @@ object ImplMethodSigTyper {
         interfaceMethod <- lookupInterfaceMethod(interfaceSymbol, implMethod.name)
         _ <- verifyModifier(implMethod, interfaceMethod)
         _ <- verifySignatureLength(implMethod, interfaceMethod)
-        hpIdents = implMethod.hps.map(hp => Ident(hp.name).setSymbol(hp).setTpe(hp.tpe))
+        hpIdents = implMethod.hps.map(hp => Ident(hp.name, Position.empty).setSymbol(hp).setTpe(hp.tpe))
         methodHPTable = (interfaceMethod.hps zip hpIdents).toMap
         interfaceHPTable = (interfaceSymbol.hps zip interfaceTpe.hardwareParam).toMap
         hpTable = methodHPTable ++ interfaceHPTable

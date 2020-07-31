@@ -1,5 +1,6 @@
 package tchdl.backend
 
+import tchdl.ast.Position
 import tchdl.backend.{ast => backend}
 import tchdl.{ast => frontend}
 import tchdl.util._
@@ -343,8 +344,8 @@ object BackendIRGen {
       }
 
       val callerHP = hargs.map {
-        case HPElem.Num(value) => frontend.IntLiteral(value)
-        case HPElem.Str(value) => frontend.StringLiteral(value)
+        case HPElem.Num(value) => frontend.IntLiteral(value, Position.empty)
+        case HPElem.Str(value) => frontend.StringLiteral(value, Position.empty)
       }
       val callerTP = targs.map(toRefType)
       val argTpes = args.map(toRefType)

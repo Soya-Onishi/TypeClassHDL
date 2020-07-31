@@ -1357,7 +1357,7 @@ object Type {
             ident.symbol.asHardwareParamSymbol,
             throw new ImplementationErrorException(s"hpTable should have ${ident.symbol.name}")
           )
-          case HPBinOp(left, right) => HPBinOp(loop(left), loop(right))
+          case bin @ HPBinOp(left, right) => HPBinOp(loop(left), loop(right), bin.position)
           case HPUnaryOp(ident) => loop(ident).negate
           case lit: Literal => lit
         }
@@ -1544,7 +1544,7 @@ object Type {
   }
 
   def bitTpe(width: Int)(implicit global: GlobalData): Type.RefType = {
-    bitTpe(IntLiteral(width))
+    bitTpe(IntLiteral(width, Position.empty))
   }
 
   def futureTpe(targ: Type.RefType)(implicit global: GlobalData): Type.RefType = {
@@ -1579,7 +1579,7 @@ object Type {
         (typedHArgs, typedTArgs) = polyArgs
         _ <- typeCheckHardArgs(symbol, typedHArgs)
       } yield {
-        TypeTree(ident, typedHArgs, typedTArgs)
+        TypeTree(ident, typedHArgs, typedTArgs, typeTree.position)
           .setSymbol(symbol)
           .setTpe(Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType)))
           .setID(typeTree.id)
@@ -1612,7 +1612,7 @@ object Type {
         val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes)
         val typedSelect = select.setSymbol(typeSymbol).setTpe(tpe)
 
-        TypeTree(typedSelect, typedHArgs, typedTArgs)
+        TypeTree(typedSelect, typedHArgs, typedTArgs, typeTree.position)
           .setSymbol(typeSymbol)
           .setTpe(tpe)
           .setID(typeTree.id)
@@ -1648,7 +1648,7 @@ object Type {
         case LookupResult.LookupFailure(err) => (Some(err), ident.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType))
         case LookupResult.LookupSuccess(symbol) => (None, ident.setSymbol(symbol).setTpe(symbol.tpe))
       }
-      case HPBinOp(left, right) =>
+      case bin @ HPBinOp(left, right) =>
         val (err0, builtLeft) = buildHP(left)
         val (err1, builtRight) = buildHP(right)
 
@@ -1662,7 +1662,7 @@ object Type {
           if (errs1.isEmpty) (None, Type.numTpe)
           else (Some(Error.MultipleErrors(errs1: _*)), Type.ErrorType)
 
-        (errs, HPBinOp(builtLeft, builtRight).setTpe(tpe))
+        (errs, HPBinOp(builtLeft, builtRight, bin.position).setTpe(tpe))
     }
   }
 
@@ -1694,7 +1694,7 @@ object Type {
   def buildThisType(symbol: Symbol.TypeSymbol, hps: Vector[ValDef], tps: Vector[TypeDef])(implicit ctx: Context.NodeContext, global: GlobalData): Option[Type.RefType] = {
     val hasError = hps.exists(_.symbol.tpe.isErrorType)
 
-    val typedHargs = hps.map(hp => Ident(hp.name).setSymbol(hp.symbol).setTpe(hp.symbol.tpe))
+    val typedHargs = hps.map(hp => Ident(hp.name, Position.empty).setSymbol(hp.symbol).setTpe(hp.symbol.tpe))
     val typedTargs = tps.map {
       tp =>
         val tpSymbol = tp.symbol.asTypeParamSymbol

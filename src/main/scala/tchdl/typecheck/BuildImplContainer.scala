@@ -21,7 +21,7 @@ object BuildImplContainer {
         child
     }
 
-    val ctx = packageSymbol.lookupCtx(cu.filename.get).get
+    val ctx = packageSymbol.lookupCtx(cu.filename).get
 
     cu.topDefs.foreach(buildContainer(_)(ctx, global))
   }
@@ -33,7 +33,7 @@ object BuildImplContainer {
 
       val errs = Vector(targetErrs, boundsErrs).flatten
       if (errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
-      else Right(TPBound(TPBoundTree(target, bounds)))
+      else Right(TPBound(TPBoundTree(target, bounds, Position.empty)))
     }
 
     def buildHPBounds(bound: HPBoundTree): Either[Error, HPBound] = {
