@@ -1,0 +1,16 @@
+package test
+
+struct ST {
+  a: Bit[8],
+  b: Future[Bit[8]]
+}
+
+module Top
+impl Top {
+  input def func(in0: Bit[8], in1: Future[Bit[8]]) -> ST {
+    ST {
+      a: in0,
+      b: in1
+    }
+  }
+}

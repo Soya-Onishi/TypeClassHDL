@@ -602,7 +602,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("use some vector manipulation methods") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVecManipulation.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 
   test("use annotation to compile firrtl") {
@@ -614,5 +614,20 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val emitter = new VerilogEmitter
     val result = emitter.execute(state)
     println(result.getEmittedCircuit.value)
+  }
+
+  test("use future field in struct") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFuture.tchdl")
+
+    val outputs = circuit.modules.head.asInstanceOf[ir.Module].ports.filter(_.direction == ir.Output)
+    assert(outputs.length == 2)
+
+    runFirrtl(circuit)
+  }
+
+  test("use data structure with future field as stage parameter") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFutureStage.tchdl")
+
+    runFirrtl(circuit, print = true)
   }
 }

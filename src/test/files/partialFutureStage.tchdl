@@ -1,0 +1,28 @@
+package test
+
+struct ST {
+  a: Bit[8],
+  b: Future[Bit[8]]
+}
+
+module Top
+impl Top {
+  input def func(in0: Bit[8], in1: Future[Bit[8]]) -> Future[Bit[8]] {
+    val data = ST {
+      a: in0,
+      b: in1
+    }
+
+    generate s0(data)
+  }
+
+  stage s0(st: ST) -> Future[Bit[8]] {
+    match st.b {
+      case Future[Bit[8]]:::NotReady =>
+        return Future[Bit[8]]:::NotReady
+      case Future[Bit[8]]:::Ready(v) =>
+        return Future[Bit[8]]:::Ready(st.a + v)
+        finish
+    }
+  }
+}
