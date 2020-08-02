@@ -110,6 +110,101 @@ package object backend {
 
       loop(this, Set.empty)
     }
+
+    def fields(implicit global: GlobalData): Map[String, BackendType] = {
+      val hpTable = (this.symbol.hps zip this.hargs).toMap
+      val tpTable = (this.symbol.tps zip this.targs).toMap
+
+      this.symbol match {
+        case _: Symbol.EnumSymbol => Map.empty
+        case symbol =>
+          symbol.tpe.declares.toMap.map {
+            case (name, symbol) =>
+              name -> toBackendType(symbol.tpe.asRefType, hpTable, tpTable)
+          }
+      }
+    }
+
+    def toFirrtlType(implicit global: GlobalData): ir.Type = {
+      def toBitType(width: Int): ir.UIntType = ir.UIntType(ir.IntWidth(width))
+      def toVecType(length: Int, tpe: ir.Type): ir.VectorType = ir.VectorType(tpe, length)
+      def toEnumType(symbol: Symbol.EnumSymbol): ir.BundleType = {
+        def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
+        def flagWidth(x: Double): Double = (math.ceil _ compose log2)(x)
+
+        def makeBitLength(
+          member: Type.EnumMemberType,
+          hpTable: Map[Symbol.HardwareParamSymbol, HPElem],
+          tpTable: Map[Symbol.TypeParamSymbol, BackendType]
+        ): BigInt = {
+          def loop(tpe: ir.Type): BigInt = tpe match {
+            case ir.BundleType(fields) => fields.map(_.tpe).map(loop).sum
+            case ir.UIntType(ir.IntWidth(width)) => width
+          }
+
+          val fieldTypes = member.fields
+            .map(_.tpe.asRefType)
+            .map(toBackendType(_, hpTable, tpTable))
+            .map(_.toFirrtlType)
+
+          fieldTypes.map(loop).sum
+        }
+
+        val members = symbol.tpe.declares
+          .toMap
+          .toVector
+          .sortWith{ case ((left, _), (right, _)) => left < right }
+          .map{ case (_, symbol) => symbol }
+
+        val kind =
+          if(members.length <= 1) None
+          else Some(ir.Field(
+            "_member",
+            ir.Default,
+            ir.UIntType(ir.IntWidth(flagWidth(members.length).toInt))
+          ))
+
+        val hpTable = (symbol.hps zip this.hargs).toMap
+        val tpTable = (symbol.tps zip this.targs).toMap
+
+        val maxLength = members
+          .map(_.tpe.asEnumMemberType)
+          .map(makeBitLength(_, hpTable, tpTable))
+          .max
+
+        val dataStorage = Some(ir.Field("_data", ir.Default, ir.UIntType(ir.IntWidth(maxLength))))
+
+        val field = Seq(kind, dataStorage).flatten
+        ir.BundleType(field)
+      }
+
+      def toOtherType: ir.BundleType = {
+        val typeFields = this.fields
+
+        val fields = typeFields.map{ case (name, tpe) => name -> tpe.toFirrtlType }
+          .toVector
+          .sortWith{ case ((left, _), (right, _)) => left < right }
+          .map{ case (name, tpe) => ir.Field(name, ir.Default, tpe) }
+
+        ir.BundleType(fields)
+      }
+
+      this.symbol match {
+        case symbol if symbol == Symbol.int  => toBitType(width = 32)
+        case symbol if symbol == Symbol.bool => toBitType(width = 1)
+        case symbol if symbol == Symbol.unit => toBitType(width = 0)
+        case symbol if symbol == Symbol.bit =>
+          val HPElem.Num(width) = this.hargs.head
+          toBitType(width)
+        case symbol if symbol == Symbol.vec =>
+          val HPElem.Num(length) = this.hargs.head
+          val elemType = this.targs.head.toFirrtlType
+
+          toVecType(length, elemType)
+        case symbol: Symbol.EnumSymbol => toEnumType(symbol)
+        case _ => toOtherType
+      }
+    }
   }
 
   def toBackendType(tpe: Type.RefType)(implicit global: GlobalData): BackendType = toBackendType(tpe, Map.empty, Map.empty)

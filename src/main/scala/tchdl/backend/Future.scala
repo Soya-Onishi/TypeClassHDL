@@ -2,9 +2,9 @@ package tchdl.backend
 
 import firrtl.ir
 
-case class Future(accesses: Map[ir.Expression, Vector[ir.Expression]], futures: Map[ir.Expression, FormKind]) {
+case class Future(froms: Map[ir.Expression, Vector[ir.Expression]], futures: Map[ir.Expression, UsageStyle]) {
   def + (that: Future): Future = {
-    val newAccesses = that.accesses.foldLeft(this.accesses) {
+    val newAccesses = that.froms.foldLeft(this.froms) {
       case (accesses, (loc, froms)) => accesses.get(loc) match {
         case None => accesses.updated(loc, froms)
         case Some(thisFroms) => accesses.updated(loc, froms ++ thisFroms)
@@ -16,15 +16,14 @@ case class Future(accesses: Map[ir.Expression, Vector[ir.Expression]], futures: 
 }
 
 object Future {
-  def empty: Future = Future(Map.empty[ir.Expression, Vector[ir.Expression]], Map.empty[ir.Expression, FormKind])
+  def empty: Future = Future(Map.empty[ir.Expression, Vector[ir.Expression]], Map.empty[ir.Expression, UsageStyle])
 }
 
-trait FormKind
-object FormKind {
-  case class Local(froms: Vector[ir.Expression], tpe: ir.Type) extends FormKind
-  case object Field extends FormKind
-  case object Stage extends FormKind
-  case class Constructor(tpe: ir.Type) extends FormKind
+trait UsageStyle
+object UsageStyle {
+  case class Local(tpe: ir.Type) extends UsageStyle
+  case object Field extends UsageStyle
+  case class Constructor(tpe: ir.Type) extends UsageStyle
 }
 
 trait Direction

@@ -50,11 +50,7 @@ object DataInstance {
   def apply(tpe: BackendType, refer: ir.Expression): StructInstance =
     StructInstance(tpe, refer)
 
-  def unapply(obj: Any): Option[(BackendType, ir.Expression)] =
-    obj match {
-      case instance: DataInstance => Some(instance.tpe, instance.refer)
-      case _ => None
-    }
+  def unapply(obj: DataInstance): Option[(BackendType, ir.Expression)] = Some(obj.tpe, obj.refer)
 }
 
 object ModuleInstance {
