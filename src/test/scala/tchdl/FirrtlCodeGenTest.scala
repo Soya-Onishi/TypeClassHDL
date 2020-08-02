@@ -627,7 +627,56 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("use data structure with future field as stage parameter") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFutureStage.tchdl")
+    runFirrtl(circuit)
+  }
 
-    runFirrtl(circuit, print = true)
+  test("use partial future in sibling interface parameter") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFutureSibling.tchdl")
+
+    val topModule = circuit.modules.find(_.name == "test_Top").get.asInstanceOf[ir.Module]
+    val sub0 = circuit.modules.find(_.name == "test_Sub0").get.asInstanceOf[ir.Module]
+    val sub1 = circuit.modules.find(_.name == "test_Sub1").get.asInstanceOf[ir.Module]
+
+    val called = sub1.body.asInstanceOf[ir.Block].stmts.collectFirst{ case c: ir.Conditionally => c.pred }.get.asInstanceOf[ir.Reference].name
+    val calledHash = extractHashCode("called_([a-zA-Z0-9]+)\\$_active", called)
+    val caller = sub0.body.asInstanceOf[ir.Block].stmts.collectFirst{ case c: ir.Conditionally => c }.get
+    val callerHash = extractHashCode("caller_([a-zA-Z0-9]+)\\$_active", caller.pred.asInstanceOf[ir.Reference].name)
+
+    val connects0 = topModule.body.asInstanceOf[ir.Block].stmts.collect{ case c: ir.Connect => c }.map(_.serialize)
+    connects0.contains("""s1.called_""" + calledHash + """$st_b._member <= or(or(UInt<1>("h0"), s0.s1$called_""" + calledHash + """$st_b._member), s0.s1$called_""" + calledHash + """$st_b._member)""")
+    connects0.contains("""s1.called_""" + calledHash + """$st_b._data <= or(or(UInt<1>("h0"), s0.s1$called_""" + calledHash + """$st_b._data), s0.s1$called_""" + calledHash + """$st_b._data)""")
+
+    val expectCallerBody = caller.conseq.asInstanceOf[ir.Block].stmts.map(_.serialize)
+    expectCallerBody.contains("""node _TEMP_3 = caller_""" + callerHash + """$st""")
+    expectCallerBody.contains("""s1$called_""" + calledHash + """$_active <= UInt<1>("h1")""")
+    expectCallerBody.contains("""s1$called_""" + calledHash + """$st <= _TEMP_3""")
+
+    val connects1 = sub0.body.asInstanceOf[ir.Block].stmts.collect{ case c: ir.Connect => c }.map(_.serialize)
+    connects1.contains("""_TEMP_3_b._member <= or(UInt<1>("h0"), caller_""" + callerHash + """$st_b._member)""")
+    connects1.contains("""_TEMP_3_b._data <= or(UInt<1>("h0"), caller_""" + callerHash + """$st_b._data)""")
+
+    runFirrtl(circuit)
+  }
+
+  test("use partial future in parent interface parameter") {
+    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFutureParent.tchdl")
+
+    val top = circuit.modules.find(_.name == "test_Top").get.asInstanceOf[ir.Module]
+    val calledWires = top.body.asInstanceOf[ir.Block].stmts.collect{ case w: ir.DefWire => w }
+    val wiresStr = calledWires.map(_.serialize)
+    val connects = top.body.asInstanceOf[ir.Block].stmts.collect{ case c: ir.Connect => c }
+    val connectStrs = connects.map(_.serialize)
+
+    val active = calledWires.find(_.name.contains("active")).get
+
+    val calledHash = extractHashCode("called_([a-zA-Z0-9]+)\\$_active", active.name)
+
+    wiresStr.contains("""wire called_""" + calledHash + """$st : { a : UInt<4>}""")
+    wiresStr.contains("""wire called_""" + calledHash + """$st_b : { _member : UInt<1>, _data : UInt<2>""")
+
+    connectStrs.contains("""called_""" + calledHash + """$st_b._member <= or(or(UInt<1>("h0"), s0.top$called_""" + calledHash + """$st_b._member), s0.top$called_""" + calledHash + """$st_b._member)""")
+    connectStrs.contains("""called_""" + calledHash + """$st_b._data <= or(or(UInt<1>("h0"), s0.top$called_""" + calledHash + """$st_b._data), s0.top$called_""" + calledHash + """$st_b._data)""")
+
+    runFirrtl(circuit)
   }
 }

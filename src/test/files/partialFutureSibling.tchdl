@@ -1,0 +1,41 @@
+package test
+
+struct ST {
+  a: Bit[8],
+  b: Future[Bit[8]]
+}
+
+module Top
+impl Top {
+  mod s0: Sub0 = Sub0 {
+    sibling:
+      s1: this.s1
+  }
+
+  mod s1: Sub1 = Sub1{}
+
+  input def start(a: Bit[8], b: Future[Bit[8]]) -> Unit {
+    val data = ST {
+      a: a,
+      b: b
+    }
+
+    this.s0.caller(data)
+  }
+}
+
+module Sub0 {
+  sibling:
+    s1: Sub1
+}
+
+impl Sub0 {
+  input def caller(st: ST) -> Unit {
+    this.s1.called(st)
+  }
+}
+
+module Sub1
+impl Sub1 {
+  sibling def called(st: ST) -> Unit {}
+}

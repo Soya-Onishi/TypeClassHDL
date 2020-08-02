@@ -698,41 +698,29 @@ object FirrtlCodeGen {
     interface.params.foreach { case (name, _) => stack.lock(name) }
     val retTpe = interface.label.symbol.tpe.asMethodType.returnType
     val isUnitRet = retTpe.origin == Symbol.unit
-    val isFutureRet = retTpe.origin == Symbol.future
-
-    val params = interface.params
-      .map { case (name, tpe) => stack.refer(name) -> tpe }
-      .map { case (name, tpe) => name -> DataInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
-      .toVector
-    params.foreach { case (name, instance) => stack.append(name, instance) }
 
     val active = ir.DefWire(ir.NoInfo, interface.activeName, ir.UIntType(ir.IntWidth(1)))
     val activeOff = ir.Connect(ir.NoInfo, ir.Reference(interface.activeName, ir.UnknownType), ir.UIntLiteral(0))
-    val paramDefs = interface.params.map{ case (name, tpe) => ir.DefWire(ir.NoInfo, name, toFirrtlType(tpe)) }.toVector
-    val paramInvalids = params
-      .filter { case (_, DataInstance(tpe, _)) => tpe.symbol != Symbol.future }
-      .map { case (name, _) => ir.IsInvalid(ir.NoInfo, ir.Reference(name.name, ir.UnknownType)) }
 
-    val retName =
-      if(isUnitRet) None
-      else Some(interface.retName)
+    val (paramWireOpts, paramFutures) = interface.params.toVector.map{ case (name, tpe) => wire(name, tpe) }.unzip
+    val (retWireOpt, retWireFutures) =
+      if(isUnitRet) (Option.empty, Vector.empty)
+      else wire(interface.retName, interface.retTpe)
+    val sigNormalWires = paramWireOpts.flatten ++ retWireOpt
+    val invalids = sigNormalWires.map(wire => ir.IsInvalid(ir.NoInfo, ir.Reference(wire.name, ir.UnknownType)))
+    val futureWires = paramFutures.flatten ++ retWireFutures
+    val future = futureWires.foldLeft(Future.empty) {
+      case (acc, wire) =>
+        val ref = ir.Reference(wire.name, ir.UnknownType)
+        val f = Future(Map.empty, Map(ref -> UsageStyle.Field))
 
-    val retWire = retName.map(ir.DefWire(ir.NoInfo, _, toFirrtlType(interface.retTpe)))
-    val retRef = retName.map(ir.Reference(_, ir.UnknownType))
-    val retInit = retRef.map(ir.IsInvalid(ir.NoInfo, _))
-    val retFuture =
-      if (isFutureRet) Future(Map.empty, Map(retRef.get -> UsageStyle.Field))
-      else Future.empty
+        acc + f
+    }
 
-    val future = params
-      .map { case (name, DataInstance(tpe, _)) => name -> tpe }
-      .filter { case (_, tpe) => tpe.symbol == Symbol.future }
-      .map { case (name, tpe) => ir.Reference(name.name, ir.UnknownType) -> tpe }
-      .map { case (refer, _) => Future(Map.empty, Map(refer -> UsageStyle.Field)) }
-      .foldLeft(retFuture)(_ + _)
+    val sigWires = sigNormalWires ++ futureWires
 
-    val wires = active +: (paramDefs ++ retWire)
-    val inits = activeOff +: (paramInvalids ++ retInit)
+    val wires = active +: sigWires
+    val inits = activeOff +: invalids
 
     BuildResult(inits, future, wires)
   }
@@ -1525,7 +1513,8 @@ object FirrtlCodeGen {
           val field = ir.SubField(bundleRef, name, ir.UnknownType)
           connect(field, instance)
       }.unzip
-      val fieldFuture = futures.foldLeft(Future.empty)(_ + _)
+      val resultFuture = results.values.map(_.future).foldLeft(Future.empty)(_ + _)
+      val fieldFuture = futures.foldLeft(resultFuture)(_ + _)
       val connects = connectOpts.flatten
       val futureLocals = futureWires.map(wire => ir.Reference(wire.name, ir.UnknownType) -> UsageStyle.Local(wire.tpe))
       val localFuture = Future(Map.empty, futureLocals.toMap)

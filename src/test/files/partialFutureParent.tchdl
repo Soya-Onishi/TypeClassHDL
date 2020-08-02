@@ -1,0 +1,44 @@
+package test
+
+struct ST {
+  a: Bit[4],
+  b: Future[Bit[2]]
+}
+
+module Top
+impl Top {
+  mod s0: Sub0 = Sub0 {
+    parent:
+      top: this
+  }
+
+  parent def called(st: ST) -> Unit {}
+}
+
+module Sub0 {
+  parent:
+    top: Top
+}
+
+impl Sub0 {
+  mod s1: Sub1 = Sub1 {
+    parent:
+      top: this.top
+  }
+}
+
+module Sub1 {
+  parent:
+    top: Top
+}
+
+impl Sub1 {
+  always caller {
+    val data = ST {
+      a: 0b0000,
+      b: Future[Bit[2]]:::Ready(0b00)
+    }
+
+    this.top.called(data)
+  }
+}
