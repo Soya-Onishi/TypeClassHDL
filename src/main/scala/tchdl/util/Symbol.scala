@@ -306,6 +306,16 @@ object Symbol {
       new StateSymbol(path.appendComponentName(name), tpe)
   }
 
+  class ProcSymbol(val path: NameSpace, tpe: Type) extends TermSymbol(tpe, Modifier.NoModifier) {
+    override val accessibility: Accessibility = Accessibility.Private
+  }
+
+  object ProcSymbol {
+    def apply(name: String, path: NameSpace, tpe: Type): ProcSymbol = {
+      new ProcSymbol(path.appendComponentName(name), tpe)
+    }
+  }
+
   class ImplementSymbol(
     val treeID: Int,
     val path: NameSpace,
