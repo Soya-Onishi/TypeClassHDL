@@ -44,6 +44,7 @@ object Error {
   case class RequireStateSpecify(candidates: Vector[Symbol.StateSymbol], pos: Position)extends Error
 
   case class RejectHeapType(tpe: Type.RefType, pos: Position) extends Error
+  case class RejectPointerType(tpe: TypeTree, pos: Position) extends Error
 
   case class HPConstraintSetMultitime(target: HPExpr, pos: Position) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type], pos: Position) extends Error

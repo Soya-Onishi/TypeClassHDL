@@ -1059,7 +1059,7 @@ object Typer {
           } yield {
             val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType))
 
-            TypeTree(ident.setTpe(symbol.tpe).setSymbol(symbol), hargs, targs, typeTree.position)
+            TypeTree(ident.setTpe(symbol.tpe).setSymbol(symbol), hargs, targs, Option.empty, typeTree.position)
               .setTpe(tpe)
               .setSymbol(symbol)
               .setID(typeTree.id)
@@ -1086,7 +1086,7 @@ object Typer {
           .setSymbol(castTpe.origin)
           .setID(cast.id)
 
-        TypeTree(typedCast, Vector.empty, Vector.empty, typeTree.position)
+        TypeTree(typedCast, Vector.empty, Vector.empty, Option.empty, typeTree.position)
           .setTpe(castTpe)
           .setSymbol(castTpe.origin)
           .setID(cast.id)
@@ -1123,7 +1123,7 @@ object Typer {
             .setTpe(tpe)
             .setID(select.id)
 
-          Right(TypeTree(typedSelect, hargs, targs, typeTree.position).setTpe(tpe).setSymbol(symbol).setID(typeTree.id))
+          Right(TypeTree(typedSelect, hargs, targs, Option.empty, typeTree.position).setTpe(tpe).setSymbol(symbol).setID(typeTree.id))
       }
     }
 
@@ -1148,7 +1148,7 @@ object Typer {
         val typedSelect = select.setSymbol(typeSymbol).setTpe(typeSymbol.tpe)
         val tpe = Type.RefType(typeSymbol, hargs, targs.map(_.tpe.asRefType))
 
-        TypeTree(typedSelect, hargs, targs, typeTree.position)
+        TypeTree(typedSelect, hargs, targs, Option.empty, typeTree.position)
           .setSymbol(typeSymbol)
           .setTpe(tpe)
           .setID(typeTree.id)
@@ -1160,21 +1160,67 @@ object Typer {
         case None => Left(Error.SelfTypeNotFound(thisTree.position))
         case Some(tpe) =>
           val tree = ThisType(thisTree.position).setSymbol(tpe.origin).setTpe(tpe).setID(thisTree.id)
-          val tpeTree = TypeTree(tree, Vector.empty, Vector.empty, thisTree.position)
+          val tpeTree = TypeTree(tree, Vector.empty, Vector.empty, Option.empty, thisTree.position)
             .setSymbol(tree.symbol)
             .setTpe(tree.tpe)
 
           Right(tpeTree)
       }
 
-    def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] =
-      typeTree.expr match {
-        case ident: Ident => typedForIdent(ident, hargs, targs)
-        case cast: CastType => typedForCast(cast)
-        case select: StaticSelect => typedForStaticSelect(select, hargs, targs)
-        case select: SelectPackage => typedForSelectPackage(select, hargs, targs)
-        case tree: ThisType => typedForThisType(tree)
+    def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
+      def typedBaseType: Either[Error, TypeTree] =
+        typeTree.expr match {
+          case ident: Ident => typedForIdent(ident, hargs, targs)
+          case cast: CastType => typedForCast(cast)
+          case select: StaticSelect => typedForStaticSelect(select, hargs, targs)
+          case select: SelectPackage => typedForSelectPackage(select, hargs, targs)
+          case tree: ThisType => typedForThisType(tree)
+        }
+
+      def typedPointerExpr(baseTpe: TypeTree): Either[Error, TypeTree] = {
+        typeTree.pointerExpr match {
+          case None => Right(baseTpe)
+          case Some(expr) =>
+            val tExpr = typedExpr(expr)
+            val tExprTpe = tExpr.tpe match {
+              case Type.ErrorType => Left(Error.DummyError)
+              case tpe: Type.RefType => Right(tpe)
+            }
+
+            def requireHWTpe: Either[Error, Unit] = {
+              val isHW = baseTpe.tpe.asRefType.isHardwareType(ctx.tpBounds)(baseTpe.position, global)
+              if(isHW) Right(())
+              else Left(Error.RequireHardwareType(baseTpe.tpe.asRefType, baseTpe.position))
+            }
+
+            def tpeCheck(exprTpe: Type.RefType): Either[Error, Unit] =
+              if(exprTpe == baseTpe.tpe) Right(())
+              else Left(Error.TypeMismatch(baseTpe.tpe, exprTpe, expr.position))
+
+            for {
+              exprTpe <- tExprTpe
+              _ <- requireHWTpe
+              _ <- tpeCheck(exprTpe)
+            } yield {
+              val baseRefTpe = baseTpe.tpe.asRefType
+              val tpe = Type.RefType(
+                baseRefTpe.origin,
+                baseRefTpe.hardwareParam,
+                baseRefTpe.typeParam
+
+                // TODO: need to add pointer specifier in reftype
+              )
+
+              baseTpe.copy(pointerExpr = Some(tExpr)).setTpe(tpe)
+            }
+        }
       }
+
+      for {
+        baseTree <- typedBaseType
+        typeTree <- typedPointerExpr(baseTree)
+      } yield typeTree
+    }
 
     val typedHArgs = typeTree.hp.map(typedHPExpr)
     val typedTArgs = typeTree.tp.map(typedTypeTree)
@@ -1185,7 +1231,7 @@ object Typer {
         global.repo.error.append(err)
         val prefix = typeTree.expr.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
-        TypeTree(prefix, typedHArgs, typedTArgs, typeTree.position)
+        TypeTree(prefix, typedHArgs, typedTArgs, Option.empty, typeTree.position)
           .setTpe(Type.ErrorType)
           .setSymbol(Symbol.ErrorSymbol)
           .setID(typeTree.id)

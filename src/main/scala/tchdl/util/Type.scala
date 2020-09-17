@@ -1496,7 +1496,7 @@ object Type {
         (typedHArgs, typedTArgs) = polyArgs
         _ <- typeCheckHardArgs(symbol, typedHArgs)
       } yield {
-        TypeTree(ident, typedHArgs, typedTArgs, typeTree.position)
+        TypeTree(ident, typedHArgs, typedTArgs, Option.empty, typeTree.position)
           .setSymbol(symbol)
           .setTpe(Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType)))
           .setID(typeTree.id)
@@ -1533,7 +1533,7 @@ object Type {
         val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes)
         val typedSelect = select.setSymbol(typeSymbol).setTpe(tpe)
 
-        TypeTree(typedSelect, typedHArgs, typedTArgs, typeTree.position)
+        TypeTree(typedSelect, typedHArgs, typedTArgs, Option.empty, typeTree.position)
           .setSymbol(typeSymbol)
           .setTpe(tpe)
           .setID(typeTree.id)
@@ -1545,19 +1545,23 @@ object Type {
       }
     }
 
-    typeTree.expr match {
-      case ident: Ident => buildForIdent(ident, typeTree.hp, typeTree.tp)
-      case select: SelectPackage => buildForSelectPackage(select, typeTree.hp, typeTree.tp)
-      case select: StaticSelect =>
-        val err = Some(Error.CannotUseStaticSelect(select, select.position))
-        val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+    // Do not accept pointer type as implementation type
+    if(typeTree.pointerExpr.isDefined) (Some(Error.RejectPointerType(typeTree, typeTree.position)), typeTree)
+    else {
+      typeTree.expr match {
+        case ident: Ident => buildForIdent(ident, typeTree.hp, typeTree.tp)
+        case select: SelectPackage => buildForSelectPackage(select, typeTree.hp, typeTree.tp)
+        case select: StaticSelect =>
+          val err = Some(Error.CannotUseStaticSelect(select, select.position))
+          val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
-        (err, tree)
-      case cast: CastType =>
-        val err = Some(Error.CannotUseCast(cast, cast.position))
-        val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+          (err, tree)
+        case cast: CastType =>
+          val err = Some(Error.CannotUseCast(cast, cast.position))
+          val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
-        (err, tree)
+          (err, tree)
+      }
     }
   }
 
