@@ -1605,6 +1605,30 @@ object CastType {
   }
 }
 
+abstract case class PointerType private(tpeTree: TypeTree, expr: Expression) extends TypeAST with HasType {
+  def copy(tpeTree: TypeTree = this.tpeTree, expr: Expression = this.expr): PointerType = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+    val oldTpe = this._tpe
+
+    new PointerType(tpeTree, expr) {
+      override val position = oldPos
+      _id = oldID
+      _symbol = oldSym
+      _tpe = oldTpe
+    }
+  }
+}
+
+object PointerType {
+  def apply(tpeTree: TypeTree, expr: Expression, pos: Position): PointerType = {
+    new PointerType(tpeTree, expr) {
+      override val position = pos
+    }
+  }
+}
+
 sealed trait Annotation
 object Annotation {
   case class BuiltIn(name: String, args: Vector[String], ret: String) extends Annotation
