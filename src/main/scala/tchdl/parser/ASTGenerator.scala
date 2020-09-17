@@ -464,7 +464,7 @@ class ASTGenerator {
       val to = typeTree(ctx.`type`(1))
       val cast = CastType(from, to, Position(ctx))
 
-      TypeTree(cast, Vector.empty, Vector.empty, Position(ctx))
+      TypeTree(cast, Vector.empty, Vector.empty, Option.empty, Position(ctx))
     }
 
     def typeHead(ctx: TP.TypeHeadContext): TypeTree = {
@@ -473,27 +473,35 @@ class ASTGenerator {
 
       if(pkg.isEmpty) elem
       else {
-        val TypeTree(ident @ Ident(name), hargs, targs) = elem
+        val TypeTree(ident @ Ident(name), hargs, targs, pExpr) = elem
         val start = Position(ctx.pkg_select).start
         val end = ident.position.end
         val pos = Position(file.name, start, end)
 
         val head = SelectPackage(pkg, name, pos)
 
-        TypeTree(head, hargs, targs, Position(ctx))
+        TypeTree(head, hargs, targs, pExpr, Position(ctx))
       }
     }
 
     def typeSelect(ctx: TP.TypeSelectContext): TypeTree = {
       val head = typeTree(ctx.`type`)
-      val tree @ TypeTree(Ident(name), hargs, targs) = typeElem(ctx.type_elem)
+      val tree @ TypeTree(Ident(name), hargs, targs, defaultExpr) = typeElem(ctx.type_elem)
       val endLine = head.position.end.line
       val endColumn = head.position.end.column + name.length
       val endPos = Point(endLine, endColumn)
       val selectPos = Position(file.name, head.position.start, endPos)
       val select = StaticSelect(head, name, selectPos)
 
-      TypeTree(select, hargs, targs, tree.position)
+      TypeTree(select, hargs, targs, defaultExpr, tree.position)
+    }
+
+    def typePointer(ctx: TP.TypePointerContext): TypeTree = {
+      val TypeTree(tpeAST, hp, tp, _) = typeTree(ctx.`type`)
+      val defaultExpr = expr(ctx.expr)
+      val pos = Position(ctx)
+
+      TypeTree(tpeAST, hp, tp, Some(defaultExpr), pos)
     }
 
     ctx match {
@@ -501,6 +509,7 @@ class ASTGenerator {
       case ctx: TP.TypeHeadContext => typeHead(ctx)
       case ctx: TP.TypeSelectContext => typeSelect(ctx)
       case ctx: TP.TypeParenthesesContext => typeTree(ctx.`type`)
+      case ctx: TP.TypePointerContext => typePointer(ctx)
     }
   }
 
@@ -514,11 +523,11 @@ class ASTGenerator {
         val id = Ident(ctx.TYPE_ID.getText, idPos)
 
         Option(ctx.apply_typeparam).map(applyTypeParam) match {
-          case Some((hps, tps)) => TypeTree(id, hps, tps, Position(ctx))
-          case None => TypeTree(id, Vector.empty, Vector.empty, Position(ctx))
+          case Some((hps, tps)) => TypeTree(id, hps, tps, Option.empty, Position(ctx))
+          case None => TypeTree(id, Vector.empty, Vector.empty, Option.empty, Position(ctx))
         }
       case ctx: TP.ThisTypeContext =>
-        TypeTree(ThisType(Position(ctx)), Vector.empty, Vector.empty, Position(ctx))
+        TypeTree(ThisType(Position(ctx)), Vector.empty, Vector.empty, Option.empty, Position(ctx))
     }
   }
 
@@ -664,7 +673,7 @@ class ASTGenerator {
         val identEnd = identStart + ctx.TYPE_ID.getText.length
         val identPos = Position(file.name, Point(identLine, identStart), Point(identLine, identEnd))
 
-        val target = TypeTree(Ident(ctx.TYPE_ID.getText, identPos), Vector.empty, Vector.empty, identPos)
+        val target = TypeTree(Ident(ctx.TYPE_ID.getText, identPos), Vector.empty, Vector.empty, Option.empty, identPos)
         val bounds = ctx.`type`.asScala.map(typeTree)
 
         TPBoundTree(target, bounds.toVector, Position(ctx))

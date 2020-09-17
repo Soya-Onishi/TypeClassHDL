@@ -1533,14 +1533,14 @@ object HPBinOp {
   }
 }
 
-abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree]) extends AST with HasType with HasSymbol {
-  def copy(expr: TypeAST = this.expr, hp: Vector[HPExpr] = this.hp, tp: Vector[TypeTree] = this.tp): TypeTree = {
+abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], pointerExpr: Option[Expression]) extends AST with HasType with HasSymbol {
+  def copy(expr: TypeAST = this.expr, hp: Vector[HPExpr] = this.hp, tp: Vector[TypeTree] = this.tp, pointerExpr: Option[Expression] = this.pointerExpr): TypeTree = {
     val oldPos = this.position
     val oldID = this._id
     val oldSym = this._symbol
     val oldTpe = this._tpe
 
-    new TypeTree(expr, hp, tp) {
+    new TypeTree(expr, hp, tp, pointerExpr) {
       override val position = oldPos
       this._id = oldID
       this._symbol = oldSym
@@ -1550,8 +1550,8 @@ abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vec
 }
 
 object TypeTree {
-  def apply(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], pos: Position): TypeTree = {
-    new TypeTree(expr, hp, tp) {
+  def apply(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], defaultExpr: Option[Expression], pos: Position): TypeTree = {
+    new TypeTree(expr, hp, tp, defaultExpr) {
       override val position = pos
     }
   }
@@ -1600,30 +1600,6 @@ abstract case class CastType private (from: TypeTree, to: TypeTree) extends Type
 object CastType {
   def apply(from: TypeTree, to: TypeTree, pos: Position): CastType = {
     new CastType(from, to) {
-      override val position = pos
-    }
-  }
-}
-
-abstract case class PointerType private(tpeTree: TypeTree, expr: Expression) extends TypeAST with HasType {
-  def copy(tpeTree: TypeTree = this.tpeTree, expr: Expression = this.expr): PointerType = {
-    val oldPos = this.position
-    val oldID = this._id
-    val oldSym = this._symbol
-    val oldTpe = this._tpe
-
-    new PointerType(tpeTree, expr) {
-      override val position = oldPos
-      _id = oldID
-      _symbol = oldSym
-      _tpe = oldTpe
-    }
-  }
-}
-
-object PointerType {
-  def apply(tpeTree: TypeTree, expr: Expression, pos: Position): PointerType = {
-    new PointerType(tpeTree, expr) {
       override val position = pos
     }
   }

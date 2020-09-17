@@ -317,7 +317,7 @@ type: (pkg_select ':::')? type_elem # TypeHead
     | type ':::' type_elem          # TypeSelect
     | type AS type                  # TypeCast
     | '(' type ')'                  # TypeParentheses
-    | '&' type '(' expr ')'         # TypePointer
+    | '&' '(' expr ')'  type        # TypePointer
     ;
 
 type_elem
