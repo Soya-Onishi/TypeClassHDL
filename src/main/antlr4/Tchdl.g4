@@ -79,10 +79,19 @@ component
     | method_def
     | stage_def
     | always_def
+    | proc_def
     ;
 
 struct_def
     : STRUCT TYPE_ID type_param? bounds? ('{' field_defs? '}')?
+    ;
+
+proc_def
+    : PROC EXPR_ID '->' type '{' proc_block* '}'
+    ;
+
+proc_block
+    : (ORIGIN | FINAL)? BLOCK EXPR_ID block
     ;
 
 signature_def
@@ -329,6 +338,10 @@ DEF: 'def';
 VAL: 'val';
 STAGE: 'stage';
 STATE: 'state';
+PROC: 'proc';
+BLOCK: 'block';
+ORIGIN: 'origin';
+FINAL: 'final';
 INPUT: 'input';
 OUTPUT: 'output';
 INTERNAL: 'internal';

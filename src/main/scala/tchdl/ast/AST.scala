@@ -463,6 +463,50 @@ object AlwaysDef {
   }
 }
 
+abstract case class ProcDef private (name: String, retTpe: TypeTree, blks: Vector[ProcBlock]) extends Component {
+  def copy(name: String = this.name, retTpe: TypeTree = this.retTpe, blks: Vector[ProcBlock] = this.blks): ProcDef = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new ProcDef(name, retTpe, blks) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object ProcDef {
+  def apply(name: String, retTpe: TypeTree, blks: Vector[ProcBlock], pos: Position): ProcDef = {
+    new ProcDef(name, retTpe, blks) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class ProcBlock private(modifier: Modifier, name: String, blk: Block) extends Definition {
+  def copy(modifier: Modifier = this.modifier, name: String = this.name, blk: Block = this.blk): ProcBlock = {
+    val pos = this.position
+    val sym = this._symbol
+    val oldID = this._id
+
+    new ProcBlock(modifier, name, blk) {
+      override val position = pos
+      _symbol = sym
+      _id = oldID
+    }
+  }
+}
+
+object ProcBlock {
+  def apply(modifier: Modifier, name: String, blk: Block, pos: Position): ProcBlock = {
+    new ProcBlock(modifier, name, blk) {
+      override val position = pos
+    }
+  }
+}
+
 abstract case class MethodDef private (annons: Vector[Annotation], flag: Modifier, name: String, hp: Vector[ValDef], tp: Vector[TypeDef], bounds: Vector[BoundTree], params: Vector[ValDef], retTpe: TypeTree, blk: Option[Block]) extends Component {
   def copy(
     annons: Vector[Annotation] = this.annons,

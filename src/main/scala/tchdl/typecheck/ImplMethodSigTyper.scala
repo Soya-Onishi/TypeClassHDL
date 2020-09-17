@@ -23,7 +23,7 @@ object ImplMethodSigTyper {
 
     implSigCtx.reAppend(
       implSymbol.hps ++
-      implSymbol.tps: _*
+        implSymbol.tps: _*
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
@@ -40,9 +40,7 @@ object ImplMethodSigTyper {
 
     val (valErrs, _) = impl.components
       .collect { case v: ValDef => v }
-      .map {
-        verifyValDef(_)(implCtx, global)
-      }
+      .map { verifyValDef(_)(implCtx, global) }
       .partitionMap(identity)
 
     val errs = methodErrs ++ stageErrs ++ valErrs
@@ -83,11 +81,11 @@ object ImplMethodSigTyper {
       }
 
       def verifyHPValidity(implHPBounds: Vector[HPBound], interfaceHPBounds: Vector[HPBound]
-      ): Either[Error, Unit] = {
+                          ): Either[Error, Unit] = {
         def verifyBounds(impls: Vector[HPBound], interfaces: Vector[HPBound]): Either[Error, Unit] =
           (impls zip interfaces)
             .filter { case (impl, interface) => impl.bound != interface.bound }
-            .map{ case (implBound, interface) => Error.HPBoundConstraintMismatch(implBound.bound, interface.bound, impl.position) }
+            .map { case (implBound, interface) => Error.HPBoundConstraintMismatch(implBound.bound, interface.bound, impl.position) }
             .combine(errs => Error.MultipleErrors(errs: _*))
 
         def buildPairs(implBounds: Vector[HPBound], interfaceBounds: Vector[HPBound]): Either[Error, Vector[(HPBound, HPBound)]] =
@@ -204,7 +202,7 @@ object ImplMethodSigTyper {
 
     implSigCtx.reAppend(
       implSymbol.hps ++
-      implSymbol.tps: _*
+        implSymbol.tps: _*
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)
