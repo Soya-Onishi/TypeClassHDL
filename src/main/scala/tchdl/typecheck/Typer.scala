@@ -61,9 +61,8 @@ object Typer {
 
     val typedBody = typedBlock(body)(methodSigCtx, global)
 
-    if (!typedBody.tpe.isErrorType && typedBody.tpe.asRefType != methodTpe.returnType) {
+    if (!typedBody.tpe.isErrorType && typedBody.tpe.asRefType != methodTpe.returnType)
       global.repo.error.append(Error.TypeMismatch(methodTpe.returnType, typedBody.tpe.asRefType, typedBody.last.position))
-    }
 
     methodDef.copy(blk = Some(typedBody)).setSymbol(methodDef.symbol).setID(methodDef.id)
   }
@@ -1059,6 +1058,7 @@ object Typer {
           } yield {
             val isPointer = symbol match {
               case _: Symbol.TypeParamSymbol => None
+              case sym: Symbol.FieldTypeSymbol => sym.tpe.asRefType.isPointer
               case _ => Some(false)
             }
             val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType), isPointer)
@@ -1119,7 +1119,7 @@ object Typer {
         case Right(pair @ (prefixTree, _)) =>
           val (symbol, tpe) = pair match {
             case (prefix, symbol: Symbol.EnumMemberSymbol) => (symbol, prefix.tpe)
-            case (_, symbol) => (symbol, Type.RefType.accessed(prefixTree.tpe.asRefType, symbol.tpe.asRefType, isPointer = Some(false)))
+            case (_, symbol) => (symbol, Type.RefType.accessed(prefixTree.tpe.asRefType, symbol.tpe.asRefType, symbol.tpe.asRefType.isPointer))
           }
 
           val typedSelect = StaticSelect(prefixTree, select.name, select.position)
@@ -1152,6 +1152,7 @@ object Typer {
         val typedSelect = select.setSymbol(typeSymbol).setTpe(typeSymbol.tpe)
         val isPointer = typeSymbol match {
           case _: Symbol.TypeParamSymbol => None
+          case sym: Symbol.FieldTypeSymbol => sym.tpe.asRefType.isPointer
           case _ => Some(false)
         }
 

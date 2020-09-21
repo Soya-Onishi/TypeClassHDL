@@ -138,9 +138,10 @@ object Type {
       val signatureCtx = Context(ctx, methodDef.symbol)
       signatureCtx.reAppend(
         methodDef.symbol.asMethodSymbol.hps ++
-        methodDef.symbol.asMethodSymbol.tps: _*
+          methodDef.symbol.asMethodSymbol.tps: _*
       )(global)
 
+      val mname = methodDef.name
       val method = methodDef.symbol.asMethodSymbol
       val hpBoundTrees = methodDef.bounds.collect { case b: HPBoundTree => b }
       val tpBoundTrees = methodDef.bounds.collect { case b: TPBoundTree => b }
@@ -313,7 +314,7 @@ object Type {
   case class FieldTypeGenerator(typeDef: TypeDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type =
       typeDef.tpe match {
-        case None => Type.RefType(typeDef.symbol.asTypeSymbol, isPointer = ???)
+        case None => Type.RefType(typeDef.symbol.asTypeSymbol, isPointer = None)
         case Some(tpeTree) =>
           val typedTree = Typer.typedTypeTree(tpeTree)(ctx, global)
           global.cache.set(typedTree)
@@ -985,7 +986,7 @@ object Type {
           val hargs = tpe.hardwareParam
           val targs = tpe.typeParam
 
-          new RefType(tpeSymbol, hargs, targs, castedAs, accessor, this.isPointer)
+          new RefType(tpeSymbol, hargs, targs, castedAs, accessor, tpe.isPointer)
         case symbol =>
           val accessedSymbol = accessor match {
             case None => this.origin
@@ -1026,7 +1027,6 @@ object Type {
     override def equals(obj: Any): Boolean = obj match {
       case that: Type.RefType =>
         def isSameOrigin: Boolean = this.origin == that.origin
-
         def isSameHp: Boolean = {
           def isSameLength = this.hardwareParam.length == that.hardwareParam.length
           def isSameExpr = this.hardwareParam
@@ -1147,7 +1147,7 @@ object Type {
       new RefType(origin, Vector.empty, Vector.empty, None, None, isPointer)
 
     def cast(from: Type.RefType, into: Type.RefType): Type.RefType = {
-      new RefType(from.origin, from.hardwareParam, from.typeParam, Some(into), from.accessor, isPointer = Some(false))
+      new RefType(from.origin, from.hardwareParam, from.typeParam, Some(into), from.accessor, from.isPointer)
     }
 
     def accessed(from: Type.RefType, to: Type.RefType, isPointer: Option[Boolean]): Type.RefType = {
@@ -1496,9 +1496,15 @@ object Type {
         (typedHArgs, typedTArgs) = polyArgs
         _ <- typeCheckHardArgs(symbol, typedHArgs)
       } yield {
+        val isPointer = symbol match {
+          case _: Symbol.TypeParamSymbol => None
+          case _ => Some(false)
+        }
+        val tpe = Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType), isPointer)
+
         TypeTree(ident, typedHArgs, typedTArgs, isPointer = false, typeTree.position)
           .setSymbol(symbol)
-          .setTpe(Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType), isPointer = Some(false)))
+          .setTpe(tpe)
           .setID(typeTree.id)
       }
 
@@ -1529,8 +1535,14 @@ object Type {
         (typedHArgs, typedTArgs) = args
         _ <- typeCheckHardArgs(typeSymbol, typedHArgs)
       } yield {
+        // TODO: isPointer's check may be redundant because select should point type definition directly, but just in case...
+        val isPointer = typeSymbol match {
+          case _: Symbol.TypeParamSymbol => None
+          case _ => Some(false) // this may cause fatal error when adding feature of type alias
+        }
+
         val targTpes = typedTArgs.map(_.tpe.asRefType)
-        val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes, isPointer = Some(false))
+        val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes, isPointer)
         val typedSelect = select.setSymbol(typeSymbol).setTpe(tpe)
 
         TypeTree(typedSelect, typedHArgs, typedTArgs, isPointer = false, typeTree.position)
@@ -1545,24 +1557,21 @@ object Type {
       }
     }
 
-    // Do not accept pointer type as implementation type
-    if(typeTree.isPointer) (Some(Error.RejectPointerType(typeTree, typeTree.position)), typeTree)
-    else {
-      typeTree.expr match {
-        case ident: Ident => buildForIdent(ident, typeTree.hp, typeTree.tp)
-        case select: SelectPackage => buildForSelectPackage(select, typeTree.hp, typeTree.tp)
-        case select: StaticSelect =>
-          val err = Some(Error.CannotUseStaticSelect(select, select.position))
-          val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+    typeTree.expr match {
+      case ident: Ident => buildForIdent(ident, typeTree.hp, typeTree.tp)
+      case select: SelectPackage => buildForSelectPackage(select, typeTree.hp, typeTree.tp)
+      case select: StaticSelect =>
+        val err = Some(Error.CannotUseStaticSelect(select, select.position))
+        val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
-          (err, tree)
-        case cast: CastType =>
-          val err = Some(Error.CannotUseCast(cast, cast.position))
-          val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
+        (err, tree)
+      case cast: CastType =>
+        val err = Some(Error.CannotUseCast(cast, cast.position))
+        val tree = typeTree.setTpe(Type.ErrorType).setSymbol(Symbol.ErrorSymbol)
 
-          (err, tree)
-      }
+        (err, tree)
     }
+
   }
 
   private def buildHP(hp: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): (Option[Error], HPExpr) = {

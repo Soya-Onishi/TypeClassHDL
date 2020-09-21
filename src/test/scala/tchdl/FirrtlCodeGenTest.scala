@@ -7,14 +7,13 @@ import tchdl.typecheck._
 import firrtl._
 import java.nio.file.Files
 
-import firrtl.annotations.CircuitTarget
-import firrtl.options.Dependency
-import firrtl.stage.FirrtlStageUtils
 import tchdl.parser.Filename
 
 import sys.process._
 import scala.language.postfixOps
+import org.scalatest.tags.Slow
 
+@Slow
 class FirrtlCodeGenTest extends TchdlFunSuite {
   def extractHashCode(regex: String, from: String): String = {
     val r = regex.r

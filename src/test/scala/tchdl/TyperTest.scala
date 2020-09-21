@@ -236,14 +236,14 @@ class TyperTest extends TchdlFunSuite {
     val add = implAdd.methods.find(_.name == "add").get
     val addReal = add.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "real").get
     val addImag = add.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "imag").get
-    val addT = Type.RefType(implAdd.tp.head.symbol.asTypeParamSymbol, isPointer = Some(false))
+    val addT = Type.RefType(implAdd.tp.head.symbol.asTypeParamSymbol, isPointer = None)
     assert(addReal.symbol.tpe.asRefType =:= addT)
     assert(addImag.symbol.tpe.asRefType =:= addT)
 
     val sub = implSub.methods.find(_.name == "sub").get
     val subReal = sub.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "real").get
     val subImag = sub.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "imag").get
-    val subT = Type.RefType(implSub.tp.head.symbol.asTypeParamSymbol, isPointer = Some(false))
+    val subT = Type.RefType(implSub.tp.head.symbol.asTypeParamSymbol, isPointer = None)
     assert(subReal.symbol.tpe.asRefType =:= subT)
     assert(subImag.symbol.tpe.asRefType =:= subT)
 
@@ -708,11 +708,11 @@ class TyperTest extends TchdlFunSuite {
     val callThirdTpe = callThird.tpe.asRefType
     val callSecondTpe = callSecond.tpe.asRefType
 
-    val thirdAccessor = new Type.RefType(thirdT, Vector.empty, Vector.empty, Some(Type.RefType(field, notPointer)), None, notPointer)
-    val secondAccessor = new Type.RefType(secondT, Vector.empty, Vector.empty, Some(Type.RefType(field, notPointer)), None, notPointer)
+    val thirdAccessor = new Type.RefType(thirdT, Vector.empty, Vector.empty, Some(Type.RefType(field, notPointer)), None, isPointer = None)
+    val secondAccessor = new Type.RefType(secondT, Vector.empty, Vector.empty, Some(Type.RefType(field, notPointer)), None, isPointer = None)
 
-    val expectCallCallTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(thirdAccessor), notPointer)
-    val expectCallThirdTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(secondAccessor), notPointer)
+    val expectCallCallTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(thirdAccessor), isPointer = None)
+    val expectCallThirdTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(secondAccessor), isPointer = None)
     val expectCallSecondTpe = Type.intTpe(global)
 
     assert(callCallTpe == expectCallCallTpe)
