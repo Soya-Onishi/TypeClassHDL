@@ -234,6 +234,26 @@ class ASTGenerator {
     AlwaysDef(name, blk, Position(ctx))
   }
 
+  def procDef(ctx: TP.Proc_defContext)(implicit file: Filename): ProcDef = {
+    def procBlock(ctx: TP.Proc_blockContext): ProcBlock = {
+      val origin = Option(ctx.ORIGIN).map(_.getText).map(Modifier.apply).getOrElse(Modifier.NoModifier)
+      val fin = Option(ctx.FINAL).map(_.getText).map(Modifier.apply).getOrElse(Modifier.NoModifier)
+      val modifier = origin | fin
+
+      val name = ctx.EXPR_ID().getText
+      val body = block(ctx.block)
+
+      ProcBlock(modifier, name, body, Position(ctx))
+    }
+
+    val name = ctx.EXPR_ID.getText
+    val default = expr(ctx.expr)
+    val tpeTree = typeTree(ctx.`type`)
+    val blocks = ctx.proc_block.asScala.map(procBlock).toVector
+
+    ProcDef(name, tpeTree, default, blocks, Position(ctx))
+  }
+
   def valDef(ctx: TP.Val_defContext)(implicit file: Filename): ValDef = {
     val name = ctx.EXPR_ID.getText
     val tpe = Option(ctx.`type`).map(typeTree)
@@ -763,5 +783,6 @@ class ASTGenerator {
     case ctx: TP.Method_defContext => methodDef(ctx)
     case ctx: TP.Stage_defContext  => stageDef(ctx)
     case ctx: TP.Always_defContext => alwaysDef(ctx)
+    case ctx: TP.Proc_defContext => procDef(ctx)
   }
 }

@@ -463,13 +463,13 @@ object AlwaysDef {
   }
 }
 
-abstract case class ProcDef private (name: String, retTpe: TypeTree, blks: Vector[ProcBlock]) extends Component {
-  def copy(name: String = this.name, retTpe: TypeTree = this.retTpe, blks: Vector[ProcBlock] = this.blks): ProcDef = {
+abstract case class ProcDef private (name: String, retTpe: TypeTree, default: Expression, blks: Vector[ProcBlock]) extends Component {
+  def copy(name: String = this.name, retTpe: TypeTree = this.retTpe, default: Expression = this.default, blks: Vector[ProcBlock] = this.blks): ProcDef = {
     val pos = this.position
     val sym = this._symbol
     val oldID = this._id
 
-    new ProcDef(name, retTpe, blks) {
+    new ProcDef(name, retTpe, default, blks) {
       override val position = pos
       _symbol = sym
       _id = oldID
@@ -478,8 +478,8 @@ abstract case class ProcDef private (name: String, retTpe: TypeTree, blks: Vecto
 }
 
 object ProcDef {
-  def apply(name: String, retTpe: TypeTree, blks: Vector[ProcBlock], pos: Position): ProcDef = {
-    new ProcDef(name, retTpe, blks) {
+  def apply(name: String, retTpe: TypeTree, default: Expression, blks: Vector[ProcBlock], pos: Position): ProcDef = {
+    new ProcDef(name, retTpe, default, blks) {
       override val position = pos
     }
   }
