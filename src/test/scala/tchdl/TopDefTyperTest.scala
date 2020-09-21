@@ -98,7 +98,12 @@ class TopDefTyperTest extends TchdlFunSuite {
     verifyBounds(
       f,
       Vector.empty,
-      Vector(TPBound(Type.RefType(f.tps.head), Vector(Type.RefType(interface.symbol.asInterfaceSymbol))))
+      Vector(
+        TPBound(
+          Type.RefType(f.tps.head, isPointer = None),
+          Vector(Type.RefType(interface.symbol.asInterfaceSymbol, isPointer = Some(false)))
+        )
+      )
     )
 
     verifyBounds(
@@ -116,7 +121,12 @@ class TopDefTyperTest extends TchdlFunSuite {
         Ident("m", Position.empty).setSymbol(h.hps.head).setTpe(Type.numTpe(global)),
         HPConstraint.Range(Vector.empty, Vector(IntLiteral(0, Position.empty)))
       )),
-      Vector(TPBound(Type.RefType(h.tps.head), Vector(Type.RefType(interface.symbol.asInterfaceSymbol))))
+      Vector(
+        TPBound(
+          Type.RefType(h.tps.head, isPointer = None),
+          Vector(Type.RefType(interface.symbol.asInterfaceSymbol, isPointer = Some(false)))
+        )
+      )
     )
   }
 

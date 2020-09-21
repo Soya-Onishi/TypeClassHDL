@@ -64,11 +64,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(methods.isEmpty)
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
-    val topTpe = BackendType(topSymbol, Vector.empty, Vector.empty)
+    val topTpe = BackendType(topSymbol, Vector.empty, Vector.empty, isPointer = false)
     val top = modules.find(_.tpe == topTpe).get.bodies.head
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
-    val subTpe = BackendType(subSymbol, Vector.empty, Vector.empty)
+    val subTpe = BackendType(subSymbol, Vector.empty, Vector.empty, isPointer = false)
 
     assert(top.interfaces.isEmpty)
     assert(top.stages.isEmpty)
@@ -92,11 +92,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(methods.isEmpty)
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
-    val topTpe = BackendType(topSymbol, Vector(HPElem.Num(4)), Vector.empty)
+    val topTpe = BackendType(topSymbol, Vector(HPElem.Num(4)), Vector.empty, isPointer = false)
     val top = modules.find(_.tpe == topTpe).get.bodies.head
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
-    val subTpe = BackendType(subSymbol, Vector(HPElem.Num(4)), Vector.empty)
+    val subTpe = BackendType(subSymbol, Vector(HPElem.Num(4)), Vector.empty, isPointer = false)
     val sub = modules.find(_.tpe == subTpe).get.bodies.head
 
     val subFieldSymbol = tree.topDefs
@@ -114,7 +114,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val add = sub.interfaces.head
 
     val bit = global.builtin.types.lookup("Bit")
-    val bit4 = BackendType(bit, Vector(HPElem.Num(4)), Vector.empty)
+    val bit4 = BackendType(bit, Vector(HPElem.Num(4)), Vector.empty, isPointer = false)
 
     assert(function.code(0) == Temp(3, This(topTpe)))
     assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, Some(topTpe), ListMap.empty, ListMap.empty), subTpe)))

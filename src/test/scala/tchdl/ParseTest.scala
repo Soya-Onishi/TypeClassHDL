@@ -31,7 +31,7 @@ class ParseTest extends TchdlFunSuite {
     def apply(name: String)(hps: HPExpr*)(tps: TypeTree*)(args: Expression*) =
       Apply(Ident(name, pos), hps.toVector, tps.toVector, args.toVector, pos)
 
-    def typeTree(name: String) = TypeTree(Ident(name, pos), Vector.empty, Vector.empty, pos)
+    def typeTree(name: String) = TypeTree(Ident(name, pos), Vector.empty, Vector.empty, isPointer = false, pos)
 
     val parser = parseString(_.expr)((gen, tree) => gen.expr(tree)(file))_
 
@@ -55,8 +55,8 @@ class ParseTest extends TchdlFunSuite {
         Vector.empty,
         Vector.empty,
         Vector(
-          field("a", TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos)),
-          field("b", TypeTree(Ident("Bit", pos), Vector(IntLiteral(3, pos)), Vector.empty, pos))
+          field("a", TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, isPointer = false, pos)),
+          field("b", TypeTree(Ident("Bit", pos), Vector(IntLiteral(3, pos)), Vector.empty, isPointer = false, pos))
         ),
         pos
       )
@@ -86,8 +86,8 @@ class ParseTest extends TchdlFunSuite {
         Vector.empty,
         Vector.empty,
         Vector.empty,
-        Vector(ValDef(Modifier.Parent | Modifier.Field, "p", Some(TypeTree(Ident("M1", pos), Vector.empty, Vector.empty, pos)), None, pos)),
-        Vector(ValDef(Modifier.Sibling | Modifier.Field, "s", Some(TypeTree(Ident("M2", pos), Vector.empty, Vector.empty, pos)), None, pos)),
+        Vector(ValDef(Modifier.Parent | Modifier.Field, "p", Some(TypeTree(Ident("M1", pos), Vector.empty, Vector.empty, isPointer = false, pos)), None, pos)),
+        Vector(ValDef(Modifier.Sibling | Modifier.Field, "s", Some(TypeTree(Ident("M2", pos), Vector.empty, Vector.empty, isPointer = false, pos)), None, pos)),
         pos
       )
     )
@@ -96,7 +96,7 @@ class ParseTest extends TchdlFunSuite {
       parser("module Mod[m: Num, T] where m: min 1 & max 3, T: I0 + I1") ==
       ModuleDef (
         "Mod",
-        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num", pos), Vector.empty, Vector.empty, pos)), None, pos)),
+        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num", pos), Vector.empty, Vector.empty, isPointer = false, pos)), None, pos)),
         Vector(TypeDef(Modifier.Param, "T", None, pos)),
         Vector(
           HPBoundTree(
@@ -108,10 +108,10 @@ class ParseTest extends TchdlFunSuite {
             pos
           ),
           TPBoundTree(
-            TypeTree(Ident("T", pos), Vector.empty, Vector.empty, pos),
+            TypeTree(Ident("T", pos), Vector.empty, Vector.empty, isPointer = false, pos),
             Vector(
-              TypeTree(Ident("I0", pos), Vector.empty, Vector.empty, pos),
-              TypeTree(Ident("I1", pos), Vector.empty, Vector.empty, pos)
+              TypeTree(Ident("I0", pos), Vector.empty, Vector.empty, isPointer = false, pos),
+              TypeTree(Ident("I1", pos), Vector.empty, Vector.empty, isPointer = false, pos)
             ),
             pos
           )
@@ -129,7 +129,7 @@ class ParseTest extends TchdlFunSuite {
     assert(
       parser("impl[T] C[T] { def f() -> Unit {} }") ==
       ImplementClass(
-        TypeTree(Ident("C", pos), Vector.empty, Vector(TypeTree(Ident("T", pos), Vector.empty, Vector.empty, pos)), pos),
+        TypeTree(Ident("C", pos), Vector.empty, Vector(TypeTree(Ident("T", pos), Vector.empty, Vector.empty, isPointer = false, pos)), isPointer = false, pos),
         Vector.empty,
         Vector(TypeDef(Modifier.Param, "T", None, pos)),
         Vector.empty,
@@ -141,7 +141,7 @@ class ParseTest extends TchdlFunSuite {
           Vector.empty,
           Vector.empty,
           Vector.empty,
-          TypeTree(Ident("Unit", pos), Vector.empty, Vector.empty, pos),
+          TypeTree(Ident("Unit", pos), Vector.empty, Vector.empty, isPointer = false, pos),
           Some(Block(Vector.empty, UnitLiteral(pos), pos)),
           pos
         )),
@@ -156,9 +156,9 @@ class ParseTest extends TchdlFunSuite {
     assert(
       parser("impl[m: Num, T] I[m] for Type[T] { }") ==
       ImplementInterface(
-        TypeTree(Ident("I", pos), Vector(Ident("m", pos)), Vector.empty, pos),
-        TypeTree(Ident("Type", pos), Vector.empty, Vector(TypeTree(Ident("T", pos), Vector.empty, Vector.empty, pos)), pos),
-        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num", pos), Vector.empty, Vector.empty, pos)), None, pos)),
+        TypeTree(Ident("I", pos), Vector(Ident("m", pos)), Vector.empty, isPointer = false, pos),
+        TypeTree(Ident("Type", pos), Vector.empty, Vector(TypeTree(Ident("T", pos), Vector.empty, Vector.empty, isPointer = false, pos)), isPointer = false, pos),
+        Vector(ValDef(Modifier.Local, "m", Some(TypeTree(Ident("Num", pos), Vector.empty, Vector.empty, isPointer = false, pos)), None, pos)),
         Vector(TypeDef(Modifier.Param, "T", None, pos)),
         Vector.empty,
         Vector.empty,
@@ -271,17 +271,17 @@ class ParseTest extends TchdlFunSuite {
       .fields
       .find(_.name == "a").get
 
-    assert(structA.tpeTree.get == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, pos))
+    assert(structA.tpeTree.get == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, isPointer = false, pos))
 
     val method = topDefs
       .collectFirst{ case impl: ImplementClass if impl.target.expr.isInstanceOf[Ident] => impl }.get
       .components
       .collectFirst{ case method: MethodDef => method }.get
 
-    assert(method.retTpe == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, pos))
+    assert(method.retTpe == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, isPointer = false, pos))
 
     val construct = method.blk.get.last.asInstanceOf[ConstructClass]
-    assert(construct.target == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, pos))
+    assert(construct.target == TypeTree(SelectPackage(Vector("test1"), "ST1", pos), Vector.empty, Vector.empty, isPointer = false, pos))
   }
 
   test("construct enum") {
@@ -301,7 +301,7 @@ class ParseTest extends TchdlFunSuite {
     assert(construct.target.expr.isInstanceOf[StaticSelect])
     val select = construct.target.expr.asInstanceOf[StaticSelect]
 
-    assert(select.prefix == TypeTree(Ident("Opt", pos), Vector.empty, Vector(TypeTree(Ident("Bit", pos), Vector(IntLiteral(2, pos)), Vector.empty, pos)), pos))
+    assert(select.prefix == TypeTree(Ident("Opt", pos), Vector.empty, Vector(TypeTree(Ident("Bit", pos), Vector(IntLiteral(2, pos)), Vector.empty, isPointer = false, pos)), isPointer = false, pos))
     assert(select.name == "Some")
     assert(construct.target.hp.isEmpty)
     assert(construct.target.tp.isEmpty)
@@ -320,9 +320,10 @@ class ParseTest extends TchdlFunSuite {
 
     def pattern(name: String, expr: MatchPattern*): EnumPattern = {
       val typeTree = TypeTree(
-        StaticSelect(TypeTree(Ident("Pattern", pos), Vector.empty, Vector.empty, pos), name, pos),
+        StaticSelect(TypeTree(Ident("Pattern", pos), Vector.empty, Vector.empty, isPointer = false, pos), name, pos),
         Vector.empty,
         Vector.empty,
+        isPointer = false,
         pos
       )
 
@@ -347,8 +348,8 @@ class ParseTest extends TchdlFunSuite {
     val traits = tree.topDefs.collectFirst{ case traits: InterfaceDef if traits.flag.hasFlag(Modifier.Trait) => traits }.get
     val interface = tree.topDefs.collectFirst{ case traits: InterfaceDef if traits.flag.hasFlag(Modifier.Interface) => traits }.get
 
-    val st = TypeTree(Ident("ST", pos), Vector.empty, Vector.empty, pos)
-    val mod = TypeTree(Ident("Mod", pos), Vector.empty, Vector.empty, pos)
+    val st = TypeTree(Ident("ST", pos), Vector.empty, Vector.empty, isPointer = false, pos)
+    val mod = TypeTree(Ident("Mod", pos), Vector.empty, Vector.empty, isPointer = false, pos)
 
     val traitImpl = tree.topDefs.collectFirst{ case impl: ImplementInterface if impl.target == st => impl }.get
     val interfaceImpl = tree.topDefs.collectFirst { case impl: ImplementInterface if impl.target == mod => impl }.get
@@ -369,7 +370,7 @@ class ParseTest extends TchdlFunSuite {
       """Int:::from(true)"""
     }
 
-    val int = TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos)
+    val int = TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, isPointer = false, pos)
 
     assert(hargs == Vector.empty)
     assert(targs == Vector.empty)
@@ -391,11 +392,11 @@ class ParseTest extends TchdlFunSuite {
   test("parse type tree") {
     val tpe = parseString(_.`type`)((gen, tree) => gen.typeTree(tree)(file))_
 
-    def tt(name: String) = TypeTree(Ident(name, pos), Vector.empty, Vector.empty, pos)
-    def ttPoly(name: String, hargs: Vector[HPExpr], targs: Vector[TypeTree]) = TypeTree(Ident(name, pos), hargs, targs, pos)
-    def cast(from: TypeTree, to: TypeTree): TypeTree = TypeTree(CastType(from, to, pos), Vector.empty, Vector.empty, pos)
-    def select(prefix: TypeTree, name: String): TypeTree = TypeTree(StaticSelect(prefix, name, pos), Vector.empty, Vector.empty, pos)
-    def pkg(name: String, pkg: String*) = TypeTree(SelectPackage(pkg.toVector, name, pos), Vector.empty, Vector.empty, pos)
+    def tt(name: String) = TypeTree(Ident(name, pos), Vector.empty, Vector.empty, isPointer = false, pos)
+    def ttPoly(name: String, hargs: Vector[HPExpr], targs: Vector[TypeTree]) = TypeTree(Ident(name, pos), hargs, targs, isPointer = false, pos)
+    def cast(from: TypeTree, to: TypeTree): TypeTree = TypeTree(CastType(from, to, pos), Vector.empty, Vector.empty, isPointer = false, pos)
+    def select(prefix: TypeTree, name: String): TypeTree = TypeTree(StaticSelect(prefix, name, pos), Vector.empty, Vector.empty, isPointer = false, pos)
+    def pkg(name: String, pkg: String*) = TypeTree(SelectPackage(pkg.toVector, name, pos), Vector.empty, Vector.empty, isPointer = false, pos)
 
     val tree0 = tpe("A")
     val tree1 = tpe("A[1]")
@@ -460,10 +461,10 @@ class ParseTest extends TchdlFunSuite {
     val tree0 = expr("(a as Int)")
     val tree1 = expr("(a as Int).f(2)")
 
-    assert(tree0 == CastExpr(Ident("a", pos), TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos), pos))
+    assert(tree0 == CastExpr(Ident("a", pos), TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, isPointer = false, pos), pos))
     assert(tree1 == Apply(
       Select(
-        CastExpr(Ident("a", pos), TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, pos), pos),
+        CastExpr(Ident("a", pos), TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, isPointer = false, pos), pos),
         "f",
         pos
       ),

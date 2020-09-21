@@ -256,7 +256,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     val signatureTpe = signatureDef.symbol.asMethodSymbol.tpe
     val methodTpe = methodDef.symbol.asMethodSymbol.tpe
 
-    val traitTpe = Type.RefType(traits.symbol.asInterfaceSymbol, Vector.empty, Vector.empty)
+    val traitTpe = Type.RefType(traits.symbol.asInterfaceSymbol, Vector.empty, Vector.empty, isPointer = Some(false))
     val implTpe = impl.target.tpe.asRefType
 
     val expectSignatureTpe = Type.MethodType(Vector(traitTpe), traitTpe)
@@ -289,7 +289,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
 
     val symbol = types.head.symbol
     assert(symbol.name == "Output")
-    assert(symbol.tpe == Type.RefType(symbol.asTypeSymbol))
+    assert(symbol.tpe == Type.RefType(symbol.asTypeSymbol, isPointer = None))
   }
 
   test("implement field type in trait impl") {

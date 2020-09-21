@@ -60,9 +60,9 @@ class BuildContainerTest extends TchdlFunSuite {
     val iTargetTpe = implInterface.target.tpe
     val iInterfaceTpe = implInterface.interface.tpe
 
-    assert(cTargetTpe == Type.RefType(struct.symbol.asTypeSymbol))
-    assert(iTargetTpe == Type.RefType(struct.symbol.asTypeSymbol))
-    assert(iInterfaceTpe == Type.RefType(interface.symbol.asInterfaceSymbol))
+    assert(cTargetTpe == Type.RefType(struct.symbol.asTypeSymbol, isPointer = Some(false)))
+    assert(iTargetTpe == Type.RefType(struct.symbol.asTypeSymbol, isPointer = Some(false)))
+    assert(iInterfaceTpe == Type.RefType(interface.symbol.asInterfaceSymbol, isPointer = Some(false)))
   }
 
   test("verify type parameter length mismatch in bounds") {
