@@ -87,7 +87,7 @@ struct_def
     ;
 
 proc_def
-    : PROC EXPR_ID '->' type '{' proc_block* '}'
+    : PROC EXPR_ID '@' expr '->' type '{' proc_block* '}'
     ;
 
 proc_block
@@ -313,11 +313,15 @@ unit_lit
     : '(' ')'
     ;
 
-type: (pkg_select ':::')? type_elem # TypeHead
-    | type ':::' type_elem          # TypeSelect
-    | type AS type                  # TypeCast
-    | '(' type ')'                  # TypeParentheses
-    | '&' '(' expr ')'  type        # TypePointer
+type: raw_type      # RawType
+    | '&' raw_type  # PointerType
+    ;
+
+raw_type
+    : (pkg_select ':::')? type_elem # TypeHead
+    | raw_type ':::' type_elem      # TypeSelect
+    | raw_type AS raw_type          # TypeCast
+    | '(' raw_type ')'              # TypeParentheses
     ;
 
 type_elem

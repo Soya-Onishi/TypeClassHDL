@@ -434,4 +434,3 @@ object Symbol {
   def mem(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("Memory")
 }
-

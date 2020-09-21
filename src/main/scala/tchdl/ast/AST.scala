@@ -1533,14 +1533,14 @@ object HPBinOp {
   }
 }
 
-abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], pointerExpr: Option[Expression]) extends AST with HasType with HasSymbol {
-  def copy(expr: TypeAST = this.expr, hp: Vector[HPExpr] = this.hp, tp: Vector[TypeTree] = this.tp, pointerExpr: Option[Expression] = this.pointerExpr): TypeTree = {
+abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], isPointer: Boolean) extends AST with HasType with HasSymbol {
+  def copy(expr: TypeAST = this.expr, hp: Vector[HPExpr] = this.hp, tp: Vector[TypeTree] = this.tp, isPointer: Boolean = this.isPointer): TypeTree = {
     val oldPos = this.position
     val oldID = this._id
     val oldSym = this._symbol
     val oldTpe = this._tpe
 
-    new TypeTree(expr, hp, tp, pointerExpr) {
+    new TypeTree(expr, hp, tp, isPointer) {
       override val position = oldPos
       this._id = oldID
       this._symbol = oldSym
@@ -1550,8 +1550,8 @@ abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vec
 }
 
 object TypeTree {
-  def apply(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], defaultExpr: Option[Expression], pos: Position): TypeTree = {
-    new TypeTree(expr, hp, tp, defaultExpr) {
+  def apply(expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], isPointer: Boolean, pos: Position): TypeTree = {
+    new TypeTree(expr, hp, tp, isPointer) {
       override val position = pos
     }
   }
