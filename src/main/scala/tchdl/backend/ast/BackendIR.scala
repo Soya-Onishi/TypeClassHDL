@@ -38,7 +38,7 @@ case class CallBuiltIn(label: String, accessorTpe: Option[BackendType], args: Ve
 case class CallInterface(label: MethodLabel, accessor: Term, args: Vector[Term], tpe: BackendType) extends Expr
 case class ReadMemory(accessor: Term, addr: Term, port: Int, tpe: BackendType) extends Expr
 case class WriteMemory(accessor: Term, addr: Term, data: Term, port: Int)(implicit global: GlobalData) extends Expr {
-  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty)
+  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty, isPointer = false)
 }
 
 case class This(tpe: BackendType) extends Expr
@@ -72,19 +72,19 @@ case class Return(stage: StageLabel, expr: Expr)(implicit global: GlobalData) ex
 }
 
 case class IntLiteral(value: Int)(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType (Symbol.int, Vector.empty, Vector.empty)
+  val tpe: BackendType = BackendType (Symbol.int, Vector.empty, Vector.empty, isPointer = false)
 }
 
 case class BitLiteral(value: BigInt, length: HPElem.Num)(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType (Symbol.bit, Vector(length), Vector.empty)
+  val tpe: BackendType = BackendType (Symbol.bit, Vector(length), Vector.empty, isPointer = false)
 }
 
 case class BoolLiteral(value: Boolean)(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType (Symbol.bool, Vector.empty, Vector.empty)
+  val tpe: BackendType = BackendType (Symbol.bool, Vector.empty, Vector.empty, isPointer = false)
 }
 
 case class UnitLiteral()(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty)
+  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty, isPointer = false)
 }
 
 sealed trait Term { val tpe: BackendType }

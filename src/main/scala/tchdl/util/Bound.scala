@@ -91,7 +91,7 @@ object TPBound {
       lazy val swappedHP = tpe.hardwareParam.view.map(swapHP).map(_.sort).toVector
       tpe.origin match {
         case _: Symbol.EntityTypeSymbol =>
-          Type.RefType(tpe.origin, swappedHP, swappedTP)
+          Type.RefType(tpe.origin, swappedHP, swappedTP, tpe.isPointer)
         case tp: Symbol.TypeParamSymbol =>
           tpTable.getOrElse(tp, throw new ImplementationErrorException(s"table should have ${tp.name}"))
       }
@@ -163,7 +163,7 @@ object TPBound {
       case tp: Symbol.TypeParamSymbol => callerTPBound.find(_.target.origin == tp) match {
         case None => false
         case Some(tpBound) =>
-          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"))
+          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"), isPointer = Some(false))
           tpBound.bounds.exists(_ =:= moduleInterface)
       }
     }

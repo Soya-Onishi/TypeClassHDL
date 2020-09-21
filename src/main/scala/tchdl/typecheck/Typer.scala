@@ -1057,7 +1057,11 @@ object Typer {
             _ <- verifyHP(symbol, hargs)
             _ <- verifyTP(symbol, hargs, targs)
           } yield {
-            val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType))
+            val isPointer = symbol match {
+              case _: Symbol.TypeParamSymbol => None
+              case _ => Some(false)
+            }
+            val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType), isPointer)
 
             TypeTree(ident.setTpe(symbol.tpe).setSymbol(symbol), hargs, targs, isPointer = false, typeTree.position)
               .setTpe(tpe)
@@ -1115,7 +1119,7 @@ object Typer {
         case Right(pair @ (prefixTree, _)) =>
           val (symbol, tpe) = pair match {
             case (prefix, symbol: Symbol.EnumMemberSymbol) => (symbol, prefix.tpe)
-            case (_, symbol) => (symbol, Type.RefType.accessed(prefixTree.tpe.asRefType, symbol.tpe.asRefType))
+            case (_, symbol) => (symbol, Type.RefType.accessed(prefixTree.tpe.asRefType, symbol.tpe.asRefType, isPointer = Some(false)))
           }
 
           val typedSelect = StaticSelect(prefixTree, select.name, select.position)
@@ -1146,7 +1150,12 @@ object Typer {
         _ <- verifyTP(typeSymbol, hargs, targs)
       } yield {
         val typedSelect = select.setSymbol(typeSymbol).setTpe(typeSymbol.tpe)
-        val tpe = Type.RefType(typeSymbol, hargs, targs.map(_.tpe.asRefType))
+        val isPointer = typeSymbol match {
+          case _: Symbol.TypeParamSymbol => None
+          case _ => Some(false)
+        }
+
+        val tpe = Type.RefType(typeSymbol, hargs, targs.map(_.tpe.asRefType), isPointer)
 
         TypeTree(typedSelect, hargs, targs, isPointer = false, typeTree.position)
           .setSymbol(typeSymbol)

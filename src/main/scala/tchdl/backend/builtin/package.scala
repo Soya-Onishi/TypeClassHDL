@@ -206,8 +206,8 @@ package object builtin {
   }
 
   def bitConcat(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    val DataInstance(BackendType(_, leftHargs, _), l) = left
-    val DataInstance(BackendType(_, rightHargs, _), r) = right
+    val DataInstance(BackendType(_, leftHargs, _, false), l) = left
+    val DataInstance(BackendType(_, rightHargs, _, false), r) = right
     val concat = ir.DoPrim(PrimOps.Cat, Seq(l, r), Seq.empty, ir.UnknownType)
 
     val HPElem.Num(leftWidth) = leftHargs.head
@@ -288,7 +288,7 @@ package object builtin {
     val DataInstance(_, elemRef) = elem
 
     val HPElem.Num(accessorLength) = tpe.hargs.head
-    val retTpe = BackendType(tpe.symbol, Vector(HPElem.Num(accessorLength + 1)), tpe.targs)
+    val retTpe = BackendType(tpe.symbol, Vector(HPElem.Num(accessorLength + 1)), tpe.targs, isPointer = false)
     val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(retTpe))
     val wireRef = ir.Reference(wire.name, ir.UnknownType)
     val init = ir.PartialConnect(ir.NoInfo, wireRef, accessorRef)
@@ -305,7 +305,7 @@ package object builtin {
     val HPElem.Num(hi) = hpHi
     val HPElem.Num(lo) = hpLo
     val elemTpe = tpe.targs.head
-    val wireTpe = BackendType(tpe.symbol, Vector(HPElem.Num(hi - lo + 1)), Vector(elemTpe))
+    val wireTpe = BackendType(tpe.symbol, Vector(HPElem.Num(hi - lo + 1)), Vector(elemTpe), isPointer = false)
 
     val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(wireTpe))
     val wireRef = ir.Reference(wire.name, ir.UnknownType)
@@ -325,7 +325,7 @@ package object builtin {
   def vecEmpty(vecTpe: BackendType)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val name = stack.next("_GEN")
     val elemTpe = vecTpe.targs.head
-    val retTpe = BackendType(vecTpe.symbol, Vector(HPElem.Num(0)), Vector(elemTpe))
+    val retTpe = BackendType(vecTpe.symbol, Vector(HPElem.Num(0)), Vector(elemTpe), isPointer = false)
     val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(retTpe))
     val wireRef = ir.Reference(wire.name, ir.UnknownType)
     val instance = DataInstance(retTpe, wireRef)

@@ -32,7 +32,7 @@ package object backend {
     }
   }
 
-  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType]) extends ToFirrtlString {
+  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType], isPointer: Boolean) extends ToFirrtlString {
     override def hashCode(): Int = symbol.hashCode + hargs.hashCode + targs.hashCode
     override def equals(obj: Any): Boolean = obj match {
       case that: BackendType =>
@@ -220,7 +220,7 @@ package object backend {
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
 
-        val backendType = BackendType(tpe.origin, hargs, targs)
+        val backendType = BackendType(tpe.origin, hargs, targs, tpe.isPointer.get)
 
         backendType
       case symbol: Symbol.FieldTypeSymbol =>
@@ -266,7 +266,7 @@ package object backend {
     val hargs = sig.hargs.map(intoLiteral)
     val targs = sig.targs.map(toRefType)
 
-    Type.RefType(sig.symbol, hargs, targs)
+    Type.RefType(sig.symbol, hargs, targs, Some(sig.isPointer))
   }
 
   def toFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {

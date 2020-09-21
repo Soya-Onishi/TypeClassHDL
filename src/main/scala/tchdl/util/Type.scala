@@ -313,7 +313,7 @@ object Type {
   case class FieldTypeGenerator(typeDef: TypeDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type =
       typeDef.tpe match {
-        case None => Type.RefType(typeDef.symbol.asTypeSymbol)
+        case None => Type.RefType(typeDef.symbol.asTypeSymbol, isPointer = ???)
         case Some(tpeTree) =>
           val typedTree = Typer.typedTypeTree(tpeTree)(ctx, global)
           global.cache.set(typedTree)
@@ -517,6 +517,7 @@ object Type {
     val typeParam: Vector[Type.RefType],
     val castedAs: Option[Type.RefType],
     val accessor: Option[Type.RefType],
+    val isPointer: Option[Boolean]
   ) extends Type {
     val name: String = origin.name
     val namespace: NameSpace = origin.path
@@ -694,7 +695,8 @@ object Type {
     )(implicit position: Position, global: GlobalData): Either[Error, (Symbol.MethodSymbol, Type.MethodType)] = {
       def targetTypeCheck(hpTable: Map[Symbol.HardwareParamSymbol, HPExpr], tpTable: Map[Symbol.TypeParamSymbol, Type.RefType]): Either[Error, Unit] = {
         val replacedTpe = impl.targetType.replaceWithMap(hpTable, tpTable)
-        val accessorTpe = Type.RefType(accessor.origin, accessor.hardwareParam, accessor.typeParam)
+        // TODO: Is this needed instead of using `accessor` directly?
+        val accessorTpe = Type.RefType(accessor.origin, accessor.hardwareParam, accessor.typeParam, accessor.isPointer)
 
         if (replacedTpe == accessorTpe) Right(())
         else Left(Error.TypeMismatch(impl.targetType, accessorTpe, position))
@@ -983,7 +985,7 @@ object Type {
           val hargs = tpe.hardwareParam
           val targs = tpe.typeParam
 
-          new RefType(tpeSymbol, hargs, targs, castedAs, accessor)
+          new RefType(tpeSymbol, hargs, targs, castedAs, accessor, this.isPointer)
         case symbol =>
           val accessedSymbol = accessor match {
             case None => this.origin
@@ -1008,7 +1010,7 @@ object Type {
 
                   val tpe = symbol.tpe.asRefType.replaceWithMap(castHPTable, castTPTable)
                   tpe.origin match {
-                    case _: Symbol.FieldTypeSymbol => Type.RefType.accessed(accessorTpe, tpe)
+                    case _: Symbol.FieldTypeSymbol => Type.RefType.accessed(accessorTpe, tpe, this.isPointer)
                     case _ => tpe
                   }
               }
@@ -1016,7 +1018,7 @@ object Type {
               val hargs = this.hardwareParam.map(_.replaceWithMap(hpTable))
               val targs = typeParam.map(_.replaceWithMap(hpTable, tpTable))
 
-              new RefType(accessedSymbol, hargs, targs, castedAs, accessor)
+              new RefType(accessedSymbol, hargs, targs, castedAs, accessor, this.isPointer)
           }
       }
     }
@@ -1027,7 +1029,6 @@ object Type {
 
         def isSameHp: Boolean = {
           def isSameLength = this.hardwareParam.length == that.hardwareParam.length
-
           def isSameExpr = this.hardwareParam
             .zip(that.hardwareParam)
             .forall { case (t, o) => t.isSameExpr(o) }
@@ -1037,17 +1038,16 @@ object Type {
 
         def isSameTP: Boolean = {
           def isSameLength = this.typeParam.length == that.typeParam.length
-
           def isSameTypes = (this.typeParam zip that.typeParam).forall { case (t, o) => t =:= o }
 
           isSameLength && isSameTypes
         }
 
         def isSameCast: Boolean = this.castedAs == that.castedAs
-
         def isSameAccessor: Boolean = this.accessor == that.accessor
+        def isBothPointer = this.isPointer == that.isPointer
 
-        isSameOrigin && isSameHp && isSameTP && isSameCast && isSameAccessor
+        isSameOrigin && isSameHp && isSameTP && isSameCast && isSameAccessor && isBothPointer
       case _ => false
     }
 
@@ -1062,7 +1062,7 @@ object Type {
       case tp: Symbol.TypeParamSymbol => ctx.tpBounds.find(_.target.origin == tp) match {
         case None => false
         case Some(tpBound) =>
-          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"))
+          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"), isPointer = Some(false))
           tpBound.bounds.exists(_ =:= moduleInterface)
       }
     }
@@ -1077,7 +1077,7 @@ object Type {
           case tp: Symbol.TypeParamSymbol => tpBounds.find(_.target.origin == tp) match {
             case None => false
             case Some(tpBound) =>
-              val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"))
+              val hardwareInterface = Type.RefType(global.builtin.interfaces.lookup("HW"), isPointer = Some(false))
               tpBound.bounds.exists(_ =:= hardwareInterface)
           }
           case struct: Symbol.StructSymbol if struct == Symbol.bit => true
@@ -1140,18 +1140,18 @@ object Type {
   }
 
   object RefType {
-    def apply(origin: Symbol.TypeSymbol, hp: Vector[HPExpr], tp: Vector[Type.RefType]): Type.RefType =
-      new RefType(origin, hp, tp, None, None)
+    def apply(origin: Symbol.TypeSymbol, hp: Vector[HPExpr], tp: Vector[Type.RefType], isPointer: Option[Boolean]): Type.RefType =
+      new RefType(origin, hp, tp, None, None, isPointer)
 
-    def apply(origin: Symbol.TypeSymbol): RefType =
-      new RefType(origin, Vector.empty, Vector.empty, None, None)
+    def apply(origin: Symbol.TypeSymbol, isPointer: Option[Boolean]): RefType =
+      new RefType(origin, Vector.empty, Vector.empty, None, None, isPointer)
 
     def cast(from: Type.RefType, into: Type.RefType): Type.RefType = {
-      new RefType(from.origin, from.hardwareParam, from.typeParam, Some(into), from.accessor)
+      new RefType(from.origin, from.hardwareParam, from.typeParam, Some(into), from.accessor, isPointer = Some(false))
     }
 
-    def accessed(from: Type.RefType, to: Type.RefType): Type.RefType = {
-      new RefType(to.origin, to.hardwareParam, to.typeParam, to.castedAs, Some(from))
+    def accessed(from: Type.RefType, to: Type.RefType, isPointer: Option[Boolean]): Type.RefType = {
+      new RefType(to.origin, to.hardwareParam, to.typeParam, to.castedAs, Some(from), isPointer)
     }
 
     def unapply(obj: Any): Option[(Symbol.TypeSymbol, Vector[HPExpr], Vector[RefType])] = obj match {
@@ -1386,11 +1386,11 @@ object Type {
             val swappedHP = tpe.hardwareParam.map(swapHP)
             val swappedTP = tpe.typeParam.map(swapType)
 
-            Type.RefType(tpe.origin, swappedHP, swappedTP)
+            Type.RefType(tpe.origin, swappedHP, swappedTP, tpe.isPointer)
           case _: Symbol.InterfaceSymbol => thisTpe
           case symbol: Symbol.FieldTypeSymbol =>
             val accessor = inferAccessor(symbol)
-            Type.RefType.accessed(accessor, tpe)
+            Type.RefType.accessed(accessor, tpe, tpe.isPointer)
           case t: Symbol.TypeParamSymbol =>
             tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
         }
@@ -1434,29 +1434,29 @@ object Type {
 
   def intTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Int")
-    Type.RefType(symbol)
+    Type.RefType(symbol, isPointer = Some(false))
   }
 
   def stringTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("String")
-    Type.RefType(symbol)
+    Type.RefType(symbol, isPointer = Some(false))
   }
 
   def unitTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Unit")
-    Type.RefType(symbol)
+    Type.RefType(symbol, isPointer = Some(false))
   }
 
   def boolTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Bool")
-    Type.RefType(symbol)
+    Type.RefType(symbol, isPointer = Some(false))
   }
 
   def bitTpe(width: IntLiteral)(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Bit")
     val IntLiteral(value) = width
 
-    if (value > 0) Type.RefType(symbol, Vector(width), Vector.empty)
+    if (value > 0) Type.RefType(symbol, Vector(width), Vector.empty, isPointer = Some(false))
     else throw new ImplementationErrorException(s"Bit's width[${value}] must be natural number")
   }
 
@@ -1466,17 +1466,17 @@ object Type {
 
   def futureTpe(targ: Type.RefType)(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Future")
-    Type.RefType(symbol, Vector.empty, Vector(targ))
+    Type.RefType(symbol, Vector.empty, Vector(targ), isPointer = Some(false))
   }
 
   def numTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Num")
-    Type.RefType(symbol, Vector.empty, Vector.empty)
+    Type.RefType(symbol, Vector.empty, Vector.empty, isPointer = Some(false))
   }
 
   def strTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Str")
-    Type.RefType(symbol, Vector.empty, Vector.empty)
+    Type.RefType(symbol, Vector.empty, Vector.empty, isPointer = Some(false))
   }
 
   def buildType[T <: Symbol.TypeSymbol](typeTree: TypeTree)(implicit ctx: Context.NodeContext, global: GlobalData, ev0: ClassTag[T], ev1: TypeTag[T]): (Option[Error], TypeTree) = {
@@ -1498,7 +1498,7 @@ object Type {
       } yield {
         TypeTree(ident, typedHArgs, typedTArgs, isPointer = false, typeTree.position)
           .setSymbol(symbol)
-          .setTpe(Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType)))
+          .setTpe(Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType), isPointer = Some(false)))
           .setID(typeTree.id)
       }
 
@@ -1530,7 +1530,7 @@ object Type {
         _ <- typeCheckHardArgs(typeSymbol, typedHArgs)
       } yield {
         val targTpes = typedTArgs.map(_.tpe.asRefType)
-        val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes)
+        val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes, isPointer = Some(false))
         val typedSelect = select.setSymbol(typeSymbol).setTpe(tpe)
 
         TypeTree(typedSelect, typedHArgs, typedTArgs, isPointer = false, typeTree.position)
@@ -1623,10 +1623,10 @@ object Type {
     val typedTargs = tps.map {
       tp =>
         val tpSymbol = tp.symbol.asTypeParamSymbol
-        Type.RefType(tpSymbol, Vector.empty, Vector.empty)
+        Type.RefType(tpSymbol, Vector.empty, Vector.empty, isPointer = None)
     }
 
     if (hasError) None
-    else Some(Type.RefType(symbol, typedHargs, typedTargs))
+    else Some(Type.RefType(symbol, typedHargs, typedTargs, isPointer = Some(false)))
   }
 }

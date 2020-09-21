@@ -186,7 +186,7 @@ object ImplMethodSigTyper {
         hpTable = methodHPTable ++ interfaceHPTable
         replacedHPBounds = HPBound.swapBounds(interfaceMethod.hpBound, hpTable)
         _ <- verifyHPValidity(implMethod.hpBound, replacedHPBounds)
-        tpRefs = implMethod.tps.map(Type.RefType.apply)
+        tpRefs = implMethod.tps.map(Type.RefType.apply(_, isPointer = None))
         methodTPTable = (interfaceMethod.tps zip tpRefs).toMap
         interfaceTPTable = (interfaceSymbol.tps zip interfaceTpe.typeParam).toMap
         tpTable = methodTPTable ++ interfaceTPTable
@@ -202,7 +202,7 @@ object ImplMethodSigTyper {
 
     implSigCtx.reAppend(
       implSymbol.hps ++
-        implSymbol.tps: _*
+      implSymbol.tps: _*
     )
 
     val implCtx = Context(implSigCtx, impl.target.tpe.asRefType)

@@ -1234,7 +1234,7 @@ object FirrtlCodeGen {
     }
 
     val stmts = Vector(enable, addr, readingConnect)
-    val future = BackendType(Symbol.future, Vector.empty, Vector(read.tpe))
+    val future = BackendType(Symbol.future, Vector.empty, Vector(read.tpe), isPointer = false)
     val instance = DataInstance(future, readDataName)
 
     RunResult(Future.empty, stmts, instance)
@@ -1263,7 +1263,7 @@ object FirrtlCodeGen {
     val addr = ir.Connect(ir.NoInfo, memSubField(port, "addr"), addrRef)
     val data = ir.Connect(ir.NoInfo, memSubField(port, "data"), dataRef)
     val stmts = Vector(enable, addr, data)
-    val instance = DataInstance(BackendType(Symbol.unit, Vector.empty, Vector.empty), ir.UIntLiteral(0))
+    val instance = DataInstance(BackendType(Symbol.unit, Vector.empty, Vector.empty, isPointer = false), ir.UIntLiteral(0))
 
     RunResult(Future.empty, stmts, instance)
   }
