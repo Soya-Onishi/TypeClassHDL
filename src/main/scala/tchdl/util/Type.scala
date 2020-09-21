@@ -1496,7 +1496,7 @@ object Type {
         (typedHArgs, typedTArgs) = polyArgs
         _ <- typeCheckHardArgs(symbol, typedHArgs)
       } yield {
-        TypeTree(ident, typedHArgs, typedTArgs, Option.empty, typeTree.position)
+        TypeTree(ident, typedHArgs, typedTArgs, isPointer = false, typeTree.position)
           .setSymbol(symbol)
           .setTpe(Type.RefType(symbol, typedHArgs, typedTArgs.map(_.tpe.asRefType)))
           .setID(typeTree.id)
@@ -1533,7 +1533,7 @@ object Type {
         val tpe = Type.RefType(typeSymbol, typedHArgs, targTpes)
         val typedSelect = select.setSymbol(typeSymbol).setTpe(tpe)
 
-        TypeTree(typedSelect, typedHArgs, typedTArgs, Option.empty, typeTree.position)
+        TypeTree(typedSelect, typedHArgs, typedTArgs, isPointer = false, typeTree.position)
           .setSymbol(typeSymbol)
           .setTpe(tpe)
           .setID(typeTree.id)
@@ -1546,7 +1546,7 @@ object Type {
     }
 
     // Do not accept pointer type as implementation type
-    if(typeTree.pointerExpr.isDefined) (Some(Error.RejectPointerType(typeTree, typeTree.position)), typeTree)
+    if(typeTree.isPointer) (Some(Error.RejectPointerType(typeTree, typeTree.position)), typeTree)
     else {
       typeTree.expr match {
         case ident: Ident => buildForIdent(ident, typeTree.hp, typeTree.tp)
