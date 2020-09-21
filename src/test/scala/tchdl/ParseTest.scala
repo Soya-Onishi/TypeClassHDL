@@ -493,4 +493,40 @@ class ParseTest extends TchdlFunSuite {
     assert(tree1 == Assign(select("mem", "d"), IntLiteral(2, pos), pos))
     assert(tree2 == Assign(select("b"), Apply(Ident("f", pos), Vector.empty, Vector.empty, Vector(IntLiteral(1, pos), IntLiteral(2, pos)), pos), pos))
   }
+
+  test("parse pointer type") {
+    val parser = parseString(_.`type`)((gen, tree) => gen.typeTree(tree)(Filename("")))_
+
+    val tree0 = parser("&Int")
+    val tree1 = parser("&Bit[4]")
+    val tree2 = parser("&Option[Int]")
+
+    assert(tree0 == TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, isPointer = true, pos))
+    assert(tree1 == TypeTree(Ident("Bit", pos), Vector(IntLiteral(4, pos)), Vector.empty, isPointer = true, pos))
+    assert(tree2 == TypeTree(Ident("Option", pos), Vector.empty, Vector(TypeTree(Ident("Int", pos), Vector.empty, Vector.empty, isPointer = false, pos)), isPointer = true, pos))
+  }
+
+  test("parse proc definition") {
+    val parser = parseString(_.proc_def)((gen, tree) => gen.procDef(tree)(Filename("")))_
+    val proc0 = parser("proc first @ 0b00 -> &Bit[2] {}")
+    val proc1 = parser(
+      """proc second @ 0b00 -> &Bit[2] {
+        |  origin block a() {}
+        |}
+        |""".stripMargin
+    )
+
+    val retTpe = TypeTree(Ident("Bit", pos), Vector(IntLiteral(2, pos)), Vector.empty, isPointer = true, pos)
+    val default = BitLiteral(0, 2, pos)
+    val block = ProcBlock(
+      Modifier("origin"),
+      "a",
+      Vector.empty,
+      Block(Vector.empty, UnitLiteral(pos), pos),
+      pos
+    )
+
+    assert(proc0 == ProcDef("first", retTpe, default, Vector.empty, pos))
+    assert(proc1 == ProcDef("second", retTpe, default, Vector(block), pos))
+  }
 }
