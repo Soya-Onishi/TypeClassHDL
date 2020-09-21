@@ -242,8 +242,9 @@ class ASTGenerator {
 
       val name = ctx.EXPR_ID().getText
       val body = block(ctx.block)
+      val params = Option(ctx.param_defs).map(paramDefs).getOrElse(Vector.empty)
 
-      ProcBlock(modifier, name, body, Position(ctx))
+      ProcBlock(modifier, name, params, body, Position(ctx))
     }
 
     val name = ctx.EXPR_ID.getText

@@ -91,7 +91,7 @@ proc_def
     ;
 
 proc_block
-    : (ORIGIN | FINAL)? BLOCK EXPR_ID block
+    : (ORIGIN | FINAL)? BLOCK EXPR_ID '(' param_defs? ')' block
     ;
 
 signature_def

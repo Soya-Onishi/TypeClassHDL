@@ -485,13 +485,13 @@ object ProcDef {
   }
 }
 
-abstract case class ProcBlock private(modifier: Modifier, name: String, blk: Block) extends Definition {
-  def copy(modifier: Modifier = this.modifier, name: String = this.name, blk: Block = this.blk): ProcBlock = {
+abstract case class ProcBlock private(modifier: Modifier, name: String, params: Vector[ValDef], blk: Block) extends Definition {
+  def copy(modifier: Modifier = this.modifier, name: String = this.name, params: Vector[ValDef] = this.params, blk: Block = this.blk): ProcBlock = {
     val pos = this.position
     val sym = this._symbol
     val oldID = this._id
 
-    new ProcBlock(modifier, name, blk) {
+    new ProcBlock(modifier, name, params, blk) {
       override val position = pos
       _symbol = sym
       _id = oldID
@@ -500,8 +500,8 @@ abstract case class ProcBlock private(modifier: Modifier, name: String, blk: Blo
 }
 
 object ProcBlock {
-  def apply(modifier: Modifier, name: String, blk: Block, pos: Position): ProcBlock = {
-    new ProcBlock(modifier, name, blk) {
+  def apply(modifier: Modifier, name: String, params: Vector[ValDef], blk: Block, pos: Position): ProcBlock = {
+    new ProcBlock(modifier, name, params, blk) {
       override val position = pos
     }
   }
