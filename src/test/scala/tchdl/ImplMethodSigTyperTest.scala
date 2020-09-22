@@ -367,4 +367,12 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(proc.symbol.name == "procedure")
     assert(proc.symbol.tpe == bitTpe)
   }
+
+  test("define proc without pointer return type") {
+    val (_, global) = untilThisPhase("procWithoutPointer.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequirePointerTypeAsProcRet])
+  }
 }

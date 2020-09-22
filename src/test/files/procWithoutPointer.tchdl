@@ -1,0 +1,14 @@
+package test
+
+module OnlyProc
+impl OnlyProc {
+  proc procedure @ 0b00 -> Bit[2] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b11
+    }
+  }
+}
