@@ -707,9 +707,10 @@ object Typer {
         def requireSizedType: Either[Error, Unit] = {
           val tpe = typedCases.head.tpe.asRefType
           val isHardwareType = tpe.isHardwareType(ctx.tpBounds)(typedCases.head.position, global)
+          val isPointer = tpe.isPointer
 
-          if(isHardwareType) Right(())
-          else Left(Error.RequireHardwareType(tpe, typedMatched.position))
+          if(isHardwareType || isPointer) Right(())
+          else Left(Error.RequirePointerOrHWType(tpe, typedMatched.position))
         }
 
         val result = for {

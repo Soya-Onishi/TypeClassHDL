@@ -275,6 +275,12 @@ object ImplMethodSigTyper {
     }
 
     def verifyMethodTpe: Either[Error, Unit] = {
+      def isValidForSig(tpe: Type.RefType, pos: Position): Boolean = {
+        val isHW = tpe.isHardwareType(ctx.tpBounds)(pos, global)
+
+        isHW || tpe.isPointer
+      }
+
       val moduleInterfaceModifier = Vector(
         Modifier.Input | Modifier.Sibling,
         Modifier.Input,
@@ -286,18 +292,18 @@ object ImplMethodSigTyper {
       val paramTpes = methodDef.params.map(_.symbol.tpe)
       val retTpe = methodDef.retTpe.tpe
 
-      val paramResults = paramTpes.map {
-        case Type.ErrorType => Left(Error.DummyError)
-        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds)(methodDef.position, global) => Right(())
-        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe, methodDef.position))
+      val paramResults = (paramTpes zip methodDef.params).map {
+        case (Type.ErrorType, _) => Left(Error.DummyError)
+        case (tpe: Type.RefType, param) if isInterfaceMethod && isValidForSig(tpe, param.position) => Right(())
+        case (tpe: Type.RefType, param) if isInterfaceMethod => Left(Error.RequirePointerOrHWType(tpe, param.position))
         case _ => Right(())
       }
 
       val retResult = retTpe match {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType if tpe =:= Type.unitTpe => Right(())
-        case tpe: Type.RefType if isInterfaceMethod && tpe.isHardwareType(ctx.tpBounds)(methodDef.retTpe.position, global) => Right(())
-        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequireHardwareType(tpe, methodDef.retTpe.position))
+        case tpe: Type.RefType if isInterfaceMethod && isValidForSig(tpe, methodDef.retTpe.position) => Right(())
+        case tpe: Type.RefType if isInterfaceMethod => Left(Error.RequirePointerOrHWType(tpe, methodDef.retTpe.position))
         case _ => Right(())
       }
 
@@ -330,14 +336,19 @@ object ImplMethodSigTyper {
       }
     }
 
-    def verifySignature(stage: Type.MethodType): Either[Error, Unit] = {
-      val errs = stage.params.filterNot(_.isHardwareType(ctx.tpBounds)(stageDef.position, global)).map(Error.RequireHardwareType(_, stageDef.position)).map(Left.apply[Error, Unit])
-      val err =
-        if (stage.returnType == Type.unitTpe) Right(())
-        else if (stage.returnType.origin == global.builtin.types.lookup("Future")) Right(())
-        else Left(Error.RequireSpecificType(stage.returnType, Seq(Type.unitTpe), stageDef.position))
+    def isValidForParam(tpe: Type.RefType, pos: Position): Boolean = {
+      val isHW = tpe.isHardwareType(ctx.tpBounds)(pos, global)
+      isHW || tpe.isPointer
+    }
 
-      (errs :+ err).combine(errs => Error.MultipleErrors(errs: _*))
+
+    def verifySignature(stage: Type.MethodType): Either[Error, Unit] = {
+      val errs = (stage.params zip stageDef.params)
+        .filterNot{ case (tpe, param) => isValidForParam(tpe, param.position) }
+        .map{ case (tpe, param) => Error.RequirePointerOrHWType(tpe, param.position) }
+        .map(Left.apply[Error, Unit])
+
+      errs.combine(errs => Error.MultipleErrors(errs: _*))
     }
 
     stageDef.symbol.tpe

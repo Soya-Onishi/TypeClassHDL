@@ -190,7 +190,7 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.RequireHardwareType])
+    assert(err.isInstanceOf[Error.RequirePointerOrHWType])
   }
 
   test("stage that has no parameter and return unit make no error") {

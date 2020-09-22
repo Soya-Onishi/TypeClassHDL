@@ -123,10 +123,11 @@ object RefCheck {
     ifExpr.alt.foreach(verifyExpr)
 
     val isRetUnit = ifExpr.tpe == Type.unitTpe
+    val isRetPointer = ifExpr.tpe.asRefType.isPointer
     val isRetHWTpe = ifExpr.tpe.asRefType.isHardwareType(ctx.tpBounds)(ifExpr.cond.position, global)
 
-    if (!isRetHWTpe && !isRetUnit)
-      global.repo.error.append(Error.RequireHardwareType(ifExpr.tpe.asRefType, ifExpr.cond.position))
+    if (!isRetHWTpe && !isRetPointer && !isRetUnit)
+      global.repo.error.append(Error.RequirePointerOrHWType(ifExpr.tpe.asRefType, ifExpr.cond.position))
   }
 
   def verifyApply(apply: Apply)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {

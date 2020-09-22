@@ -38,7 +38,7 @@ object Error {
   case class RequireTypeTree(pos: Position) extends Error
   case class RequireSpecificType(actual: Type.RefType, requires: Seq[Type.RefType], pos: Position) extends Error
   case class RequireModuleType(actual: Type.RefType, pos: Position) extends Error
-  case class RequireHardwareType(actual: Type.RefType, pos: Position) extends Error
+  case class RequirePointerOrHWType(actual: Type.RefType, pos: Position) extends Error
   case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol, pos: Position) extends Error
   case class RequireFlag(require: Modifier, actual: Symbol, pos: Position) extends Error
   case class RequireStateSpecify(candidates: Vector[Symbol.StateSymbol], pos: Position)extends Error

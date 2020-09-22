@@ -494,7 +494,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.RequireHardwareType])
+    assert(err.isInstanceOf[Error.RequirePointerOrHWType])
   }
 
   test("top level method definition") {
