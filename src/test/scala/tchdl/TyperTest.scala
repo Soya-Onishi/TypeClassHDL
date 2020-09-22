@@ -908,4 +908,17 @@ class TyperTest extends TchdlFunSuite {
     val paramTpe = stages.params.head.symbol.tpe
     assert(paramTpe == tpe)
   }
+
+  test("use deref for pointer type") {
+    val (_, global) = untilTyper("useDerefPointer.tchdl")
+    expectNoError(global)
+  }
+
+  test("use deref for normal type") {
+    val (_, global) = untilTyper("useDerefForNormal.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.RequirePointerType])
+  }
 }

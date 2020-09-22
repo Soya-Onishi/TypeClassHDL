@@ -1,0 +1,8 @@
+package test
+
+module UsePointer
+impl UsePointer {
+  input def f(x: Bit[2]) -> Bit[2] {
+    *x
+  }
+}
