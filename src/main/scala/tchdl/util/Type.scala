@@ -431,10 +431,10 @@ object Type {
     override def equals(obj: Any): Boolean = obj match {
       case that: MethodType =>
         def isSameParam: Boolean = this.params == that.params
-
         def isSameRet: Boolean = this.returnType == that.returnType
 
         isSameParam && isSameRet
+      case _ => false
     }
 
     def =:=(that: Type): Boolean = this == that
@@ -850,7 +850,7 @@ object Type {
       }
     }
 
-    def lookupStage(stageName: String, args: Vector[Type.RefType])(implicit position: Position, global: GlobalData): LookupResult[(Symbol.StageSymbol, Type.MethodType)] = {
+    def lookupStage(stageName: String, args: Vector[Type.RefType])(implicit position: Position, global: GlobalData): LookupResult[StageResult] = {
       def verifySignatureLength(stage: Symbol.StageSymbol): Either[Error, Unit] = {
         val paramLength = stage.tpe.asMethodType.params.length
         val argLength = args.length
@@ -859,7 +859,7 @@ object Type {
         else Left(Error.ParameterLengthMismatch(paramLength, argLength, position))
       }
 
-      def lookupFromImpl(impl: ImplementContainer): Either[Error, (Symbol.StageSymbol, Type.MethodType)] = {
+      def lookupFromImpl(impl: ImplementContainer): Either[Error, StageResult] = {
         val (initHPTable, initTPTable) = RefType.buildTable(impl)
         val lookupResult = impl.lookup[Symbol.StageSymbol](stageName) match {
           case None => Left(Error.SymbolNotFound(stageName, position))
@@ -881,11 +881,11 @@ object Type {
           _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTpBound, Vector.empty, Vector.empty, position)
           swappedTpe = RefType.assignMethodTpe(stageTpe, hpTable, tpTable, swappedTpBound, this)
           _ <- RefType.verifyMethodType(swappedTpe, args, position)
-        } yield (stage, stageTpe)
+        } yield StageResult(stage, swappedTpe, hpTable, tpTable)
       }
 
       val impls = this.origin.asInstanceOf[Symbol.EntityTypeSymbol].impls
-      val result = impls.foldLeft[Either[Error, (Symbol.StageSymbol, Type.MethodType)]](Left(Error.DummyError)) {
+      val result = impls.foldLeft[Either[Error, StageResult]](Left(Error.DummyError)) {
         case (right @ Right(_), _) => right
         case (Left(errs), impl) => lookupFromImpl(impl) match {
           case right @ Right(_) => right
@@ -894,7 +894,7 @@ object Type {
       }
 
       result match {
-        case Right(pair) => LookupResult.LookupSuccess(pair)
+        case Right(r) => LookupResult.LookupSuccess(r)
         case Left(err) => LookupResult.LookupFailure(err)
       }
     }
@@ -919,7 +919,8 @@ object Type {
           swappedTPBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
           simplifiedHPBound = HPBound.simplify(swappedHPBound)
           _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTPBound, callerHPBound, callerTPBound, position)
-          retTpe = proc.tpe.asMethodType.replaceWithMap(hpTable, tpTable).returnType
+          procTpe = proc.tpe.asMethodType
+          retTpe = Type.RefType.assignMethodTpe(procTpe, hpTable, tpTable, swappedTPBound, this).returnType
         } yield ProcResult(proc, retTpe, hpTable, tpTable)
       }
 
@@ -1198,7 +1199,11 @@ object Type {
         case Some(tpe) => s"($tpe):::"
       }
 
-      s"$accessor$name$params$cast"
+      val pointer =
+        if(this.isPointer) "&"
+        else ""
+
+      s"$pointer$accessor$name$params$cast"
     }
   }
 
@@ -1420,7 +1425,6 @@ object Type {
           case HPUnaryOp(ident) => loop(ident).negate
           case lit: Literal => lit
         }
-
 
         loop(expr).sort.combine
       }

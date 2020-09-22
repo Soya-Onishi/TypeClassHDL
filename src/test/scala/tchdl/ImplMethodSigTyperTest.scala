@@ -344,8 +344,10 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
       )
     }
 
+    val procTpe = proc.symbol.tpe
     assert(proc.symbol.name == "procedure")
-    assert(proc.symbol.tpe == bitTpe)
+    assert(procTpe.isInstanceOf[Type.MethodType])
+    assert(procTpe.asMethodType.returnType == bitTpe)
   }
 
   test("define proc without pointer return type") {

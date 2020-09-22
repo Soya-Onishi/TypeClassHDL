@@ -351,7 +351,7 @@ object ImplMethodSigTyper {
   }
 
   def verifyProcDef(pdef: ProcDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.ProcSymbol] = {
-    val retTpe = pdef.symbol.tpe.asRefType
+    val retTpe = pdef.symbol.tpe.asMethodType.returnType
 
     if(retTpe.isPointer) Right(pdef.symbol.asProcSymbol)
     else Left(Error.RequirePointerTypeAsProcRet(retTpe, pdef.retTpe.position))

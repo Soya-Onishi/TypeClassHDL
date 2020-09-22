@@ -93,7 +93,7 @@ object Typer {
     pdef.blks.foreach(Namer.namedProcBlock(_)(procCtx, global))
     val typedBlocks = pdef.blks.map(typedProcBlock(_)(procCtx, global))
 
-    val retTpe = pdef.symbol.tpe.asRefType
+    val retTpe = pdef.symbol.tpe.asMethodType.returnType
     val expectTpe = Type.RefType(retTpe.origin, retTpe.hardwareParam, retTpe.typeParam, isPointer = false)
     if(typedDefault.tpe != expectTpe && !typedDefault.tpe.isErrorType)
       global.repo.error.append(Error.TypeMismatch(expectTpe, typedDefault.tpe.asRefType, typedDefault.position))
@@ -1423,55 +1423,54 @@ object Typer {
     val self = ctx.self.getOrElse(throw new ImplementationErrorException("stage must be in module instance"))
     val typedArgs = generate.args.map(typedExpr)
 
-    val (symbol, tpe) =
-      if (typedArgs.exists(_.tpe.isErrorType)) (Symbol.ErrorSymbol, Type.ErrorType)
+    val stateInfo =
+      if (typedArgs.exists(_.tpe.isErrorType)) Left(Error.DummyError)
       else self.lookupStage(generate.target, typedArgs.map(_.tpe.asRefType))(generate.position, global) match {
-        case LookupResult.LookupFailure(err) =>
-          global.repo.error.append(err)
-          (Symbol.ErrorSymbol, Type.ErrorType)
-        case LookupResult.LookupSuccess((stageSymbol, stageType)) =>
-          (stageSymbol, stageType.returnType)
+        case LookupResult.LookupFailure(err) => Left(err)
+        case LookupResult.LookupSuccess(stage) =>
+          verifyInitState(stage, generate.state, generate.position)
+            .map{ state => (stage, state) }
       }
 
-    val result = symbol match {
-      case Symbol.ErrorSymbol => Left(Error.DummyError)
-      case stage: Symbol.StageSymbol => verifyInitState(stage, generate.state, generate.position)
-    }
-
-    val (stageSymbol, retTpe, generateState) = result match {
-      case Right(generateState) => (symbol, tpe, generateState)
+    stateInfo match {
+      case Right((stage, state)) =>
+        generate.copy(args = typedArgs, state = state)
+          .setSymbol(stage.stage)
+          .setTpe(stage.stageTpe.returnType)
       case Left(err) =>
         global.repo.error.append(err)
-        (Symbol.ErrorSymbol, Type.ErrorType, generate.state)
+        generate.copy(args = typedArgs)
+          .setSymbol(Symbol.ErrorSymbol)
+          .setTpe(Type.ErrorType)
     }
-
-    Generate(generate.target, typedArgs, generateState, generate.position)
-      .setSymbol(stageSymbol)
-      .setTpe(retTpe)
-      .setID(generate.id)
   }
 
-  private def verifyInitState(stage: Symbol.StageSymbol, state: Option[StateInfo], pos: Position)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Option[StateInfo]] = {
+  private def verifyInitState(stage: StageResult, state: Option[StateInfo], pos: Position)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Option[StateInfo]] = {
     def noStatePattern(tpe: Type.MethodType): Either[Error, Option[StateInfo]] = {
-      val states = tpe.declares.toMap.values.collect {
-        case state: Symbol.StateSymbol => state
-      }.toVector
+      val states = tpe.declares.toMap.values.collect { case state: Symbol.StateSymbol => state }.toVector
 
       if (states.isEmpty) Right(Option.empty)
       else Left(Error.RequireStateSpecify(states, pos))
     }
 
-    def withStatePattern(tpe: Type.MethodType, state: String, args: Vector[Expression], info: StateInfo): Either[Error, Option[StateInfo]] = {
+    def withStatePattern(stage: StageResult, state: String, args: Vector[Expression], info: StateInfo): Either[Error, Option[StateInfo]] = {
       val nameStart = info.position.start
       val nameEndColumn = info.position.start.column + state.length
       val namePos = Position(info.position.filename, nameStart, Point(nameStart.line, nameEndColumn))
 
-      tpe.declares.lookup(state) match {
+      stage.stage.tpe.declares.lookup(state) match {
         case None => Left(Error.SymbolNotFound(state, namePos))
         case Some(symbol) if !symbol.isStateSymbol => Left(Error.SymbolNotFound(state, namePos))
         case Some(stateSymbol: Symbol.StateSymbol) => stateSymbol.tpe match {
           case Type.ErrorType => Left(Error.DummyError)
-          case tpe: Type.MethodType => verifyStatePattern(stateSymbol, tpe, state, args, info)
+          case tpe: Type.MethodType =>
+            verifyStatePattern(
+              stateSymbol,
+              tpe.replaceWithMap(stage.hpTable, stage.tpTable),
+              state,
+              args,
+              info
+            )
         }
       }
     }
@@ -1498,37 +1497,26 @@ object Typer {
       } yield Some(StateInfo(state, typedArgs, info.position).setSymbol(symbol))
     }
 
-    stage.tpe match {
-      case Type.ErrorType => Left(Error.DummyError)
-      case tpe: Type.MethodType => state match {
-        case None => noStatePattern(tpe)
-        case Some(info @ StateInfo(stateName, args)) => withStatePattern(tpe, stateName, args, info)
-      }
+    state match {
+      case None => noStatePattern(stage.stageTpe)
+      case Some(info @ StateInfo(stateName, args)) => withStatePattern(stage, stateName, args, info)
     }
   }
 
 
   def typedRelay(relay: Relay)(implicit ctx: Context.NodeContext, global: GlobalData): Relay = {
-    def stageSymbol: Symbol.StageSymbol =
-      ctx.owners
-        .collectFirst{ case s: Symbol.StageSymbol => s }
-        .getOrElse(throw new ImplementationErrorException("state must be under stage context"))
-
-    def typedStageRelay(args: Vector[Expression], stage: Symbol.StageSymbol): Either[Error, Relay] = {
+    def typedStageRelay(args: Vector[Expression]): Either[Error, Relay] = {
       val self = ctx.self.getOrElse(throw new ImplementationErrorException("stage must be in module instance"))
       val argsHaveError = args.exists(_.tpe.isErrorType)
 
-      def lookupStage: Either[Error, Symbol.StageSymbol] =
-        self.lookupStage(relay.target, args.map(_.tpe.asRefType))(relay.position, global) match {
-          case LookupResult.LookupFailure(err) => Left(err)
-          case LookupResult.LookupSuccess((stage, _)) => Right(stage)
-        }
+      def lookupStage: Either[Error, StageResult] =
+        self.lookupStage(relay.target, args.map(_.tpe.asRefType))(relay.position, global).toEither
 
       if(argsHaveError) Left(Error.DummyError)
       else for {
         stage <- lookupStage
         state <- verifyInitState(stage, relay.state, relay.position)
-      } yield relay.copy(state = state).setSymbol(stage).setTpe(Type.unitTpe(global))
+      } yield relay.copy(state = state).setSymbol(stage.stage).setTpe(Type.unitTpe(global))
     }
 
     def typedProcRelay(args: Vector[Expression]): Either[Error, Relay] = {
@@ -1579,8 +1567,8 @@ object Typer {
     val typedArgs = relay.params.map(typedExpr)
 
     val result = ctx.owner match {
-      case s: Symbol.StageSymbol     => typedStageRelay(typedArgs, s)
-      case _: Symbol.StateSymbol     => typedStageRelay(typedArgs, stageSymbol)
+      case s: Symbol.StageSymbol     => typedStageRelay(typedArgs)
+      case _: Symbol.StateSymbol     => typedStageRelay(typedArgs)
       case _: Symbol.ProcBlockSymbol => typedProcRelay(typedArgs)
       case _ => Left(Error.RelayOutsideStageOrProc(relay.position))
     }
@@ -1638,14 +1626,14 @@ object Typer {
 
   def typedReturn(ret: Return)(implicit ctx: Context.NodeContext, global: GlobalData): Return = {
     def typecheck(proc: Symbol.ProcSymbol, expr: Expression): Either[Error, Unit] = {
-      val retTpe = proc.tpe.asRefType
+      val retTpe = proc.tpe.asMethodType.returnType
       val expectTpe = Type.RefType(retTpe.origin, retTpe.hardwareParam, retTpe.typeParam, isPointer = false)
 
       expr.tpe match {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType =>
           if (tpe == expectTpe) Right(())
-          else Left(Error.TypeMismatch(retTpe, tpe, expr.position))
+          else Left(Error.TypeMismatch(expectTpe, tpe, expr.position))
       }
     }
 
