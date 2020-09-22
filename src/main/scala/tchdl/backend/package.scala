@@ -220,7 +220,7 @@ package object backend {
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
 
-        val backendType = BackendType(tpe.origin, hargs, targs, tpe.isPointer.get)
+        val backendType = BackendType(tpe.origin, hargs, targs, tpe.isPointer)
 
         backendType
       case symbol: Symbol.FieldTypeSymbol =>
@@ -266,7 +266,7 @@ package object backend {
     val hargs = sig.hargs.map(intoLiteral)
     val targs = sig.targs.map(toRefType)
 
-    Type.RefType(sig.symbol, hargs, targs, Some(sig.isPointer))
+    Type.RefType(sig.symbol, hargs, targs, sig.isPointer)
   }
 
   def toFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {

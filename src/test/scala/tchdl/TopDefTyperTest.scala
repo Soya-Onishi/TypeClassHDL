@@ -100,8 +100,8 @@ class TopDefTyperTest extends TchdlFunSuite {
       Vector.empty,
       Vector(
         TPBound(
-          Type.RefType(f.tps.head, isPointer = None),
-          Vector(Type.RefType(interface.symbol.asInterfaceSymbol, isPointer = Some(false)))
+          Type.RefType(f.tps.head, isPointer = false),
+          Vector(Type.RefType(interface.symbol.asInterfaceSymbol, isPointer = false))
         )
       )
     )
@@ -123,8 +123,8 @@ class TopDefTyperTest extends TchdlFunSuite {
       )),
       Vector(
         TPBound(
-          Type.RefType(h.tps.head, isPointer = None),
-          Vector(Type.RefType(interface.symbol.asInterfaceSymbol, isPointer = Some(false)))
+          Type.RefType(h.tps.head, isPointer = false),
+          Vector(Type.RefType(interface.symbol.asInterfaceSymbol, isPointer = false))
         )
       )
     )

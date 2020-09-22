@@ -191,7 +191,7 @@ object ImplMethodSigTyper {
         hpTable = methodHPTable ++ interfaceHPTable
         replacedHPBounds = HPBound.swapBounds(interfaceMethod.hpBound, hpTable)
         _ <- verifyHPValidity(implMethod.hpBound, replacedHPBounds)
-        tpRefs = implMethod.tps.map(Type.RefType.apply(_, isPointer = None))
+        tpRefs = implMethod.tps.map(Type.RefType.apply(_, isPointer = false))
         methodTPTable = (interfaceMethod.tps zip tpRefs).toMap
         interfaceTPTable = (interfaceSymbol.tps zip interfaceTpe.typeParam).toMap
         tpTable = methodTPTable ++ interfaceTPTable
@@ -353,10 +353,8 @@ object ImplMethodSigTyper {
   def verifyProcDef(pdef: ProcDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.ProcSymbol] = {
     val retTpe = pdef.symbol.tpe.asRefType
 
-    retTpe.isPointer match {
-      case Some(true) => Right(pdef.symbol.asProcSymbol)
-      case _ => Left(Error.RequirePointerTypeAsProcRet(retTpe, pdef.retTpe.position))
-    }
+    if(retTpe.isPointer) Right(pdef.symbol.asProcSymbol)
+    else Left(Error.RequirePointerTypeAsProcRet(retTpe, pdef.retTpe.position))
   }
 
   def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.VariableSymbol] = {

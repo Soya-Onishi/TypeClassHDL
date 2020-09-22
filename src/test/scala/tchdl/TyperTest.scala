@@ -77,7 +77,7 @@ class TyperTest extends TchdlFunSuite {
       .last
       .asInstanceOf[Select]
 
-    assert(select.tpe == Type.RefType(global.builtin.types.lookup("Int"), isPointer= Some(false)))
+    assert(select.tpe == Type.RefType(global.builtin.types.lookup("Int"), isPointer= false))
   }
 
   test("call another impl's method from another impl") {
@@ -195,7 +195,7 @@ class TyperTest extends TchdlFunSuite {
 
     val vdef0 = vdef.asInstanceOf[ValDef]
     val bitSymbol = global.builtin.types.lookup("Bit")
-    val expectBitTpe = Type.RefType(bitSymbol, Vector(Ident("m", Position.empty).setSymbol(m)), Vector.empty, isPointer = Some(false))
+    val expectBitTpe = Type.RefType(bitSymbol, Vector(Ident("m", Position.empty).setSymbol(m)), Vector.empty, isPointer = false)
 
     assert(vdef0.symbol.tpe =:= expectBitTpe)
     assert(add.tpe =:= expectBitTpe)
@@ -213,7 +213,7 @@ class TyperTest extends TchdlFunSuite {
     val aluImpl = implClass.find(_.target.symbol.name == "ALU").get
 
     val complex = struct.symbol.asStructSymbol
-    val complexBit8 = Type.RefType(complex, Vector.empty, Vector(Type.bitTpe(IntLiteral(8, Position.empty))(global)), isPointer = Some(false))
+    val complexBit8 = Type.RefType(complex, Vector.empty, Vector(Type.bitTpe(IntLiteral(8, Position.empty))(global)), isPointer = false)
 
     val always = topImpl.components.collectFirst{ case always: AlwaysDef => always }.get
     val alwaysA = always.blk.elems.collectFirst{ case vdef @ ValDef(_, "a", _, _) => vdef }.get
@@ -236,14 +236,14 @@ class TyperTest extends TchdlFunSuite {
     val add = implAdd.methods.find(_.name == "add").get
     val addReal = add.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "real").get
     val addImag = add.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "imag").get
-    val addT = Type.RefType(implAdd.tp.head.symbol.asTypeParamSymbol, isPointer = None)
+    val addT = Type.RefType(implAdd.tp.head.symbol.asTypeParamSymbol, isPointer = false)
     assert(addReal.symbol.tpe.asRefType =:= addT)
     assert(addImag.symbol.tpe.asRefType =:= addT)
 
     val sub = implSub.methods.find(_.name == "sub").get
     val subReal = sub.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "real").get
     val subImag = sub.blk.get.elems.collect{ case vdef: ValDef => vdef }.find(_.name == "imag").get
-    val subT = Type.RefType(implSub.tp.head.symbol.asTypeParamSymbol, isPointer = None)
+    val subT = Type.RefType(implSub.tp.head.symbol.asTypeParamSymbol, isPointer = false)
     assert(subReal.symbol.tpe.asRefType =:= subT)
     assert(subImag.symbol.tpe.asRefType =:= subT)
 
@@ -575,7 +575,7 @@ class TyperTest extends TchdlFunSuite {
     assert(select.symbol == staticMethod.symbol)
 
     val tpe = typeTree.tpe.asRefType
-    assert(tpe.castedAs.contains(Type.RefType(static.symbol.asTypeSymbol, isPointer = Some(false))))
+    assert(tpe.castedAs.contains(Type.RefType(static.symbol.asTypeSymbol, isPointer = false)))
     assert(tpe.origin == Symbol.int(global))
   }
 
@@ -712,11 +712,11 @@ class TyperTest extends TchdlFunSuite {
     val callThirdTpe = callThird.tpe.asRefType
     val callSecondTpe = callSecond.tpe.asRefType
 
-    val thirdAccessor = new Type.RefType(thirdT, Vector.empty, Vector.empty, Some(Type.RefType(field, notPointer)), None, isPointer = None)
-    val secondAccessor = new Type.RefType(secondT, Vector.empty, Vector.empty, Some(Type.RefType(field, notPointer)), None, isPointer = None)
+    val thirdAccessor = new Type.RefType(thirdT, Vector.empty, Vector.empty, Some(Type.RefType(field, isPointer = false)), None, isPointer = false)
+    val secondAccessor = new Type.RefType(secondT, Vector.empty, Vector.empty, Some(Type.RefType(field, isPointer = false)), None, isPointer = false)
 
-    val expectCallCallTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(thirdAccessor), isPointer = None)
-    val expectCallThirdTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(secondAccessor), isPointer = None)
+    val expectCallCallTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(thirdAccessor), isPointer = false)
+    val expectCallThirdTpe = new Type.RefType(output, Vector.empty, Vector.empty, None, Some(secondAccessor), isPointer = false)
     val expectCallSecondTpe = Type.intTpe(global)
 
     assert(callCallTpe == expectCallCallTpe)
@@ -806,5 +806,18 @@ class TyperTest extends TchdlFunSuite {
   test("riscv alu test") {
     val (_, global) = untilTyper("RiscvALU.tchdl")
     expectNoError(global)
+  }
+
+  test("proc definition without errors") {
+    val (Seq(tree), global) = untilTyper("procNoError.tchdl")
+    expectNoError(global)
+
+    val proc = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }
+      .map(_.components)
+      .flatMap(_.collectFirst{ case proc: ProcDef => proc })
+      .get
+
+    proc.default
   }
 }

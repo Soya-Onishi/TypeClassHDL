@@ -1088,12 +1088,7 @@ object Typer {
             _ <- verifyHP(symbol, hargs)
             _ <- verifyTP(symbol, hargs, targs)
           } yield {
-            val isPointer = symbol match {
-              case _: Symbol.TypeParamSymbol => None
-              case sym: Symbol.FieldTypeSymbol => sym.tpe.asRefType.isPointer
-              case _ => Some(false)
-            }
-            val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType), isPointer)
+            val tpe = Type.RefType(symbol, hargs, targs.map(_.tpe.asRefType), isPointer = false)
 
             TypeTree(ident.setTpe(symbol.tpe).setSymbol(symbol), hargs, targs, isPointer = false, typeTree.position)
               .setTpe(tpe)
@@ -1182,13 +1177,7 @@ object Typer {
         _ <- verifyTP(typeSymbol, hargs, targs)
       } yield {
         val typedSelect = select.setSymbol(typeSymbol).setTpe(typeSymbol.tpe)
-        val isPointer = typeSymbol match {
-          case _: Symbol.TypeParamSymbol => None
-          case sym: Symbol.FieldTypeSymbol => sym.tpe.asRefType.isPointer
-          case _ => Some(false)
-        }
-
-        val tpe = Type.RefType(typeSymbol, hargs, targs.map(_.tpe.asRefType), isPointer)
+        val tpe = Type.RefType(typeSymbol, hargs, targs.map(_.tpe.asRefType), isPointer = false)
 
         TypeTree(typedSelect, hargs, targs, isPointer = false, typeTree.position)
           .setSymbol(typeSymbol)
@@ -1233,7 +1222,7 @@ object Typer {
             tpe.origin,
             tpe.hardwareParam,
             tpe.typeParam,
-            Some(true)
+            isPointer = true
           )
 
           if(isHW) Right(pointerTpe)
@@ -1599,11 +1588,12 @@ object Typer {
   def typedReturn(ret: Return)(implicit ctx: Context.NodeContext, global: GlobalData): Return = {
     def typecheck(proc: Symbol.ProcSymbol, expr: Expression): Either[Error, Unit] = {
       val retTpe = proc.tpe.asRefType
+      val expectTpe = Type.RefType(retTpe.origin, retTpe.hardwareParam, retTpe.typeParam, isPointer = false)
 
       expr.tpe match {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType =>
-          if (tpe == retTpe) Right(())
+          if (tpe == expectTpe) Right(())
           else Left(Error.TypeMismatch(tpe, retTpe, expr.position))
       }
     }

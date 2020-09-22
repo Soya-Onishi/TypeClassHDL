@@ -163,7 +163,7 @@ object TPBound {
       case tp: Symbol.TypeParamSymbol => callerTPBound.find(_.target.origin == tp) match {
         case None => false
         case Some(tpBound) =>
-          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"), isPointer = Some(false))
+          val moduleInterface = Type.RefType(global.builtin.interfaces.lookup("Module"), isPointer = false)
           tpBound.bounds.exists(_ =:= moduleInterface)
       }
     }
