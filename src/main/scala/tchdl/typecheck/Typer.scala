@@ -244,6 +244,7 @@ object Typer {
       case matchExpr: Match => typedMatch(matchExpr)
       case binop: StdBinOp => typedStdBinOp(binop)
       case unaryOp: StdUnaryOp => typedStdUnaryOp(unaryOp)
+      case deref: DeReference => typedDeReference(deref)
       case ifExpr: IfExpr => typedIfExpr(ifExpr)
       case self: This => typedThis(self)
       case blk: Block => typedBlock(blk)
@@ -940,6 +941,24 @@ object Typer {
         unaryOp.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
       case LookupResult.LookupSuccess((symbol, tpe)) =>
         unaryOp.setSymbol(symbol).setTpe(tpe.returnType)
+    }
+  }
+
+  def typedDeReference(deref: DeReference)(implicit ctx: Context.NodeContext, global: GlobalData): DeReference = {
+    val expr = typedExpr(deref.expr)
+    val result = expr.tpe match {
+      case Type.ErrorType => Left(Error.DummyError)
+      case tpe: Type.RefType if !tpe.isPointer => Left(Error.RequirePointerType(tpe, deref.position))
+      case tpe: Type.RefType =>
+        val refTpe = Type.RefType(tpe.origin, tpe.hardwareParam, tpe.typeParam, isPointer = false)
+        Right(refTpe)
+    }
+
+    result match {
+      case Right(tpe) => deref.copy(expr = expr).setTpe(tpe)
+      case Left(err) =>
+        global.repo.error.append(err)
+        deref.copy(expr = expr).setTpe(Type.ErrorType)
     }
   }
 

@@ -183,7 +183,7 @@ hp_bound_expr
     ;
 
 expr: expr '.' (apply | EXPR_ID)                 # SelectExpr
-    | <assoc=right> op=('-' | '!') expr          # UnaryExpr
+    | <assoc=right> op=('-' | '!' | '*') expr    # UnaryExpr
     | expr op=('*' | '/') expr                   # MulDivExpr
     | expr op=('+' | '-') expr                   # AddSubExpr
     | expr op=('<<' | '>>' | '<<<' | '>>>') expr # ShiftExpr

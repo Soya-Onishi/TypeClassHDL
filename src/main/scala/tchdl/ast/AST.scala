@@ -1578,6 +1578,28 @@ object HPBinOp {
   }
 }
 
+abstract case class DeReference private (expr: Expression) extends Expression {
+  def copy(expr: Expression = this.expr): DeReference = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+
+    new DeReference(expr) {
+      override val position = oldPos
+      _id = oldID
+      _tpe = oldTpe
+    }
+  }
+}
+
+object DeReference {
+  def apply(expr: Expression, pos: Position): DeReference = {
+    new DeReference(expr) {
+      override val position = pos
+    }
+  }
+}
+
 abstract case class TypeTree private (expr: TypeAST, hp: Vector[HPExpr], tp: Vector[TypeTree], isPointer: Boolean) extends AST with HasType with HasSymbol {
   def copy(expr: TypeAST = this.expr, hp: Vector[HPExpr] = this.hp, tp: Vector[TypeTree] = this.tp, isPointer: Boolean = this.isPointer): TypeTree = {
     val oldPos = this.position

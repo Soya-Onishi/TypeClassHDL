@@ -43,6 +43,7 @@ object Error {
   case class RequireFlag(require: Modifier, actual: Symbol, pos: Position) extends Error
   case class RequireStateSpecify(candidates: Vector[Symbol.StateSymbol], pos: Position)extends Error
   case class RequirePointerTypeAsProcRet(tpe: Type.RefType, pos: Position) extends Error
+  case class RequirePointerType(actual: Type.RefType, pos: Position) extends Error
   case class RequireHWAsPointer(tpe: Type.RefType, pos: Position) extends Error
 
   case class RejectHeapType(tpe: Type.RefType, pos: Position) extends Error

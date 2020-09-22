@@ -427,14 +427,12 @@ class ASTGenerator {
     Match(matched, cases, Position(ctx))
   }
 
-  def stdUnaryOp(op: String, exp: TP.ExprContext, position: Position)(implicit file: Filename): StdUnaryOp = {
-    val operation = op match {
-      case "-" => Operation.Neg
-      case "!" => Operation.Not
+  def stdUnaryOp(op: String, exp: TP.ExprContext, position: Position)(implicit file: Filename): Expression =
+    op match {
+      case "-" => StdUnaryOp(Operation.Neg, expr(exp), position)
+      case "!" => StdUnaryOp(Operation.Not, expr(exp), position)
+      case "*" => DeReference(expr(exp), position)
     }
-
-    StdUnaryOp(operation, expr(exp), position)
-  }
 
   def stdBinOp(left: TP.ExprContext, right: TP.ExprContext, op: String, position: Position)(implicit file: Filename): StdBinOp = {
     val operation = op match {
