@@ -28,7 +28,7 @@ object Typer {
           case methodDef: MethodDef => typedMethodDef(methodDef)(implBodyCtx, global)
           case stageDef: StageDef => typedStageDef(stageDef)(implBodyCtx, global)
           case alwaysDef: AlwaysDef => typedAlwaysDef(alwaysDef)(implBodyCtx, global)
-          case procDef: ProcDef => typed
+          case procDef: ProcDef => typedProcDef(procDef)(implBodyCtx, global)
           case valDef: ValDef if valDef.flag.hasNoFlag(Modifier.Child) => typedValDef(valDef)(implBodyCtx, global)
           case valDef: ValDef => typedModDef(valDef)(implBodyCtx, global)
         }
@@ -1525,7 +1525,7 @@ object Typer {
           .map{ case (p, a) => Error.TypeMismatch(p, a.tpe.asRefType, a.position) }
 
         if(errs.isEmpty) Right(())
-        else Left(Error.MultipleErrors(errs))
+        else Left(Error.MultipleErrors(errs: _*))
       }
 
       val procCtx = findProcCtx.getOrElse(throw new ImplementationErrorException("proc's blocks must be under proc definition"))
