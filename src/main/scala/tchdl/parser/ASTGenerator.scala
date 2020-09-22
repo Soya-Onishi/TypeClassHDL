@@ -282,13 +282,12 @@ class ASTGenerator {
     val params = Option(ctx.param_defs)
       .map(paramDefs)
       .getOrElse(Vector.empty)
-    val tpe = typeTree(ctx.`type`)
     val (states, blks) =
       Option(ctx.stage_body)
         .map(stageBody)
         .getOrElse((Vector.empty, Vector.empty))
 
-    StageDef(name, params, tpe, states, blks, Position(ctx))
+    StageDef(name, params, states, blks, Position(ctx))
   }
 
   def stateDef(ctx: TP.State_defContext)(implicit file: Filename): StateDef = {

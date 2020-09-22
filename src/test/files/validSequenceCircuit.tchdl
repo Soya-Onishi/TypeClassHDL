@@ -6,7 +6,7 @@ impl M {
     generate st1(a, b) # s1
   }
 
-  stage st1(a: Bit[8], b: Bit[8]) -> Unit {
+  stage st1(a: Bit[8], b: Bit[8]) {
     val c = a + b
 
     state s1 {
@@ -22,11 +22,11 @@ impl M {
     }
   }
 
-  stage st2(x: Bit[8]) -> Unit {
+  stage st2(x: Bit[8]) {
     finish
   }
 
-  stage st3(y: Bit[8]) -> Unit {
+  stage st3(y: Bit[8]) {
     finish
   }
 }

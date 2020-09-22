@@ -1,6 +1,0 @@
-package test
-
-module M
-impl M {
-  stage s() -> Bit[4] {}
-}

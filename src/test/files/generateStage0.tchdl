@@ -6,5 +6,5 @@ impl M {
     generate st0()
   }
 
-  stage st() -> Unit { finish }
+  stage st() { finish }
 }

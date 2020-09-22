@@ -6,5 +6,5 @@ impl M {
     relay st1()
   }
 
-  stage st1() -> Unit {}
+  stage st1() {}
 }

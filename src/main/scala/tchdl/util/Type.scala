@@ -312,9 +312,7 @@ object Type {
         val bodyCtx = Context(paramCtx)
         stage.states.foreach(Namer.nodeLevelNamed(_)(bodyCtx, global))
 
-        val typedTpe = Typer.typedTypeTree(stage.retTpe)(paramCtx, global)
-
-        MethodType(paramTpes.map(_.asRefType), typedTpe.tpe.asRefType, bodyCtx.scope)
+        MethodType(paramTpes.map(_.asRefType), Type.unitTpe(global), bodyCtx.scope)
       }
     }
   }

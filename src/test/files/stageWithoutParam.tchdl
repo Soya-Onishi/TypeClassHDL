@@ -2,5 +2,5 @@ package test
 
 module M
 impl M {
-  stage st() -> Unit {}
+  stage st() {}
 }

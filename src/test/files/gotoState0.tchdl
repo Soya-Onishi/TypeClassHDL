@@ -2,7 +2,7 @@ package test
 
 module M
 impl M {
-  stage st() -> Unit {
+  stage st() {
     goto s0
 
     state s0 {}

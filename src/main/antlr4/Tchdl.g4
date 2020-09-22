@@ -148,7 +148,7 @@ val_def
     ;
 
 stage_def
-    : STAGE EXPR_ID '(' param_defs? ')' '->' type stage_body?
+    : STAGE EXPR_ID '(' param_defs? ')' stage_body?
     ;
 
 stage_body

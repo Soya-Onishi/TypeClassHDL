@@ -566,11 +566,10 @@ object ValDef {
   }
 }
 
-abstract case class StageDef private (name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem]) extends Component {
+abstract case class StageDef private (name: String, params: Vector[ValDef], states: Vector[StateDef], blk: Vector[BlockElem]) extends Component {
   def copy(
     name: String = this.name,
     params: Vector[ValDef] = this.params,
-    retTpe: TypeTree = this.retTpe,
     states: Vector[StateDef] = this.states,
     blk: Vector[BlockElem] = this.blk
   ): StageDef = {
@@ -578,7 +577,7 @@ abstract case class StageDef private (name: String, params: Vector[ValDef], retT
     val sym = this._symbol
     val oldID = this._id
 
-    new StageDef(name, params, retTpe, states, blk) {
+    new StageDef(name, params, states, blk) {
       override val position = pos
       _symbol = sym
       _id = oldID
@@ -587,8 +586,8 @@ abstract case class StageDef private (name: String, params: Vector[ValDef], retT
 }
 
 object StageDef {
-  def apply(name: String, params: Vector[ValDef], retTpe: TypeTree, states: Vector[StateDef], blk: Vector[BlockElem], pos: Position): StageDef = {
-    new StageDef(name, params, retTpe, states, blk) {
+  def apply(name: String, params: Vector[ValDef], states: Vector[StateDef], blk: Vector[BlockElem], pos: Position): StageDef = {
+    new StageDef(name, params, states, blk) {
       override val position = pos
     }
   }

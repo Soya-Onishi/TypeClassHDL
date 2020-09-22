@@ -198,14 +198,6 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     expectNoError(global)
   }
 
-  test("stage's return type must be Unit or Future[_]") {
-    val (_, global) = untilThisPhase("stageWithInvalidRet.tchdl")
-    expectError(1)(global)
-
-    val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.RequireSpecificType])
-  }
-
   test("internal function must cause no errors") {
     val (_, global) = untilThisPhase("InputCallInternal.tchdl")
     expectNoError(global)
@@ -229,18 +221,6 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
   test("enum Option[Bit[8]] causes no error") {
     val (_, global) = untilThisPhase("enumWithInterfaceParam3.tchdl")
     expectNoError(global)
-  }
-
-  test("use Future[Bit[_]] as stage return type") {
-    val (Seq(tree), global) = untilThisPhase("stageWithFuture.tchdl")
-    expectNoError(global)
-
-    val stage = tree.topDefs
-      .collectFirst{ case impl: ImplementClass => impl }.get
-      .components
-      .collectFirst{ case stage: StageDef => stage }.get
-
-    assert(stage.symbol.tpe.asMethodType.returnType == Type.futureTpe(Type.bitTpe(IntLiteral(8, Position.empty))(global))(global))
   }
 
   test("use This type as signature") {

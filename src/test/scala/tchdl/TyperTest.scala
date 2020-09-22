@@ -427,10 +427,12 @@ class TyperTest extends TchdlFunSuite {
   }
 
 
+  /*
   test("return Future value in stage does not cause any errors") {
     val (_, global) = untilTyper("stageWithFuture.tchdl")
     expectNoError(global)
   }
+  */
 
   test("static method definition does not cause any error") {
     val (_, global) = untilTyper("defineStaticMethod.tchdl")
@@ -522,6 +524,7 @@ class TyperTest extends TchdlFunSuite {
     assert(methodSymbol == method.symbol)
   }
 
+  /*
   test("state's parameters are in scope correctly") {
     val (Seq(tree), global) = untilTyper("useStateParam.tchdl")
     expectNoError(global)
@@ -539,6 +542,7 @@ class TyperTest extends TchdlFunSuite {
 
     assert(ansIdent.symbol == s2.params.head.symbol)
   }
+  */
 
   test("unspecified hp bound meet constraints implicitly for m + 1") {
     val (Seq(tree), global) = untilTyper("verifyHPBound0.tchdl")
