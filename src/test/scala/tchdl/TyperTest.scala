@@ -820,4 +820,15 @@ class TyperTest extends TchdlFunSuite {
 
     proc.default
   }
+
+  test("proc definition type mismatch between return type and default value") {
+    val (_, global) = untilTyper("procDefaultTypeMismatch.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
+    val e = err.asInstanceOf[Error.TypeMismatch]
+    assert(e.actual == Type.bitTpe(4)(global))
+    assert(e.expect == Type.bitTpe(2)(global))
+  }
 }

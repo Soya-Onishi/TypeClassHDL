@@ -93,6 +93,11 @@ object Typer {
     pdef.blks.foreach(Namer.namedProcBlock(_)(procCtx, global))
     val typedBlocks = pdef.blks.map(typedProcBlock(_)(procCtx, global))
 
+    val retTpe = pdef.symbol.tpe.asRefType
+    val expectTpe = Type.RefType(retTpe.origin, retTpe.hardwareParam, retTpe.typeParam, isPointer = false)
+    if(typedDefault.tpe != expectTpe && !typedDefault.tpe.isErrorType)
+      global.repo.error.append(Error.TypeMismatch(expectTpe, typedDefault.tpe.asRefType, typedDefault.position))
+
     val typedPDef = pdef.copy(
       default = typedDefault,
       blks = typedBlocks,
