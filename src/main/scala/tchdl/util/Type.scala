@@ -209,6 +209,20 @@ object Type {
     }
   }
 
+  case class ProcBlockTypeGenerator(pblk: ProcBlock, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+    override def generate: Type = {
+      val sigCtx = Context(ctx, pblk.symbol)
+      val paramTpes = pblk.params
+        .map(Namer.namedLocalDef(_)(sigCtx, global))
+        .map(Typer.typedValDef(_)(sigCtx, global))
+        .map(_.symbol.tpe)
+
+      val hasError = paramTpes.exists(_.isErrorType)
+      if(hasError) Type.ErrorType
+      else MethodType(paramTpes.map(_.asRefType), Type.unitTpe(global))
+    }
+  }
+
   case class VariableTypeGenerator(vdef: ValDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
       val ValDef(_, _, tpeTree, expr) = vdef

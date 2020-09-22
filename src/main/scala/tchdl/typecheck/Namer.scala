@@ -35,6 +35,14 @@ object Namer {
     proc.setSymbol(symbol)
   }
 
+  def namedProcBlock(pblk: ProcBlock)(implicit ctx: Context.NodeContext, global: GlobalData): ProcBlock = {
+    val blkTpe = Type.ProcBlockTypeGenerator(pblk, ctx, global)
+    val symbol = Symbol.ProcBlockSymbol(pblk.name, ctx.path, blkTpe, pblk.modifier)
+
+    ctx.append(symbol).left.foreach(global.repo.error.append)
+    pblk.setSymbol(symbol)
+  }
+
   def namedMethod(method: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
     def tryAppendOperator(symbol: Symbol.MethodSymbol): Unit = {
       val isTopLevel = ctx.path.pkgName == Vector("std", "functions")
@@ -284,6 +292,8 @@ object Namer {
       case vdef: ValDef => namedLocalDef(vdef)
       case stage: StageDef => namedStageDef(stage)
       case state: StateDef => namedStateDef(state)
+      case proc: ProcDef => namedProc(proc)
+      case pblk: ProcBlock => namedProcBlock(pblk)
       case typeDef: TypeDef if typeDef.flag.hasFlag(Modifier.Param) => namedTypeParamDef(typeDef)
       case typeDef: TypeDef if typeDef.flag.hasFlag(Modifier.Field) => namedFieldTypeDef(typeDef)
     }

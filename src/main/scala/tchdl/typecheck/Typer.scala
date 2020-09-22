@@ -1187,7 +1187,9 @@ object Typer {
           case tree: ThisType => typedForThisType(tree)
         }
 
-      def pointerVerify(typedTree: TypeTree): Either[Error, Unit] =
+      def pointerVerify(typedTree: TypeTree): Either[Error, Unit] = {
+        // Don't use typedTree.isPointer as condition because typedTree.isPointer must be false.
+        // typedTree.isPointer is assigned at post process after returning this inner method.
         if(!typeTree.isPointer) Right(())
         else {
           val isHW = typedTree.tpe.asRefType.isHardwareType(ctx.tpBounds)(typeTree.position, global)
@@ -1196,6 +1198,7 @@ object Typer {
           if(isHW) Right(())
           else Left(Error.RequireHWAsPointer(tpe, typedTree.position))
         }
+      }
 
       for {
         tree <- exec

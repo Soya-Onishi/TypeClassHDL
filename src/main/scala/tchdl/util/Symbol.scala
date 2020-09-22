@@ -317,6 +317,16 @@ object Symbol {
     }
   }
 
+  class ProcBlockSymbol(val path: NameSpace, tpe: Type, modifier: Modifier) extends TermSymbol(tpe, modifier) {
+    override val accessibility: Accessibility = Accessibility.Private
+  }
+
+  object ProcBlockSymbol {
+    def apply(name: String, path: NameSpace, tpe: Type, modifier: Modifier): ProcBlockSymbol = {
+      new ProcBlockSymbol(path.appendComponentName(name), tpe, modifier)
+    }
+  }
+
   class ImplementSymbol(
     val treeID: Int,
     val path: NameSpace,
