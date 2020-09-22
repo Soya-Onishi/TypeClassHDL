@@ -831,4 +831,23 @@ class TyperTest extends TchdlFunSuite {
     assert(e.actual == Type.bitTpe(4)(global))
     assert(e.expect == Type.bitTpe(2)(global))
   }
+
+  test("relay non existent block causes an error") {
+    val (_, global) = untilTyper("procRelayNonExistentBlock.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.SymbolNotFound])
+  }
+
+  test("relay with argument type mismatch causes an error") {
+    val (_, global) = untilTyper("procRelayTypeMismatch.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
+    val e = err.asInstanceOf[Error.TypeMismatch]
+    assert(e.expect == Type.bitTpe(4)(global))
+    assert(e.actual == Type.bitTpe(2)(global))
+  }
 }
