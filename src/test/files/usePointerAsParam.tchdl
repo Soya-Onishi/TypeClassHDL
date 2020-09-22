@@ -1,0 +1,21 @@
+package test
+
+module UsePointer
+impl UsePointer {
+  input def f() -> Unit {
+    val x = commence procedure # first()
+    this.g(x)
+  }
+
+  internal def g(x: &Bit[2]) -> Unit {}
+
+  proc procedure @ 0b00 -> &Bit[2] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b11
+    }
+  }
+}

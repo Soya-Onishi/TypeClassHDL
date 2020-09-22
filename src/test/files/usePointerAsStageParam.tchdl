@@ -1,0 +1,21 @@
+package test
+
+module UsePointer
+impl UsePointer {
+  input def f() -> Unit {
+    val x = commence procedure # first()
+    generate s(x)
+  }
+
+  proc procedure @ 0b00 -> &Bit[2] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b11
+    }
+  }
+
+  stage s(x: &Bit[2]) { finish }
+}

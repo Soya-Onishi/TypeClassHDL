@@ -861,4 +861,51 @@ class TyperTest extends TchdlFunSuite {
     assert(e.expect == Type.bitTpe(2)(global))
     assert(e.actual == Type.bitTpe(4)(global))
   }
+
+  test("use pointer type as parameter type") {
+    val (Seq(tree), global) = untilTyper("usePointerAsParam.tchdl")
+    expectNoError(global)
+
+    val methods = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }
+      .get.components
+      .collect{ case mdef: MethodDef => mdef }
+
+    val f = methods.find(_.name == "f").get
+    val g = methods.find(_.name == "g").get
+
+    val bitTpe = Type.bitTpe(2)(global)
+    val tpe = Type.RefType(bitTpe.origin, bitTpe.hardwareParam, bitTpe.typeParam, isPointer = true)
+    assert(g.params.head.symbol.tpe == tpe)
+
+    val vdef = f.blk.get.elems.head.asInstanceOf[ValDef]
+    assert(vdef.symbol.tpe == tpe)
+  }
+
+  test("use pointer type as stage's parameter type") {
+    val (Seq(tree), global) = untilTyper("usePointerAsStageParam.tchdl")
+    expectNoError(global)
+
+    val methods = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }
+      .get.components
+      .collect{ case mdef: MethodDef => mdef }
+
+    val f = methods.find(_.name == "f").get
+
+    val bitTpe = Type.bitTpe(2)(global)
+    val tpe = Type.RefType(bitTpe.origin, bitTpe.hardwareParam, bitTpe.typeParam, isPointer = true)
+
+    val vdef = f.blk.get.elems.head.asInstanceOf[ValDef]
+    assert(vdef.symbol.tpe == tpe)
+
+    val stages = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }
+      .get.components
+      .collect{ case sdef: StageDef => sdef }
+      .head
+
+    val paramTpe = stages.params.head.symbol.tpe
+    assert(paramTpe == tpe)
+  }
 }
