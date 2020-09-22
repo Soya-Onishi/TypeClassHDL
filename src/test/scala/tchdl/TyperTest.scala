@@ -285,7 +285,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.RelayOutsideStage])
+    assert(err.isInstanceOf[Error.RelayOutsideStageOrProc])
   }
 
   test("valid sequence circuit") {

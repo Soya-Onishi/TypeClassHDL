@@ -75,8 +75,10 @@ object Error {
 
   case class FinishOutsideStage(pos: Position) extends Error
   case class GotoOutsideState(pos: Position) extends Error
-  case class RelayOutsideStage(pos: Position) extends Error
+  case class RelayOutsideStageOrProc(pos: Position) extends Error
+  case class RelayWithStateInProc(pos: Position) extends Error
   case class ReturnOutsideStage(pos: Position) extends Error
+  case class ReturnOutsideProcBlock(pos: Position) extends Error
 
   case class DefinitionNameConflict(name: String, pos: Position) extends Error
   case class ImplementInterfaceConflict(impl0: ImplementInterfaceContainer, impl1: ImplementInterfaceContainer, pos0: Position, pos: Position) extends Error

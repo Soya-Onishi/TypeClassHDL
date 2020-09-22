@@ -82,6 +82,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def isStageSymbol: Boolean = this.isInstanceOf[Symbol.StageSymbol]
   def isStateSymbol: Boolean = this.isInstanceOf[Symbol.StateSymbol]
   def isInterfaceSymbol: Boolean = this.isInstanceOf[Symbol.InterfaceSymbol]
+  def isProcSymbol: Boolean = this.isInstanceOf[Symbol.ProcSymbol]
 }
 
 trait HasImpls {

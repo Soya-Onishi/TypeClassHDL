@@ -4,6 +4,8 @@ import tchdl.ast._
 import tchdl.util.TchdlException.ImplementationErrorException
 import tchdl.util._
 
+import scala.annotation.tailrec
+
 object Typer {
   def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
     implicit val ctx: Context.RootContext = getContext(cu.pkgName, cu.filename)
@@ -26,6 +28,7 @@ object Typer {
           case methodDef: MethodDef => typedMethodDef(methodDef)(implBodyCtx, global)
           case stageDef: StageDef => typedStageDef(stageDef)(implBodyCtx, global)
           case alwaysDef: AlwaysDef => typedAlwaysDef(alwaysDef)(implBodyCtx, global)
+          case procDef: ProcDef => typed
           case valDef: ValDef if valDef.flag.hasNoFlag(Modifier.Child) => typedValDef(valDef)(implBodyCtx, global)
           case valDef: ValDef => typedModDef(valDef)(implBodyCtx, global)
         }
@@ -80,6 +83,35 @@ object Typer {
 
     global.cache.set(typedAlways)
     typedAlways
+  }
+
+  def typedProcDef(pdef: ProcDef)(implicit ctx: Context.NodeContext, global: GlobalData): ProcDef = {
+    val procCtx = Context(ctx, pdef.symbol)
+    val typedDefault = typedExpr(pdef.default)(procCtx, global)
+
+    // named and typed each blocks in proc
+    pdef.blks.foreach(Namer.namedProcBlock(_)(procCtx, global))
+    val typedBlocks = pdef.blks.map(typedProcBlock(_)(procCtx, global))
+
+    val typedPDef = pdef.copy(
+      default = typedDefault,
+      blks = typedBlocks,
+    )
+
+    global.cache.set(typedPDef)
+    typedPDef
+  }
+
+  def typedProcBlock(pblk: ProcBlock)(implicit ctx: Context.NodeContext, global: GlobalData): ProcBlock = {
+    val sigCtx = Context(ctx, pblk.symbol)
+    val paramSymbols = pblk.params.map(_.symbol)
+    sigCtx.reAppend(paramSymbols: _*)
+
+    val typedBlk = typedBlock(pblk.blk)(sigCtx, global)
+    val typedPBlk = pblk.copy(blk = typedBlk)
+
+    global.cache.set(typedPBlk)
+    typedPBlk
   }
 
   def typedValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): ValDef = {
@@ -1379,14 +1411,14 @@ object Typer {
       .setID(generate.id)
   }
 
-  private def verifyInitState(stage: Symbol.StageSymbol, state: Option[StateInfo], generatePos: Position)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Option[StateInfo]] = {
+  private def verifyInitState(stage: Symbol.StageSymbol, state: Option[StateInfo], pos: Position)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Option[StateInfo]] = {
     def noStatePattern(tpe: Type.MethodType): Either[Error, Option[StateInfo]] = {
       val states = tpe.declares.toMap.values.collect {
         case state: Symbol.StateSymbol => state
       }.toVector
 
       if (states.isEmpty) Right(Option.empty)
-      else Left(Error.RequireStateSpecify(states, generatePos))
+      else Left(Error.RequireStateSpecify(states, pos))
     }
 
     def withStatePattern(tpe: Type.MethodType, state: String, args: Vector[Expression], info: StateInfo): Either[Error, Option[StateInfo]] = {
@@ -1437,6 +1469,90 @@ object Typer {
 
 
   def typedRelay(relay: Relay)(implicit ctx: Context.NodeContext, global: GlobalData): Relay = {
+    def stageSymbol: Symbol.StageSymbol =
+      ctx.owners
+        .collectFirst{ case s: Symbol.StageSymbol => s }
+        .getOrElse(throw new ImplementationErrorException("state must be under stage context"))
+
+    def typedStageRelay(args: Vector[Expression], stage: Symbol.StageSymbol): Either[Error, Relay] = {
+      val self = ctx.self.getOrElse(throw new ImplementationErrorException("stage must be in module instance"))
+      val argsHaveError = args.exists(_.tpe.isErrorType)
+
+      def lookupStage: Either[Error, Symbol.StageSymbol] =
+        self.lookupStage(relay.target, args.map(_.tpe.asRefType))(relay.position, global) match {
+          case LookupResult.LookupFailure(err) => Left(err)
+          case LookupResult.LookupSuccess((stage, _)) => Right(stage)
+        }
+
+      if(argsHaveError) Left(Error.DummyError)
+      else for {
+        stage <- lookupStage
+        state <- verifyInitState(stage, relay.state, relay.position)
+      } yield relay.copy(state = state).setSymbol(stage).setTpe(Type.unitTpe(global))
+    }
+
+    def typedProcRelay(args: Vector[Expression]): Either[Error, Relay] = {
+      def findProcCtx: Option[Context.NodeContext] = {
+        @tailrec def loop(ctx: Context): Option[Context.NodeContext] = {
+          ctx match {
+            case _: Context.RootContext => None
+            case c: Context.NodeContext if c.owner.isProcSymbol => Some(c)
+            case c: Context.NodeContext => loop(c.parent)
+          }
+        }
+
+        loop(ctx)
+      }
+
+      def verifyNoState: Either[Error, Unit] =
+        if(relay.state.isDefined) Left(Error.RelayWithStateInProc(relay.position))
+        else Right(())
+
+      def lookupBlock(target: String, ctx: Context.NodeContext): Either[Error, Symbol.ProcBlockSymbol] =
+        ctx.lookupLocal[Symbol.ProcBlockSymbol](target).toEither
+
+      def verifyArguments(blk: Symbol.ProcBlockSymbol, args: Vector[Expression]): Either[Error, Unit] = {
+        if(args.exists(_.tpe.isErrorType))
+          return Left(Error.DummyError)
+
+        val paramTpes = blk.tpe.asMethodType.params
+
+        if(paramTpes.length != args.length)
+          return Left(Error.ParameterLengthMismatch(paramTpes.length, args.length, relay.position))
+
+        val errs = (paramTpes zip args)
+          .filter{ case (p, a) => p != a.tpe }
+          .map{ case (p, a) => Error.TypeMismatch(p, a.tpe.asRefType, a.position) }
+
+        if(errs.isEmpty) Right(())
+        else Left(Error.MultipleErrors(errs))
+      }
+
+      val procCtx = findProcCtx.getOrElse(throw new ImplementationErrorException("proc's blocks must be under proc definition"))
+      for {
+        _ <- verifyNoState
+        pblk <- lookupBlock(relay.target, procCtx)
+        _ <- verifyArguments(pblk, args)
+      } yield relay.copy().setSymbol(pblk).setTpe(Type.unitTpe)
+    }
+
+    val typedArgs = relay.params.map(typedExpr)
+
+    val result = ctx.owner match {
+      case s: Symbol.StageSymbol     => typedStageRelay(typedArgs, s)
+      case _: Symbol.StateSymbol     => typedStageRelay(typedArgs, stageSymbol)
+      case _: Symbol.ProcBlockSymbol => typedProcRelay(typedArgs)
+      case _ => Left(Error.RelayOutsideStageOrProc(relay.position))
+    }
+
+    result match {
+      case Right(relay) => relay
+      case Left(err) =>
+        global.repo.error.append(err)
+        relay.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
+    }
+
+    /*
     def verifyRelayTarget: Relay = {
       val self = ctx.self.getOrElse(throw new ImplementationErrorException("stage must be in module instance"))
       val typedArgs = relay.params.map(typedExpr)
@@ -1470,18 +1586,19 @@ object Typer {
         .setID(relay.id)
     }
 
-    ctx.owner match {
+    val result = ctx.owner match {
       case _: Symbol.StageSymbol => verifyRelayTarget
       case _: Symbol.StateSymbol => verifyRelayTarget
       case _ =>
-        global.repo.error.append(Error.RelayOutsideStage(relay.position))
+        global.repo.error.append(Error.RelayOutsideStageOrProc(relay.position))
         relay.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
     }
+     */
   }
 
   def typedReturn(ret: Return)(implicit ctx: Context.NodeContext, global: GlobalData): Return = {
-    def typecheck(stage: Symbol.StageSymbol, expr: Expression): Either[Error, Unit] = {
-      val retTpe = stage.tpe.asMethodType.returnType
+    def typecheck(proc: Symbol.ProcSymbol, expr: Expression): Either[Error, Unit] = {
+      val retTpe = proc.tpe.asRefType
 
       expr.tpe match {
         case Type.ErrorType => Left(Error.DummyError)
@@ -1494,17 +1611,14 @@ object Typer {
     val typedRetExpr = typedExpr(ret.expr)
 
     val result = ctx.owner match {
-      case stage: Symbol.StageSymbol =>
-        typecheck(stage, typedRetExpr)
-      case _: Symbol.StateSymbol =>
-        val stage = ctx.owners(1).asInstanceOf[Symbol.StageSymbol]
-        typecheck(stage, typedRetExpr)
-      case _ =>
-        Left(Error.ReturnOutsideStage(ret.position))
+      case _: Symbol.ProcBlockSymbol =>
+        val proc = ctx.owners(1).asProcSymbol
+        typecheck(proc, typedRetExpr)
+      case _ => Left(Error.ReturnOutsideProcBlock(ret.position))
     }
 
     result.left.foreach(global.repo.error.append)
-    Return(typedRetExpr, ret.position).setTpe(Type.unitTpe).setID(ret.id)
+    ret.copy(expr = typedRetExpr).setTpe(Type.unitTpe)
   }
 
   def typedHPExpr(expr: HPExpr)(implicit ctx: Context.NodeContext, global: GlobalData): HPExpr = expr match {
