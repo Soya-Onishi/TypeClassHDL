@@ -1,0 +1,18 @@
+package test
+
+module CommenceProc
+impl CommenceProc {
+  def start() -> &Bit[2] {
+    commence multiCycle # first()
+  }
+
+  proc multiCycle @ 0b00 -> &Bit[2] {
+    origin block first() {
+      goto second()
+    }
+
+    final block second() {
+      return 0b11
+    }
+  }
+}

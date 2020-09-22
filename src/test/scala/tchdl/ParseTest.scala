@@ -529,4 +529,14 @@ class ParseTest extends TchdlFunSuite {
     assert(proc0 == ProcDef("first", retTpe, default, Vector.empty, pos))
     assert(proc1 == ProcDef("second", retTpe, default, Vector(block), pos))
   }
+
+  test("parse commence procedure") {
+    val parser = parseString(_.commence)((gen, tree) => gen.commence(tree)(Filename("")))_
+
+    val com0 = parser("commence target # first()")
+    val com1 = parser("commence target # first(0b00)")
+
+    assert(com0 == Commence("target", CommenceBlock("first", Vector.empty, pos), pos))
+    assert(com1 == Commence("target", CommenceBlock("first", Vector(BitLiteral(0, 2, pos)), pos), pos))
+  }
 }
