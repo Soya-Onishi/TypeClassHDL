@@ -850,4 +850,15 @@ class TyperTest extends TchdlFunSuite {
     assert(e.expect == Type.bitTpe(4)(global))
     assert(e.actual == Type.bitTpe(2)(global))
   }
+
+  test("proc's return type mismatch causes an error") {
+    val (_, global) = untilTyper("procReturnTypeMismatch.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.TypeMismatch])
+    val e = err.asInstanceOf[Error.TypeMismatch]
+    assert(e.expect == Type.bitTpe(2)(global))
+    assert(e.actual == Type.bitTpe(4)(global))
+  }
 }

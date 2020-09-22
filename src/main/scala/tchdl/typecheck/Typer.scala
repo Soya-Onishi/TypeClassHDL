@@ -1599,7 +1599,7 @@ object Typer {
         case Type.ErrorType => Left(Error.DummyError)
         case tpe: Type.RefType =>
           if (tpe == expectTpe) Right(())
-          else Left(Error.TypeMismatch(tpe, retTpe, expr.position))
+          else Left(Error.TypeMismatch(retTpe, tpe, expr.position))
       }
     }
 
