@@ -350,6 +350,7 @@ class ASTGenerator {
     case ctx: TP.GotoExprContext => goto(ctx.goto_expr)
     case ctx: TP.RelayExprContext => relay(ctx.relay)
     case ctx: TP.GenerateExprContext => generate(ctx.generate)
+    case ctx: TP.CommenceExprContext => commence(ctx.commence)
     case ctx: TP.ReturnContext => Return(expr(ctx.expr), Position(ctx))
     case ctx: TP.LitExprContext => literal(ctx.literal)
     case ctx: TP.ParenthesesExprContext => expr(ctx.expr)
@@ -728,6 +729,21 @@ class ASTGenerator {
     }
 
     Generate(stageName, stageArgs, state, Position(ctx))
+  }
+
+  def commence(ctx: TP.CommenceContext)(implicit file: Filename): Commence = {
+    val proc = ctx.EXPR_ID(0).getText
+    val block = ctx.EXPR_ID(1).getText
+    val args = ctx.args.expr.asScala.map(expr).toVector
+
+    val blockStartLine = ctx.EXPR_ID(1).getSymbol.getLine
+    val blockStartPoint = ctx.EXPR_ID(1).getSymbol.getCharPositionInLine
+    val blockEndLine = ctx.getStop.getLine
+    val blockEndPoint = ctx.getStop.getCharPositionInLine
+    val blockPosition = Position(file.name, Point(blockStartLine, blockStartPoint), Point(blockEndLine, blockEndPoint))
+
+    val commenceBlock = CommenceBlock(block, args, blockPosition)
+    Commence(proc, commenceBlock, Position(ctx))
   }
 
   def relay(ctx: TP.RelayContext)(implicit file: Filename): Relay = {

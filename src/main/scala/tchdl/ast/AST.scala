@@ -1208,6 +1208,52 @@ object Generate {
   }
 }
 
+abstract case class Commence private(proc: String, block: CommenceBlock) extends Expression with HasSymbol {
+  def copy(proc: String = this.proc, block: CommenceBlock = this.block): Commence = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldTpe = this._tpe
+    val oldSym = this._symbol
+
+    new Commence(proc, block) {
+      override val position = oldPos
+      _id = oldID
+      _tpe = oldTpe
+      _symbol = oldSym
+    }
+  }
+}
+
+object Commence {
+  def apply(proc: String, block: CommenceBlock, pos: Position): Commence = {
+    new Commence(proc, block) {
+      override val position = pos
+    }
+  }
+}
+
+abstract case class CommenceBlock private (target: String, args: Vector[Expression]) extends AST with HasSymbol {
+  def copy(target: String = this.target, args: Vector[Expression] = this.args): CommenceBlock = {
+    val oldPos = this.position
+    val oldID = this._id
+    val oldSym = this._symbol
+
+    new CommenceBlock(target, args) {
+      override val position = oldPos
+      _id = oldID
+      _symbol = oldSym
+    }
+  }
+}
+
+object CommenceBlock {
+  def apply(target: String, args: Vector[Expression], pos: Position): CommenceBlock = {
+    new CommenceBlock(target, args) {
+      override val position = pos
+    }
+  }
+}
+
 abstract case class Relay private (target: String, params: Vector[Expression], state: Option[StateInfo]) extends Expression with HasSymbol {
   def copy(target: String = this.target, params: Vector[Expression] = this.params, state: Option[StateInfo] = this.state): Relay = {
     val oldPos = this.position

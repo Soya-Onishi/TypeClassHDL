@@ -203,6 +203,7 @@ expr: expr '.' (apply | EXPR_ID)                 # SelectExpr
     | goto_expr                                  # GotoExpr
     | relay                                      # RelayExpr
     | generate                                   # GenerateExpr
+    | commence                                   # CommenceExpr
     | RETURN expr                                # Return
     | literal                                    # LitExpr
     | '(' expr AS type ')'                       # CastExpr
@@ -288,6 +289,10 @@ generate
     : GENERATE EXPR_ID '(' args ')' ('#' EXPR_ID ('(' args ')')? )?
     ;
 
+commence
+    : COMMENCE EXPR_ID '#' EXPR_ID ('(' args ')')?
+    ;
+
 relay
     : RELAY EXPR_ID '(' args ')' ('#' EXPR_ID ( '(' args ')' )? )?
     ;
@@ -370,6 +375,7 @@ AS: 'as';
 FINISH: 'finish';
 GOTO: 'goto';
 GENERATE: 'generate';
+COMMENCE: 'commence';
 RELAY: 'relay';
 RETURN: 'return';
 
