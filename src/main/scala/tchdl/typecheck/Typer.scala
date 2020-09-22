@@ -1409,7 +1409,11 @@ object Typer {
             .filter { case (p, a) => p != a.tpe }
             .map { case (p, a) => Error.TypeMismatch(p, a.tpe, a.position) }
 
-          errs.combine(errs => Error.MultipleErrors(errs: _*)).map(_ => blk)
+          val notOriginErr =
+            if(blk.flag.hasFlag(Modifier.Origin)) None
+            else Some(Error.CommenceFromNonOrigin(blk, commence.block.position))
+
+          (errs ++ notOriginErr).combine(errs => Error.MultipleErrors(errs: _*)).map(_ => blk)
         case Some(_) => Left(Error.SymbolNotFound(commence.block.target, commence.block.position))
       }
     }
