@@ -197,7 +197,7 @@ object ImplMethodSigTyper {
         tpTable = methodTPTable ++ interfaceTPTable
         replacedTPBounds = TPBound.swapBounds(interfaceMethod.tpBound, hpTable, tpTable)
         _ <- verifyTPValidity(implMethod.tpBound, replacedTPBounds)
-        replacedMethodTpe = interfaceMethod.tpe.asMethodType.replaceWithMap(hpTable, tpTable, impl.position)
+        replacedMethodTpe = interfaceMethod.tpe.asMethodType.replaceWithMap(hpTable, tpTable)
         _ <- compareMethodSignature(implMethod.tpe.asMethodType, replacedMethodTpe, fieldTypes)
       } yield ()
     }

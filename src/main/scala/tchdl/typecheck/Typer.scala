@@ -257,6 +257,7 @@ object Typer {
       case bit: BitLiteral => typedBitLiteral(bit)
       case apply: Apply => typedExprApply(apply)
       case generate: Generate => typedGenerate(generate)
+      case commence: Commence => typedCommence(commence)
       case goto: Goto => typedGoto(goto)
       case finish: Finish => typedFinish(finish)
       case relay: Relay => typedRelay(relay)
@@ -363,7 +364,7 @@ object Typer {
           swappedHPBound = HPBound.swapBounds(methodSymbol.hpBound, hpTable)
           swappedTPBound = TPBound.swapBounds(methodSymbol.tpBound, hpTable, tpTable)
           _ <- verifyEachBounds(swappedHPBound, swappedTPBound)
-          replacedTpe = methodType.replaceWithMap(hpTable, tpTable, apply.position)
+          replacedTpe = methodType.replaceWithMap(hpTable, tpTable)
           _ <- Type.RefType.verifyMethodType(replacedTpe, typedArgs.map(_.tpe.asRefType), apply.position)
           typedApply = Apply(
             ident.setTpe(replacedTpe).setSymbol(methodSymbol),
@@ -493,7 +494,7 @@ object Typer {
 
             val selectTpe = symbol.tpe match {
               case tpe: Type.RefType => tpe.replaceWithMap(hpTable, tpTable)
-              case tpe: Type.MethodType => tpe.replaceWithMap(hpTable, tpTable, select.position)
+              case tpe: Type.MethodType => tpe.replaceWithMap(hpTable, tpTable)
               case Type.ErrorType => Type.ErrorType
             }
 
@@ -1371,6 +1372,51 @@ object Typer {
     }
 
     goto.setSymbol(stateSymbol).setTpe(Type.unitTpe)
+  }
+
+  def typedCommence(commence: Commence)(implicit ctx: Context.NodeContext, global: GlobalData): Commence = {
+    def verifyCallBlock(proc: ProcResult, args: Vector[Expression]): Either[Error, Symbol.ProcBlockSymbol] = {
+      val target = commence.block.target
+      proc.proc.tpe.declares.lookup(target) match {
+        case None      => Left(Error.SymbolNotFound(target, commence.block.position))
+        case Some(blk: Symbol.ProcBlockSymbol) =>
+          val tpe = blk.tpe.asMethodType.replaceWithMap(proc.hpTable, proc.tpTable)
+          val params = tpe.params
+
+          if(args.length != params.length)
+            return Left(Error.ParameterLengthMismatch(params.length, args.length, commence.block.position))
+
+          val errs = (params zip args)
+            .filter { case (p, a) => p != a.tpe }
+            .map { case (p, a) => Error.TypeMismatch(p, a.tpe, a.position) }
+
+          errs.combine(errs => Error.MultipleErrors(errs: _*)).map(_ => blk)
+        case Some(_) => Left(Error.SymbolNotFound(commence.block.target, commence.block.position))
+      }
+    }
+
+    val self = ctx.self.getOrElse(throw new ImplementationErrorException("proc must be in module instance"))
+    val typedArgs = commence.block.args.map(typedExpr)
+    val hasError = typedArgs.exists(_.tpe.isErrorType)
+
+    val result = self.lookupProc(commence.proc, ctx.hpBounds, ctx.tpBounds)(commence.position, global) match {
+      case LookupResult.LookupFailure(err) => Left(err)
+      case LookupResult.LookupSuccess(_) if hasError => Left(Error.DummyError)
+      case LookupResult.LookupSuccess(result) => verifyCallBlock(result, typedArgs) match {
+        case Left(err) => Left(err)
+        case Right(blk) =>
+          commence.block.setSymbol(blk)
+          commence.setSymbol(result.proc).setTpe(result.retTpe)
+          Right(commence)
+      }
+    }
+
+    result match {
+      case Right(commence) => commence
+      case Left(err) =>
+        global.repo.error.append(err)
+        commence.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
+    }
   }
 
   def typedGenerate(generate: Generate)(implicit ctx: Context.NodeContext, global: GlobalData): Generate = {

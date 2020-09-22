@@ -204,8 +204,15 @@ object Type {
   case class ProcTypeGenerator(proc: ProcDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
     override def generate: Type = {
       val typedTpe = Typer.typedTypeTree(proc.retTpe)(ctx, global)
+
+      val blkCtx = Context(ctx, proc.symbol)
+      proc.blks.foreach(Namer.nodeLevelNamed(_)(blkCtx, global))
       global.cache.set(typedTpe)
-      typedTpe.tpe
+
+      typedTpe.tpe match {
+        case Type.ErrorType    => Type.ErrorType
+        case tpe: Type.RefType => Type.MethodType(Vector.empty, tpe, blkCtx.scope)
+      }
     }
   }
 
@@ -410,7 +417,7 @@ object Type {
     val namespace: NameSpace = NameSpace.empty
     val declares: Scope = Scope.empty
 
-    def replaceWithMap(hpMap: Map[Symbol.HardwareParamSymbol, HPExpr], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType], position: Position): Type.MethodType = {
+    def replaceWithMap(hpMap: Map[Symbol.HardwareParamSymbol, HPExpr], tpMap: Map[Symbol.TypeParamSymbol, Type.RefType]): Type.MethodType = {
       def replace: PartialFunction[Type, Type.RefType] = {
         case tpe: Type.RefType => tpe.replaceWithMap(hpMap, tpMap)
       }
@@ -892,6 +899,42 @@ object Type {
       }
     }
 
+    def lookupProc(target: String, callerHPBound: Vector[HPBound], callerTPBound: Vector[TPBound])(implicit position: Position, global: GlobalData): LookupResult[ProcResult] = {
+      def lookupFromImpl(impl: ImplementContainer): Either[Error, ProcResult] = {
+        val (initHPTable, initTPTable) = Type.RefType.buildTable(impl)
+        val lookupResult = impl.lookup[Symbol.ProcSymbol](target) match {
+          case None    => Left(Error.SymbolNotFound(target, position))
+          case Some(p) => Right(p)
+        }
+
+        for {
+          proc <- lookupResult
+          caller = Vector(this)
+          target = Vector(impl.targetType)
+          positions = Vector(Position.empty)
+          _ <- RefType.verifySuperSets(caller, target, positions)
+          hpTable <- Type.RefType.assignHPTable(initHPTable, caller, target, position)
+          tpTable <- Type.RefType.assignTPTable(initTPTable, caller, target, position)
+          swappedHPBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
+          swappedTPBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
+          simplifiedHPBound = HPBound.simplify(swappedHPBound)
+          _ <- Bound.verifyEachBounds(simplifiedHPBound, swappedTPBound, callerHPBound, callerTPBound, position)
+          retTpe = proc.tpe.asMethodType.replaceWithMap(hpTable, tpTable).returnType
+        } yield ProcResult(proc, retTpe, hpTable, tpTable)
+      }
+
+      val impls = this.origin.asInstanceOf[Symbol.EntityTypeSymbol].impls
+      val result = impls.foldLeft[Either[Error, ProcResult]](Left(Error.SymbolNotFound(target, position))) {
+        case (Left(_), impl) => lookupFromImpl(impl)
+        case (Right(r), _) => Right(r)
+      }
+
+      result match {
+        case Right(r) => LookupResult.LookupSuccess(r)
+        case Left(err) => LookupResult.LookupFailure(err)
+      }
+    }
+
     def lookupOperator(
       op: Operation,
       args: Vector[Type.RefType],
@@ -915,7 +958,7 @@ object Type {
       result match {
         case Left(err) => LookupResult.LookupFailure(err)
         case Right((hpTable, tpTable)) =>
-          val methodTpe = method.tpe.asMethodType.replaceWithMap(hpTable, tpTable, position)
+          val methodTpe = method.tpe.asMethodType.replaceWithMap(hpTable, tpTable)
           LookupResult.LookupSuccess(method, methodTpe)
       }
     }
