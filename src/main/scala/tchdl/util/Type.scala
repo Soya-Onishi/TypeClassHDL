@@ -141,7 +141,6 @@ object Type {
           methodDef.symbol.asMethodSymbol.tps: _*
       )(global)
 
-      val mname = methodDef.name
       val method = methodDef.symbol.asMethodSymbol
       val hpBoundTrees = methodDef.bounds.collect { case b: HPBoundTree => b }
       val tpBoundTrees = methodDef.bounds.collect { case b: TPBoundTree => b }
@@ -199,6 +198,14 @@ object Type {
           methodDef.params.foreach(_.setSymbol(Symbol.ErrorSymbol))
           Type.ErrorType
       }
+    }
+  }
+
+  case class ProcTypeGenerator(proc: ProcDef, ctx: Context.NodeContext, global: GlobalData) extends TypeGenerator {
+    override def generate: Type = {
+      val typedTpe = Typer.typedTypeTree(proc.retTpe)(ctx, global)
+      global.cache.set(typedTpe)
+      typedTpe.tpe
     }
   }
 

@@ -38,12 +38,17 @@ object ImplMethodSigTyper {
       .map(verifyStageDef(_)(implCtx, global))
       .partitionMap(identity)
 
+    val (procErrs, _) = impl.components
+      .collect{ case p: ProcDef => p }
+      .map(verifyProcDef(_)(implCtx, global))
+      .partitionMap(identity)
+
     val (valErrs, _) = impl.components
       .collect { case v: ValDef => v }
       .map { verifyValDef(_)(implCtx, global) }
       .partitionMap(identity)
 
-    val errs = methodErrs ++ stageErrs ++ valErrs
+    val errs = methodErrs ++ stageErrs ++ procErrs ++ valErrs
     errs.foreach(global.repo.error.append)
   }
 
@@ -345,7 +350,16 @@ object ImplMethodSigTyper {
     } yield stageSymbol
   }
 
-  def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, globla: GlobalData): Either[Error, Symbol.VariableSymbol] = {
+  def verifyProcDef(pdef: ProcDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.ProcSymbol] = {
+    val retTpe = pdef.symbol.tpe.asRefType
+
+    retTpe.isPointer match {
+      case Some(true) => Right(pdef.symbol.asProcSymbol)
+      case _ => Left(Error.RequirePointerTypeAsProcRet(retTpe, pdef.retTpe.position))
+    }
+  }
+
+  def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.VariableSymbol] = {
     val self = ctx.self.getOrElse(throw new ImplementationErrorException("this type should be there"))
     self.origin match {
       case _: Symbol.StructSymbol => Left(Error.ImplementModuleComponentInStruct(self, vdef.position))

@@ -1177,7 +1177,8 @@ object Typer {
           Right(tpeTree)
       }
 
-    def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] =
+    def execTyped(hargs: Vector[HPExpr], targs: Vector[TypeTree]): Either[Error, TypeTree] = {
+      def exec: Either[Error, TypeTree] =
         typeTree.expr match {
           case ident: Ident => typedForIdent(ident, hargs, targs)
           case cast: CastType => typedForCast(cast)
@@ -1185,6 +1186,22 @@ object Typer {
           case select: SelectPackage => typedForSelectPackage(select, hargs, targs)
           case tree: ThisType => typedForThisType(tree)
         }
+
+      def pointerVerify(typedTree: TypeTree): Either[Error, Unit] =
+        if(!typeTree.isPointer) Right(())
+        else {
+          val isHW = typedTree.tpe.asRefType.isHardwareType(ctx.tpBounds)(typeTree.position, global)
+          val tpe = typedTree.tpe.asRefType
+
+          if(isHW) Right(())
+          else Left(Error.RequireHWAsPointer(tpe, typedTree.position))
+        }
+
+      for {
+        tree <- exec
+        _ <- pointerVerify(tree)
+      } yield tree
+    }
 
     val typedHArgs = typeTree.hp.map(typedHPExpr)
     val typedTArgs = typeTree.tp.map(typedTypeTree)

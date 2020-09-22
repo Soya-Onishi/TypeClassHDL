@@ -27,6 +27,14 @@ object Namer {
     always.setSymbol(symbol)
   }
 
+  def namedProc(proc: ProcDef)(implicit ctx: Context.NodeContext, global: GlobalData): ProcDef = {
+    val procTpe = Type.ProcTypeGenerator(proc, ctx, global)
+    val symbol = Symbol.ProcSymbol(proc.name, ctx.path, procTpe)
+
+    ctx.append(symbol).left.foreach(global.repo.error.append)
+    proc.setSymbol(symbol)
+  }
+
   def namedMethod(method: MethodDef)(implicit ctx: Context, global: GlobalData): MethodDef = {
     def tryAppendOperator(symbol: Symbol.MethodSymbol): Unit = {
       val isTopLevel = ctx.path.pkgName == Vector("std", "functions")

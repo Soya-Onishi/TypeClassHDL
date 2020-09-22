@@ -70,6 +70,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asStageSymbol: Symbol.StageSymbol = this.asInstanceOf[Symbol.StageSymbol]
   def asStateSymbol: Symbol.StateSymbol = this.asInstanceOf[Symbol.StateSymbol]
   def asAlwaysSymbol: Symbol.AlwaysSymbol = this.asInstanceOf[Symbol.AlwaysSymbol]
+  def asProcSymbol: Symbol.ProcSymbol = this.asInstanceOf[Symbol.ProcSymbol]
 
   def isTypeSymbol: Boolean = this.isInstanceOf[Symbol.TypeSymbol]
   def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]
