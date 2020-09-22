@@ -343,4 +343,28 @@ class ImplMethodSigTyperTest extends TchdlFunSuite {
     assert(e.actual == Type.strTpe(global))
     assert(e.requires == Vector(Type.numTpe(global)))
   }
+
+  test("define proc that has no error") {
+    val (Seq(tree), global) = untilThisPhase("procNoError.tchdl")
+    expectNoError(global)
+
+    val proc = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }
+      .map(impl => impl.components)
+      .flatMap(cs => cs.collectFirst{ case proc: ProcDef => proc })
+      .get
+
+    val bitTpe = {
+      val src = Type.bitTpe(2)(global)
+      Type.RefType(
+        src.origin,
+        src.hardwareParam,
+        src.typeParam,
+        isPointer = Some(true)
+      )
+    }
+
+    assert(proc.symbol.name == "procedure")
+    assert(proc.symbol.tpe == bitTpe)
+  }
 }
