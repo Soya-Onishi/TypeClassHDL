@@ -90,7 +90,6 @@ object Typer {
     val typedDefault = typedExpr(pdef.default)(procCtx, global)
 
     // named and typed each blocks in proc
-    pdef.blks.foreach(Namer.namedProcBlock(_)(procCtx, global))
     val typedBlocks = pdef.blks.map(typedProcBlock(_)(procCtx, global))
 
     val retTpe = pdef.symbol.tpe.asMethodType.returnType
@@ -1540,12 +1539,14 @@ object Typer {
     }
 
     def typedProcRelay(args: Vector[Expression]): Either[Error, Relay] = {
-      def findProcCtx: Option[Context.NodeContext] = {
-        @tailrec def loop(ctx: Context): Option[Context.NodeContext] = {
+      def findProcSym: Option[Symbol.ProcSymbol] = {
+        @tailrec def loop(ctx: Context): Option[Symbol.ProcSymbol] = {
           ctx match {
             case _: Context.RootContext => None
-            case c: Context.NodeContext if c.owner.isProcSymbol => Some(c)
-            case c: Context.NodeContext => loop(c.parent)
+            case c: Context.NodeContext => c.owner match {
+              case p: Symbol.ProcSymbol => Some(p)
+              case _ => loop(c.parent)
+            }
           }
         }
 
@@ -1556,8 +1557,12 @@ object Typer {
         if(relay.state.isDefined) Left(Error.RelayWithStateInProc(relay.position))
         else Right(())
 
-      def lookupBlock(target: String, ctx: Context.NodeContext): Either[Error, Symbol.ProcBlockSymbol] =
-        ctx.lookupLocal[Symbol.ProcBlockSymbol](target).toEither
+      def lookupBlock(target: String, proc: Symbol.ProcSymbol): Either[Error, Symbol.ProcBlockSymbol] =
+        proc.tpe.declares.lookup(target) match {
+          case Some(blk: Symbol.ProcBlockSymbol) => Right(blk)
+          case Some(sym) => Left(Error.RequireSymbol[Symbol.ProcBlockSymbol](sym, relay.position))
+          case None => Left(Error.SymbolNotFound(target, relay.position))
+        }
 
       def verifyArguments(blk: Symbol.ProcBlockSymbol, args: Vector[Expression]): Either[Error, Unit] = {
         if(args.exists(_.tpe.isErrorType))
@@ -1576,10 +1581,10 @@ object Typer {
         else Left(Error.MultipleErrors(errs: _*))
       }
 
-      val procCtx = findProcCtx.getOrElse(throw new ImplementationErrorException("proc's blocks must be under proc definition"))
+      val procSymbol = findProcSym.getOrElse(throw new ImplementationErrorException("proc's blocks must be under proc definition"))
       for {
         _ <- verifyNoState
-        pblk <- lookupBlock(relay.target, procCtx)
+        pblk <- lookupBlock(relay.target, procSymbol)
         _ <- verifyArguments(pblk, args)
       } yield relay.copy().setSymbol(pblk).setTpe(Type.unitTpe)
     }
