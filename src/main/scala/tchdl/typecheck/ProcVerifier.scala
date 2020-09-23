@@ -79,15 +79,14 @@ object ProcVerifier {
     val cases = caseOpts.collect{ case Some(c) => c }
     val hasLeft = cases.exists(_.isLeft)
     val hasRight = cases.exists(_.isRight)
-    val allRight = cases.forall(_.isRight)
 
     lazy val r0 = cases.collect{ case Left(err) => err }.combine(errs => Error.MultipleErrors(errs: _*)).some
     lazy val r1 = Left(Error.ControlFlowNotExhaustive(matchExpr, matchExpr.position)).some
 
     if(allNone) None
-    else if(hasLeft && hasNone) r0
-    else if(hasRight && !allRight) r1
-    else if(allRight) Right(()).some
+    else if(hasLeft) r0
+    else if(hasRight && hasNone) r1
+    else if(hasRight) Right(()).some
     else throw new ImplementationErrorException("control flow must not reach here")
   }
 }

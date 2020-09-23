@@ -59,4 +59,31 @@ class ProcVerifierTest extends TchdlFunSuite {
     val (_, global) = untilThisPhase("procIfControl.tchdl")
     expectNoError(global)
   }
+
+  test("use if expression but not exhausitve causes error") {
+    val (_, global) = untilThisPhase("procIfControlNotExhaustive.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ControlFlowNotExhaustive])
+  }
+
+  test("use if but no control flow and using control at top level of block causes no error") {
+    val (_, global) = untilThisPhase("procIfButNotRelated.tchdl")
+    expectNoError(global)
+  }
+
+  test("use match expression and use relay exhaustively") {
+    val (_, global) = untilThisPhase("procMatch.tchdl")
+    expectNoError(global)
+  }
+
+  test("use match expression and not exhaustively relay") {
+    val (_, global) = untilThisPhase("procMatchNotExhaustively.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ControlFlowNotExhaustive])
+    assert(err.asInstanceOf[Error.ControlFlowNotExhaustive].expr.isInstanceOf[Match])
+  }
 }
