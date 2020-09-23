@@ -256,7 +256,7 @@ package object builtin {
     val stmts = Vector(wire, init, update)
     val instance = DataInstance(accessor.tpe, wireRef)
 
-    RunResult(Future.empty, stmts, instance)
+    RunResult(stmts, instance)
   }
 
   def vecUpdatedDyn(accessor: Instance, index: Instance, elem: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
@@ -279,7 +279,7 @@ package object builtin {
     val stmts = Vector(wire, init, update)
     val instance = DataInstance(accessor.tpe, wireRef)
 
-    RunResult(Future.empty, stmts, instance)
+    RunResult(stmts, instance)
   }
 
   def vecAppend(accessor: Instance, elem: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
@@ -296,7 +296,7 @@ package object builtin {
 
     val instance = DataInstance(retTpe, wireRef)
     val stmts = Vector(wire, init, last)
-    RunResult(Future.empty, stmts, instance)
+    RunResult(stmts, instance)
   }
 
   def vecTruncate(accessor: Instance, hpHi: HPElem, hpLo: HPElem)(implicit stack: StackFrame, global: GlobalData): RunResult = {
@@ -319,7 +319,7 @@ package object builtin {
     val instance = DataInstance(wireTpe, wireRef)
     val stmts = wire +: connects
 
-    RunResult(Future.empty, stmts, instance)
+    RunResult(stmts, instance)
   }
 
   def vecEmpty(vecTpe: BackendType)(implicit stack: StackFrame, global: GlobalData): RunResult = {
@@ -330,7 +330,7 @@ package object builtin {
     val wireRef = ir.Reference(wire.name, ir.UnknownType)
     val instance = DataInstance(retTpe, wireRef)
 
-    RunResult(Future.empty, Vector(wire), instance)
+    RunResult(Vector(wire), instance)
   }
 
   def bitFromInt(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
@@ -343,7 +343,7 @@ package object builtin {
     val retTpe = toBackendType(Type.bitTpe(toWidth))
     val retInstance = DataInstance(retTpe, casted)
 
-    RunResult(Future.empty, Vector.empty, retInstance)
+    RunResult(Vector.empty, retInstance)
   }
 
   def bitFromBool(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
@@ -353,7 +353,7 @@ package object builtin {
     val retTpe = toBackendType(Type.bitTpe(toWidth))
     val retInstance = DataInstance(retTpe, casted)
 
-    RunResult(Future.empty, Vector.empty, retInstance)
+    RunResult(Vector.empty, retInstance)
   }
 
   def bitFromBit(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
@@ -366,7 +366,7 @@ package object builtin {
     val retTpe = toBackendType(Type.bitTpe(toWidth))
     val retInstance = DataInstance(retTpe, casted)
 
-    RunResult(Future.empty, Vector.empty, retInstance)
+    RunResult(Vector.empty, retInstance)
   }
 
   private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp)(f: (BigInt, BigInt) => BigInt): RunResult = {
@@ -497,6 +497,6 @@ package object builtin {
     }
 
     val instance = DataInstance(tpe, calc)
-    RunResult(Future.empty, Vector.empty, instance)
+    RunResult(Vector.empty, instance)
   }
 }
