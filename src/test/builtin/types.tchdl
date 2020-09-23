@@ -166,7 +166,7 @@ impl[depth: Num, width: Num, readPort: Num, writePort: Num, readLatency: Num, wr
         writeLatency: min 1,
         T: HW
 {
-  @built_in[readMem: (Bit) => &T]
+  @built_in[readMem: (Bit) => *]
   input def read[port: Num](addr: Bit[width]) -> &T
     where port: max readPort - 1 & min 0
   {

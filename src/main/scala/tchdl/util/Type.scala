@@ -1459,7 +1459,8 @@ object Type {
             val accessor = inferAccessor(symbol)
             Type.RefType.accessed(accessor, tpe, tpe.isPointer)
           case t: Symbol.TypeParamSymbol =>
-            tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
+            val cand = tpTable.getOrElse(t, throw new ImplementationErrorException(s"tpTable should have ${t.name}"))
+            Type.RefType(cand.origin, cand.hardwareParam, cand.typeParam, tpe.isPointer)
         }
 
       val params = method.params.map(swapType)

@@ -150,7 +150,6 @@ class BuiltInTypes extends BuiltInSymbols[Symbol.ClassTypeSymbol] {
     "Num" -> null,
     "Str" -> null,
     "Bool" -> null,
-    "Future" -> null,
     "Vector" -> null,
     "Memory" -> null,
   )
