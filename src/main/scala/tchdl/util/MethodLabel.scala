@@ -70,6 +70,31 @@ case class StateLabel(
   override lazy val toString: String = stage.toString + "$" + symbol.name
 }
 
+case class ProcLabel(
+  symbol: Symbol.ProcSymbol,
+  accessor: Option[BackendType],
+  id: Int,
+  hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
+  tps: ListMap[Symbol.TypeParamSymbol, BackendType],
+) extends BackendLabel {
+  override type SymbolType = Symbol.ProcSymbol
+  override lazy val toString: String = symbol.name + "_" + hashCode().toHexString
+
+  def retName: String = toString + "__ret"
+}
+
+case class ProcBlockLabel(
+  symbol: Symbol.ProcBlockSymbol,
+  accessor: Option[BackendType],
+  proc: ProcLabel,
+) extends BackendLabel {
+  override type SymbolType = Symbol.ProcBlockSymbol
+  override lazy val toString: String = proc.toString + "_" + symbol.name
+
+  override val hps = proc.hps
+  override val tps = proc.tps
+}
+
 case class AlwaysLabel(
   symbol: Symbol.AlwaysSymbol,
   accessor: Option[BackendType],

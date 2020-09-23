@@ -472,6 +472,17 @@ package object backend {
       .find(_.symbol == stage)
   }
 
+  def findProcTree(proc: Symbol.ProcSymbol, global: GlobalData): Option[frontend.ProcDef] = {
+    global.compilationUnits
+      .filter(_.pkgName == proc.path.pkgName)
+      .view
+      .flatMap(_.topDefs)
+      .collect { case impl: frontend.ImplementClass => impl.components }
+      .flatten
+      .collect { case p: frontend.ProcDef => p }
+      .find(_.symbol == proc)
+  }
+
   def buildHPTable(
     hps: Vector[Symbol.HardwareParamSymbol],
     callers: Vector[BackendType],

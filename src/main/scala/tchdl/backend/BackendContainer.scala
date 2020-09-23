@@ -25,7 +25,8 @@ case class ModuleContainerBody(
   interfaces: Vector[MethodContainer],
   stages: Vector[StageContainer],
   always: Vector[AlwaysContainer],
-  fields: Vector[FieldContainer]
+  fields: Vector[FieldContainer],
+  procs: Vector[ProcContainer],
 ) {
   def addInterface(interface: MethodContainer): ModuleContainerBody =
     this.copy(interfaces = this.interfaces :+ interface)
@@ -38,11 +39,14 @@ case class ModuleContainerBody(
 
   def addField(field: FieldContainer): ModuleContainerBody =
     this.copy(fields = this.fields :+ field)
+
+  def addProc(proc: ProcContainer): ModuleContainerBody =
+    this.copy(procs = this.procs :+ proc)
 }
 
 object ModuleContainerBody {
   def empty(hps: Map[String, HPElem]): ModuleContainerBody =
-    ModuleContainerBody(None, hps, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
+    ModuleContainerBody(None, hps, Vector.empty, Vector.empty, Vector.empty, Vector.empty, Vector.empty)
 }
 
 case class MethodContainer(
@@ -75,6 +79,24 @@ case class StageContainer(
 
 case class StateContainer (
   label: StateLabel,
+  params: ListMap[String, BackendType],
+  code: Vector[ast.Stmt]
+) extends BackendContainer {
+  lazy val toFirrtlString: String = label.toString
+}
+
+case class ProcContainer (
+  label: ProcLabel,
+  default: Vector[ast.Stmt],
+  defaultRet: ast.Expr,
+  blks: Vector[ProcBlockContainer],
+  ret: BackendType
+) extends BackendContainer {
+  lazy val toFirrtlString: String = label.toString
+}
+
+case class ProcBlockContainer (
+  label: ProcBlockLabel,
   params: ListMap[String, BackendType],
   code: Vector[ast.Stmt]
 ) extends BackendContainer {

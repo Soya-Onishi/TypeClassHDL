@@ -49,11 +49,13 @@ object BackendIRGen {
 
     val interfaceContainers = summary.modules.flatMap(_.bodies).flatMap(_.interfaces)
     val stageContainers = summary.modules.flatMap(_.bodies).flatMap(_.stages)
+    val procContainers = summary.modules.flatMap(_.bodies).flatMap(_.procs)
 
     val unConstructedLabels = summary.labels.filterNot {
       case label: MethodLabel if isInterface(label.symbol) => interfaceContainers.exists(_.label == label)
       case label: MethodLabel => summary.methods.exists(_.label == label)
       case label: StageLabel => stageContainers.exists(_.label == label)
+      case label: ProcLabel => procContainers.exists(_.label == label)
     }
 
     val renewedSummary = unConstructedLabels.foldLeft(summary) {
@@ -75,7 +77,7 @@ object BackendIRGen {
                 val nameSuffix = interface.toFirrtlString
                 val hpNames = interface.symbol.hps.map(hp => nameSuffix + "_" + hp.name)
                 val hps = (hpNames zip interface.hargs).toMap
-                val newBody = ModuleContainerBody(label.interface, hps, Vector(container), Vector.empty, Vector.empty, Vector.empty)
+                val newBody = ModuleContainerBody(label.interface, hps, Vector(container), Vector.empty, Vector.empty, Vector.empty, Vector.empty)
 
                 module.copy(bodies = module.bodies :+ newBody)
               case Some(moduleBody) =>
@@ -109,6 +111,21 @@ object BackendIRGen {
             val head = module.bodies.head.addStage(container)
             module.copy(bodies = module.bodies.updated(0, head))
           case module => module
+        }
+
+        Summary(modules, summary.methods, summary.labels ++ labels)
+      case (summary, label: ProcLabel) =>
+        val impl =
+          findImplClassTree(label.symbol, global) orElse
+          findImplInterfaceTree(label.symbol, global) getOrElse (throw new ImplementationErrorException("method must be there"))
+        val proc = findProcTree(label.symbol, global) getOrElse (throw new ImplementationErrorException("stage tree should be found"))
+        val context = makeContext(label, Some(impl.symbol.asImplementSymbol), None)
+        val (container, labels) = buildProc(proc, label)(context, global)
+        val modules = summary.modules.map{
+          case module if !label.accessor.contains(module.tpe) => module
+          case module =>
+            val head = module.bodies.head.addProc(container)
+            module.copy(bodies = module.bodies.updated(0, head))
         }
 
         Summary(modules, summary.methods, summary.labels ++ labels)
@@ -280,6 +297,37 @@ object BackendIRGen {
     (StateContainer(label, params, code), labels)
   }
 
+  def buildProc(procDef: frontend.ProcDef, label: ProcLabel)(implicit ctx: BackendContext, global: GlobalData): (ProcContainer, Set[BackendLabel]) = {
+    val BuildResult(code, last, defaultLabel) = buildExpr(procDef.default)
+
+    val (blks, labels) = procDef.blks.map { blk =>
+      val symbol = blk.symbol.asProcBlockSymbol
+      val blkLabel = ProcBlockLabel(symbol, label.accessor, label)
+      val context = BackendContext(ctx, blkLabel)
+
+      buildProcBlock(blk, blkLabel)(context, global)
+    }.unzip
+
+    val retTpe = procDef.symbol.tpe.asMethodType.returnType
+    val tpe = toBackendType(retTpe, ctx.hpTable, ctx.tpTable)
+
+    (ProcContainer(label, code, last.get, blks, tpe), defaultLabel ++ labels.flatten)
+  }
+
+  def buildProcBlock(blk: frontend.ProcBlock, label: ProcBlockLabel)(implicit ctx: BackendContext, global: GlobalData): (ProcBlockContainer, Set[BackendLabel]) = {
+    val paramNames = blk.params.map(_.name).map(param => label.toString + "_" + param)
+    val paramTpes = blk.params.map(_.symbol.tpe.asRefType).map(toBackendType(_, ctx.hpTable, ctx.tpTable))
+    val paramSymbols = blk.params.map(_.symbol.asTermSymbol)
+    val params = ListMap.from(paramNames zip paramTpes)
+    (paramSymbols zip paramNames).foreach { case (symbol, name) => ctx.append(symbol, name) }
+
+    val BuildResult(nodes, last, labels) = buildBlk(blk.blk)
+    val lastStmt = last.map(backend.Abandon.apply).getOrElse(backend.Abandon(backend.UnitLiteral()))
+    val code = nodes :+ lastStmt
+
+    (ProcBlockContainer(label, params, code), labels)
+  }
+
   def buildExpr(expr: frontend.Expression)(implicit ctx: BackendContext, global: GlobalData): BuildResult =
     expr match {
       case ident: frontend.Ident => buildIdent(ident)
@@ -297,6 +345,7 @@ object BackendIRGen {
       case _: frontend.Finish => buildFinish
       case goto: frontend.Goto => buildGoto(goto)
       case generate: frontend.Generate => buildGenerate(generate)
+      case commence: frontend.Commence => buildCommence(commence)
       case relay: frontend.Relay => buildRelay(relay)
       case ret: frontend.Return => buildReturn(ret)
       case cast: frontend.CastExpr => buildExpr(cast.expr)
@@ -935,22 +984,63 @@ object BackendIRGen {
     BuildResult(argStmts ++ argTemps, Some(gotoExpr), argLabels)
   }
 
-  def buildRelay(relay: frontend.Relay)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    val BuildResult(_, Some(finish), _) = finishPart
-    val BuildResult(stmts, generate, labels) = generatePart(relay.params, relay.symbol.asStageSymbol, relay.state)
-    val abandonFinish = backend.Abandon(finish)
+  def buildCommence(commence: frontend.Commence)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    // create label to add subject to build IR
+    val procSymbol = commence.symbol.asProcSymbol
+    val procLabel = ProcLabel(procSymbol, ctx.label.accessor, global.getID(procSymbol), ctx.hpTable, ctx.tpTable)
 
-    BuildResult(stmts :+ abandonFinish, generate, labels)
+    val pblkSymbol =  commence.block.symbol.asProcBlockSymbol
+    val pblkLabel = ProcBlockLabel(pblkSymbol, ctx.label.accessor, procLabel)
+    val argResults = commence.block.args.map(buildExpr)
+    val argCode = argResults.flatMap(_.nodes)
+    val argLasts = argResults.map(_.last.get)
+    val argLabels = argResults.flatMap(_.labels).toSet
+    val temps = argLasts.map(e => backend.Temp(ctx.temp.get(), e))
+    val terms = temps.map(t => backend.Term.Temp(t.id, t.expr.tpe))
+
+    val retTpe = toBackendType(commence.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+    val com = backend.Commence(pblkLabel, terms, retTpe)
+    val code = argCode ++ temps
+
+    BuildResult(code, Some(com), argLabels + procLabel)
+  }
+
+  def buildRelay(relay: frontend.Relay)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    def stagePattern: BuildResult = {
+      val BuildResult(_, Some(finish), _) = finishPart
+      val BuildResult(stmts, generate, labels) = generatePart(relay.params, relay.symbol.asStageSymbol, relay.state)
+      val abandonFinish = backend.Abandon(finish)
+
+      BuildResult(stmts :+ abandonFinish, generate, labels)
+    }
+
+    def procPattern(from: ProcBlockLabel): BuildResult = {
+      val target = relay.symbol.asProcBlockSymbol
+      val targetLabel = ProcBlockLabel(target, from.accessor, from.proc)
+      val results = relay.params.map(buildExpr)
+      val argCode = results.flatMap(_.nodes)
+      val lasts = results.map(_.last.get)
+      val labels = results.flatMap(_.labels).toSet
+      val temps = lasts.map(e => backend.Temp(ctx.temp.get(), e))
+      val terms = temps.map(t => backend.Term.Temp(t.id, t.expr.tpe))
+      val relayCode = backend.RelayBlock(targetLabel, terms)
+
+      val code = argCode ++ temps
+      BuildResult(code, Some(relayCode), labels)
+    }
+
+    ctx.label match {
+      case _: StateLabel => stagePattern
+      case _: StageLabel => stagePattern
+      case b: ProcBlockLabel => procPattern(b)
+    }
   }
 
   def buildReturn(ret: frontend.Return)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    val stageLabel = ctx.label match {
-      case stage: StageLabel => stage
-      case state: StateLabel => state.stage
-    }
+    val procLabel = ctx.label.asInstanceOf[ProcBlockLabel].proc
 
     val BuildResult(stmts, Some(expr), labels) = buildExpr(ret.expr)
-    val retStmt = backend.Abandon(backend.Return(stageLabel, expr))
+    val retStmt = backend.Abandon(backend.Return(procLabel, expr))
 
     BuildResult(stmts :+ retStmt, Some(backend.UnitLiteral()), labels)
   }

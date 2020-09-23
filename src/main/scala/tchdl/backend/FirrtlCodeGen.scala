@@ -1803,7 +1803,7 @@ object FirrtlCodeGen {
 
   def runReturn(ret: backend.Return)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val RunResult(exprFuture, stmts, instance) = runExpr(ret.expr)
-    val loc = ir.Reference(ret.stage.retName, ir.UnknownType)
+    val loc = ir.Reference(ret.proc.retName, ir.UnknownType)
     val DataInstance(_, refer) = instance
     val retFuture = Future(Map(loc -> Vector(refer)), Map.empty)
 

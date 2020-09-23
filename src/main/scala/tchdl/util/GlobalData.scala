@@ -42,6 +42,18 @@ abstract class GlobalData {
         fields
     }
 
+  private var procIDMax: Int = 0
+  private val procIDMap: mutable.Map[Symbol.ProcSymbol, Int] = mutable.Map.empty
+  def getID(symbol: Symbol.ProcSymbol): Int =
+    procIDMap.get(symbol) match {
+      case Some(id) => id
+      case None =>
+        procIDMap(symbol) = procIDMax
+        val ret = procIDMax
+        procIDMax += 1
+        ret
+    }
+
   val command: Command
   def compilationUnits: Vector[CompilationUnit] = throw new ImplementationErrorException("Compilation Units not assigned yet")
 
