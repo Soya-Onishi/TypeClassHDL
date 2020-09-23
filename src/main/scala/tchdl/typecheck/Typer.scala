@@ -108,6 +108,9 @@ object Typer {
 
   def typedProcBlock(pblk: ProcBlock)(implicit ctx: Context.NodeContext, global: GlobalData): ProcBlock = {
     val sigCtx = Context(ctx, pblk.symbol)
+
+    // named and typed parameters
+    pblk.symbol.tpe
     val paramSymbols = pblk.params.map(_.symbol)
     sigCtx.reAppend(paramSymbols: _*)
 
