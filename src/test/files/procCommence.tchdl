@@ -2,7 +2,7 @@ package test
 
 module CommenceProc
 impl CommenceProc {
-  def start() -> &Bit[2] {
+  input def start() -> &Bit[2] {
     commence multiCycle # first()
   }
 

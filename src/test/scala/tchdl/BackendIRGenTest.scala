@@ -331,4 +331,24 @@ class BackendIRGenTest extends TchdlFunSuite {
     val (modules, _, global) = untilThisPhase(Vector("riscv"), "ALU", "RiscvALU.tchdl")
     expectNoError(global)
   }
+
+  test("generate simple proc") {
+    val (modules, _, global) = untilThisPhase(Vector("test"), "CommenceProc", "procCommence.tchdl")
+    expectNoError(global)
+
+    val module = modules.head
+    assert(module.bodies.length == 1)
+    assert(module.bodies.head.interfaces.length == 1)
+    assert(module.bodies.head.procs.length == 1)
+    val method = module.bodies.head.interfaces.head
+    val proc = module.bodies.head.procs.head
+    val pblk = proc.blks.find(_.label.symbol.name == "first").get
+
+    assert(method.ret.isInstanceOf[Commence])
+    val tpe = BackendType(Symbol.bit(global), Vector(HPElem.Num(2)), Vector.empty, isPointer = true)
+    assert(method.ret.tpe == tpe)
+    val commence = method.ret.asInstanceOf[Commence]
+    assert(commence.label == pblk.label)
+    assert(commence.tpe == tpe)
+  }
 }

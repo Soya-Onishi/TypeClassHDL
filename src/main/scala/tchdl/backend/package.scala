@@ -43,12 +43,13 @@ package object backend {
     }
 
     override def toString: String = {
+      val pointer = if(isPointer) "&" else ""
       val head = symbol.name
       val args = hargs.map(_.toString) ++ targs.map(_.toString)
 
       args match {
         case Vector() => head
-        case args => s"$head[${args.mkString(",")}]"
+        case args => s"$pointer$head[${args.mkString(",")}]"
       }
     }
 
