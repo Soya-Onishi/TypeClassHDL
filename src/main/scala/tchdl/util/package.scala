@@ -143,4 +143,9 @@ package object util {
   implicit class ToXXXOption(from: String) {
     def toIntOption: Option[Int] = Try(from.toInt).toOption
   }
+
+  implicit class ToOption[T](from: T) {
+    def option: Option[T] = Option(from)
+    def some: Some[T] = Some(from)
+  }
 }

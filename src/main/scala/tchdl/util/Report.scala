@@ -125,6 +125,7 @@ object Error {
   case class RequireLiteral(actual: AST) extends Error
 
   case class CommenceFromNonOrigin(blk: Symbol.ProcBlockSymbol, pos: Position) extends Error
+  case class ControlFlowNotExhaustive(expr: Expression, pos: Position) extends Error
 
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
