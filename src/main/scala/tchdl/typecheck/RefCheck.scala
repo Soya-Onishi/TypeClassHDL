@@ -23,6 +23,7 @@ object RefCheck {
         impl.components.foreach {
           case vdef: ValDef => verifyValDef(vdef)(implCtx, global)
           case method: MethodDef => verifyMethodDef(method)(implCtx, global)
+          case proc: ProcDef => verifyProcDef(proc)(implCtx, global)
           case stage: StageDef => verifyStageDef(stage)(implCtx, global)
           case always: AlwaysDef => verifyAlways(always)(implCtx, global)
         }
@@ -46,6 +47,19 @@ object RefCheck {
     methodSigCtx.reAppend(method.hps ++ method.tps: _*)
 
     methodDef.blk.foreach(verifyExpr(_)(methodSigCtx, global))
+  }
+
+  def verifyProcDef(procDef: ProcDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {
+    val procCtx = Context(ctx, procDef.symbol.asProcSymbol)
+
+    procDef.blks.foreach{blk =>
+      val blkCtx = Context(procCtx, blk.symbol.asProcBlockSymbol)
+      val elems = blk.blk.elems :+ blk.blk.last
+      elems.foreach {
+        case v: ValDef => verifyValDef(v)(blkCtx, global)
+        case e: Expression => verifyExpr(e)(blkCtx, global)
+      }
+    }
   }
 
   def verifyStageDef(stageDef: StageDef)(implicit ctx: Context.NodeContext, global: GlobalData): Unit = {

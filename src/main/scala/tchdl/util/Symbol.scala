@@ -71,6 +71,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def asStateSymbol: Symbol.StateSymbol = this.asInstanceOf[Symbol.StateSymbol]
   def asAlwaysSymbol: Symbol.AlwaysSymbol = this.asInstanceOf[Symbol.AlwaysSymbol]
   def asProcSymbol: Symbol.ProcSymbol = this.asInstanceOf[Symbol.ProcSymbol]
+  def asProcBlockSymbol: Symbol.ProcBlockSymbol = this.asInstanceOf[Symbol.ProcBlockSymbol]
 
   def isTypeSymbol: Boolean = this.isInstanceOf[Symbol.TypeSymbol]
   def isTypeParamSymbol: Boolean = this.isInstanceOf[Symbol.TypeParamSymbol]
