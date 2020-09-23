@@ -646,6 +646,12 @@ object FirrtlCodeGen {
     val retTpe = interface.label.symbol.tpe.asMethodType.returnType
     val isUnitRet = retTpe.origin == Symbol.unit
 
+    val params = interface.params
+      .map { case (name, tpe) => stack.refer(name) -> tpe }
+      .map { case (name, tpe) => name -> DataInstance(tpe, ir.Reference(name.name, ir.UnknownType)) }
+      .toVector
+    params.foreach { case (name, instance) => stack.append(name, instance) }
+
     val active = ir.DefWire(ir.NoInfo, interface.activeName, ir.UIntType(ir.IntWidth(1)))
     val activeOff = ir.Connect(ir.NoInfo, ir.Reference(interface.activeName, ir.UnknownType), ir.UIntLiteral(0))
 
@@ -1095,8 +1101,7 @@ object FirrtlCodeGen {
     }
 
     val stmts = Vector(enable, addr, readingConnect)
-    val future = BackendType(Symbol.future, Vector.empty, Vector(read.tpe), isPointer = false)
-    val instance = DataInstance(future, readDataName)
+    val instance = DataInstance(read.tpe.copy(isPointer = true), readDataName)
 
     RunResult(stmts, instance)
   }
@@ -1159,11 +1164,7 @@ object FirrtlCodeGen {
         ir.Block(altStmts ++ altRet)
       )
 
-      val retInstance = ifExpr.tpe.symbol match {
-        case symbol if symbol == Symbol.future => DataInstance()
-        case _ => DataInstance(ifExpr.tpe, retRef)
-      }
-
+      val retInstance = DataInstance(ifExpr.tpe, retRef)
       val stmts = Vector(normalWireOpt, Some(whenStmt)).flatten
 
       RunResult(stmts, retInstance)
@@ -1515,9 +1516,7 @@ object FirrtlCodeGen {
 
     val enumName = stack.next("_ENUM")
     val enumRef = ir.Reference(enumName.name, ir.UnknownType)
-    val wireDef =
-      if (enum.target.symbol == Symbol.future) None
-      else Some(ir.DefWire(ir.NoInfo, enumName.name, tpe))
+    val wireDef = Some(ir.DefWire(ir.NoInfo, enumName.name, tpe))
 
     val connectFlag = ir.Connect(
       ir.NoInfo,
@@ -1626,22 +1625,6 @@ object FirrtlCodeGen {
       case _ => (None, "")
     }
 
-    def futureRefs(tpe: BackendType, name: String): Map[String, String => String] = {
-      tpe.symbol match {
-        case sym if sym == Symbol.future => Map(name -> (_ + name))
-        case _ => tpe.fields.flatMap{ case (last, tpe) => futureRefs(tpe, name + "_" + last) }
-      }
-    }
-
-    def futureConnect(froms: Vector[(String, ir.Expression)], locs: Vector[(String, ir.Expression)]): Vector[(ir.Expression, ir.Expression)] = {
-      froms.headOption match {
-        case None => Vector.empty
-        case Some(from) =>
-          val (loc, remains) = locs.findRemain{ case (name, _) => name == from._1 }
-          (loc.get._2, from._2) +: futureConnect(froms.tail, remains)
-      }
-    }
-
     def attachPrefix(prefix: Option[ir.Expression], suffix: String): ir.Expression =
       prefix match {
         case Some(ref) => ir.SubField(ref, suffix, ir.UnknownType)
@@ -1650,13 +1633,8 @@ object FirrtlCodeGen {
 
     val (fromPrefix, fromName) = flattenName(from.refer)
     val (locPrefix, locName) = flattenName(loc)
-    val refs = futureRefs(from.tpe, "")
 
-    val connect =
-      if(from.tpe.symbol == Symbol.future) None
-      else Some(ir.Connect(ir.NoInfo, loc, from.refer))
-
-    connect
+    Some(ir.Connect(ir.NoInfo, loc, from.refer))
   }
 
   private def defNode(loc: String, from: DataInstance)(implicit stack: StackFrame, global: GlobalData): Option[ir.DefNode] = {

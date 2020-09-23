@@ -1,10 +1,12 @@
 package test
 
+import std::types:::Option
+
 module Top
 impl Top {
   mod mem: Memory[256, 8, 2, 1, 1, 1, Bit[32]] = Memory[256, 8, 2, 1, 1, 1, Bit[32]]{}
 
-  input def read(addr: Bit[8]) -> Future[Bit[32]] {
+  input def read(addr: Bit[8]) -> &Option[Bit[32]] {
     this.mem.read[0](addr)
     this.mem.read[1](addr + 1)
   }

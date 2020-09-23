@@ -101,7 +101,6 @@ package object backend {
           case int if int == Symbol.int => true
           case bool if bool == Symbol.bool => true
           case string if string == Symbol.string => false
-          case future if future == Symbol.future => verifyEnum(future.asEnumSymbol, verified, types)
           case symbol: Symbol.EnumSymbol => verifyEnum(symbol, verified, types)
           case _ if global.lookupFields(verified).isEmpty => false
           case _ if types(verified) => false

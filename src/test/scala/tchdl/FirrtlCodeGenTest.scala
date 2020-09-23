@@ -369,6 +369,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     runFirrtl(circuit)
   }
 
+  /*
   test("stage with Future[Bit[_]] as return type must generate correct firrtl code") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "stageWithFuture.tchdl")
     runFirrtl(circuit)
@@ -400,7 +401,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+   */
 
+  /*
   test("chained stage returns does not cause an error") {
     def findConnect(connects: Vector[ir.Connect], matches: String): Option[ir.Connect] =
       connects.collectFirst{
@@ -432,7 +435,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+   */
 
+  /*
   test("call sibling interface with Future[_] parameter") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "CallSiblingFuture.tchdl")
     runFirrtl(circuit)
@@ -442,6 +447,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "CallParentFuture.tchdl")
     runFirrtl(circuit)
   }
+   */
 
   test("call all binary operation of Bit[_]") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAllBinOpBit.tchdl")
@@ -453,11 +459,14 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     runFirrtl(circuit)
   }
 
+  /*
   test("use state parameter with Future[Bit[8]]") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam.tchdl")
     runFirrtl(circuit)
   }
+   */
 
+  /*
   test("use state parameter with Bit[8]") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam1.tchdl")
     runFirrtl(circuit)
@@ -491,6 +500,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+  */
 
   test("method call with cast variable") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castToCallMethod.tchdl")
@@ -536,7 +546,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("read and write memory")  {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
-    runFirrtl(circuit, print = true)
+    runFirrtl(circuit)
   }
 
   test("read registers by static and dynamic index") {
@@ -615,6 +625,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     println(result.getEmittedCircuit.value)
   }
 
+  /*
   test("use future field in struct") {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFuture.tchdl")
 
@@ -678,4 +689,5 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     runFirrtl(circuit)
   }
+  */
 }

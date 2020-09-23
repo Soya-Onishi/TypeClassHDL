@@ -1532,11 +1532,6 @@ object Type {
     bitTpe(IntLiteral(width, Position.empty))
   }
 
-  def futureTpe(targ: Type.RefType)(implicit global: GlobalData): Type.RefType = {
-    val symbol = global.builtin.types.lookup("Future")
-    Type.RefType(symbol, Vector.empty, Vector(targ), isPointer = false)
-  }
-
   def numTpe(implicit global: GlobalData): Type.RefType = {
     val symbol = global.builtin.types.lookup("Num")
     Type.RefType(symbol, Vector.empty, Vector.empty, isPointer = false)

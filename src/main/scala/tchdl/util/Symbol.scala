@@ -417,9 +417,6 @@ object Symbol {
     override val accessibility: Accessibility = Accessibility.Public
   }
 
-  def future(implicit global: GlobalData): Symbol.EnumSymbol =
-    global.builtin.types.lookup("Future").asEnumSymbol
-
   def bit(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("Bit")
 
