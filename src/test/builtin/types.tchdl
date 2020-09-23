@@ -166,14 +166,14 @@ impl[depth: Num, width: Num, readPort: Num, writePort: Num, readLatency: Num, wr
         writeLatency: min 1,
         T: HW
 {
-  @built_in[readMem: (Bit) => Future]
-  input def read[port: Num](addr: Bit[width]) -> Future[T]
+  @built_in[readMem: (Bit) => &T]
+  input def read[port: Num](addr: Bit[width]) -> &T
     where port: max readPort - 1 & min 0
   {
     this.reading(addr)
   }
 
-  def reading(addr: Bit[width]) -> Future[T] {
+  def reading(addr: Bit[width]) -> &T {
     this.reading(addr)
   }
 
@@ -187,12 +187,6 @@ impl[depth: Num, width: Num, readPort: Num, writePort: Num, readLatency: Num, wr
   def writing(addr: Bit[width], data: T) -> Unit {
     this.writing(addr, data)
   }
-}
-
-
-enum Future[T] where T: HW {
-  Ready(T)
-  NotReady
 }
 
 enum Ordering {
