@@ -987,7 +987,7 @@ object BackendIRGen {
   def buildCommence(commence: frontend.Commence)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
     // create label to add subject to build IR
     val procSymbol = commence.symbol.asProcSymbol
-    val procLabel = ProcLabel(procSymbol, ctx.label.accessor, global.getID(procSymbol), ctx.hpTable, ctx.tpTable)
+    val procLabel = ProcLabel(procSymbol, ctx.label.accessor, ctx.hpTable, ctx.tpTable)
 
     val pblkSymbol =  commence.block.symbol.asProcBlockSymbol
     val pblkLabel = ProcBlockLabel(pblkSymbol, ctx.label.accessor, procLabel)

@@ -73,7 +73,6 @@ case class StateLabel(
 case class ProcLabel(
   symbol: Symbol.ProcSymbol,
   accessor: Option[BackendType],
-  id: Int,
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType],
 ) extends BackendLabel {
