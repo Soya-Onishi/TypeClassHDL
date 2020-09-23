@@ -86,4 +86,9 @@ class ProcVerifierTest extends TchdlFunSuite {
     assert(err.isInstanceOf[Error.ControlFlowNotExhaustive])
     assert(err.asInstanceOf[Error.ControlFlowNotExhaustive].expr.isInstanceOf[Match])
   }
+
+  test("use match expression not related to control flow") {
+    val (_, global) = untilThisPhase("procMatchNotRelated.tchdl")
+    expectNoError(global)
+  }
 }

@@ -1,0 +1,19 @@
+package test
+
+module OnlyProc
+impl OnlyProc {
+  proc procedure @ 0b00 -> &Bit[2] {
+    origin block first(a: Bit[1]) {
+      val x = match a {
+        case 0b0 => 0b1
+        case 0b1 => 0b0
+      }
+
+      relay second()
+    }
+
+    final block second() {
+      return 0b11
+    }
+  }
+}
