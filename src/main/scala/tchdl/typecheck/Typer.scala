@@ -1657,6 +1657,11 @@ object Typer {
   }
 
   def typedReturn(ret: Return)(implicit ctx: Context.NodeContext, global: GlobalData): Return = {
+    def inFinalBlock(blk: Symbol.ProcBlockSymbol): Either[Error, Unit] = {
+      if(blk.flag.hasFlag(Modifier.Final)) Right(())
+      else Left(Error.ReturnFromNonFinal(blk, ret.position))
+    }
+
     def typecheck(proc: Symbol.ProcSymbol, expr: Expression): Either[Error, Unit] = {
       val retTpe = proc.tpe.asMethodType.returnType
       val expectTpe = Type.RefType(retTpe.origin, retTpe.hardwareParam, retTpe.typeParam, isPointer = false)
@@ -1672,9 +1677,13 @@ object Typer {
     val typedRetExpr = typedExpr(ret.expr)
 
     val result = ctx.owner match {
-      case _: Symbol.ProcBlockSymbol =>
+      case blk: Symbol.ProcBlockSymbol =>
         val proc = ctx.owners(1).asProcSymbol
-        typecheck(proc, typedRetExpr)
+
+        for {
+          _ <- inFinalBlock(blk)
+          _ <- typecheck(proc, typedRetExpr)
+        } yield ()
       case _ => Left(Error.ReturnOutsideProcBlock(ret.position))
     }
 

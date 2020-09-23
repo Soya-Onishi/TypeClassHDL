@@ -921,4 +921,41 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.RequirePointerType])
   }
+
+  test("commence proc") {
+    val (Seq(tree), global) = untilTyper("procCommence.tchdl")
+    expectNoError(global)
+
+    val components = tree.topDefs
+      .collectFirst{ case impl: ImplementClass => impl }
+      .get.components
+
+    val proc = components.collectFirst{ case p: ProcDef => p }.get
+    val pblk = proc.blks.find(_.name == "first").get
+    val commence = components
+      .collectFirst{ case m: MethodDef => m }
+      .get.blk
+      .get.last
+      .asInstanceOf[Commence]
+
+
+    assert(commence.symbol == proc.symbol)
+    assert(commence.block.symbol == pblk.symbol)
+  }
+
+  test("commence from non origin block causes error") {
+    val (_, global) = untilTyper("procCommenceNonOrigin.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.CommenceFromNonOrigin])
+  }
+
+  test("use return in non final block causes error") {
+    val (_, global) = untilTyper("procReturnInNotFinal.tchdl")
+    expectError(1)(global)
+
+    val err = global.repo.error.elems.head
+    assert(err.isInstanceOf[Error.ReturnFromNonFinal])
+  }
 }

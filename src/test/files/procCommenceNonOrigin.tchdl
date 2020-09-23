@@ -3,7 +3,7 @@ package test
 module CommenceProc
 impl CommenceProc {
   def start() -> &Bit[2] {
-    commence multiCycle # first()
+    commence multiCycle # second()
   }
 
   proc multiCycle @ 0b00 -> &Bit[2] {
