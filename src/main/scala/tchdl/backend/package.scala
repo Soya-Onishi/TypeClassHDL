@@ -207,6 +207,13 @@ package object backend {
     }
   }
 
+  object BackendType {
+    def bitTpe(width: Int)(implicit global: GlobalData) = toBackendType(Type.bitTpe(width))
+    def intTpe(implicit global: GlobalData) = bitTpe(32)
+    def boolTpe(implicit global: GlobalData) = bitTpe(1)
+    def unitTpe(implicit global: GlobalData) = bitTpe(0)
+  }
+
   def toBackendType(tpe: Type.RefType)(implicit global: GlobalData): BackendType = toBackendType(tpe, Map.empty, Map.empty)
   def toBackendType(
     tpe: Type.RefType,

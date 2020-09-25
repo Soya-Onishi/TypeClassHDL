@@ -15,7 +15,7 @@ trait HasType {
 case class Variable(name: String, tpe: BackendType, expr: Expr) extends Stmt
 case class Temp(id: Int, expr: Expr) extends Stmt
 case class Abandon(expr: Expr) extends Stmt
-case class Assign(loc: Vector[String], expr: Expr) extends Stmt
+case class Assign(loc: Vector[(String, BackendType)], expr: Expr) extends Stmt
 
 case class ConstructMemory(name: Term, target: BackendType) extends Expr {
   val tpe = target
@@ -67,8 +67,8 @@ case class Goto(state: State)(implicit global: GlobalData) extends Expr {
 case class Generate(stage: StageLabel, args: Vector[Term.Temp], state: Option[State], tpe: BackendType) extends Expr
 case class State(label: StateLabel, args: Vector[Term.Temp])
 
-case class Commence(label: ProcBlockLabel, args: Vector[Term.Temp], tpe: BackendType) extends Expr
-case class RelayBlock(label: ProcBlockLabel, args: Vector[Term.Temp])(implicit global: GlobalData) extends Expr {
+case class Commence(procLabel: ProcLabel, blkLabel: ProcBlockLabel, args: Vector[Term.Temp], tpe: BackendType) extends Expr
+case class RelayBlock(procLabel: ProcLabel, blkLabel: ProcBlockLabel, args: Vector[Term.Temp])(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
 }
 case class Return(proc: ProcLabel, expr: Expr)(implicit global: GlobalData) extends Expr {

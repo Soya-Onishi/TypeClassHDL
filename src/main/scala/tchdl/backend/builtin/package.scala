@@ -3,7 +3,7 @@ package tchdl.backend
 import tchdl.util.Type
 import tchdl.util.Symbol
 import tchdl.util.GlobalData
-import firrtl.ir
+import tchdl.backend.ast.{BackendLIR => lir}
 import firrtl.PrimOps
 import tchdl.backend.FirrtlCodeGen.StackFrame
 
@@ -188,10 +188,10 @@ package object builtin {
     val HPElem.Num(hiIndex) = hi
     val HPElem.Num(loIndex) = lo
     val DataInstance(_, refer) = operand
-    val truncate = ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(hiIndex, loIndex), ir.UnknownType)
 
     val width = hiIndex - loIndex + 1
     val retTpe = toBackendType(Type.bitTpe(width)(global))(global)
+    val truncate = lir.Ops(PrimOps.Bits, Vector(refer), Vector(hiIndex, loIndex), retTpe)
 
     RunResult.inst(DataInstance(retTpe, truncate))
   }
@@ -199,8 +199,8 @@ package object builtin {
   def bitBit(operand: Instance, index: HPElem, global: GlobalData): RunResult = {
     val HPElem.Num(idx) = index
     val DataInstance(_, refer) = operand
-    val bit = ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(idx, idx), ir.UnknownType)
     val retTpe = toBackendType(Type.bitTpe(1)(global))(global)
+    val bit = lir.Ops(PrimOps.Bits, Vector(refer), Vector(idx, idx), retTpe)
 
     RunResult.inst(DataInstance(retTpe, bit))
   }
@@ -208,12 +208,12 @@ package object builtin {
   def bitConcat(left: Instance, right: Instance, global: GlobalData): RunResult = {
     val DataInstance(BackendType(_, leftHargs, _, false), l) = left
     val DataInstance(BackendType(_, rightHargs, _, false), r) = right
-    val concat = ir.DoPrim(PrimOps.Cat, Seq(l, r), Seq.empty, ir.UnknownType)
 
     val HPElem.Num(leftWidth) = leftHargs.head
     val HPElem.Num(rightWidth) = rightHargs.head
     val width = leftWidth + rightWidth
     val retTpe = toBackendType(Type.bitTpe(width)(global))(global)
+    val concat = lir.Ops(PrimOps.Cat, Vector(l, r), Vector.empty, retTpe)
 
     RunResult.inst(DataInstance(retTpe, concat))
   }
@@ -222,7 +222,7 @@ package object builtin {
     val HPElem.Num(idx) = index
     val DataInstance(tpe, refer) = accessor
     val elemType = tpe.targs.head
-    val subIndex = ir.SubIndex(refer, idx, toFirrtlType(elemType)(global))
+    val subIndex = lir.SubIndex(refer, idx, elemType)
 
     RunResult.inst(DataInstance(elemType, subIndex))
   }
@@ -231,27 +231,24 @@ package object builtin {
     val DataInstance(_, idx) = index
     val DataInstance(tpe, refer) = accessor
     val elemType = tpe.targs.head
-    val subAccess = ir.SubAccess(refer, idx, toFirrtlType(elemType)(global))
+    val subAccess = lir.SubAccess(refer, idx, elemType)
 
     RunResult.inst(DataInstance(elemType, subAccess))
   }
 
   def vecUpdated(accessor: Instance, elem: Instance, index: HPElem)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val name = stack.next("_VEC_UPDATED")
-    val vecTpe = toFirrtlType(accessor.tpe)
+    val vecTpe = accessor.tpe
+    val elemTpe = elem.tpe
 
     val DataInstance(_, vecRef) = accessor
     val DataInstance(_, elemRef) = elem
     val HPElem.Num(idx) = index
 
-    val wire = ir.DefWire(ir.NoInfo, name.name, vecTpe)
-    val wireRef = ir.Reference(wire.name, vecTpe)
-    val init = ir.Connect(ir.NoInfo, wireRef, vecRef)
-    val update = ir.Connect(
-      ir.NoInfo,
-      ir.SubIndex(wireRef, idx, ir.UnknownType),
-      elemRef
-    )
+    val wire = lir.Wire(name.name, vecTpe)
+    val wireRef = lir.Reference(wire.name, vecTpe)
+    val init = lir.Assign(wireRef, vecRef)
+    val update = lir.Assign(lir.SubIndex(wireRef, idx, elemTpe), elemRef)
 
     val stmts = Vector(wire, init, update)
     val instance = DataInstance(accessor.tpe, wireRef)
@@ -261,20 +258,17 @@ package object builtin {
 
   def vecUpdatedDyn(accessor: Instance, index: Instance, elem: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val name = stack.next("_VEC_UPDATED")
-    val vecTpe = toFirrtlType(accessor.tpe)
+    val vecTpe = accessor.tpe
+    val elemTpe = elem.tpe
 
     val DataInstance(_, vecRef) = accessor
     val DataInstance(_, elemRef) = elem
     val DataInstance(_, idxRef) = index
 
-    val wire = ir.DefWire(ir.NoInfo, name.name, vecTpe)
-    val wireRef = ir.Reference(wire.name, vecTpe)
-    val init = ir.Connect(ir.NoInfo, wireRef, vecRef)
-    val update = ir.Connect(
-      ir.NoInfo,
-      ir.SubAccess(wireRef, idxRef, ir.UnknownType),
-      elemRef
-    )
+    val wire = lir.Wire(name.name, vecTpe)
+    val wireRef = lir.Reference(wire.name, vecTpe)
+    val init = lir.Assign(wireRef, vecRef)
+    val update = lir.Assign(lir.SubAccess(wireRef, idxRef, elemTpe), elemRef)
 
     val stmts = Vector(wire, init, update)
     val instance = DataInstance(accessor.tpe, wireRef)
@@ -289,10 +283,10 @@ package object builtin {
 
     val HPElem.Num(accessorLength) = tpe.hargs.head
     val retTpe = BackendType(tpe.symbol, Vector(HPElem.Num(accessorLength + 1)), tpe.targs, isPointer = false)
-    val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(retTpe))
-    val wireRef = ir.Reference(wire.name, ir.UnknownType)
+    val wire = lir.Wire(name.name, retTpe)
+    val wireRef = lir.Reference(wire.name, retTpe)
     val init = ir.PartialConnect(ir.NoInfo, wireRef, accessorRef)
-    val last = ir.Connect(ir.NoInfo, ir.SubIndex(wireRef, accessorLength, ir.UnknownType), elemRef)
+    val last = lir.Assign(lir.SubIndex(wireRef, accessorLength, elem.tpe), elemRef)
 
     val instance = DataInstance(retTpe, wireRef)
     val stmts = Vector(wire, init, last)
@@ -307,13 +301,13 @@ package object builtin {
     val elemTpe = tpe.targs.head
     val wireTpe = BackendType(tpe.symbol, Vector(HPElem.Num(hi - lo + 1)), Vector(elemTpe), isPointer = false)
 
-    val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(wireTpe))
-    val wireRef = ir.Reference(wire.name, ir.UnknownType)
-    val locRef = (idx: Int) => ir.SubIndex(wireRef, idx, ir.UnknownType)
-    val fromRef = (idx: Int) => ir.SubIndex(accessorRef, idx, ir.UnknownType)
+    val wire = lir.Wire(name.name, wireTpe)
+    val wireRef = lir.Reference(wire.name, wireTpe)
+    val locRef = (idx: Int) => lir.SubIndex(wireRef, idx, elemTpe)
+    val fromRef = (idx: Int) => lir.SubIndex(accessorRef, idx, elemTpe)
 
     val connects = (lo to hi).zipWithIndex
-      .map{ case (fromIdx, locIdx) => ir.Connect(ir.NoInfo, locRef(locIdx), fromRef(fromIdx)) }
+      .map{ case (fromIdx, locIdx) => lir.Assign(locRef(locIdx), fromRef(fromIdx)) }
       .toVector
 
     val instance = DataInstance(wireTpe, wireRef)
@@ -326,8 +320,8 @@ package object builtin {
     val name = stack.next("_GEN")
     val elemTpe = vecTpe.targs.head
     val retTpe = BackendType(vecTpe.symbol, Vector(HPElem.Num(0)), Vector(elemTpe), isPointer = false)
-    val wire = ir.DefWire(ir.NoInfo, name.name, toFirrtlType(retTpe))
-    val wireRef = ir.Reference(wire.name, ir.UnknownType)
+    val wire = lir.Wire(name.name, retTpe)
+    val wireRef = lir.Reference(wire.name, retTpe)
     val instance = DataInstance(retTpe, wireRef)
 
     RunResult(Vector(wire), instance)
@@ -336,11 +330,11 @@ package object builtin {
   def bitFromInt(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
     val HPElem.Num(toWidth) = bitTpe.hargs.head
     val DataInstance(_, refer) = from
-    val casted =
-      if(toWidth > 32) ir.DoPrim(PrimOps.Pad, Seq(refer), Seq(toWidth - 32), ir.UnknownType)
-      else ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(toWidth - 1, 0), ir.UnknownType)
 
     val retTpe = toBackendType(Type.bitTpe(toWidth))
+    val casted =
+      if(toWidth > 32) lir.Ops(PrimOps.Pad, Vector(refer), Vector(toWidth - 32), retTpe)
+      else lir.Ops(PrimOps.Bits, Vector(refer), Vector(toWidth - 1, 0), retTpe)
     val retInstance = DataInstance(retTpe, casted)
 
     RunResult(Vector.empty, retInstance)
@@ -349,8 +343,8 @@ package object builtin {
   def bitFromBool(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
     val HPElem.Num(toWidth) = bitTpe.hargs.head
     val DataInstance(_, refer) = from
-    val casted = ir.DoPrim(PrimOps.Pad, Seq(refer), Seq(toWidth - 1), ir.UnknownType)
     val retTpe = toBackendType(Type.bitTpe(toWidth))
+    val casted = lir.Ops(PrimOps.Pad, Vector(refer), Vector(toWidth - 1), retTpe)
     val retInstance = DataInstance(retTpe, casted)
 
     RunResult(Vector.empty, retInstance)
@@ -360,28 +354,29 @@ package object builtin {
     val HPElem.Num(toWidth) = bitTpe.hargs.head
     val DataInstance(fromTpe, refer) = from
     val HPElem.Num(fromWidth) = fromTpe.hargs.head
-    val casted =
-      if(toWidth > fromWidth) ir.DoPrim(PrimOps.Pad, Seq(refer), Seq(toWidth - fromWidth), ir.UnknownType)
-      else ir.DoPrim(PrimOps.Bits, Seq(refer), Seq(toWidth - 1, 0), ir.UnknownType)
+
     val retTpe = toBackendType(Type.bitTpe(toWidth))
+    val casted =
+      if(toWidth > fromWidth) lir.Ops(PrimOps.Pad, Vector(refer), Vector(toWidth - fromWidth), retTpe)
+      else lir.Ops(PrimOps.Bits, Vector(refer), Vector(toWidth - 1, 0), retTpe)
     val retInstance = DataInstance(retTpe, casted)
 
     RunResult(Vector.empty, retInstance)
   }
 
-  private def intBinOps(left: Instance, right: Instance, ops: ir.PrimOp)(f: (BigInt, BigInt) => BigInt): RunResult = {
+  private def intBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp)(f: (BigInt, BigInt) => BigInt): RunResult = {
     val DataInstance(tpe, l) = left
     val DataInstance(_, r) = right
 
     val ret = (l, r) match {
-      case (ir.UIntLiteral(left, _), ir.UIntLiteral(right, _)) => ir.UIntLiteral(f(left, right), ir.IntWidth(32))
-      case (left, right) => ir.DoPrim(ops, Seq(left, right), Seq.empty, ir.UIntType(ir.IntWidth(32)))
+      case (lir.Literal(left, _, _), lir.Literal(right, _, _)) => lir.Literal(f(left, right), 32, l.tpe)
+      case (left, right) => lir.Ops(ops, Vector(left, right), Vector.empty, l.tpe)
     }
 
     RunResult.inst(DataInstance(tpe, ret))
   }
 
-  private def intCmpOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => Boolean): RunResult = {
+  private def intCmpOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => Boolean): RunResult = {
     def toInt(bool: Boolean): BigInt =
       if(bool) BigInt(1)
       else     BigInt(0)
@@ -390,24 +385,24 @@ package object builtin {
     val DataInstance(_, r) = right
 
     val ret = (l, r) match {
-      case (ir.UIntLiteral(left, _), ir.UIntLiteral(right, _)) => ir.UIntLiteral(toInt(f(left, right)), ir.IntWidth(1))
-      case (left, right) => ir.DoPrim(ops, Seq(left, right), Seq.empty, ir.UIntType(ir.IntWidth(1)))
+      case (lir.Literal(left, _, _), lir.Literal(right, _, _)) => lir.Literal(toInt(f(left, right)), 32, l.tpe)
+      case (left, right) => lir.Ops(ops, Vector(left, right), Vector.empty, l.tpe)
     }
 
     val boolTpe = toBackendType(Type.boolTpe(global))(global)
     RunResult.inst(DataInstance(boolTpe, ret))
   }
 
-  private def intUnaryOps(operand: Instance, ops: ir.PrimOp, global: GlobalData)(f: BigInt => BigInt): RunResult = {
+  private def intUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp, global: GlobalData)(f: BigInt => BigInt): RunResult = {
     val ret = operand match {
-      case DataInstance(_, ir.UIntLiteral(value, _)) => ir.UIntLiteral(f(value), ir.IntWidth(32))
-      case DataInstance(_, expr) => ir.DoPrim(ops, Seq(expr), Seq.empty, ir.UIntType(ir.IntWidth(32)))
+      case DataInstance(_, lir.Literal(value, _, tpe)) => lir.Literal(f(value), 32, tpe)
+      case DataInstance(_, expr) => lir.Ops(ops, Vector(expr), Vector.empty, expr.tpe)
     }
 
     RunResult.inst(DataInstance(operand.tpe, ret))
   }
 
-  private def boolBinOps(left: Instance, right: Instance, ops: ir.PrimOp)(f: (Boolean, Boolean) => Boolean): RunResult = {
+  private def boolBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp)(f: (Boolean, Boolean) => Boolean): RunResult = {
     def toBool(lit: BigInt): Boolean = {
       lit.toInt match {
         case 0 => false
@@ -415,26 +410,26 @@ package object builtin {
       }
     }
 
-    def toRef(bool: Boolean): ir.UIntLiteral = {
-      if(bool) ir.UIntLiteral(1, ir.IntWidth(1))
-      else     ir.UIntLiteral(0, ir.IntWidth(1))
+    def toRef(bool: Boolean): lir.Literal = {
+      if(bool) lir.Literal(1, 1, left.tpe)
+      else     lir.Literal(0, 1, left.tpe)
     }
 
     val DataInstance(tpe, leftRef) = left
     val DataInstance(_, rightRef) = right
 
     val retRef = (leftRef, rightRef) match {
-      case (ir.UIntLiteral(left, _), ir.UIntLiteral(right, _)) =>
+      case (lir.Literal(left, _, _), lir.Literal(right, _, _)) =>
         val ret = f(toBool(left), toBool(right))
         toRef(ret)
       case (left, right) =>
-        ir.DoPrim(ops, Seq(left, right), Seq.empty, ir.UIntType(ir.IntWidth(1)))
+        lir.Ops(ops, Vector(left, right), Vector.empty, left.tpe)
     }
 
     RunResult.inst(DataInstance(tpe, retRef))
   }
 
-  private def boolUnaryOps(operand: Instance, ops: ir.PrimOp, global: GlobalData)(f: Boolean => Boolean): RunResult = {
+  private def boolUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp, global: GlobalData)(f: Boolean => Boolean): RunResult = {
     def toBool(lit: BigInt): Boolean = {
       lit.toInt match {
         case 0 => false
@@ -442,57 +437,60 @@ package object builtin {
       }
     }
 
-    def toRef(bool: Boolean): ir.UIntLiteral = {
-      if(bool) ir.UIntLiteral(1, ir.IntWidth(1))
-      else     ir.UIntLiteral(0, ir.IntWidth(1))
+    def toRef(bool: Boolean): lir.Literal = {
+      if(bool) lir.Literal(1, 1, operand.tpe)
+      else     lir.Literal(0, 1, operand.tpe)
     }
 
     val DataInstance(_, ref) = operand
 
     val ret = ref match {
-      case ir.UIntLiteral(value, _) => (toRef _ compose f compose toBool)(value)
-      case expr => ir.DoPrim(ops, Seq(expr), Seq.empty, ir.UIntType(ir.IntWidth(1)))
+      case lir.Literal(value, _, _) => (toRef _ compose f compose toBool)(value)
+      case expr => lir.Ops(ops, Vector(expr), Vector.empty, expr.tpe)
     }
 
     RunResult.inst(DataInstance(operand.tpe, ret))
   }
 
-  private def bitBinOps(left: Instance, right: Instance, ops: ir.PrimOp): RunResult = {
+  private def bitBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp): RunResult = {
     val DataInstance(tpe, leftRef) = left
     val DataInstance(_, rightRef) = right
 
-    RunResult.inst(DataInstance(tpe, ir.DoPrim(ops, Seq(leftRef, rightRef), Seq.empty, ir.UnknownType)))
+    val op = lir.Ops(ops, Vector(leftRef, rightRef), Vector.empty, leftRef.tpe)
+    RunResult.inst(DataInstance(tpe, op))
   }
 
-  private def bitCmpOps(left: Instance, right: Instance, ops: ir.PrimOp, global: GlobalData): RunResult = {
+  private def bitCmpOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, global: GlobalData): RunResult = {
     val DataInstance(_, leftRef) = left
     val DataInstance(_, rightRef) = right
 
     val retTpe = toBackendType(Type.bitTpe(1)(global))(global)
+    val op = lir.Ops(ops, Vector(leftRef, rightRef), Vector.empty, retTpe)
 
-    RunResult.inst(DataInstance(retTpe, ir.DoPrim(ops, Seq(leftRef, rightRef), Seq.empty, ir.UnknownType)))
+    RunResult.inst(DataInstance(retTpe, op))
   }
 
-  private def bitUnaryOps(operand: Instance, ops: ir.PrimOp): RunResult = {
+  private def bitUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp): RunResult = {
     val DataInstance(tpe, ref) = operand
+    val op = lir.Ops(ops, Vector(ref), Vector.empty, tpe)
 
-    RunResult.inst(DataInstance(tpe, ir.DoPrim(ops, Seq(ref), Seq.empty, ir.UnknownType)))
+    RunResult.inst(DataInstance(tpe, op))
   }
 
-  private def shift(left: Instance, right: Instance, ops: ir.PrimOp, dynOps: ir.PrimOp)(implicit global: GlobalData): RunResult = {
+  private def shift(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, dynOps: firrtl.ir.PrimOp)(implicit global: GlobalData): RunResult = {
     val DataInstance(tpe, leftRef) = left
     val calc = right match {
-      case DataInstance(_, ir.UIntLiteral(shamt, _)) => ir.DoPrim(ops, Seq(leftRef), Seq(shamt), toFirrtlType(tpe))
+      case DataInstance(_, lir.Literal(shamt, _, _)) => lir.Ops(ops, Vector(leftRef), Vector(shamt), tpe)
       case DataInstance(shamtTpe, rightRef) if shamtTpe == toBackendType(Type.intTpe) =>
-        val truncate = ir.DoPrim(PrimOps.Bits, Seq(rightRef), Seq(18, 0), ir.UnknownType)
-        ir.DoPrim(dynOps, Seq(leftRef, truncate), Seq.empty, toFirrtlType(tpe))
+        val truncate = lir.Ops(PrimOps.Bits, Vector(rightRef), Vector(18, 0))
+        lir.Ops(dynOps, Vector(leftRef, truncate), Vector.empty, tpe)
       case DataInstance(shamtTpe, rightRef) if shamtTpe.symbol == Symbol.bit =>
         val HPElem.Num(width) = shamtTpe.hargs.head
 
-        if(width < 20) ir.DoPrim(dynOps, Seq(leftRef, rightRef), Seq.empty, toFirrtlType(tpe))
+        if(width < 20) lir.Ops(dynOps, Vector(leftRef, rightRef), Vector.empty, tpe)
         else {
-          val truncate = ir.DoPrim(PrimOps.Bits, Seq(rightRef), Seq(18, 0), ir.UnknownType)
-          ir.DoPrim(dynOps, Seq(leftRef, truncate), Seq.empty, toFirrtlType(tpe))
+          val truncate = lir.Ops(PrimOps.Bits, Vector(rightRef), Vector(18, 0))
+          lir.Ops(dynOps, Vector(leftRef, truncate), Vector.empty, tpe)
         }
     }
 

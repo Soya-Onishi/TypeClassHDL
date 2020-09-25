@@ -999,7 +999,7 @@ object BackendIRGen {
     val terms = temps.map(t => backend.Term.Temp(t.id, t.expr.tpe))
 
     val retTpe = toBackendType(commence.tpe.asRefType, ctx.hpTable, ctx.tpTable)
-    val com = backend.Commence(pblkLabel, terms, retTpe)
+    val com = backend.Commence(procLabel, pblkLabel, terms, retTpe)
     val code = argCode ++ temps
 
     BuildResult(code, Some(com), argLabels + procLabel)
@@ -1015,6 +1015,11 @@ object BackendIRGen {
     }
 
     def procPattern(from: ProcBlockLabel): BuildResult = {
+      def procLabel(ctx: BackendContext): ProcLabel = ctx.label match {
+        case label: ProcLabel => label
+        case _ => procLabel(ctx.parent.get)
+      }
+
       val target = relay.symbol.asProcBlockSymbol
       val targetLabel = ProcBlockLabel(target, from.accessor, from.proc)
       val results = relay.params.map(buildExpr)
@@ -1023,7 +1028,7 @@ object BackendIRGen {
       val labels = results.flatMap(_.labels).toSet
       val temps = lasts.map(e => backend.Temp(ctx.temp.get(), e))
       val terms = temps.map(t => backend.Term.Temp(t.id, t.expr.tpe))
-      val relayCode = backend.RelayBlock(targetLabel, terms)
+      val relayCode = backend.RelayBlock(procLabel(ctx), targetLabel, terms)
 
       val code = argCode ++ temps
       BuildResult(code, Some(relayCode), labels)
@@ -1138,8 +1143,10 @@ object BackendIRGen {
 
         BuildResult(stmts :+ v, None, labels)
       case assign: frontend.Assign =>
-        def buildLoc(expr: frontend.Expression): Vector[String] = expr match {
-          case frontend.Select(prefix, name) => buildLoc(prefix) :+ name
+        def buildLoc(expr: frontend.Expression): Vector[(String, BackendType)] = expr match {
+          case frontend.Select(prefix, name) =>
+            val vec = buildLoc(prefix)
+            vec :+ (name, toBackendType(expr.tpe.asRefType, ctx.hpTable, ctx.tpTable))
           case frontend.This() => Vector.empty
           case tree => throw new ImplementationErrorException(s"[$tree] must not be at here")
         }

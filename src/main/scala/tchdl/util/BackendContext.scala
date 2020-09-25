@@ -9,8 +9,7 @@ import scala.collection.immutable.ListMap
 abstract class BackendContext {
   val temp: TempCounter = new TempCounter
   private val scope: mutable.Map[Symbol.TermSymbol, String] = mutable.Map.empty
-
-  protected val parent: Option[BackendContext]
+  val parent: Option[BackendContext]
 
   val label: BackendLabel
   val tpBound: Map[Type.RefType, Vector[BackendType]]

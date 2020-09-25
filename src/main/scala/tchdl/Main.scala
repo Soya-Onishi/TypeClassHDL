@@ -132,7 +132,7 @@ object Main extends App {
   showError(global)
 
   val topModule = moduleContainers.head.tpe
-  val circuit = FirrtlCodeGen.exec(topModule, moduleContainers, methodContainers)(newGlobal)
+  val modules = FirrtlCodeGen.exec(moduleContainers, methodContainers)(newGlobal)
   showError(global)
 
   val output = command.output.getOrElse("out.fir")

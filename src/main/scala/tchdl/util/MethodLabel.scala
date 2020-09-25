@@ -89,6 +89,7 @@ case class ProcBlockLabel(
 ) extends BackendLabel {
   override type SymbolType = Symbol.ProcBlockSymbol
   override lazy val toString: String = proc.toString + "_" + symbol.name
+  lazy val activeName: String = toString + "__active"
 
   override val hps = proc.hps
   override val tps = proc.tps
