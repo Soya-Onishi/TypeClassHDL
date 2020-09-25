@@ -348,7 +348,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val tpe = BackendType(Symbol.bit(global), Vector(HPElem.Num(2)), Vector.empty, isPointer = true)
     assert(method.ret.tpe == tpe)
     val commence = method.ret.asInstanceOf[Commence]
-    assert(commence.label == pblk.label)
+    assert(commence.blkLabel == pblk.label)
     assert(commence.tpe == tpe)
   }
 }
