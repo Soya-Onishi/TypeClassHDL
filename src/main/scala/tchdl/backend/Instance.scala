@@ -2,7 +2,7 @@ package tchdl.backend
 
 import tchdl.util.{GlobalData, Symbol, Type}
 import tchdl.backend.ast.{BackendLIR => lir}
-import tchdl.backend.FirrtlCodeGen.StackFrame
+import tchdl.backend.BackendLIRGen.StackFrame
 import tchdl.util.TchdlException.ImplementationErrorException
 
 trait Instance {

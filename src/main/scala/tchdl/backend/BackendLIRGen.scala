@@ -10,7 +10,7 @@ import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
 import scala.collection.mutable
 
-object FirrtlCodeGen {
+object BackendLIRGen {
   case class BuildResult[T](stmts: Vector[lir.Stmt], component: T)
   case class FirrtlContext(
     interfaces: Map[BackendType, Vector[MethodContainer]],

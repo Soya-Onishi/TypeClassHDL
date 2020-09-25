@@ -132,7 +132,7 @@ object Main extends App {
   showError(global)
 
   val topModule = moduleContainers.head.tpe
-  val lirModule = FirrtlCodeGen.exec(moduleContainers, methodContainers)(newGlobal)
+  val lirModule = BackendLIRGen.exec(moduleContainers, methodContainers)(newGlobal)
   showError(global)
 
   val output = command.output.getOrElse("out.fir")
