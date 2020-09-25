@@ -229,7 +229,7 @@ object FirrtlCodeGen {
     val moduleField = global.lookupFields(module.tpe)
     val (upperPorts, upperPortInits) = moduleField
       .toVector
-      .map { case (name, tpe) => buildUpperModule(name, tpe)(ctx, global) }
+      .map { case (name, tpe) => buildUpperModule(name, tpe)(stack, ctx, global) }
       .unzip
 
     val elaborated = modules.reduceLeft[lir.Module] {
@@ -250,12 +250,17 @@ object FirrtlCodeGen {
     elaborated.copy(ports = ports, inits = inits)
   }
 
-  def elaborate(module: ModuleContainerBody, tpe: BackendType)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData) = {
-    module.hps
+  def elaborate(module: ModuleContainerBody, tpe: BackendType)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): lir.Module = {
+    val hpStmts = module.hps.toVector
       .map { case (name, elem) => stack.next(name) -> elem }
-      .foreach {
-        case (name, HPElem.Num(num)) => stack.append(name, DataInstance(num))
-        case (name, HPElem.Str(str)) => stack.append(name, StringInstance(str))
+      .flatMap {
+        case (name, HPElem.Num(num)) =>
+          val RunResult(intStmts, inst) = DataInstance.int(num)
+          stack.append(name, inst)
+          intStmts
+        case (name, HPElem.Str(str)) =>
+          stack.append(name, StringInstance(str))
+          Vector.empty
       }
 
     // fields into stack
@@ -319,7 +324,7 @@ object FirrtlCodeGen {
     val stageBodies = module.stages.map(runStage(_)(stack, ctx, global))
     val procedures = accessCondss.flatten ++ interfaceBodies.map(_.component) ++ stageBodies.map(_.component) ++ alwayss.flatMap(_.stmts)
 
-    lir.Module(tpe, ports, instances, mems, components, inits, procedures)
+    lir.Module(tpe, ports, instances, mems, hpStmts ++ components, inits, procedures)
   }
 
   def runInput(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.Port] = {
@@ -364,8 +369,8 @@ object FirrtlCodeGen {
     val name = field.toFirrtlString
 
     val (defaultStmts, default) = field.ret.map(runExpr) match {
-      case None => (Vector.empty, lir.Undef(field.tpe))
-      case Some(RunResult(eStmts, inst: DataInstance)) => (eStmts, inst.refer)
+      case None => (Vector.empty, Option.empty)
+      case Some(RunResult(eStmts, inst: DataInstance)) => (eStmts, inst.refer.some)
     }
     val reg = lir.Reg(name, default, field.tpe)
 
@@ -528,13 +533,16 @@ object FirrtlCodeGen {
         .map { case (name, tpe) => name -> StructInstance(tpe, lir.Reference(name.name, tpe)) }
 
       params.foreach { case (name, instance) => stack.append(name, instance) }
-      params.map{ case (name, inst) => lir.Reg(name.name, lir.Undef(inst.tpe), inst.tpe) }
+      params.map{ case (name, inst) => lir.Reg(name.name, Option.empty, inst.tpe) }
     }
+
+    val activeTpe = toBackendType(Type.bitTpe(1))
+    val activeNode = lir.Node(stack.next("_GEN").name, lir.Literal(1, activeTpe), activeTpe)
+    val activeRef = lir.Reference(activeNode.name, activeTpe)
+    val active = lir.Reg(stage.activeName, Some(activeRef), activeTpe)
 
     val stageRegs = buildParams(stage.params.toVector)
     val stateRegs = buildParams(stage.states.flatMap(_.params))
-    val activeTpe = toBackendType(Type.bitTpe(1))
-    val active = lir.Reg(stage.activeName, lir.Literal(1, 1, activeTpe), activeTpe)
 
     val stateLen = atLeastLength(stage.states.length).toInt
     val stateTpe = toBackendType(Type.bitTpe(stateLen))
@@ -542,13 +550,13 @@ object FirrtlCodeGen {
       if (stage.states.isEmpty) None
       else Some(lir.Reg(
         stage.stateName,
-        lir.Undef(stateTpe),
+        Option.empty,
         stateTpe
       ))
 
     val regs = active +: (stageRegs ++ stateRegs ++ state)
 
-    BuildResult(Vector.empty, regs)
+    BuildResult(Vector(activeNode), regs)
   }
 
   def runStage(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.When] = {
@@ -559,13 +567,20 @@ object FirrtlCodeGen {
         val stateTpe = toBackendType(Type.bitTpe(stateLen))
         val stateStmts = state.code.flatMap(runStmt)
         val stateRef = lir.Reference(stage.stateName, stateTpe)
-        val stateIdx = lir.Literal(idx, stateLen, stateTpe)
 
-        lir.When (
-          lir.Ops(PrimOps.Eq, Vector(stateRef, stateIdx), Vector.empty, BackendType.boolTpe),
-          stateStmts,
-          Vector.empty
+        val idxName = stack.next("_GEN")
+        val idxLiteral = lir.Literal(idx, stateTpe)
+        val idxNode = lir.Node(idxName.name, idxLiteral, stateTpe)
+        val idxRef = lir.Reference(idxNode.name, stateTpe)
+
+        val condNode = lir.Node(
+          stack.next("_GEN").name,
+          lir.Ops(PrimOps.Eq, Vector(stateRef, idxRef), Vector.empty, BackendType.boolTpe),
+          BackendType.boolTpe
         )
+        val condRef = lir.Reference(condNode.name, BackendType.boolTpe)
+
+        lir.When (condRef, stateStmts, Vector.empty)
     }
 
     val cond = lir.When(
@@ -579,7 +594,7 @@ object FirrtlCodeGen {
 
   def buildProcSignature(proc: ProcContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
     val params = proc.blks.flatMap(_.params.toVector)
-    val regs = params.map{ case (name, tpe) => lir.Reg(name, lir.Undef(tpe), tpe) }
+    val regs = params.map{ case (name, tpe) => lir.Reg(name, Option.empty, tpe) }
     val wire = lir.Wire(proc.label.retName, proc.ret)
 
     // add instances to stack
@@ -587,12 +602,13 @@ object FirrtlCodeGen {
     val instances = params.map { case (name, tpe) => StructInstance(tpe, lir.Reference(name, tpe)) }
     (params zip instances).foreach{ case ((name, _), inst) => stack.append(Name(name), inst) }
 
-    val activeOff = lir.Literal(0, 1, BackendType.boolTpe)
+    val activeOff = lir.Literal(0, BackendType.boolTpe)
+    val (activeOffNode, activeOffRef) = makeNode(activeOff)
     val blkActives = proc.blks
       .map(_.label.activeName)
-      .map(name => lir.Reg(name, activeOff, BackendType.boolTpe))
+      .map(name => lir.Reg(name, activeOffRef.some, BackendType.boolTpe))
 
-    regs ++ blkActives :+ wire
+    (regs :+ activeOffNode) ++ (blkActives :+ wire)
   }
 
   def runProc(proc: ProcContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[Vector[lir.When]] = {
@@ -633,13 +649,13 @@ object FirrtlCodeGen {
     val output = retName.map(name => lir.Port(lir.Dir.Output, name, interface.retTpe))
 
     val retRef = retName.map(lir.Reference(_, interface.retTpe))
-    val retInvalid = retRef.map(ref => lir.Assign(ref, lir.Undef(ref.tpe)))
+    val retInvalid = retName.map(name => lir.Invalid(name))
     val ports = active +: (paramPorts ++ output)
 
     BuildResult(retInvalid.toVector, ports)
   }
 
-  private def buildInternalInterfaceSignature(interface: MethodContainer)(implicit stack: StackFrame, global: GlobalData): BuildResult[Vector[lir.Wire]] = {
+  private def buildInternalInterfaceSignature(interface: MethodContainer)(implicit stack: StackFrame, global: GlobalData): BuildResult[Vector[lir.Stmt]] = {
     interface.params.foreach { case (name, _) => stack.lock(name) }
     val retTpe = interface.label.symbol.tpe.asMethodType.returnType
     val isUnitRet = retTpe.origin == Symbol.unit
@@ -651,7 +667,8 @@ object FirrtlCodeGen {
     params.foreach { case (name, instance) => stack.append(name, instance) }
 
     val active = lir.Wire(interface.activeName, BackendType.boolTpe)
-    val activeOff = lir.Assign(lir.Reference(interface.activeName, BackendType.boolTpe), lir.Literal(0, 1, BackendType.boolTpe))
+    val (activeOffNode, activeOffRef) = makeNode(lir.Literal(0, BackendType.boolTpe))
+    val activeOff = lir.Assign(lir.Reference(interface.activeName, BackendType.boolTpe), activeOffRef)
 
     val paramWires = params.map{ case (name, ref) => lir.Wire(name.name, ref.tpe)}
     val retWireOpt =
@@ -659,10 +676,10 @@ object FirrtlCodeGen {
       else Some(lir.Wire(interface.retName, interface.retTpe))
     val sigWires = paramWires ++ retWireOpt
     val wireRefs = sigWires.map(w => lir.Reference(w.name, w.tpe))
-    val invalids = wireRefs.map(ref => lir.Assign(ref, lir.Undef(ref.tpe)))
+    val invalids = wireRefs.map(ref => lir.Invalid(ref.name))
 
     val wires = active +: sigWires
-    val inits = activeOff +: invalids
+    val inits = Vector(activeOffNode, activeOff) ++ invalids
 
     BuildResult(inits, wires)
   }
@@ -676,17 +693,16 @@ object FirrtlCodeGen {
       else lir.Assign(lir.Reference(interface.retName, interface.retTpe), instance.refer).some
 
     val activeRef = lir.Reference(interface.activeName, BackendType.boolTpe)
-    val active = lir.Literal(1, 1, BackendType.boolTpe)
-    val cond = lir.When(
-      lir.Ops(PrimOps.Eq, Vector(activeRef, active), Vector.empty, BackendType.boolTpe),
-      stmts ++ retStmts ++ retConnect,
-      Vector.empty
-    )
+    val literal = lir.Literal(1, BackendType.boolTpe)
+    val (literalNode, literalRef) = makeNode(literal)
+    val (opsNode, opsRef) = makeNode(lir.Ops(PrimOps.Eq, Vector(activeRef, literalRef), Vector.empty, BackendType.boolTpe))
 
-    BuildResult(Vector.empty, cond)
+    val cond = lir.When(opsRef, stmts ++ retStmts ++ retConnect, Vector.empty)
+
+    BuildResult(Vector(literalNode, opsNode), cond)
   }
 
-  def buildUpperModule(moduleName: String, tpe: BackendType)(implicit ctx: FirrtlContext, global: GlobalData): (Vector[lir.Port], Vector[lir.Stmt]) = {
+  def buildUpperModule(moduleName: String, tpe: BackendType)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[lir.Port], Vector[lir.Stmt]) = {
     val allInterfaces = ctx.interfaces.getOrElse(tpe, Vector.empty)
 
     val interfaces = allInterfaces.filter {
@@ -710,12 +726,12 @@ object FirrtlCodeGen {
           else lir.Port(lir.Dir.Input, retName, interface.ret.tpe).some
         val params = interface.params.map { case (name, tpe) => lir.Port(lir.Dir.Output, buildName(name), tpe) }.toVector
 
-        val defaultLit = lir.Literal(0, 1, BackendType.boolTpe)
+        val (litNode, litRef) = makeNode(lir.Literal(0, BackendType.boolTpe))
         val activeRef = lir.Reference(activeName, BackendType.boolTpe)
-        val activeInit = lir.Assign(activeRef, defaultLit)
-        val paramInits = params.map(param => lir.Assign(lir.Reference(param.name, param.tpe), lir.Undef(param.tpe)))
+        val activeInit = lir.Assign(activeRef, litRef)
+        val paramInits = params.map(param => lir.Invalid(param.name))
 
-        (active +: (params ++ retOpt), activeInit +: paramInits)
+        (active +: (params ++ retOpt), Vector(litNode, activeInit) ++ paramInits)
     }
 
     val (ports, inits) = pairs.unzip
@@ -724,7 +740,7 @@ object FirrtlCodeGen {
   }
 
   def runStmt(stmt: backend.Stmt)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
-    def buildConnect(loc: lir.Expr, expr: backend.Expr): (Instance, Vector[lir.Stmt]) = {
+    def buildConnect(loc: lir.Ref, expr: backend.Expr): (Instance, Vector[lir.Stmt]) = {
       val RunResult(stmts, instance) = runExpr(expr)
 
       val (retInst, connectOpt) = instance match {
@@ -766,7 +782,7 @@ object FirrtlCodeGen {
         exprStmts ++ nodeOpt
       case backend.Assign(target, expr) =>
         val (headName, headTpe) = target.head
-        val loc = target.tail.foldLeft[lir.Expr](lir.Reference(headName, headTpe)) {
+        val loc = target.tail.foldLeft[lir.Ref](lir.Reference(headName, headTpe)) {
           case (ref, (name, tpe)) => lir.SubField(ref, name, tpe)
         }
 
@@ -799,13 +815,13 @@ object FirrtlCodeGen {
       case ret: backend.Return => runReturn(ret)
       case commence: backend.Commence => runCommence(commence)
       case relay: backend.RelayBlock => runRelayBlock(relay)
-      case backend.IntLiteral(value) => RunResult(Vector.empty, DataInstance(value))
-      case backend.BoolLiteral(value) => RunResult(Vector.empty, DataInstance(value))
-      case backend.UnitLiteral() => RunResult(Vector.empty, DataInstance())
+      case backend.IntLiteral(value) => DataInstance.int(value)
+      case backend.BoolLiteral(value) => DataInstance.bool(value)
+      case backend.UnitLiteral() => DataInstance.unit()
       case bit @ backend.BitLiteral(value, HPElem.Num(width)) =>
-        val stmts = Vector.empty
-        val instance = StructInstance(bit.tpe, lir.Literal(value, width, BackendType.bitTpe(width)))
-        RunResult(stmts, instance)
+        val (bitNode, bitRef) = makeNode(lir.Literal(value, BackendType.bitTpe(width)))
+        val instance = StructInstance(bit.tpe, bitRef)
+        RunResult(Vector(bitNode), instance)
     }
 
   def runIdent(ident: backend.Ident)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -870,10 +886,12 @@ object FirrtlCodeGen {
 
     val accessor = call.accessor.map(getInstance)
     val args = call.args.map(getInstance)
-    val hargs = call.hargs.map {
-      case HPElem.Num(value) => DataInstance(value)
-      case HPElem.Str(value) => StringInstance(value)
+    val hargResults = call.hargs.map {
+      case HPElem.Num(value) => DataInstance.int(value)
+      case HPElem.Str(value) => RunResult(Vector.empty, StringInstance(value))
     }
+    val hargs = hargResults.map(_.instance)
+    val hargStmts = hargResults.flatMap(_.stmts)
 
     val newStack = StackFrame(stack, accessor)
 
@@ -886,7 +904,7 @@ object FirrtlCodeGen {
     val stmts = method.code.flatMap(stmt => runStmt(stmt)(newStack, ctx, global))
     val RunResult(retStmts, instance) = runExpr(method.ret)(newStack, ctx, global)
 
-    RunResult(stmts ++ retStmts, instance)
+    RunResult(hargStmts ++ stmts ++ retStmts, instance)
   }
 
   def runCallInterface(call: backend.CallInterface)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -967,7 +985,7 @@ object FirrtlCodeGen {
     }
     */
 
-    def calling(tpe: BackendType)(refer: (String, BackendType) => lir.Expr): RunResult = {
+    def calling(tpe: BackendType)(refer: (String, BackendType) => lir.Ref): RunResult = {
       val candidates = ctx.interfaces(tpe)
       val interface = candidates.find(_.label == call.label).get
 
@@ -977,20 +995,21 @@ object FirrtlCodeGen {
         case backend.Term.Variable(name, _) => stack.refer(name)
       }
       val args = argNames.map(stack.lookup).map(_.asInstanceOf[DataInstance])
+      val (litNode, litRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
       val activate = lir.Assign(
         refer(interface.activeName, BackendType.boolTpe),
-        lir.Literal(1, 1, BackendType.boolTpe)
+        litRef
       )
 
       val connects = (params zip args).map{ case (p, a) => lir.Assign(p, a.refer) }
-      val returnedInstance = interface.ret match {
-        case backend.UnitLiteral() => DataInstance()
+      val result = interface.ret match {
+        case backend.UnitLiteral() => DataInstance.unit()
         case _ =>
           val tpe = interface.retTpe
-          DataInstance(tpe, refer(interface.retName, tpe))
+          RunResult(Vector.empty, DataInstance(tpe, refer(interface.retName, tpe)))
       }
 
-      RunResult(activate +: connects, returnedInstance)
+      RunResult(Vector(litNode, activate) ++ connects ++ result.stmts, result.instance)
     }
 
     val referName = call.accessor match {
@@ -1015,31 +1034,31 @@ object FirrtlCodeGen {
     val insts = call.args.map(getInstance)
 
     call.label match {
-      case "addInt" => builtin.intAdd(insts(0), insts(1))
-      case "subInt" => builtin.intSub(insts(0), insts(1))
-      case "mulInt" => builtin.intMul(insts(0), insts(1))
-      case "divInt" => builtin.intDiv(insts(0), insts(1))
-      case "orInt"  => builtin.intOr(insts(0), insts(1))
-      case "andInt" => builtin.intAnd(insts(0), insts(1))
-      case "xorInt" => builtin.intXor(insts(0), insts(1))
+      case "addInt" => builtin.intAdd(insts(0), insts(1), stack)
+      case "subInt" => builtin.intSub(insts(0), insts(1), stack)
+      case "mulInt" => builtin.intMul(insts(0), insts(1), stack)
+      case "divInt" => builtin.intDiv(insts(0), insts(1), stack)
+      case "orInt"  => builtin.intOr(insts(0), insts(1), stack)
+      case "andInt" => builtin.intAnd(insts(0), insts(1), stack)
+      case "xorInt" => builtin.intXor(insts(0), insts(1), stack)
       case "shlInt" => builtin.intShl(insts(0), insts(1))
       case "shrInt" => builtin.intShr(insts(0), insts(1))
       case "dynShlInt" => builtin.intDynShl(insts(0), insts(1))
       case "dynShrInt" => builtin.intDynShr(insts(0), insts(1))
-      case "eqInt" => builtin.intEq(insts(0), insts(1), global)
-      case "neInt" => builtin.intNe(insts(0), insts(1), global)
-      case "gtInt" => builtin.intGt(insts(0), insts(1), global)
-      case "geInt" => builtin.intGe(insts(0), insts(1), global)
-      case "ltInt" => builtin.intLt(insts(0), insts(1), global)
-      case "leInt" => builtin.intLe(insts(0), insts(1), global)
-      case "negInt" => builtin.intNeg(insts(0), global)
-      case "notInt" => builtin.intNot(insts(0), global)
+      case "eqInt" => builtin.intEq(insts(0), insts(1), stack, global)
+      case "neInt" => builtin.intNe(insts(0), insts(1), stack, global)
+      case "gtInt" => builtin.intGt(insts(0), insts(1), stack, global)
+      case "geInt" => builtin.intGe(insts(0), insts(1), stack, global)
+      case "ltInt" => builtin.intLt(insts(0), insts(1), stack, global)
+      case "leInt" => builtin.intLe(insts(0), insts(1), stack, global)
+      case "negInt" => builtin.intNeg(insts(0), stack, global)
+      case "notInt" => builtin.intNot(insts(0), stack, global)
       case "orBool"  => builtin.boolOr(insts(0), insts(1))
       case "andBool" => builtin.boolAnd(insts(0), insts(1))
       case "xorBool" => builtin.boolXor(insts(0), insts(1))
       case "eqBool" => builtin.boolEq(insts(0), insts(1), global)
       case "neBool" => builtin.boolNe(insts(0), insts(1), global)
-      case "notBool" => builtin.boolNot(insts(0), global)
+      case "notBool" => builtin.boolNot(insts(0), stack, global)
       case "addBit" => builtin.bitAdd(insts(0), insts(1))
       case "subBit" => builtin.bitSub(insts(0), insts(1))
       case "mulBit" => builtin.bitMul(insts(0), insts(1))
@@ -1051,17 +1070,17 @@ object FirrtlCodeGen {
       case "shrBit" => builtin.bitShr(insts(0), insts(1))
       case "dynShlBit" => builtin.bitDynShl(insts(0), insts(1))
       case "dynShrBit" => builtin.bitDynShr(insts(0), insts(1))
-      case "eqBit" => builtin.bitEq(insts(0), insts(1), global)
-      case "neBit" => builtin.bitNe(insts(0), insts(1), global)
-      case "gtBit" => builtin.bitGt(insts(0), insts(1), global)
-      case "geBit" => builtin.bitGe(insts(0), insts(1), global)
-      case "ltBit" => builtin.bitLt(insts(0), insts(1), global)
-      case "leBit" => builtin.bitLe(insts(0), insts(1), global)
+      case "eqBit" => builtin.bitEq(insts(0), insts(1), stack, global)
+      case "neBit" => builtin.bitNe(insts(0), insts(1), stack, global)
+      case "gtBit" => builtin.bitGt(insts(0), insts(1), stack, global)
+      case "geBit" => builtin.bitGe(insts(0), insts(1), stack, global)
+      case "ltBit" => builtin.bitLt(insts(0), insts(1), stack, global)
+      case "leBit" => builtin.bitLe(insts(0), insts(1), stack, global)
       case "negBit" => builtin.bitNeg(insts(0))
       case "notBit" => builtin.bitNot(insts(0))
-      case "truncateBit" => builtin.bitTruncate(insts(0), call.hargs(0), call.hargs(1), global)
-      case "bitBit" => builtin.bitBit(insts(0), call.hargs(0), global)
-      case "concatBit" => builtin.bitConcat(insts(0), insts(1), global)
+      case "truncateBit" => builtin.bitTruncate(insts(0), call.hargs(0), call.hargs(1), stack, global)
+      case "bitBit" => builtin.bitBit(insts(0), call.hargs(0), stack, global)
+      case "concatBit" => builtin.bitConcat(insts(0), insts(1), stack, global)
       case "idxVec" => builtin.vecIdx(insts(0), call.hargs(0), global)
       case "idxDynVec" => builtin.vecIdxDyn(insts(0), insts(1), global)
       case "updatedVec" => builtin.vecUpdated(insts(0), insts(1), call.hargs(0))
@@ -1105,9 +1124,9 @@ object FirrtlCodeGen {
     val DataInstance(_, dataRef) = stack.lookup(getName(write.data))
 
     val writeMem = lir.MemWrite(memory.name, write.port, addrRef, dataRef)
-    val instance = DataInstance()
+    val result = DataInstance.unit()
 
-    RunResult(Vector(writeMem), instance)
+    RunResult(writeMem +: result.stmts, result.instance)
   }
 
   def runThis()(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult =
@@ -1143,15 +1162,15 @@ object FirrtlCodeGen {
       altStmts ++ altAssign
     )
 
-    val retInstance = retRefOpt.map(ret => DataInstance(ifExpr.tpe, ret)).getOrElse(DataInstance())
+    val retResult = retRefOpt
+      .map(ret => RunResult(Vector.empty, DataInstance(ifExpr.tpe, ret)))
+      .getOrElse(DataInstance.unit())
     val stmts = wireOpt.toVector :+ whenStmt
 
-    RunResult(stmts, retInstance)
+    RunResult(stmts ++ retResult.stmts, retResult.instance)
   }
 
   def runMatch(matchExpr: backend.Match)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    import firrtl.ir.{Type, UIntType, BundleType, VectorType}
-
     def extractFieldData(source: lir.SubField, tpe: BackendType, bitIdx: BigInt): (Vector[lir.Stmt], Name, BigInt) = {
       /*
       tpe match {
@@ -1235,9 +1254,9 @@ object FirrtlCodeGen {
       }
     }
 
-    def runPattern(instance: DataInstance, pattern: backend.MatchPattern): (Vector[lir.Stmt], DataInstance) = {
+    def runPattern(instance: DataInstance, pattern: backend.MatchPattern): RunResult = {
       def toLIRForm(lit: backend.Literal): lir.Literal = {
-        def toLit(value: Int, width: Int): lir.Literal = lir.Literal(value, width, BackendType.bitTpe(width))
+        def toLit(value: Int, width: Int): lir.Literal = lir.Literal(value, BackendType.bitTpe(width))
 
         lit match {
           case backend.IntLiteral(value) => toLit(value, 32)
@@ -1247,30 +1266,32 @@ object FirrtlCodeGen {
         }
       }
 
-      def literalPattern(lit: backend.Literal): (Vector[lir.Stmt], DataInstance) = {
+      def literalPattern(lit: backend.Literal): RunResult = {
         val locName = stack.next("_GEN")
         val loc = lir.Reference(locName.name, lit.tpe)
         val locTpe = BackendType.boolTpe
         val literal = toLIRForm(lit)
-        val cmp = lir.Ops(PrimOps.Eq, Vector(instance.refer, literal), Vector.empty, BackendType.boolTpe)
+        val (literalNode, literalRef) = makeNode(literal)
+        val cmp = lir.Ops(PrimOps.Eq, Vector(instance.refer, literalRef), Vector.empty, BackendType.boolTpe)
         val node = lir.Node(locName.name, cmp, BackendType.boolTpe)
         val inst = DataInstance(locTpe, loc)
 
-        (Vector(node), inst)
+        RunResult(Vector(literalNode, node), inst)
       }
 
-      def identPattern(variable: backend.Term.Variable): (Vector[lir.Stmt], DataInstance) = {
+      def identPattern(variable: backend.Term.Variable): RunResult = {
         val locName = stack.next(variable.name)
         val loc = lir.Reference(locName.name, variable.tpe)
         val node = lir.Node(locName.name, instance.refer, variable.tpe)
         val locInstance = DataInstance(instance.tpe, loc)
         stack.append(locName, locInstance)
+        val RunResult(stmts, inst: DataInstance) = DataInstance.bool(bool = true)
 
-        (Vector(node), DataInstance(bool = true))
+        RunResult(node +: stmts, inst)
       }
 
       pattern match {
-        case backend.WildCardPattern(_) => (Vector.empty, DataInstance(bool = true))
+        case backend.WildCardPattern(_) => DataInstance.bool(bool = true)
         case backend.LiteralPattern(lit) => literalPattern(lit)
         case backend.IdentPattern(name) => identPattern(name)
         case backend.EnumPattern(variant, patterns, tpe) =>
@@ -1289,9 +1310,10 @@ object FirrtlCodeGen {
           val dataTpe = BackendType.bitTpe(dataFirTpe.width.asInstanceOf[firrtl.ir.IntWidth].width.toInt)
           val dataRef = lir.SubField(instance.refer, "_data", dataTpe)
 
+          val (litNode, litRef) = makeNode(lir.Literal(variant, memberTpe))
           val variantEq = lir.Ops(
             PrimOps.Eq,
-            Vector(memberRef, lir.Literal(variant, memberWidth, memberTpe)),
+            Vector(memberRef, litRef),
             Vector.empty,
             BackendType.boolTpe
           )
@@ -1310,34 +1332,41 @@ object FirrtlCodeGen {
           val stmts = stmtBuilder.result()
           val refs = refBuilder.result()
 
-          val trueRef = lir.Literal(1, 1, BackendType.boolTpe)
-          val (patternStmtss, conds) = (patterns zip refs)
+          val trueRef = lir.Literal(1, BackendType.boolTpe)
+          val results = (patterns zip refs)
             .map{ case (pattern, ref) => pattern -> DataInstance(pattern.tpe, ref) }
             .map{ case (pattern, inst) => runPattern(inst, pattern) }
-            .unzip
 
+          val conds = results.map(_.instance.asInstanceOf[DataInstance])
+          val patternStmts = results.flatMap(_.stmts)
+
+          val leftNodes = Vector.newBuilder[lir.Node]
           val condition = conds.filter(_.refer == trueRef).foldLeft[lir.Expr](variantEq) {
-            case (left, right) => lir.Ops(
-              PrimOps.And,
-              Vector(left, right.refer),
-              Vector.empty,
-              left.tpe
+            case (left, right) =>
+              val (leftNode, leftRef) = makeNode(left)
+              leftNodes += leftNode
+
+              lir.Ops(
+                PrimOps.And,
+                Vector(leftRef, right.refer),
+                Vector.empty,
+                left.tpe
             )
           }
 
           val condName = stack.next("_GEN")
           val condRef = lir.Reference(condName.name, condition.tpe)
           val connect = lir.Node(condName.name, condition, condition.tpe)
-          val returnStmts = stmts ++ patternStmtss.flatten :+ connect
+          val returnStmts = litNode +: (stmts ++ leftNodes.result() ++ patternStmts) :+ connect
           val boolTpe = toBackendType(Type.boolTpe)
           val returnInst = DataInstance(boolTpe, condRef)
 
-          (returnStmts, returnInst)
+          RunResult(returnStmts, returnInst)
       }
     }
 
     def runCase(instance: DataInstance, caseExpr: backend.Case, retLoc: Option[lir.Reference]): (Vector[lir.Stmt], lir.When) = {
-      val (patternStmts, condInstance) = runPattern(instance, caseExpr.pattern)
+      val RunResult(patternStmts, condInstance: DataInstance) = runPattern(instance, caseExpr.pattern)
       val bodyStmts = caseExpr.stmts.flatMap(runStmt)
       val RunResult(exprStmts, retInstance: DataInstance) = runExpr(caseExpr.ret)
 
@@ -1359,8 +1388,8 @@ object FirrtlCodeGen {
       }
 
     val retRefOpt = retWireOpt.map(wire => lir.Reference(wire.name, wire.tpe))
-    val retInstance = retRefOpt.map(DataInstance(tpe, _)).getOrElse(DataInstance())
-    val retInvalid = retRefOpt.map(ref => lir.Assign(ref, lir.Undef(ref.tpe)))
+    val RunResult(resStmts, retInstance) = retRefOpt.map(ref => RunResult(Vector.empty, DataInstance(tpe, ref))).getOrElse(DataInstance.unit())
+    val retInvalid = retRefOpt.map(ref => lir.Invalid(ref.name))
     val retStmts = Vector(retWireOpt, retInvalid).flatten
 
     retRefOpt.foreach(ref => stack.append(Name(ref.name), retInstance))
@@ -1372,7 +1401,7 @@ object FirrtlCodeGen {
       case (cond, elsePart) =>  cond.copy(alt = Vector(elsePart))
     }
 
-    val stmts = retStmts ++ patternStmts :+ caseConds
+    val stmts = resStmts ++ retStmts ++ patternStmts :+ caseConds
 
     RunResult(stmts, retInstance)
   }
@@ -1412,7 +1441,7 @@ object FirrtlCodeGen {
     // In order to connect between two indirect module communication,
     // this method add statements for connecting between two modules.
     // current module is also subject to communication.
-    def buildIndirectAccessCond(interface: MethodContainer, fromName: String)(targetBuilder: String => lir.Expr): (Option[lir.Assign], lir.When) = {
+    def buildIndirectAccessCond(interface: MethodContainer, fromName: String)(targetBuilder: String => lir.Ref): (Option[lir.Invalid], Vector[lir.Stmt]) = {
       // this method make source wire's name
       // For example, if looking into submodule's parent module's interface,
       // name will be [submodule instance name] . [parent module instance name]_[name] like sub.parent_call_active
@@ -1427,16 +1456,17 @@ object FirrtlCodeGen {
           val dst = fromRef(interface.retName, interface.retTpe)
           lir.Assign(dst, targetBuilder(interface.retName)).some
         }
-      val retInvalid = assignOpt.map(assign => lir.Assign(assign.dst, lir.Undef(assign.dst.tpe)))
+      val retInvalid = assignOpt.map(_ => lir.Invalid(interface.retName))
 
       val params = interface.params.map { case (name, _) => targetBuilder(name) }.toVector
       val args = interface.params.map { case (name, tpe) => fromRef(name, tpe) }.toVector
       val connects = (params zip args).map { case (param, arg) => lir.Assign(param, arg) }
-      val activate = lir.Assign(targetBuilder(interface.activeName), lir.Literal(1, 1, BackendType.boolTpe))
+      val (activeLitNode, activeLitRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
+      val activate = lir.Assign(targetBuilder(interface.activeName), activeLitRef)
       val conseq = (activate +: connects) ++ assignOpt
       val when = lir.When(fromActive, conseq, Vector.empty)
 
-      (retInvalid, when)
+      (retInvalid, Vector(activeLitNode, when))
     }
 
     // For submodule's parent module
@@ -1450,15 +1480,15 @@ object FirrtlCodeGen {
         val RunResult(stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
         val parents = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Parent))
 
-        val targetName: String => lir.Expr = refer match {
+        val targetName: String => lir.Ref = refer match {
           case ModuleLocation.This => (name: String) => lir.Reference(name, tpe)
           case ModuleLocation.Upper(target) => name: String => lir.Reference(target + "_" + name, tpe)
           case _: ModuleLocation.Sub => throw new ImplementationErrorException("refer a sub module as a parent module")
         }
 
-        val (invalids, conds) = parents.map(buildIndirectAccessCond(_, fromName)(targetName)).unzip
+        val (invalids, stmtss) = parents.map(buildIndirectAccessCond(_, fromName)(targetName)).unzip
 
-        (stmts ++ invalids.flatten, conds)
+        (stmts ++ invalids.flatten, stmtss.flatten)
     }.unzip
 
     // For submodule's sibling module
@@ -1467,15 +1497,15 @@ object FirrtlCodeGen {
         val RunResult(stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
         val siblings = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Sibling))
 
-        val target: String => lir.Expr = refer match {
+        val target: String => lir.Ref = refer match {
           case ModuleLocation.This => throw new ImplementationErrorException("refer this module as sibling module")
           case ModuleLocation.Sub(refer) => (name: String) => lir.SubField(refer, name, tpe)
           case ModuleLocation.Upper(refer) => (name: String) => lir.Reference(refer + "$" + name, tpe)
         }
 
-        val (invalid, conds) = siblings.map(buildIndirectAccessCond(_, fromName)(target)).unzip
+        val (invalid, stmtss) = siblings.map(buildIndirectAccessCond(_, fromName)(target)).unzip
 
-        (stmts ++ invalid.flatten, conds)
+        (stmts ++ invalid.flatten, stmtss.flatten)
     }.unzip
 
     // Assign default values to submodule's input or sibling interfaces
@@ -1493,10 +1523,11 @@ object FirrtlCodeGen {
           val activeRef = buildRef(interface.activeName, BackendType.boolTpe)
           val params = interface.params.map{ case (name, tpe) => buildRef(name, tpe) }.toVector
 
-          val activeOff = lir.Assign(activeRef, lir.Literal(0, 1, BackendType.boolTpe))
-          val paramInvalid = params.map(p => lir.Assign(p, lir.Undef(p.tpe)))
+          val (activeOffNode, activeOffRef) = makeNode(lir.Literal(0, BackendType.boolTpe))
+          val activeOff = lir.Assign(activeRef, activeOffRef)
+          val paramInvalid = params.map(p => lir.Invalid(p.name))
 
-          activeOff +: paramInvalid
+          Vector(activeOffNode, activeOff) ++ paramInvalid
       }
 
     val parentStmts = parentStmtss.toVector.flatten
@@ -1521,7 +1552,7 @@ object FirrtlCodeGen {
   }
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    def makeLeafs(tpe: BackendType, refer: lir.Expr): Vector[lir.Expr] = {
+    def makeLeafs(tpe: BackendType, refer: lir.Ref): Vector[lir.Ref] = {
       /*
       tpe match {
         case ir.UIntType(_) => Vector(refer)
@@ -1554,17 +1585,23 @@ object FirrtlCodeGen {
     }
 
     val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
+    val temporaryNodes = Vector.newBuilder[lir.Node]
     val value = insts
       .map(_.asInstanceOf[DataInstance])
       .flatMap(inst => makeLeafs(inst.tpe, inst.refer))
-      .reduceLeftOption[lir.Expr] {
+      .reduceLeftOption[lir.Ref] {
         case (prefix, refer) =>
           val HPElem.Num(prefixWidth) = prefix.tpe.hargs.head
           val HPElem.Num(referWidth) = refer.tpe.hargs.head
           val catWidth = prefixWidth + referWidth
-          lir.Ops(PrimOps.Cat, Vector(refer, prefix), Vector.empty, BackendType.bitTpe(catWidth))
+          val cat = lir.Ops(PrimOps.Cat, Vector(refer, prefix), Vector.empty, BackendType.bitTpe(catWidth))
+          val (tempNode, tempRef) = makeNode(cat)
+
+          temporaryNodes += tempNode
+          tempRef
       }
-      .getOrElse(lir.Literal(0, 0, BackendType.unitTpe))
+      .getOrElse(lir.Literal(0, BackendType.unitTpe))
+    val (valueNode, valueRef) = makeNode(value)
 
     val variants = enum.tpe.symbol.tpe.declares
       .toMap.toVector
@@ -1573,8 +1610,9 @@ object FirrtlCodeGen {
     val variantWidth = atLeastLength(variants.length).toInt
     val flagValue = variants.zipWithIndex
       .find { case (symbol, _) => symbol == enum.variant }
-      .map { case (_, idx) => lir.Literal(idx, variantWidth, BackendType.bitTpe(variantWidth)) }
+      .map { case (_, idx) => lir.Literal(idx, BackendType.bitTpe(variantWidth)) }
       .getOrElse(throw new ImplementationErrorException(s"${enum.variant} was not found"))
+    val (flagNode, flagRef) = makeNode(flagValue)
 
     val enumName = stack.next("_ENUM")
     val enumRef = lir.Reference(enumName.name, enum.tpe)
@@ -1582,14 +1620,14 @@ object FirrtlCodeGen {
 
     val connectFlag = lir.Assign(
       lir.SubField(enumRef, "_member", flagValue.tpe),
-      flagValue
+      flagRef
     )
     val connectData = lir.Assign(
       lir.SubField(enumRef, "_data", value.tpe),
-      value
+      valueRef
     )
 
-    val runResultStmts = Vector(wireDef, connectFlag, connectData)
+    val runResultStmts = wireDef +: (temporaryNodes.result() ++ Vector(valueNode, flagNode, connectFlag, connectData))
     val instance = DataInstance(enum.tpe, enumRef)
 
     RunResult(runResultStmts, instance)
@@ -1598,9 +1636,11 @@ object FirrtlCodeGen {
   def runFinish(finish: backend.Finish)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val active = finish.stage.activeName
     val activeRef = lir.Reference(active, BackendType.boolTpe)
-    val finishStmt = lir.Assign(activeRef, lir.Literal(0, 1, BackendType.boolTpe))
+    val (literalNode, literalRef) = makeNode(lir.Literal(0, BackendType.boolTpe))
+    val finishStmt = lir.Assign(activeRef, literalRef)
+    val RunResult(unitStmts, unit) = DataInstance.unit()
 
-    RunResult(Vector(finishStmt), DataInstance())
+    RunResult(Vector(literalNode, finishStmt) ++ unitStmts, unit)
   }
 
   def runGoto(goto: backend.Goto)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1612,27 +1652,30 @@ object FirrtlCodeGen {
     val stateTpe = BackendType.bitTpe(stateWidth)
 
     val stateRef = lir.Reference(stage.stateName, stateTpe)
-    val changeState = lir.Assign(stateRef, lir.Literal(state.index, stateWidth, stateTpe))
+    val (literalNode, literalRef) = makeNode(lir.Literal(state.index, stateTpe))
+    val changeState = lir.Assign(stateRef, literalRef)
 
     val stmts = assignRegParams(stateContainer.params, goto.state.args)
+    val RunResult(unitStmts, unitInstance) = DataInstance.unit()
 
-    RunResult(changeState +: stmts, DataInstance())
+    RunResult(Vector(literalNode, changeState) ++ stmts ++ unitStmts, unitInstance)
   }
 
   def runGenerate(generate: backend.Generate)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val stageContainer = ctx.stages(stack.lookupThis.get.tpe).find(_.label == generate.stage).get
     val activeRef = lir.Reference(generate.stage.activeName, BackendType.boolTpe)
-    val activate = lir.Assign(activeRef, lir.Literal(1, 1, BackendType.boolTpe))
+    val (literalNode, literalRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
+    val activate = lir.Assign(activeRef, literalRef)
 
-    val state = generate.state match {
-      case None => None
+    val (state, node) = generate.state match {
+      case None => (None, None)
       case Some(backend.State(label, _)) =>
         val stateWidth = atLeastLength(stageContainer.states.length).toInt
         val stateTpe = BackendType.bitTpe(stateWidth)
         val stateRef = lir.Reference(stageContainer.label.stateName, stateTpe)
-        val stateVal = lir.Literal(label.index, stateWidth, stateTpe)
+        val (stateValNode, stateValRef) = makeNode(lir.Literal(label.index, stateTpe))
 
-        lir.Assign(stateRef, stateVal).some
+        (lir.Assign(stateRef, stateValRef).some, stateValNode.some)
     }
 
     val stageAssigns = assignRegParams(stageContainer.params, generate.args)
@@ -1644,9 +1687,10 @@ object FirrtlCodeGen {
         assignRegParams(stateContainer.params, args)
     }.getOrElse(Vector.empty)
 
-    val stmts = activate +: (state.toVector ++ stageAssigns ++ stateAssigns)
+    val stmts = Vector(literalNode, activate) ++ (node.toVector ++ state.toVector ++ stageAssigns ++ stateAssigns)
+    val RunResult(unitStmts, unit) = DataInstance.unit()
 
-    RunResult(stmts, DataInstance())
+    RunResult(stmts ++ unitStmts, unit)
   }
 
   private def assignRegParams(params: ListMap[String, BackendType], args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
@@ -1661,29 +1705,35 @@ object FirrtlCodeGen {
     val DataInstance(_, refer) = instance
     val retRef = lir.Reference(ret.proc.retName, ret.tpe)
     val assign = lir.Assign(retRef, refer)
+    val RunResult(unitStmts, unit) = DataInstance.unit()
 
-    RunResult(stmts :+ assign, DataInstance())
+    RunResult((stmts :+ assign) ++ unitStmts, unit)
   }
 
   def runCommence(commence: backend.Commence)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val stmts = activateProcBlock(commence.procLabel, commence.blkLabel, commence.args)
     val pointer = lir.Pointer(commence.procLabel.symbol.path, commence.tpe)
-    val inst = DataInstance(commence.tpe, pointer)
+    val (pointerNode, pointerRef) = makeNode(pointer)
+    val inst = DataInstance(commence.tpe, pointerRef)
 
-    RunResult(stmts, inst)
+    RunResult(stmts :+ pointerNode, inst)
   }
 
-  def runRelayBlock(relay: backend.RelayBlock)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult =
+  def runRelayBlock(relay: backend.RelayBlock)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    val RunResult(unitStmts, unit) = DataInstance.unit()
+
     RunResult(
-      activateProcBlock(relay.procLabel, relay.blkLabel, relay.args),
-      DataInstance()
+      activateProcBlock(relay.procLabel, relay.blkLabel, relay.args) ++ unitStmts,
+      unit
     )
+  }
 
   def activateProcBlock(procLabel: ProcLabel, blkLabel: ProcBlockLabel, args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
     val procContainer = ctx.procs(stack.lookupThis.get.tpe).find(_.label == procLabel).get
 
     val activeRef = lir.Reference(blkLabel.activeName, BackendType.boolTpe)
-    val activate = lir.Assign(activeRef, lir.Literal(1, 1, BackendType.boolTpe))
+    val (litNode, litRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
+    val activate = lir.Assign(activeRef, litRef)
 
     val blkContainer = procContainer.blks.find(_.label == blkLabel).get
     val assigns = (blkContainer.params.toVector zip args).map {
@@ -1693,7 +1743,7 @@ object FirrtlCodeGen {
         lir.Assign(paramRef, argRef)
     }
 
-    activate +: assigns
+    Vector(litNode, activate) ++ assigns
   }
 
   /*
@@ -1724,4 +1774,15 @@ object FirrtlCodeGen {
     definition(portBuilder)(name, tpe)
   }
   */
+
+  private def makeNode(expr: lir.Expr)(implicit stack: StackFrame): (lir.Node, lir.Reference) = {
+    val node = lir.Node(
+      stack.next("_GEN").name,
+      expr,
+      expr.tpe
+    )
+    val ref = lir.Reference(node.name, expr.tpe)
+
+    (node, ref)
+  }
 }

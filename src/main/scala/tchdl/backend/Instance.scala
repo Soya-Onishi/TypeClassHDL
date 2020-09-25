@@ -2,6 +2,7 @@ package tchdl.backend
 
 import tchdl.util.{GlobalData, Symbol, Type}
 import tchdl.backend.ast.{BackendLIR => lir}
+import tchdl.backend.FirrtlCodeGen.StackFrame
 import tchdl.util.TchdlException.ImplementationErrorException
 
 trait Instance {
@@ -12,10 +13,10 @@ trait Instance {
 }
 
 abstract class DataInstance extends Instance {
-  override type ReferType = lir.Expr
+  override type ReferType = lir.Ref
 
   val tpe: BackendType
-  def refer: lir.Expr
+  def refer: lir.Ref
 }
 
 abstract class ModuleInstance extends Instance {
@@ -33,29 +34,49 @@ object ModuleLocation {
 }
 
 object DataInstance {
-  def apply(int: Int)(implicit global: GlobalData): StructInstance = {
+  def int(int: Int)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val intTpe = toBackendType(Type.bitTpe(32))
-    StructInstance(intTpe, lir.Literal(BigInt(int), 32, intTpe))
+    val (node, ref) = makeNode(lir.Literal(BigInt(int), intTpe))
+    val inst = StructInstance(intTpe, ref)
+
+    RunResult(Vector(node), inst)
   }
 
-  def apply(bool: Boolean)(implicit global: GlobalData): StructInstance = {
+  def bool(bool: Boolean)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val value = if(bool) 1 else 0
     val tpe = toBackendType(Type.bitTpe(1))
-    StructInstance(tpe, lir.Literal(value, 1, tpe))
+    val (node, ref) = makeNode(lir.Literal(value, tpe))
+    val inst = StructInstance(tpe, ref)
+
+    RunResult(Vector(node), inst)
   }
 
-  def apply()(implicit global: GlobalData): StructInstance = {
+  def unit()(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val tpe = toBackendType(Type.unitTpe)
-    StructInstance(tpe, lir.Literal(0, 0, tpe))
+    val (node, ref) = makeNode(lir.Literal(0, tpe))
+    val inst = StructInstance(tpe, ref)
+
+    RunResult(Vector(node), inst)
   }
 
-  def apply(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: lir.Expr): EnumInstance =
+  def apply(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: lir.Ref): EnumInstance =
     EnumInstance(tpe, variant, refer)
 
-  def apply(tpe: BackendType, refer: lir.Expr): StructInstance =
+  def apply(tpe: BackendType, refer: lir.Ref): StructInstance =
     StructInstance(tpe, refer)
 
-  def unapply(obj: DataInstance): Option[(BackendType, lir.Expr)] = Some(obj.tpe, obj.refer)
+  def unapply(obj: DataInstance): Option[(BackendType, lir.Ref)] = Some(obj.tpe, obj.refer)
+
+  private def makeNode(expr: lir.Expr)(implicit stack: StackFrame): (lir.Node, lir.Reference) = {
+    val node = lir.Node(
+      stack.next("_GEN").name,
+      expr,
+      expr.tpe
+    )
+    val ref = lir.Reference(node.name, node.tpe)
+
+    (node, ref)
+  }
 }
 
 object ModuleInstance {
@@ -76,8 +97,8 @@ object ModuleInstance {
 }
 
 
-case class EnumInstance(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: lir.Expr) extends DataInstance
-case class StructInstance(tpe: BackendType, refer: lir.Expr) extends DataInstance
+case class EnumInstance(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: lir.Ref) extends DataInstance
+case class StructInstance(tpe: BackendType, refer: lir.Ref) extends DataInstance
 case class StringInstance(value: String)(implicit global: GlobalData) extends DataInstance {
   val field = Map.empty
   val tpe = toBackendType(Type.stringTpe, Map.empty, Map.empty)

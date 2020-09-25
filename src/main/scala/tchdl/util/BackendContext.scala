@@ -31,7 +31,7 @@ object BackendContext {
     val _tpBound = tpBound
 
     new BackendContext {
-      override protected val parent: Option[BackendContext] = None
+      override val parent: Option[BackendContext] = None
 
       override val label = _label
       override val tpBound = _tpBound
@@ -43,7 +43,7 @@ object BackendContext {
     val _parent = parent
 
     new BackendContext {
-      override protected val parent: Option[BackendContext] = Some(_parent)
+      override val parent: Option[BackendContext] = Some(_parent)
 
       override val label = _label
       override val tpBound = _parent.tpBound

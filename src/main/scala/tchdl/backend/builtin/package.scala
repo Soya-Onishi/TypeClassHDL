@@ -1,190 +1,188 @@
 package tchdl.backend
 
-import tchdl.util.Type
-import tchdl.util.Symbol
-import tchdl.util.GlobalData
+import tchdl.util.{GlobalData, Symbol, ToOption, Type}
 import tchdl.backend.ast.{BackendLIR => lir}
 import firrtl.PrimOps
 import tchdl.backend.FirrtlCodeGen.StackFrame
 
 package object builtin {
-  def intAdd(left: Instance, right: Instance): RunResult = {
-    intBinOps(left, right, PrimOps.Add)(_ + _)
+  def intAdd(left: Instance, right: Instance, stack: StackFrame): RunResult = {
+    intBinOps(left, right, PrimOps.Add, stack)(_ + _)
   }
 
-  def intSub(left: Instance, right: Instance): RunResult = {
-    intBinOps(left, right, PrimOps.Sub)(_ - _)
+  def intSub(left: Instance, right: Instance, stack: StackFrame): RunResult = {
+    intBinOps(left, right, PrimOps.Sub, stack)(_ - _)
   }
 
-  def intMul(left: Instance, right: Instance): RunResult = {
-    intBinOps(left, right, PrimOps.Mul)(_ * _)
+  def intMul(left: Instance, right: Instance, stack: StackFrame): RunResult = {
+    intBinOps(left, right, PrimOps.Mul, stack)(_ * _)
   }
 
-  def intDiv(left: Instance, right: Instance): RunResult = {
-    intBinOps(left, right, PrimOps.Div)(_ / _)
+  def intDiv(left: Instance, right: Instance, stack: StackFrame): RunResult = {
+    intBinOps(left, right, PrimOps.Div, stack)(_ / _)
   }
 
-  def intOr(left: Instance, right: Instance): RunResult = {
-    intBinOps(left, right, PrimOps.Or)(_ | _)
+  def intOr(left: Instance, right: Instance, stack: StackFrame): RunResult = {
+    intBinOps(left, right, PrimOps.Or, stack)(_ | _)
   }
 
-  def intAnd(left: Instance, right: Instance): RunResult = {
-    intBinOps(left, right, PrimOps.And)(_ & _)
+  def intAnd(left: Instance, right: Instance, stack: StackFrame): RunResult = {
+    intBinOps(left, right, PrimOps.And, stack)(_ & _)
   }
 
-  def intXor(left: Instance, right: Instance): RunResult = {
-    intBinOps(left, right, PrimOps.Xor)(_ ^ _)
+  def intXor(left: Instance, right: Instance, stack: StackFrame): RunResult = {
+    intBinOps(left, right, PrimOps.Xor, stack)(_ ^ _)
   }
 
-  def intShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def intShl(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shl, PrimOps.Dshl)
   }
 
-  def intShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def intShr(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shr, PrimOps.Dshr)
   }
 
-  def intDynShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def intDynShl(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shl, PrimOps.Dshl)
   }
 
-  def intDynShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def intDynShr(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shr, PrimOps.Dshr)
   }
 
-  def intEq(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intCmpOps(left, right, PrimOps.Eq, global)(_ == _)
+  def intEq(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intCmpOps(left, right, PrimOps.Eq, stack, global)(_ == _)
   }
 
-  def intNe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intCmpOps(left, right, PrimOps.Neq, global)(_ != _)
+  def intNe(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intCmpOps(left, right, PrimOps.Neq, stack, global)(_ != _)
   }
 
-  def intGe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intCmpOps(left, right, PrimOps.Geq, global)(_ >= _)
+  def intGe(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intCmpOps(left, right, PrimOps.Geq, stack, global)(_ >= _)
   }
 
-  def intGt(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intCmpOps(left, right, PrimOps.Gt, global)(_ > _)
+  def intGt(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intCmpOps(left, right, PrimOps.Gt, stack, global)(_ > _)
   }
 
-  def intLe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intCmpOps(left, right, PrimOps.Leq, global)(_ <= _)
+  def intLe(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intCmpOps(left, right, PrimOps.Leq, stack, global)(_ <= _)
   }
 
-  def intLt(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    intCmpOps(left, right, PrimOps.Lt, global)(_ < _)
+  def intLt(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intCmpOps(left, right, PrimOps.Lt, stack, global)(_ < _)
   }
 
-  def intNeg(operand: Instance, global: GlobalData): RunResult = {
-    intUnaryOps(operand, PrimOps.Neg, global)(value => -value)
+  def intNeg(operand: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intUnaryOps(operand, PrimOps.Neg, stack, global)(value => -value)
   }
 
-  def intNot(operand: Instance, global: GlobalData): RunResult = {
-    intUnaryOps(operand, PrimOps.Not, global)(value => ~value)
+  def intNot(operand: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    intUnaryOps(operand, PrimOps.Not, stack, global)(value => ~value)
   }
 
-  def boolAnd(left: Instance, right: Instance): RunResult = {
-    boolBinOps(left, right, PrimOps.And)(_ & _)
+  def boolAnd(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    boolBinOps(left, right, PrimOps.And, stack)(_ & _)
   }
 
-  def boolOr(left: Instance, right: Instance): RunResult = {
-    boolBinOps(left, right, PrimOps.Or)(_ | _)
+  def boolOr(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    boolBinOps(left, right, PrimOps.Or, stack)(_ | _)
   }
 
-  def boolXor(left: Instance, right: Instance): RunResult = {
-    boolBinOps(left, right, PrimOps.Xor)(_ ^ _)
+  def boolXor(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    boolBinOps(left, right, PrimOps.Xor, stack)(_ ^ _)
   }
 
-  def boolEq(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    boolBinOps(left, right, PrimOps.Eq)(_ == _)
+  def boolEq(left: Instance, right: Instance, global: GlobalData)(implicit stack: StackFrame): RunResult = {
+    boolBinOps(left, right, PrimOps.Eq, stack)(_ == _)
   }
 
-  def boolNe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    boolBinOps(left, right, PrimOps.Neq)(_ != _)
+  def boolNe(left: Instance, right: Instance, global: GlobalData)(implicit stack: StackFrame): RunResult = {
+    boolBinOps(left, right, PrimOps.Neq, stack)(_ != _)
   }
 
-  def boolNot(operand: Instance, global: GlobalData): RunResult = {
-    boolUnaryOps(operand, PrimOps.Not, global)(value => !value)
+  def boolNot(operand: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    boolUnaryOps(operand, PrimOps.Not, stack, global)(value => !value)
   }
 
-  def bitAdd(left: Instance, right: Instance): RunResult = {
-    bitBinOps(left, right, PrimOps.Add)
+  def bitAdd(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    bitBinOps(left, right, PrimOps.Add, stack)
   }
 
-  def bitSub(left: Instance, right: Instance): RunResult = {
-    bitBinOps(left, right, PrimOps.Sub)
+  def bitSub(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    bitBinOps(left, right, PrimOps.Sub, stack)
   }
 
-  def bitMul(left: Instance, right: Instance): RunResult = {
-    bitBinOps(left, right, PrimOps.Mul)
+  def bitMul(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    bitBinOps(left, right, PrimOps.Mul, stack)
   }
 
-  def bitDiv(left: Instance, right: Instance): RunResult = {
-    bitBinOps(left, right, PrimOps.Div)
+  def bitDiv(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    bitBinOps(left, right, PrimOps.Div, stack)
   }
 
-  def bitOr(left: Instance, right: Instance): RunResult = {
-    bitBinOps(left, right, PrimOps.Or)
+  def bitOr(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    bitBinOps(left, right, PrimOps.Or, stack)
   }
 
-  def bitAnd(left: Instance, right: Instance): RunResult = {
-    bitBinOps(left, right, PrimOps.And)
+  def bitAnd(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    bitBinOps(left, right, PrimOps.And, stack)
   }
 
-  def bitXor(left: Instance, right: Instance): RunResult = {
-    bitBinOps(left, right, PrimOps.Xor)
+  def bitXor(left: Instance, right: Instance)(implicit stack: StackFrame): RunResult = {
+    bitBinOps(left, right, PrimOps.Xor, stack)
   }
 
-  def bitShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def bitShl(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shl, PrimOps.Dshl)
   }
 
-  def bitShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def bitShr(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shr, PrimOps.Dshr)
   }
 
-  def bitDynShl(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def bitDynShl(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shl, PrimOps.Dshl)
   }
 
-  def bitDynShr(left: Instance, right: Instance)(implicit global: GlobalData): RunResult = {
+  def bitDynShr(left: Instance, right: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     shift(left, right, PrimOps.Shr, PrimOps.Dshr)
   }
 
-  def bitEq(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    bitCmpOps(left, right, PrimOps.Eq, global)
+  def bitEq(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    bitCmpOps(left, right, PrimOps.Eq, stack, global)
   }
 
-  def bitNe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    bitCmpOps(left, right, PrimOps.Neq, global)
+  def bitNe(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    bitCmpOps(left, right, PrimOps.Neq, stack, global)
   }
 
-  def bitGe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    bitCmpOps(left, right, PrimOps.Geq, global)
+  def bitGe(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    bitCmpOps(left, right, PrimOps.Geq, stack, global)
   }
 
-  def bitGt(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    bitCmpOps(left, right, PrimOps.Gt, global)
+  def bitGt(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    bitCmpOps(left, right, PrimOps.Gt, stack, global)
   }
 
-  def bitLe(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    bitCmpOps(left, right, PrimOps.Leq, global)
+  def bitLe(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    bitCmpOps(left, right, PrimOps.Leq, stack, global)
   }
 
-  def bitLt(left: Instance, right: Instance, global: GlobalData): RunResult = {
-    bitCmpOps(left, right, PrimOps.Lt, global)
+  def bitLt(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    bitCmpOps(left, right, PrimOps.Lt, stack, global)
   }
 
-  def bitNeg(operand: Instance): RunResult = {
-    bitUnaryOps(operand, PrimOps.Neg)
+  def bitNeg(operand: Instance)(implicit stack: StackFrame): RunResult = {
+    bitUnaryOps(operand, PrimOps.Neg, stack)
   }
 
-  def bitNot(operand: Instance): RunResult = {
-    bitUnaryOps(operand, PrimOps.Not)
+  def bitNot(operand: Instance)(implicit stack: StackFrame): RunResult = {
+    bitUnaryOps(operand, PrimOps.Not, stack)
   }
 
-  def bitTruncate(operand: Instance, hi: HPElem, lo: HPElem, global: GlobalData): RunResult = {
+  def bitTruncate(operand: Instance, hi: HPElem, lo: HPElem, stack: StackFrame, global: GlobalData): RunResult = {
     val HPElem.Num(hiIndex) = hi
     val HPElem.Num(loIndex) = lo
     val DataInstance(_, refer) = operand
@@ -192,20 +190,22 @@ package object builtin {
     val width = hiIndex - loIndex + 1
     val retTpe = toBackendType(Type.bitTpe(width)(global))(global)
     val truncate = lir.Ops(PrimOps.Bits, Vector(refer), Vector(hiIndex, loIndex), retTpe)
+    val (truncateNode, truncateRef) = makeNode(truncate, stack)
 
-    RunResult.inst(DataInstance(retTpe, truncate))
+    RunResult(Vector(truncateNode), DataInstance(retTpe, truncateRef))
   }
 
-  def bitBit(operand: Instance, index: HPElem, global: GlobalData): RunResult = {
+  def bitBit(operand: Instance, index: HPElem, stack: StackFrame,global: GlobalData): RunResult = {
     val HPElem.Num(idx) = index
     val DataInstance(_, refer) = operand
     val retTpe = toBackendType(Type.bitTpe(1)(global))(global)
     val bit = lir.Ops(PrimOps.Bits, Vector(refer), Vector(idx, idx), retTpe)
+    val (bitNode, bitRef) = makeNode(bit, stack)
 
-    RunResult.inst(DataInstance(retTpe, bit))
+    RunResult(Vector(bitNode), DataInstance(retTpe, bitRef))
   }
 
-  def bitConcat(left: Instance, right: Instance, global: GlobalData): RunResult = {
+  def bitConcat(left: Instance, right: Instance, stack: StackFrame, global: GlobalData): RunResult = {
     val DataInstance(BackendType(_, leftHargs, _, false), l) = left
     val DataInstance(BackendType(_, rightHargs, _, false), r) = right
 
@@ -214,8 +214,9 @@ package object builtin {
     val width = leftWidth + rightWidth
     val retTpe = toBackendType(Type.bitTpe(width)(global))(global)
     val concat = lir.Ops(PrimOps.Cat, Vector(l, r), Vector.empty, retTpe)
+    val (concatNode, concatRef) = makeNode(concat, stack)
 
-    RunResult.inst(DataInstance(retTpe, concat))
+    RunResult(Vector(concatNode), DataInstance(retTpe, concatRef))
   }
 
   def vecIdx(accessor: Instance, index: HPElem, global: GlobalData): RunResult = {
@@ -285,7 +286,7 @@ package object builtin {
     val retTpe = BackendType(tpe.symbol, Vector(HPElem.Num(accessorLength + 1)), tpe.targs, isPointer = false)
     val wire = lir.Wire(name.name, retTpe)
     val wireRef = lir.Reference(wire.name, retTpe)
-    val init = ir.PartialConnect(ir.NoInfo, wireRef, accessorRef)
+    val init = lir.PartialAssign(wireRef, accessorRef)
     val last = lir.Assign(lir.SubIndex(wireRef, accessorLength, elem.tpe), elemRef)
 
     val instance = DataInstance(retTpe, wireRef)
@@ -327,7 +328,7 @@ package object builtin {
     RunResult(Vector(wire), instance)
   }
 
-  def bitFromInt(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
+  def bitFromInt(bitTpe: BackendType, from: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val HPElem.Num(toWidth) = bitTpe.hargs.head
     val DataInstance(_, refer) = from
 
@@ -335,22 +336,25 @@ package object builtin {
     val casted =
       if(toWidth > 32) lir.Ops(PrimOps.Pad, Vector(refer), Vector(toWidth - 32), retTpe)
       else lir.Ops(PrimOps.Bits, Vector(refer), Vector(toWidth - 1, 0), retTpe)
-    val retInstance = DataInstance(retTpe, casted)
 
-    RunResult(Vector.empty, retInstance)
+    val (castedNode, castedRef) = makeNode(casted, stack)
+    val retInstance = DataInstance(retTpe, castedRef)
+
+    RunResult(Vector(castedNode), retInstance)
   }
 
-  def bitFromBool(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
+  def bitFromBool(bitTpe: BackendType, from: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val HPElem.Num(toWidth) = bitTpe.hargs.head
     val DataInstance(_, refer) = from
     val retTpe = toBackendType(Type.bitTpe(toWidth))
     val casted = lir.Ops(PrimOps.Pad, Vector(refer), Vector(toWidth - 1), retTpe)
-    val retInstance = DataInstance(retTpe, casted)
+    val (castedNode, castedRef) = makeNode(casted, stack)
+    val retInstance = DataInstance(retTpe, castedRef)
 
-    RunResult(Vector.empty, retInstance)
+    RunResult(Vector(castedNode), retInstance)
   }
 
-  def bitFromBit(bitTpe: BackendType, from: Instance)(implicit global: GlobalData): RunResult = {
+  def bitFromBit(bitTpe: BackendType, from: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val HPElem.Num(toWidth) = bitTpe.hargs.head
     val DataInstance(fromTpe, refer) = from
     val HPElem.Num(fromWidth) = fromTpe.hargs.head
@@ -359,142 +363,128 @@ package object builtin {
     val casted =
       if(toWidth > fromWidth) lir.Ops(PrimOps.Pad, Vector(refer), Vector(toWidth - fromWidth), retTpe)
       else lir.Ops(PrimOps.Bits, Vector(refer), Vector(toWidth - 1, 0), retTpe)
-    val retInstance = DataInstance(retTpe, casted)
 
-    RunResult(Vector.empty, retInstance)
+    val (castedNode, castedRef) = makeNode(casted, stack)
+    val retInstance = DataInstance(retTpe, castedRef)
+
+    RunResult(Vector(castedNode), retInstance)
   }
 
-  private def intBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp)(f: (BigInt, BigInt) => BigInt): RunResult = {
-    val DataInstance(tpe, l) = left
-    val DataInstance(_, r) = right
+  private def intBinOps(leftInst: Instance, rightInst: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame)(f: (BigInt, BigInt) => BigInt): RunResult = {
+    val DataInstance(tpe, left) = leftInst
+    val DataInstance(_, right) = rightInst
+    val (retNode, retRef) = makeNode(lir.Ops(ops, Vector(left, right), Vector.empty, left.tpe), stack)
 
-    val ret = (l, r) match {
-      case (lir.Literal(left, _, _), lir.Literal(right, _, _)) => lir.Literal(f(left, right), 32, l.tpe)
-      case (left, right) => lir.Ops(ops, Vector(left, right), Vector.empty, l.tpe)
-    }
-
-    RunResult.inst(DataInstance(tpe, ret))
+    RunResult(Vector(retNode), DataInstance(tpe, retRef))
   }
 
-  private def intCmpOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, global: GlobalData)(f: (BigInt, BigInt) => Boolean): RunResult = {
-    def toInt(bool: Boolean): BigInt =
-      if(bool) BigInt(1)
-      else     BigInt(0)
-
-    val DataInstance(_, l) = left
-    val DataInstance(_, r) = right
-
-    val ret = (l, r) match {
-      case (lir.Literal(left, _, _), lir.Literal(right, _, _)) => lir.Literal(toInt(f(left, right)), 32, l.tpe)
-      case (left, right) => lir.Ops(ops, Vector(left, right), Vector.empty, l.tpe)
-    }
+  private def intCmpOps(leftInst: Instance, rightInst: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame, global: GlobalData)(f: (BigInt, BigInt) => Boolean): RunResult = {
+    val DataInstance(_, left) = leftInst
+    val DataInstance(_, right) = rightInst
+    val (retNode, retRef) = makeNode(lir.Ops(ops, Vector(left, right), Vector.empty, left.tpe), stack)
 
     val boolTpe = toBackendType(Type.boolTpe(global))(global)
-    RunResult.inst(DataInstance(boolTpe, ret))
+    RunResult(Vector(retNode), DataInstance(boolTpe, retRef))
   }
 
-  private def intUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp, global: GlobalData)(f: BigInt => BigInt): RunResult = {
-    val ret = operand match {
-      case DataInstance(_, lir.Literal(value, _, tpe)) => lir.Literal(f(value), 32, tpe)
-      case DataInstance(_, expr) => lir.Ops(ops, Vector(expr), Vector.empty, expr.tpe)
-    }
+  private def intUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame, global: GlobalData)(f: BigInt => BigInt): RunResult = {
+    val DataInstance(_, expr) = operand
 
-    RunResult.inst(DataInstance(operand.tpe, ret))
+    val retNode = lir.Node(
+      stack.next("_GEN").name,
+      lir.Ops(ops, Vector(expr), Vector.empty, expr.tpe),
+      expr.tpe
+    )
+    val retRef = lir.Reference(retNode.name, retNode.tpe)
+
+    RunResult(Vector(retNode), DataInstance(operand.tpe, retRef))
   }
 
-  private def boolBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp)(f: (Boolean, Boolean) => Boolean): RunResult = {
-    def toBool(lit: BigInt): Boolean = {
-      lit.toInt match {
-        case 0 => false
-        case 1 => true
-      }
-    }
-
-    def toRef(bool: Boolean): lir.Literal = {
-      if(bool) lir.Literal(1, 1, left.tpe)
-      else     lir.Literal(0, 1, left.tpe)
-    }
-
+  private def boolBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame)(f: (Boolean, Boolean) => Boolean): RunResult = {
     val DataInstance(tpe, leftRef) = left
     val DataInstance(_, rightRef) = right
+    val ret = lir.Ops(ops, Vector(leftRef, rightRef), Vector.empty, left.tpe)
+    val retNode = lir.Node(
+      stack.next("_GEN").name,
+      ret,
+      ret.tpe
+    )
+    val retRef = lir.Reference(retNode.name, retNode.tpe)
 
-    val retRef = (leftRef, rightRef) match {
-      case (lir.Literal(left, _, _), lir.Literal(right, _, _)) =>
-        val ret = f(toBool(left), toBool(right))
-        toRef(ret)
-      case (left, right) =>
-        lir.Ops(ops, Vector(left, right), Vector.empty, left.tpe)
-    }
-
-    RunResult.inst(DataInstance(tpe, retRef))
+    RunResult(Vector(retNode), DataInstance(tpe, retRef))
   }
 
-  private def boolUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp, global: GlobalData)(f: Boolean => Boolean): RunResult = {
-    def toBool(lit: BigInt): Boolean = {
-      lit.toInt match {
-        case 0 => false
-        case 1 => true
-      }
-    }
-
-    def toRef(bool: Boolean): lir.Literal = {
-      if(bool) lir.Literal(1, 1, operand.tpe)
-      else     lir.Literal(0, 1, operand.tpe)
-    }
-
+  private def boolUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame, global: GlobalData)(f: Boolean => Boolean): RunResult = {
     val DataInstance(_, ref) = operand
+    val (retNode, retRef) = makeNode(ref, stack)
 
-    val ret = ref match {
-      case lir.Literal(value, _, _) => (toRef _ compose f compose toBool)(value)
-      case expr => lir.Ops(ops, Vector(expr), Vector.empty, expr.tpe)
-    }
-
-    RunResult.inst(DataInstance(operand.tpe, ret))
+    RunResult(Vector(retNode), DataInstance(operand.tpe, retRef))
   }
 
-  private def bitBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp): RunResult = {
+  private def bitBinOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame): RunResult = {
     val DataInstance(tpe, leftRef) = left
     val DataInstance(_, rightRef) = right
 
     val op = lir.Ops(ops, Vector(leftRef, rightRef), Vector.empty, leftRef.tpe)
-    RunResult.inst(DataInstance(tpe, op))
+    val (opNode, opRef) = makeNode(op, stack)
+
+    RunResult(Vector(opNode), DataInstance(tpe, opRef))
   }
 
-  private def bitCmpOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, global: GlobalData): RunResult = {
+  private def bitCmpOps(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame, global: GlobalData): RunResult = {
     val DataInstance(_, leftRef) = left
     val DataInstance(_, rightRef) = right
 
     val retTpe = toBackendType(Type.bitTpe(1)(global))(global)
     val op = lir.Ops(ops, Vector(leftRef, rightRef), Vector.empty, retTpe)
+    val (opNode, opRef) = makeNode(op, stack)
 
-    RunResult.inst(DataInstance(retTpe, op))
+    RunResult(Vector(opNode), DataInstance(retTpe, opRef))
   }
 
-  private def bitUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp): RunResult = {
+  private def bitUnaryOps(operand: Instance, ops: firrtl.ir.PrimOp, stack: StackFrame): RunResult = {
     val DataInstance(tpe, ref) = operand
     val op = lir.Ops(ops, Vector(ref), Vector.empty, tpe)
+    val (opNode, opRef) = makeNode(op, stack)
 
-    RunResult.inst(DataInstance(tpe, op))
+    RunResult(Vector(opNode), DataInstance(tpe, opRef))
   }
 
-  private def shift(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, dynOps: firrtl.ir.PrimOp)(implicit global: GlobalData): RunResult = {
+  private def shift(left: Instance, right: Instance, ops: firrtl.ir.PrimOp, dynOps: firrtl.ir.PrimOp)(implicit stack: StackFrame, global: GlobalData): RunResult = {
     val DataInstance(tpe, leftRef) = left
-    val calc = right match {
-      case DataInstance(_, lir.Literal(shamt, _, _)) => lir.Ops(ops, Vector(leftRef), Vector(shamt), tpe)
+    val (calc, stmtOpt) = right match {
       case DataInstance(shamtTpe, rightRef) if shamtTpe == toBackendType(Type.intTpe) =>
-        val truncate = lir.Ops(PrimOps.Bits, Vector(rightRef), Vector(18, 0))
-        lir.Ops(dynOps, Vector(leftRef, truncate), Vector.empty, tpe)
+        val truncate = lir.Ops(PrimOps.Bits, Vector(rightRef), Vector(18, 0), BackendType.bitTpe(19))
+        val (truncateNode, truncateRef) = makeNode(truncate, stack)
+        val calc = lir.Ops(dynOps, Vector(leftRef, truncateRef), Vector.empty, tpe)
+
+        (calc, truncateNode.some)
       case DataInstance(shamtTpe, rightRef) if shamtTpe.symbol == Symbol.bit =>
         val HPElem.Num(width) = shamtTpe.hargs.head
 
-        if(width < 20) lir.Ops(dynOps, Vector(leftRef, rightRef), Vector.empty, tpe)
+        if(width < 20) (lir.Ops(dynOps, Vector(leftRef, rightRef), Vector.empty, tpe), Option.empty)
         else {
-          val truncate = lir.Ops(PrimOps.Bits, Vector(rightRef), Vector(18, 0))
-          lir.Ops(dynOps, Vector(leftRef, truncate), Vector.empty, tpe)
+          val truncate = lir.Ops(PrimOps.Bits, Vector(rightRef), Vector(18, 0), BackendType.bitTpe(19))
+          val (truncateNode, truncateRef) = makeNode(truncate, stack)
+          val calc = lir.Ops(dynOps, Vector(leftRef, truncateRef), Vector.empty, tpe)
+
+          (calc, truncateNode.some)
         }
     }
 
-    val instance = DataInstance(tpe, calc)
-    RunResult(Vector.empty, instance)
+    val (calcNode, calcRef) = makeNode(calc, stack)
+    val instance = DataInstance(tpe, calcRef)
+    RunResult(stmtOpt.toVector :+ calcNode, instance)
+  }
+
+  private def makeNode(expr: lir.Expr, stack: StackFrame): (lir.Node, lir.Reference) = {
+    val node = lir.Node(
+      stack.next("_GEN").name,
+      expr,
+      expr.tpe
+    )
+    val ref = lir.Reference(node.name, node.tpe)
+
+    (node, ref)
   }
 }
