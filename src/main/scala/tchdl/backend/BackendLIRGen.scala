@@ -520,7 +520,9 @@ object BackendLIRGen {
   private def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
   private def atLeastLength(x: Double): Double = {
     val width = (math.ceil _ compose log2) (x)
+
     if (width == 0) 1
+    else if(x == 0) 0
     else width
   }
 
@@ -648,7 +650,6 @@ object BackendLIRGen {
 
     val output = retName.map(name => lir.Port(lir.Dir.Output, name, interface.retTpe))
 
-    val retRef = retName.map(lir.Reference(_, interface.retTpe))
     val retInvalid = retName.map(name => lir.Invalid(name))
     val ports = active +: (paramPorts ++ output)
 
@@ -685,21 +686,17 @@ object BackendLIRGen {
   }
 
   def runInterface(interface: MethodContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.When] = {
-    val stmts = interface.code.flatMap(runStmt(_))
-    val RunResult(retStmts, instance: DataInstance) = runExpr(interface.ret)
+    val stmts = removeUnitNode(interface.code.flatMap(runStmt(_)))
+    val RunResult(retStmtTmps, instance: DataInstance) = runExpr(interface.ret)
+    val retStmts = removeUnitNode(retStmtTmps)
     val methodRetTpe = interface.label.symbol.tpe.asMethodType.returnType
     val retConnect =
       if (methodRetTpe == Type.unitTpe) Option.empty
       else lir.Assign(lir.Reference(interface.retName, interface.retTpe), instance.refer).some
 
-    val activeRef = lir.Reference(interface.activeName, BackendType.boolTpe)
-    val literal = lir.Literal(1, BackendType.boolTpe)
-    val (literalNode, literalRef) = makeNode(literal)
-    val (opsNode, opsRef) = makeNode(lir.Ops(PrimOps.Eq, Vector(activeRef, literalRef), Vector.empty, BackendType.boolTpe))
+    val cond = lir.When(lir.Reference(interface.activeName, BackendType.boolTpe), stmts ++ retStmts ++ retConnect, Vector.empty)
 
-    val cond = lir.When(opsRef, stmts ++ retStmts ++ retConnect, Vector.empty)
-
-    BuildResult(Vector(literalNode, opsNode), cond)
+    BuildResult(Vector.empty, cond)
   }
 
   def buildUpperModule(moduleName: String, tpe: BackendType)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): (Vector[lir.Port], Vector[lir.Stmt]) = {
@@ -908,83 +905,6 @@ object BackendLIRGen {
   }
 
   def runCallInterface(call: backend.CallInterface)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    /*
-    def callInternal(tpe: BackendType): RunResult = {
-      val candidates = ctx.interfaces(tpe)
-      val interface = candidates.find(_.label == call.label).get
-
-      val paramRefs = interface.params
-        .map { case (name, _) => stack.refer(name) }
-        .map { name => ir.Reference(name.name, ir.UnknownType) }
-
-      val argNames = call.args.map {
-        case backend.Term.Temp(id, _) => stack.refer(id)
-        case backend.Term.Variable(name, _) => stack.refer(name)
-      }
-      val argInstances = argNames.map(stack.lookup).map(_.asInstanceOf[DataInstance])
-
-      val (futures, connectOpts) = (paramRefs zip argInstances).map{ case (p, a) => connect(p, a) }.unzip
-      val future = futures.foldLeft(Future.empty)(_ + _)
-      val connects = connectOpts.flatten.toVector
-      val activate = ir.Connect(ir.NoInfo, ir.Reference(interface.activeName, ir.UnknownType), ir.UIntLiteral(1))
-      val returnedInstance = interface.ret match {
-        case backend.UnitLiteral() => DataInstance()
-        case _ => DataInstance(interface.retTpe, ir.Reference(interface.retName, ir.UnknownType))
-      }
-
-      RunResult(future, activate +: connects, returnedInstance)
-    }
-
-    def callToSubModule(module: ir.Reference, tpe: BackendType): RunResult = {
-      val candidates = ctx.interfaces(tpe)
-      val interface = candidates.find(_.label == call.label).get
-
-      val params = interface.params.toVector.map { case (name, _) => ir.SubField(module, name, ir.UnknownType) }
-      val argNames = call.args.map {
-        case backend.Term.Temp(id, _) => stack.refer(id)
-        case backend.Term.Variable(name, _) => stack.refer(name)
-      }
-      val args = argNames.map(stack.lookup).map(_.asInstanceOf[DataInstance])
-      val activate = ir.Connect(ir.NoInfo, ir.SubField(module, interface.activeName, ir.UnknownType), ir.UIntLiteral(1))
-
-      val (futures, connectOpts) = (params zip args).map{ case (p, a) => connect(p, a) }.unzip
-      val connects = connectOpts.flatten
-      val future = futures.foldLeft(Future.empty)(_ + _)
-
-      val returnedInstance = interface.ret match {
-        case backend.UnitLiteral() => DataInstance()
-        case _ => DataInstance(interface.retTpe, ir.SubField(module, interface.retName, ir.UnknownType))
-      }
-
-      RunResult(future, activate +: connects, returnedInstance)
-    }
-
-    def callToUpperModule(module: String, tpe: BackendType): RunResult = {
-      def refBuilder(name: String): ir.Reference = ir.Reference(module + "$" + name, ir.UnknownType)
-
-      val candidates = ctx.interfaces(tpe)
-      val interface = candidates.find(_.label == call.label).get
-      val params = interface.params.toVector.map { case (name, _) => refBuilder(name) }
-
-      val argNames = call.args.map {
-        case backend.Term.Temp(id, _) => stack.refer(id)
-        case backend.Term.Variable(name, _) => stack.refer(name)
-      }
-      val args = argNames.map(stack.lookup).map(_.asInstanceOf[DataInstance])
-
-      val activate = ir.Connect(ir.NoInfo, refBuilder(interface.activeName), ir.UIntLiteral(1))
-      val (futures, connectOpts) = (params zip args).map{ case (p, a) => connect(p, a) }.unzip
-      val future = futures.foldLeft(Future.empty)(_ + _)
-      val connects = connectOpts.flatten
-      val returnedInstance = interface.ret match {
-        case backend.UnitLiteral() => DataInstance()
-        case _ => DataInstance(interface.retTpe, refBuilder(interface.retName))
-      }
-
-      RunResult(future, activate +: connects, returnedInstance)
-    }
-    */
-
     def calling(tpe: BackendType)(refer: (String, BackendType) => lir.Ref): RunResult = {
       val candidates = ctx.interfaces(tpe)
       val interface = candidates.find(_.label == call.label).get
@@ -1094,19 +1014,19 @@ object BackendLIRGen {
     }
   }
 
-  def runReadMemory(read: backend.ReadMemory)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+  def  runReadMemory(read: backend.ReadMemory)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def getName(term: backend.Term): Name = term match {
       case backend.Term.Variable(name, _) => stack.refer(name)
       case backend.Term.Temp(id, _) => stack.refer(id)
     }
 
     val ModuleInstance(_, location) = stack.lookup(getName(read.accessor))
-    val ModuleLocation.Sub(memory @ lir.Reference(memName, _)) = location
+    val ModuleLocation.Sub(lir.Reference(memName, _)) = location
     val DataInstance(_, addrRef) = stack.lookup(getName(read.addr))
 
     val readTpe = read.tpe.copy(isPointer = true)
     val readStmt = lir.MemRead(memName, read.port, addrRef, readTpe)
-    val readDataRef = lir.Reference(memName + "_" + s"_${read.port}_data", readTpe)
+    val readDataRef = lir.Reference(NameTemplate.memPointer(memName, read.port), readTpe)
     val instance = DataInstance(readTpe, readDataRef)
 
     RunResult(Vector(readStmt), instance)
@@ -1171,40 +1091,14 @@ object BackendLIRGen {
   }
 
   def runMatch(matchExpr: backend.Match)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    def extractFieldData(source: lir.SubField, tpe: BackendType, bitIdx: BigInt): (Vector[lir.Stmt], Name, BigInt) = {
-      /*
-      tpe match {
-        case UIntType(firrtl.ir.IntWidth(width)) =>
-          val name = stack.next("_EXTRACT")
-          val tpe = BackendType.bitTpe(width.toInt)
-          val expr = lir.Ops(PrimOps.Bits, Vector(source), Vector(bitIdx + width - 1, bitIdx), tpe)
-          val node = lir.Node(name.name, expr, expr.tpe)
-
-          (Vector(node), name, bitIdx + width)
-        case BundleType(fields) =>
-          val bundleName = stack.next("_EXTRACT")
-          val wire = lir.Wire(bundleName.name, tpe)
-
-          def subField(name: String): ir.SubField =
-            ir.SubField(
-              ir.Reference(bundleName.name, tpe),
-              name,
-              ir.UnknownType
-            )
-
-          val (stmts, nextIdx) = fields.foldLeft((Vector.empty[ir.Statement], bitIdx)) {
-            case ((stmts, idx), field) =>
-              val (leafStmts, name, nextIdx) = extractFieldData(source, field.tpe, idx)
-              val connect = ir.Connect(ir.NoInfo, subField(field.name), ir.Reference(name.name, ir.UnknownType))
-
-              (stmts ++ leafStmts :+ connect, nextIdx)
-          }
-
-          (wire +: stmts, bundleName, nextIdx)
-        case VectorType(tpe, length) =>
-
+    def extractFieldData(source: lir.SubField, srcTpe: BackendType, bitIdx: BigInt): (Vector[lir.Stmt], Name, BigInt) = {
+      def convertHWType(tpe: BackendType): BackendType = tpe.symbol match {
+        case sym if sym == Symbol.int => BackendType.bitTpe(32)
+        case sym if sym == Symbol.unit => BackendType.bitTpe(0)
+        case _ => tpe
       }
-      */
+
+      val tpe = convertHWType(srcTpe)
 
       tpe.symbol match {
         case sym if sym == Symbol.bit =>
@@ -1341,7 +1235,7 @@ object BackendLIRGen {
           val patternStmts = results.flatMap(_.stmts)
 
           val leftNodes = Vector.newBuilder[lir.Node]
-          val condition = conds.filter(_.refer == trueRef).foldLeft[lir.Expr](variantEq) {
+          val condition = conds.foldLeft[lir.Expr](variantEq) {
             case (left, right) =>
               val (leftNode, leftRef) = makeNode(left)
               leftNodes += leftNode
@@ -1441,7 +1335,7 @@ object BackendLIRGen {
     // In order to connect between two indirect module communication,
     // this method add statements for connecting between two modules.
     // current module is also subject to communication.
-    def buildIndirectAccessCond(interface: MethodContainer, fromName: String)(targetBuilder: String => lir.Ref): (Option[lir.Invalid], Vector[lir.Stmt]) = {
+    def buildIndirectAccessCond(interface: MethodContainer, fromName: String)(targetBuilder: (String, BackendType) => lir.Ref): (Option[lir.Invalid], Vector[lir.Stmt]) = {
       // this method make source wire's name
       // For example, if looking into submodule's parent module's interface,
       // name will be [submodule instance name] . [parent module instance name]_[name] like sub.parent_call_active
@@ -1454,15 +1348,15 @@ object BackendLIRGen {
         if (isUnitRet) Option.empty
         else {
           val dst = fromRef(interface.retName, interface.retTpe)
-          lir.Assign(dst, targetBuilder(interface.retName)).some
+          lir.Assign(dst, targetBuilder(interface.retName, interface.retTpe)).some
         }
       val retInvalid = assignOpt.map(_ => lir.Invalid(interface.retName))
 
-      val params = interface.params.map { case (name, _) => targetBuilder(name) }.toVector
+      val params = interface.params.map { case (name, tpe) => targetBuilder(name, tpe) }.toVector
       val args = interface.params.map { case (name, tpe) => fromRef(name, tpe) }.toVector
       val connects = (params zip args).map { case (param, arg) => lir.Assign(param, arg) }
       val (activeLitNode, activeLitRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
-      val activate = lir.Assign(targetBuilder(interface.activeName), activeLitRef)
+      val activate = lir.Assign(targetBuilder(interface.activeName, BackendType.boolTpe), activeLitRef)
       val conseq = (activate +: connects) ++ assignOpt
       val when = lir.When(fromActive, conseq, Vector.empty)
 
@@ -1480,9 +1374,9 @@ object BackendLIRGen {
         val RunResult(stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
         val parents = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Parent))
 
-        val targetName: String => lir.Ref = refer match {
-          case ModuleLocation.This => (name: String) => lir.Reference(name, tpe)
-          case ModuleLocation.Upper(target) => name: String => lir.Reference(target + "_" + name, tpe)
+        val targetName: (String, BackendType) => lir.Ref = refer match {
+          case ModuleLocation.This => (name: String, tpe: BackendType) => lir.Reference(name, tpe)
+          case ModuleLocation.Upper(target) => (name: String, tpe: BackendType) => lir.Reference(target + "_" + name, tpe)
           case _: ModuleLocation.Sub => throw new ImplementationErrorException("refer a sub module as a parent module")
         }
 
@@ -1497,10 +1391,10 @@ object BackendLIRGen {
         val RunResult(stmts, ModuleInstance(tpe, refer)) = runExpr(expr)
         val siblings = ctx.interfaces(tpe).filter(_.label.symbol.hasFlag(Modifier.Sibling))
 
-        val target: String => lir.Ref = refer match {
+        val target: (String, BackendType) => lir.Ref = refer match {
           case ModuleLocation.This => throw new ImplementationErrorException("refer this module as sibling module")
-          case ModuleLocation.Sub(refer) => (name: String) => lir.SubField(refer, name, tpe)
-          case ModuleLocation.Upper(refer) => (name: String) => lir.Reference(refer + "$" + name, tpe)
+          case ModuleLocation.Sub(refer) => (name: String, tpe: BackendType) => lir.SubField(refer, name, tpe)
+          case ModuleLocation.Upper(refer) => (name: String, tpe: BackendType) => lir.Reference(refer + "$" + name, tpe)
         }
 
         val (invalid, stmtss) = siblings.map(buildIndirectAccessCond(_, fromName)(target)).unzip
@@ -1553,22 +1447,6 @@ object BackendLIRGen {
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def makeLeafs(tpe: BackendType, refer: lir.Ref): Vector[lir.Ref] = {
-      /*
-      tpe match {
-        case ir.UIntType(_) => Vector(refer)
-        case ir.BundleType(fields) =>
-          val refers = fields.flatMap {
-            field =>
-              val underRefer = ir.SubField(refer, field.name, field.tpe)
-              makeLeafs(field.tpe, underRefer)
-          }
-
-          refers.toVector
-        case ir.VectorType(tpe, length) =>
-          (0 to length).flatMap(idx => makeLeafs(tpe, ir.SubIndex(refer, idx, tpe))).toVector
-      }
-      */
-
       tpe.symbol match {
         case sym if sym == Symbol.bit => Vector(refer)
         case sym if sym == Symbol.vec =>
@@ -1703,11 +1581,10 @@ object BackendLIRGen {
   def runReturn(ret: backend.Return)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val RunResult(stmts, instance) = runExpr(ret.expr)
     val DataInstance(_, refer) = instance
-    val retRef = lir.Reference(ret.proc.retName, ret.tpe)
-    val assign = lir.Assign(retRef, refer)
+    val retStmt = lir.Return(ret.proc.symbol.path, refer)
     val RunResult(unitStmts, unit) = DataInstance.unit()
 
-    RunResult((stmts :+ assign) ++ unitStmts, unit)
+    RunResult((stmts :+ retStmt) ++ unitStmts, unit)
   }
 
   def runCommence(commence: backend.Commence)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1784,5 +1661,12 @@ object BackendLIRGen {
     val ref = lir.Reference(node.name, expr.tpe)
 
     (node, ref)
+  }
+
+  private def removeUnitNode(stmts: Vector[lir.Stmt])(implicit globa: GlobalData): Vector[lir.Stmt] = {
+    val unitTpe = toBackendType(Type.unitTpe)
+    val (_, removed) = stmts.collectPartition{ case n @ lir.Node(_, _, tpe) if tpe == unitTpe => n }
+
+    removed
   }
 }

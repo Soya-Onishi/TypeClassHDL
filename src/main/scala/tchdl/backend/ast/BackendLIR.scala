@@ -36,6 +36,7 @@ object BackendLIR {
   case class When(cond: Ref, conseq: Vector[Stmt], alt: Vector[Stmt]) extends Stmt
   case class MemRead(name: String, port: Int, addr: Ref, tpe: BackendType) extends Stmt
   case class MemWrite(name: String, port: Int, addr: Ref, data: Ref) extends Stmt
+  case class Return(path: NameSpace, expr: Ref) extends Stmt
   case class Stop() extends Stmt
 
   case class Reference(name: String, tpe: BackendType) extends Ref
@@ -44,7 +45,8 @@ object BackendLIR {
   case class SubAccess(vec: Ref, idx: Ref, tpe: BackendType) extends Ref
 
   case class Literal(value: BigInt, tpe: BackendType) extends Expr
+  case class Commence(path: NameSpace, origin: String, tpe: BackendType) extends Expr
   case class Pointer(path: NameSpace, tpe: BackendType) extends Expr
-  case class Deref(expr: Reference, tpe: BackendType) extends Expr
+  case class Deref(ref: Reference, tpe: BackendType) extends Expr
   case class Ops(op: PrimOp, args: Vector[Ref], consts: Vector[BigInt], tpe: BackendType) extends Expr
 }

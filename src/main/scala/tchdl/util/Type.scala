@@ -1524,7 +1524,7 @@ object Type {
     val symbol = global.builtin.types.lookup("Bit")
     val IntLiteral(value) = width
 
-    if (value > 0) Type.RefType(symbol, Vector(width), Vector.empty, isPointer = false)
+    if (value >= 0) Type.RefType(symbol, Vector(width), Vector.empty, isPointer = false)
     else throw new ImplementationErrorException(s"Bit's width[${value}] must be natural number")
   }
 
