@@ -2,21 +2,19 @@ package test
 
 module Top
 impl Top {
-  input def calc(a: Bit[4], b: Bit[4], c: Bit[4], d: Bit[4]) -> Future[Bit[4]] {
+  input def calc(a: Bit[4], b: Bit[4], c: Bit[4], d: Bit[4]) -> Unit {
     generate exec(a, b, c, d) # first
   }
 
-  stage exec(a: Bit[4], b: Bit[4], c: Bit[4], d: Bit[4]) -> Future[Bit[4]] {
+  stage exec(a: Bit[4], b: Bit[4], c: Bit[4], d: Bit[4]) {
     state first {
       val x = a + b
       val y = c + d
 
-      return Future[Bit[4]]:::NotReady
       goto second(x, y)
     }
 
     state second(x: Bit[4], y: Bit[4]) {
-      return Future[Bit[4]]:::Ready(x + y)
       finish
     }
   }

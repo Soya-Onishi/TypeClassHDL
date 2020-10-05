@@ -223,13 +223,10 @@ package object backend {
     def replace(tpe: Type.RefType): BackendType = tpe.origin match {
       case tp: Symbol.TypeParamSymbol =>
         tpTable.getOrElse(tp, throw new ImplementationErrorException(s"$tp should be found in tpTable"))
-      case _: Symbol.EntityTypeSymbol =>
+      case sym: Symbol.EntityTypeSymbol =>
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
-
-        val backendType = BackendType(tpe.origin, hargs, targs, tpe.isPointer)
-
-        backendType
+        BackendType(tpe.origin, hargs, targs, tpe.isPointer)
       case symbol: Symbol.FieldTypeSymbol =>
         val accessor = tpe.accessor.getOrElse(throw new ImplementationErrorException(s"$symbol should have accessor"))
         val accessorTPTable = tpTable.map { case (tp, tpe) => tp -> toRefType(tpe)}

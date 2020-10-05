@@ -2,17 +2,17 @@ package test
 
 module Top
 impl Top {
-  input def function(a: Bit[8], b: Bit[8]) -> Unit {
-    generate s0() # st1(a, b)
+  input def function(v0: Bit[8], v1: Bit[8]) -> Unit {
+    generate s0() # st1(v0, v1)
   }
 
-  stage s0() -> Unit {
+  stage s0() {
     state st1(x: Bit[8], y: Bit[8]) {
       relay s1() # st2(x + y)
     }
   }
 
-  stage s1() -> Unit {
+  stage s1() {
     state st2(z: Bit[8]) {
       finish
     }

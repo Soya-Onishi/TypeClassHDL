@@ -1163,12 +1163,11 @@ object BackendLIRGen {
       def literalPattern(lit: backend.Literal): RunResult = {
         val locName = stack.next("_GEN")
         val loc = lir.Reference(locName.name, lit.tpe)
-        val locTpe = BackendType.boolTpe
         val literal = toLIRForm(lit)
         val (literalNode, literalRef) = makeNode(literal)
         val cmp = lir.Ops(PrimOps.Eq, Vector(instance.refer, literalRef), Vector.empty, BackendType.boolTpe)
         val node = lir.Node(locName.name, cmp, BackendType.boolTpe)
-        val inst = DataInstance(locTpe, loc)
+        val inst = DataInstance(BackendType.boolTpe, lir.Reference(node.name, node.tpe))
 
         RunResult(Vector(literalNode, node), inst)
       }
@@ -1252,8 +1251,7 @@ object BackendLIRGen {
           val condRef = lir.Reference(condName.name, condition.tpe)
           val connect = lir.Node(condName.name, condition, condition.tpe)
           val returnStmts = litNode +: (stmts ++ leftNodes.result() ++ patternStmts) :+ connect
-          val boolTpe = toBackendType(Type.boolTpe)
-          val returnInst = DataInstance(boolTpe, condRef)
+          val returnInst = DataInstance(BackendType.boolTpe, condRef)
 
           RunResult(returnStmts, returnInst)
       }

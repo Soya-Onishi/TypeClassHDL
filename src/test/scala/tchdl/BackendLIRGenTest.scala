@@ -5,12 +5,11 @@ import tchdl.backend._
 import tchdl.util._
 import tchdl.typecheck._
 import tchdl.backend.ast.{BackendLIR => lir}
-import java.nio.file.Files
-
 import tchdl.parser.Filename
 
-import sys.process._
 import scala.language.postfixOps
+import scala.reflect.ClassTag
+import scala.reflect.runtime.universe.TypeTag
 import org.scalatest.tags.Slow
 
 @Slow
@@ -26,6 +25,18 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
+
+  def findAllComponents[T: ClassTag : TypeTag](stmts: Vector[lir.Stmt]): Vector[T] = {
+    if(stmts.isEmpty) Vector.empty
+    else {
+      val nodes = stmts.collect{ case n: T => n }
+      val whens = stmts.collect{ case w: lir.When => w }
+      val conseqs = findAllComponents(whens.flatMap(_.conseq))
+      val alts = findAllComponents(whens.flatMap(_.alt))
+
+      nodes ++ conseqs ++ alts
+    }
+  }
 
   def untilThisPhase(pkgName: Vector[String], module: String, names: String*): (Vector[lir.Module], GlobalData) = {
     val fullnames = names.map(buildName(rootDir, filePath, _))
@@ -552,237 +563,424 @@ class BackendLIRGenTest extends TchdlFunSuite {
     untilThisPhase(Vector("test"), "Top", "useAllBinOpInt.tchdl")
   }
 
-  /*
-  test("use state parameter with Future[Bit[8]]") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam.tchdl")
-    runFirrtl(circuit)
-  }
-   */
 
-  /*
   test("use state parameter with Bit[8]") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam1.tchdl")
-    runFirrtl(circuit)
+    val (modules, _) = untilThisPhase(Vector("test"), "Top", "useStateParam1.tchdl")
+    val top = findModule(modules, "Top").get
+
+    val nodes = findAllComponents[lir.Node](top.components ++ top.inits ++ top.procedures)
+    val wires = findAllComponents[lir.Wire](top.components ++ top.inits ++ top.procedures)
+    val regs = findAllComponents[lir.Reg](top.components ++ top.inits ++ top.procedures)
+
+    val execActive = top.components.collectFirst{ case r @ lir.Reg(name, _, _) if name.contains("exec") && name.contains("_active") => r }.get
+    val execHash = extractHashCode("exec_([0-9a-f]+)\\$_active", execActive.name)
+    def execName(name: String): String = s"exec_$execHash$$$name"
+
+    // node node_name <= source_wire_name
+    //      ^^^^^^^^^    ^^^^^^^^^^^^^^^^
+    //      return val   argument('name')
+    def findSourceNode(name: String): lir.Reference = {
+      nodes.collectFirst{
+        case lir.Node(dst, lir.Reference(ref, _), tpe) if name == ref => lir.Reference(dst, tpe)
+      }.get
+    }
+
+    val a = findSourceNode(execName("a"))
+    val b = findSourceNode(execName("b"))
+    val c = findSourceNode(execName("c"))
+    val d = findSourceNode(execName("d"))
+    val addNodeOpt0 = nodes.find(_.src == lir.Ops(firrtl.PrimOps.Add, Vector(a, b), Vector.empty, a.tpe))
+    val addNodeOpt1 = nodes.find(_.src == lir.Ops(firrtl.PrimOps.Add, Vector(c, d), Vector.empty, c.tpe))
+
+    assert(addNodeOpt0.isDefined)
+    assert(addNodeOpt1.isDefined)
+
+    val addNode0 = addNodeOpt0.get
+    val addNode1 = addNodeOpt1.get
+
+    val execFirstLocals = wires.collect{
+      case w @ lir.Wire(name, _) if name.contains("exec") && name.contains("first") => w
+    }
+    val execFirstX = execFirstLocals.find(_.name.contains("x")).get
+    val execFirstY = execFirstLocals.find(_.name.contains("y")).get
+
+    val assigns = findAllComponents[lir.Assign](top.components ++ top.inits ++ top.procedures)
+      .collect{ case a @ lir.Assign(_: lir.Reference, _) => a }
+
+    val xAssign = assigns.find(_.dst.asInstanceOf[lir.Reference].name == execFirstX.name).get
+    val yAssign = assigns.find(_.dst.asInstanceOf[lir.Reference].name == execFirstY.name).get
+
+    assert(xAssign.src == lir.Reference(addNode0.name, addNode0.tpe))
+    assert(yAssign.src == lir.Reference(addNode1.name, addNode1.tpe))
+
+    val execSecondX = regs.find(r => r.name.contains("exec") && r.name.contains("second") && r.name.contains("x")).get
+    val execSecondY = regs.find(r => r.name.contains("exec") && r.name.contains("second") && r.name.contains("y")).get
+
+    val xAssign0 = assigns.find(_.dst.asInstanceOf[lir.Reference].name == execSecondX.name).get
+    val yAssign0 = assigns.find(_.dst.asInstanceOf[lir.Reference].name == execSecondY.name).get
+
+    val xAssignNode0 = nodes.find(_.name == xAssign0.src.asInstanceOf[lir.Reference].name).get
+    val yAssignNode0 = nodes.find(_.name == yAssign0.src.asInstanceOf[lir.Reference].name).get
+
+    assert(xAssignNode0.src.asInstanceOf[lir.Reference].name  == execFirstX.name)
+    assert(yAssignNode0.src.asInstanceOf[lir.Reference].name  == execFirstY.name)
   }
 
   test("use state parameter for generate and relay") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useStateParam2.tchdl")
-    val stmts = circuit.modules
-      .head.asInstanceOf[ir.Module]
-      .body.asInstanceOf[ir.Block]
-      .stmts
+    val (modules, _) = untilThisPhase(Vector("test"), "Top", "useStateParam2.tchdl")
+    val top = findModule(modules, "Top").get
 
-    val whens = stmts.collect{ case cond: ir.Conditionally => cond }
-    val functionWhen = whens.find(_.pred.asInstanceOf[ir.Reference].name.contains("function")).get
-    val s0When = whens.find(_.pred.asInstanceOf[ir.Reference].name.contains("s0")).get
+    def contains(src: String, keywords: String*): Boolean = {
+      keywords.forall(word => src.contains(word))
+    }
 
-    val functionName = functionWhen.pred.asInstanceOf[ir.Reference].name
-    val s0Name = s0When.pred.asInstanceOf[ir.Reference].name
+    val regs = findAllComponents[lir.Reg](top.components ++ top.inits ++ top.procedures)
+    val nodes = findAllComponents[lir.Node](top.components ++ top.inits ++ top.procedures)
+    val assigns = findAllComponents[lir.Assign](top.components ++ top.inits ++ top.procedures)
+      .collect{ case a @ lir.Assign(_: lir.Reference, _) => a }
 
-    val functionID = extractHashCode("function_([0-9a-f]+)\\$_active", functionName)
-    val s0ID = extractHashCode("s0_([0-9a-f]+)\\$_active", s0Name)
+    val function = top.procedures.collect{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("s0") && name.contains("_active") => w }
+    val s0st1x = regs.collectFirst{ case r @ lir.Reg(name, _, _) if contains(name, "s0", "st1", "x") => r }.get
+    val s0st1y = regs.collectFirst{ case r @ lir.Reg(name, _, _) if contains(name, "s0", "st1", "y") => r }.get
+    val assignX = assigns.find(_.dst.asInstanceOf[lir.Reference].name == s0st1x.name).get
+    val assignY = assigns.find(_.dst.asInstanceOf[lir.Reference].name == s0st1y.name).get
+    val nodeX = nodes.find(_.name == assignX.src.asInstanceOf[lir.Reference].name).get
+    val nodeY = nodes.find(_.name == assignY.src.asInstanceOf[lir.Reference].name).get
+    val functionV0 = top.ports.find(p => contains(p.name, "function", "v0")).get
+    val functionV1 = top.ports.find(p => contains(p.name, "function", "v1")).get
 
-    val connects = functionWhen.conseq.asInstanceOf[ir.Block].stmts.collect { case connect: ir.Connect => connect }
-    assert(connects.length == 4)
-
-    val connectX = connects(2)
-    val connectY = connects(3)
-
-    assert(connectX.loc == ir.Reference("s0_" + s0ID + "$st1$x", ir.UnknownType))
-    assert(connectY.loc == ir.Reference("s0_" + s0ID + "$st1$y", ir.UnknownType))
-
-    runFirrtl(circuit)
+    assert(nodeX.src == lir.Reference(functionV0.name, functionV0.tpe))
+    assert(nodeY.src == lir.Reference(functionV1.name, functionV1.tpe))
   }
-  */
 
-  /*
   test("method call with cast variable") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castToCallMethod.tchdl")
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "castToCallMethod.tchdl")
+    val top = findModule(modules, "Top").get
+    val function = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val nodes = findAllComponents[lir.Node](function.conseq)
+    val lit32 = nodes.find(_.src == lir.Literal(32, BackendType.intTpe(global)))
+    val lit64 = nodes.find(_.src == lir.Literal(64, BackendType.intTpe(global)))
 
-    val ir.Connect(_, _, from) = circuit.modules
-      .head.asInstanceOf[ir.Module]
-      .body.asInstanceOf[ir.Block]
-      .stmts
-      .collectFirst{ case cond: ir.Conditionally => cond }.get
-      .conseq.asInstanceOf[ir.Block]
-      .stmts.last
-
-    assert(from == ir.UIntLiteral(32, ir.IntWidth(32)))
-
-    runFirrtl(circuit)
+    assert(lit32.isDefined)
+    assert(lit64.isEmpty)
   }
+
 
   test("static method call with cast Type") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castToSelectMethod.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "castToSelectMethod.tchdl")
+    val top = findModule(modules, "Top").get
+    val function = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val nodes = findAllComponents[lir.Node](function.conseq)
+    val lit32 = nodes.find(_.src == lir.Literal(32, BackendType.intTpe(global)))
+    val lit64 = nodes.find(_.src == lir.Literal(64, BackendType.intTpe(global)))
+
+    assert(lit32.isDefined)
+    assert(lit64.isEmpty)
   }
 
   test("call static method from type parameter with cast") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castTPtoCallStatic.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "castTPtoCallStatic.tchdl")
+    val top = findModule(modules, "Top").get
+    val function = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val nodes = findAllComponents[lir.Node](function.conseq)
+    val lit32 = nodes.find(_.src == lir.Literal(32, BackendType.intTpe(global)))
+    val lit64 = nodes.find(_.src == lir.Literal(64, BackendType.intTpe(global)))
+
+    assert(lit32.isDefined)
+    assert(lit64.isEmpty)
   }
 
   test("call normal method from type parameter with cast") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "castTPtoCallNormal.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "castTPtoCallNormal.tchdl")
+    val top = findModule(modules, "Top").get
+    val function = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val nodes = findAllComponents[lir.Node](function.conseq)
+    val lit32 = nodes.find(_.src == lir.Literal(32, BackendType.intTpe(global)))
+    val lit64 = nodes.find(_.src == lir.Literal(64, BackendType.intTpe(global)))
+
+    assert(lit32.isDefined)
+    assert(lit64.isEmpty)
   }
 
   test("refer field type in function signature causes no error") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "referFieldTypeInSignature3.tchdl")
-
-    runFirrtl(circuit)
+    // this only verify phases passed correctly
+    untilThisPhase(Vector("test"), "Top", "referFieldTypeInSignature3.tchdl")
   }
 
   test("use bit manipulation methods") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useBitManipulationMethod.tchdl")
-    runFirrtl(circuit)
+    val (modules, _) = untilThisPhase(Vector("test"), "Top", "useBitManipulationMethod.tchdl")
+    val top = findModule(modules, "Top").get
+    val caller = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val nodes = findAllComponents[lir.Node](caller.conseq)
+    val ops = nodes.collect{ case lir.Node(_, ops: lir.Ops, _) => ops }
+
+    assert(ops.length == 4)
+    assert(ops(0).consts == Seq(7, 3))
+    assert(ops(0).op == firrtl.PrimOps.Bits)
+    assert(ops(1).consts == Seq(2, 1))
+    assert(ops(1).op == firrtl.PrimOps.Bits)
+    assert(ops(2).consts == Seq(4, 4))
+    assert(ops(2).op == firrtl.PrimOps.Bits)
+    assert(ops(3).op == firrtl.PrimOps.Cat)
   }
 
+
+  /*
+  TODO: require tests using
   test("read and write memory")  {
+
     val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
     runFirrtl(circuit)
   }
+  */
 
   test("read registers by static and dynamic index") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVector.tchdl")
-    runFirrtl(circuit)
+    def contains(src: String, keywords: String*): Boolean = {
+      keywords.forall(word => src.contains(word))
+    }
+
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "useVector.tchdl")
+    val top = findModule(modules, "Top").get
+    val readDyn = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(cond, _), _, _) if cond.contains("readDyn") => w }.get
+    val nodes = findAllComponents[lir.Node](readDyn.conseq)
+    val assigns = findAllComponents[lir.Assign](readDyn.conseq)
+
+    val dyn = assigns.find(_.src.isInstanceOf[lir.SubAccess]).get
+    val subAccess = dyn.src.asInstanceOf[lir.SubAccess]
+    val idxRef = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if contains(name, "readDyn", "idx") => n }.get
+    val vecRef = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference("regs", _), _) => n }.get
+
+    assert(subAccess.idx == lir.Reference(idxRef.name, idxRef.tpe))
+    assert(subAccess.vec == lir.Reference(vecRef.name, vecRef.tpe))
   }
 
   test("write registers by assignment") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAssign.tchdl")
-    runFirrtl(circuit)
+    def contains(src: String, keywords: String*): Boolean = {
+      keywords.forall(word => src.contains(word))
+    }
+
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "useAssign.tchdl")
+    val top = findModule(modules, "Top").get
+    val nodes = findAllComponents[lir.Node](top.components ++ top.inits ++ top.procedures)
+
+    def test(funcName: String, regName: String)(checker: lir.Assign => Unit): Unit = {
+      val f = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if contains(name, funcName, "_active") => w }.get
+      val assigns = findAllComponents[lir.Assign](f.conseq)
+      val assign = assigns.collectFirst{ case a @ lir.Assign(lir.Reference(name, _), _) if name == regName => a }.get
+
+      checker(assign)
+    }
+
+    test("function0", "a"){ assign =>
+      val nodeName = assign.src.asInstanceOf[lir.Reference].name
+      val node = nodes.find(_.name == nodeName).get
+      assert(node.src == lir.Literal(0, BackendType.bitTpe(2)(global)))
+    }
+
+    test("function1", "vec") { assign =>
+      assert(assign.src.isInstanceOf[lir.Reference])
+      val refName = assign.src.asInstanceOf[lir.Reference].name
+      assert(refName.matches("function1_[0-9a-f]+\\$vec"))
+    }
+
   }
 
   test("use vector update") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVectorUpdate.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "useVectorUpdate.tchdl")
+    val top = findModule(modules, "Top").get
+    val updateReg = top.procedures.collectFirst{ case w @ lir.When(ref: lir.Reference, _, _) if ref.name.matches("updateReg_[0-9a-f]+\\$_active") => w }.get
+    val updateFirstReg = top.procedures.collectFirst{ case w @ lir.When(ref: lir.Reference, _, _) if ref.name.matches("updateFirstReg_[0-9a-f]+\\$_active") => w }.get
+
+    {
+      val nodes = findAllComponents[lir.Node](updateReg.conseq)
+      val assigns = findAllComponents[lir.Assign](updateReg.conseq)
+      val refRegs = nodes.find(_.src.asInstanceOf[lir.Reference].name == "regs").get
+      val refIdx = nodes.find(_.src.asInstanceOf[lir.Reference].name.matches("updateReg_[0-9a-f]+\\$idx")).get
+      val refElem = nodes.find(_.src.asInstanceOf[lir.Reference].name.matches("updateReg_[0-9a-f]+\\$elem")).get
+
+      val assignUpdate = assigns.collectFirst { case a @ lir.Assign(lir.Reference("_VEC_UPDATED_0", _), _) => a }.get
+      val assignAccess = assigns.find(_.dst.isInstanceOf[lir.SubAccess]).get
+      val assignRegs = assigns.collectFirst{ case a @ lir.Assign(lir.Reference("regs", _), _) => a }.get
+
+      assert(assignUpdate.src == lir.Reference(refRegs.name, refRegs.tpe))
+      assert(assignAccess.src == lir.Reference(refElem.name, refElem.tpe))
+      assert(assignAccess.dst.asInstanceOf[lir.SubAccess].idx == lir.Reference(refIdx.name, refIdx.tpe))
+      assert(assignRegs.src == lir.Reference("_VEC_UPDATED_0", assignRegs.src.tpe))
+    }
   }
 
   test("pattern match with bool type") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch9.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "PatternMatch9.tchdl")
+    val top = findModule(modules, "Top").get
+    val f = top.procedures.collectFirst{ case w: lir.When => w }.get
+
+    val bit1 = BackendType.boolTpe(global)
+    val bool = BackendType(Symbol.bool(global), Vector.empty, Vector.empty, isPointer = false)
+    val nodes = findAllComponents[lir.Node](f.conseq)
+    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_[0-9a-f]+\\$a") => n }.get
+    val lit1Node = nodes.collectFirst{ case n @ lir.Node(_, lir.Literal(v, _), _) if v == 1 => n }.get
+    val lit0Node = nodes.collectFirst{ case n @ lir.Node(_, lir.Literal(v, _), _) if v == 0 => n }.get
+    val eqNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Ops, _) => n }
+    val eqs = eqNodes.map(_.src.asInstanceOf[lir.Ops])
+    assert(eqs(0).args == Vector(lir.Reference(aNode.name, bool), lir.Reference(lit1Node.name, bit1)))
+    assert(eqs(1).args == Vector(lir.Reference(aNode.name, bool), lir.Reference(lit0Node.name, bit1)))
+
+    val when0 = f.conseq.collectFirst{ case w: lir.When => w }.get
+    assert(when0.cond == lir.Reference(eqNodes(0).name, bit1))
+    val when1 = when0.alt.collectFirst{ case w: lir.When => w }.get
+    assert(when1.cond == lir.Reference(eqNodes(1).name, bit1))
   }
 
   test("pattern match with Int type") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch10.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "PatternMatch10.tchdl")
+    val top = findModule(modules, "Top").get
+    val f = top.procedures.collectFirst { case w: lir.When => w }.get
+
+    val int = BackendType.intTpe(global)
+    val bool = BackendType.boolTpe(global)
+    val nodes = f.conseq.collect{ case n: lir.Node => n }
+    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_[0-9a-f]+\\$a") => n }.get
+    val litNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Literal, _) => n }
+    val eqNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Ops, _) => n }
+
+    assert(litNodes.length == 3)
+    assert(litNodes(0).src == lir.Literal(0, int))
+    assert(litNodes(1).src == lir.Literal(1, int))
+    assert(litNodes(2).src == lir.Literal(1, bool))
+
+    val a = lir.Reference(aNode.name, aNode.tpe)
+    val lit0 = lir.Reference(litNodes(0).name, litNodes(0).tpe)
+    val lit1 = lir.Reference(litNodes(1).name, litNodes(1).tpe)
+    assert(eqNodes(0).src == lir.Ops(firrtl.PrimOps.Eq, Vector(a, lit0), Vector.empty, bool))
+    assert(eqNodes(1).src == lir.Ops(firrtl.PrimOps.Eq, Vector(a, lit1), Vector.empty, bool))
+
+    val when0 = f.conseq.collectFirst{ case w: lir.When => w }.get
+    assert(when0.cond == lir.Reference(eqNodes(0).name, bool))
+    val when1 = when0.alt.collectFirst{ case w: lir.When => w }.get
+    assert(when1.cond == lir.Reference(eqNodes(1).name, bool))
+    val when2 = when1.alt.collectFirst{ case w: lir.When => w }.get
+    assert(when2.cond == lir.Reference(litNodes(2).name, bool))
   }
 
   test("pattern match with Bit[2] type") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch11.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "PatternMatch11.tchdl")
+    val top = findModule(modules, "Top").get
+    val f = top.procedures.collectFirst { case w: lir.When => w }.get
+
+    val bit = BackendType.bitTpe(2)(global)
+    val bool = BackendType.boolTpe(global)
+    val nodes = f.conseq.collect{ case n: lir.Node => n }
+    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_[0-9a-f]+\\$a") => n }.get
+    val litNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Literal, _) => n }
+    val eqNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Ops, _) => n }
+
+    assert(litNodes.length == 3)
+    assert(litNodes(0).src == lir.Literal(0, bit))
+    assert(litNodes(1).src == lir.Literal(1, bit))
+    assert(litNodes(2).src == lir.Literal(1, bool))
+
+    val a = lir.Reference(aNode.name, aNode.tpe)
+    val lit0 = lir.Reference(litNodes(0).name, litNodes(0).tpe)
+    val lit1 = lir.Reference(litNodes(1).name, litNodes(1).tpe)
+    assert(eqNodes(0).src == lir.Ops(firrtl.PrimOps.Eq, Vector(a, lit0), Vector.empty, bool))
+    assert(eqNodes(1).src == lir.Ops(firrtl.PrimOps.Eq, Vector(a, lit1), Vector.empty, bool))
+
+    val when0 = f.conseq.collectFirst{ case w: lir.When => w }.get
+    assert(when0.cond == lir.Reference(eqNodes(0).name, bool))
+    val when1 = when0.alt.collectFirst{ case w: lir.When => w }.get
+    assert(when1.cond == lir.Reference(eqNodes(1).name, bool))
+    val when2 = when1.alt.collectFirst{ case w: lir.When => w }.get
+    assert(when2.cond == lir.Reference(litNodes(2).name, bool))
   }
 
   test("pattern match with Bit[2] type with ident catcher") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch12.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "PatternMatch12.tchdl")
+    val top = findModule(modules, "Top").get
+    val f = top.procedures.collectFirst{ case w: lir.When => w }.get
+
+    val bool = BackendType.boolTpe(global)
+    val nodes = f.conseq.collect{ case n: lir.Node => n }
+    val litNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Literal, _) => n }
+    val eqNode = nodes.collectFirst{ case n @ lir.Node(_, _: lir.Ops, _) => n }.get
+
+    val when0 = f.conseq.collectFirst{ case w: lir.When => w }.get
+    assert(when0.cond == lir.Reference(eqNode.name, bool))
+    val when1 = when0.alt.collectFirst{ case w: lir.When => w }.get
+    assert(when1.cond == lir.Reference(litNodes(1).name, bool))
   }
+
 
   test("use cast method to cast some types into Bit[8]") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useFroms.tchdl")
-    runFirrtl(circuit)
-  }
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "useFroms.tchdl")
+    val top = findModule(modules, "Top").get
+    val f0 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function0_[0-9a-f]+\\$_active") => w }.get
+    val f1 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function1_[0-9a-f]+\\$_active") => w }.get
+    val f2 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function2_[0-9a-f]+\\$_active") => w }.get
+    val bit8 = BackendType.bitTpe(8)(global)
 
-  test("compile grayscale module") {
-    val (circuit, _) = untilThisPhase(Vector("lbp"), "GrayScaler", "RGB.tchdl", "GrayScaler.tchdl")
-    runFirrtl(circuit)
-  }
+    {
+      val opNode = f0.conseq.collectFirst{ case n @ lir.Node(_, _: lir.Ops, _) => n }.get
+      val assign = f0.conseq.collectFirst{ case a: lir.Assign => a }.get
+      val ops = opNode.src.asInstanceOf[lir.Ops]
 
-  test("update and refer multiple layer Vector") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVecVec.tchdl")
-    runFirrtl(circuit)
+      assert(ops.op == firrtl.PrimOps.Pad)
+      assert(assign.dst.isInstanceOf[lir.Reference])
+      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function0_[0-9a-f]+\\$_ret"))
+      assert(assign.src == lir.Reference(opNode.name, bit8))
+    }
+
+    {
+      val opNode = f1.conseq.collectFirst{ case n @ lir.Node(_, _: lir.Ops, _) => n }.get
+      val assign = f1.conseq.collectFirst{ case a: lir.Assign => a }.get
+      val ops = opNode.src.asInstanceOf[lir.Ops]
+
+      assert(ops.op == firrtl.PrimOps.Bits)
+      assert(assign.dst.isInstanceOf[lir.Reference])
+      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function1_[0-9a-f]+\\$_ret"))
+      assert(assign.src == lir.Reference(opNode.name, bit8))
+    }
+
+    {
+      val opNode = f2.conseq.collectFirst{ case n @ lir.Node(_, _: lir.Ops, _) => n }.get
+      val assign = f2.conseq.collectFirst{ case a: lir.Assign => a }.get
+      val ops = opNode.src.asInstanceOf[lir.Ops]
+
+      assert(ops.op == firrtl.PrimOps.Pad)
+      assert(assign.dst.isInstanceOf[lir.Reference])
+      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function2_[0-9a-f]+\\$_ret"))
+      assert(assign.src == lir.Reference(opNode.name, bit8))
+    }
   }
 
   test("use interface's internal interface") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useInterfaceMethodForModule.tchdl")
-    runFirrtl(circuit)
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "useInterfaceMethodForModule.tchdl")
+
+    val top = findModule(modules, "Top").get
+    val sub = findModule(modules, "Sub").get
+
+    val function = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val inc = sub.procedures.collectFirst{ case w: lir.When => w }.get
+    val incHash = extractHashCode("TopInterface__inc_([0-9a-f]+)\\$_active", inc.cond.asInstanceOf[lir.Reference].name)
+    assert(inc.cond.asInstanceOf[lir.Reference].name == s"TopInterface__inc_$incHash$$_active")
+
+    val addNode = inc.conseq.collectFirst{ case n @ lir.Node(_, lir.Ops(firrtl.PrimOps.Add, _, _, _), _) => n }.get
+    val assignInc = inc.conseq.collectFirst{ case a: lir.Assign => a }.get
+    assert(assignInc.dst == lir.Reference(s"TopInterface__inc_$incHash$$_ret", addNode.tpe))
+    assert(assignInc.src == lir.Reference(addNode.name, addNode.tpe))
+
+    val bool = BackendType.boolTpe(global)
+    val assignFunc = function.conseq.collectFirst{ case a @ lir.Assign(lir.SubField(_, field, _), _) if field.contains("_active") => a }.get
+    assert(assignFunc.dst == lir.SubField(lir.Reference("sub", sub.tpe), s"TopInterface__inc_$incHash$$_active", bool))
+    assert(assignFunc.src.tpe == bool)
   }
 
   test("elaborate code that uses builder pattern") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "builderPattern.tchdl")
-    runFirrtl(circuit)
+    // run builder pattern
+    untilThisPhase(Vector("test"), "Top", "builderPattern.tchdl")
   }
+
 
   test("use some vector manipulation methods") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useVecManipulation.tchdl")
-    runFirrtl(circuit)
+    untilThisPhase(Vector("test"), "Top", "useVecManipulation.tchdl")
   }
-
-  test("use annotation to compile firrtl") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useAllBinOpBit.tchdl")
-    val emit = EmitCircuitAnnotation(classOf[VerilogEmitter])
-    val compiler = new firrtl.stage.transforms.Compiler(firrtl.stage.Forms.VerilogOptimized)
-    val init = CircuitState(circuit, Seq(emit))
-    val state = compiler.execute(init)
-    val emitter = new VerilogEmitter
-    val result = emitter.execute(state)
-    println(result.getEmittedCircuit.value)
-  }
-  */
-
-  /*
-  test("use future field in struct") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFuture.tchdl")
-
-    val outputs = circuit.modules.head.asInstanceOf[ir.Module].ports.filter(_.direction == ir.Output)
-    assert(outputs.length == 2)
-
-    runFirrtl(circuit)
-  }
-
-  test("use data structure with future field as stage parameter") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFutureStage.tchdl")
-    runFirrtl(circuit)
-  }
-
-  test("use partial future in sibling interface parameter") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFutureSibling.tchdl")
-
-    val topModule = circuit.modules.find(_.name == "test_Top").get.asInstanceOf[ir.Module]
-    val sub0 = circuit.modules.find(_.name == "test_Sub0").get.asInstanceOf[ir.Module]
-    val sub1 = circuit.modules.find(_.name == "test_Sub1").get.asInstanceOf[ir.Module]
-
-    val called = sub1.body.asInstanceOf[ir.Block].stmts.collectFirst{ case c: ir.Conditionally => c.pred }.get.asInstanceOf[ir.Reference].name
-    val calledHash = extractHashCode("called_([a-zA-Z0-9]+)\\$_active", called)
-    val caller = sub0.body.asInstanceOf[ir.Block].stmts.collectFirst{ case c: ir.Conditionally => c }.get
-    val callerHash = extractHashCode("caller_([a-zA-Z0-9]+)\\$_active", caller.pred.asInstanceOf[ir.Reference].name)
-
-    val connects0 = topModule.body.asInstanceOf[ir.Block].stmts.collect{ case c: ir.Connect => c }.map(_.serialize)
-    connects0.contains("""s1.called_""" + calledHash + """$st_b._member <= or(or(UInt<1>("h0"), s0.s1$called_""" + calledHash + """$st_b._member), s0.s1$called_""" + calledHash + """$st_b._member)""")
-    connects0.contains("""s1.called_""" + calledHash + """$st_b._data <= or(or(UInt<1>("h0"), s0.s1$called_""" + calledHash + """$st_b._data), s0.s1$called_""" + calledHash + """$st_b._data)""")
-
-    val expectCallerBody = caller.conseq.asInstanceOf[ir.Block].stmts.map(_.serialize)
-    expectCallerBody.contains("""node _TEMP_3 = caller_""" + callerHash + """$st""")
-    expectCallerBody.contains("""s1$called_""" + calledHash + """$_active <= UInt<1>("h1")""")
-    expectCallerBody.contains("""s1$called_""" + calledHash + """$st <= _TEMP_3""")
-
-    val connects1 = sub0.body.asInstanceOf[ir.Block].stmts.collect{ case c: ir.Connect => c }.map(_.serialize)
-    connects1.contains("""_TEMP_3_b._member <= or(UInt<1>("h0"), caller_""" + callerHash + """$st_b._member)""")
-    connects1.contains("""_TEMP_3_b._data <= or(UInt<1>("h0"), caller_""" + callerHash + """$st_b._data)""")
-
-    runFirrtl(circuit)
-  }
-
-  test("use partial future in parent interface parameter") {
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "partialFutureParent.tchdl")
-
-    val top = circuit.modules.find(_.name == "test_Top").get.asInstanceOf[ir.Module]
-    val calledWires = top.body.asInstanceOf[ir.Block].stmts.collect{ case w: ir.DefWire => w }
-    val wiresStr = calledWires.map(_.serialize)
-    val connects = top.body.asInstanceOf[ir.Block].stmts.collect{ case c: ir.Connect => c }
-    val connectStrs = connects.map(_.serialize)
-
-    val active = calledWires.find(_.name.contains("active")).get
-
-    val calledHash = extractHashCode("called_([a-zA-Z0-9]+)\\$_active", active.name)
-
-    wiresStr.contains("""wire called_""" + calledHash + """$st : { a : UInt<4>}""")
-    wiresStr.contains("""wire called_""" + calledHash + """$st_b : { _member : UInt<1>, _data : UInt<2>""")
-
-    connectStrs.contains("""called_""" + calledHash + """$st_b._member <= or(or(UInt<1>("h0"), s0.top$called_""" + calledHash + """$st_b._member), s0.top$called_""" + calledHash + """$st_b._member)""")
-    connectStrs.contains("""called_""" + calledHash + """$st_b._data <= or(or(UInt<1>("h0"), s0.top$called_""" + calledHash + """$st_b._data), s0.top$called_""" + calledHash + """$st_b._data)""")
-
-    runFirrtl(circuit)
-  }
-  */
 }

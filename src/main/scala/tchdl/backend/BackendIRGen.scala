@@ -442,6 +442,7 @@ object BackendIRGen {
         Summary(newTemps, newTerms, labels)
     }
 
+    val argTpes = apply.args.map(_.tpe.asRefType)
     val retTpe = toBackendType(apply.tpe.asRefType, ctx.hpTable, ctx.tpTable)
     val hargs = apply.hps.map(evalHPExpr(_, ctx.hpTable))
     val targs = apply.tps.view
