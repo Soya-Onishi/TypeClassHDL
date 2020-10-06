@@ -539,4 +539,20 @@ class ParseTest extends TchdlFunSuite {
     assert(com0 == Commence("target", CommenceBlock("first", Vector.empty, pos), pos))
     assert(com1 == Commence("target", CommenceBlock("first", Vector(BitLiteral(0, 2, pos)), pos), pos))
   }
+
+  test("parse check for deref and multiply") {
+    val parser = parseString(_.block)((gen, tree) => gen.block(tree)(Filename("")))_
+    val blk = parser(
+      """{
+        |  val local = v0 * v1
+        |  *pointer + local
+        |}
+        |""".stripMargin).asInstanceOf[Block]
+
+    assert(blk.elems.length == 1)
+    assert(blk.elems.head.isInstanceOf[ValDef])
+    val localExpr = blk.elems.head.asInstanceOf[ValDef].expr.get
+    assert(localExpr == StdBinOp(Operation.Mul, Ident("v0", pos), Ident("v1", pos), pos))
+    assert(blk.last == StdBinOp(Operation.Add, DeReference(Ident("pointer", pos), pos), Ident("local", pos), pos))
+  }
 }

@@ -1,7 +1,7 @@
 grammar Tchdl;
 
 compilation_unit
-    : pkg_name import_clause* top_definition* EOF
+    : NL* pkg_name NL* (import_clause NL*)* (top_definition NL*)* EOF
     ;
 
 pkg_name
@@ -29,15 +29,15 @@ top_definition
     ;
 
 module_def
-    : MODULE TYPE_ID type_param? bounds? ('{' parents? siblings? '}')?
+    : MODULE TYPE_ID type_param? NL* bounds? NL* ('{' NL* parents? NL* siblings? NL* '}')?
     ;
 
 trait_def
-    : TRAIT TYPE_ID type_param? bounds? '{' (signature_def | type_dec)* '}'
+    : TRAIT TYPE_ID type_param? NL* bounds? NL* '{' NL* ((signature_def | type_dec) NL+)* NL* '}'
     ;
 
 interface_def
-    : INTERFACE TYPE_ID type_param? bounds? '{' (signature_def | type_dec)*'}'
+    : INTERFACE TYPE_ID type_param? NL* bounds? NL* '{' NL* ((signature_def | type_dec) NL+)* NL* '}'
     ;
 
 type_dec
@@ -45,19 +45,19 @@ type_dec
     ;
 
 enum_def
-    : ENUM TYPE_ID type_param? bounds? '{' enum_field_def+ '}'
+    : ENUM TYPE_ID type_param? NL* bounds? NL* '{' NL* (enum_field_def NL+)+ NL* '}'
     ;
 
 enum_field_def
-    : TYPE_ID ('(' type+ ')')?
+    : TYPE_ID ('(' type (',' type)* ')')?
     ;
 
 implement_class
-    : IMPLEMENT type_param? type bounds? '{' component* '}'
+    : IMPLEMENT type_param? type NL* bounds? NL* '{' NL* (component NL*)* NL* '}'
     ;
 
 implement_interface
-    : IMPLEMENT type_param? type FOR type bounds? '{' (method_def | type_def)* '}'
+    : IMPLEMENT type_param? type FOR type NL* bounds? NL* '{' NL* (method_def | type_def NL*)* NL* '}'
     ;
 
 type_def
@@ -65,11 +65,11 @@ type_def
     ;
 
 parents
-    : PARENT ':' EXPR_ID ':' type (',' EXPR_ID ':' type)*
+    : PARENT ':' NL* EXPR_ID ':' type NL* (',' NL* EXPR_ID ':' type NL*)*
     ;
 
 siblings
-    : SIBLING ':' EXPR_ID ':' type (',' EXPR_ID ':' type)*
+    : SIBLING ':' NL* EXPR_ID ':' type NL* (',' NL* EXPR_ID ':' type NL* )*
     ;
 
 component
@@ -83,19 +83,19 @@ component
     ;
 
 struct_def
-    : STRUCT TYPE_ID type_param? bounds? ('{' field_defs? '}')?
+    : STRUCT TYPE_ID type_param? NL* bounds? NL* ('{' NL* field_defs? NL* '}')?
     ;
 
 proc_def
-    : PROC EXPR_ID '@' expr '->' type '{' proc_block* '}'
+    : PROC EXPR_ID NL* '@' expr NL* '->' NL* type NL* '{' NL* proc_block* NL* '}'
     ;
 
 proc_block
-    : (ORIGIN | FINAL)? BLOCK EXPR_ID '(' param_defs? ')' block
+    : (ORIGIN | FINAL)? BLOCK EXPR_ID NL* '(' NL* param_defs? NL* ')' NL* block
     ;
 
 signature_def
-    : signature_accessor* DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds?
+    : signature_accessor* DEF EXPR_ID type_param? NL* '(' NL* param_defs? NL* ')' NL* '->' NL* type bounds?
     ;
 
 signature_accessor
@@ -103,7 +103,7 @@ signature_accessor
     ;
 
 method_def
-    : builtin_specifier* method_accessor* DEF EXPR_ID type_param? '(' param_defs? ')' '->' type bounds? block
+    : (builtin_specifier NL*)* method_accessor* DEF EXPR_ID type_param? NL* '(' NL* param_defs? NL* ')' NL* '->' NL* type NL* bounds? NL* block
     ;
 
 builtin_specifier
@@ -120,7 +120,7 @@ method_accessor
     ;
 
 param_defs
-    : param_def (',' param_def)*
+    : param_def (',' NL* param_def )*
     ;
 
 param_def
@@ -128,7 +128,7 @@ param_def
     ;
 
 field_defs
-    : field_def (',' field_def)*
+    : field_def (',' NL* field_def)*
     ;
 
 field_def
@@ -136,27 +136,27 @@ field_def
     ;
 
 submodule_def
-    : MOD EXPR_ID ':' type '=' construct_module
+    : MOD EXPR_ID ':' type NL* '=' NL* construct_module
     ;
 
 always_def
-    : ALWAYS EXPR_ID block
+    : ALWAYS EXPR_ID NL* block
     ;
 
 val_def
-    : VAL EXPR_ID (':' type)? '=' expr
+    : VAL EXPR_ID (':' type)? NL* '=' NL* expr
     ;
 
 stage_def
-    : STAGE EXPR_ID '(' param_defs? ')' stage_body?
+    : STAGE EXPR_ID NL* '(' NL* param_defs? NL* ')' NL* stage_body?
     ;
 
 stage_body
-    : '{' (block_elem | state_def)* '}'
+    : '{' NL* ((block_elem | state_def) NL+)* NL* '}'
     ;
 
 state_def
-    : STATE EXPR_ID ('(' param_defs? ')')? block
+    : STATE EXPR_ID NL* ('(' NL* param_defs? NL* ')')? NL* block
     ;
 
 port_def
@@ -164,16 +164,16 @@ port_def
     ;
 
 reg_def
-    : REG EXPR_ID ':' type ('=' expr)?
+    : REG EXPR_ID ':' type NL* ('=' NL* expr)?
     ;
 
 bounds
-    : WHERE bound (',' bound)*
+    : WHERE bound (',' NL* bound)*
     ;
 
 bound
-    : TYPE_ID ':' type ('+' type)* # TPBound
-    | hp_expr ':' hp_bound_expr ('&' hp_bound_expr)* # HPBound
+    : TYPE_ID ':' type ('+' NL* type)* # TPBound
+    | hp_expr ':' hp_bound_expr ('&' NL* hp_bound_expr)* # HPBound
     ;
 
 hp_bound_expr
@@ -182,7 +182,7 @@ hp_bound_expr
     | 'eq' hp_expr  # EqBound
     ;
 
-expr: expr '.' (apply | EXPR_ID)                 # SelectExpr
+expr: expr '.' NL* (apply | EXPR_ID)             # SelectExpr
     | <assoc=right> op=('-' | '!' | '*') expr    # UnaryExpr
     | expr op=('*' | '/') expr                   # MulDivExpr
     | expr op=('+' | '-') expr                   # AddSubExpr
@@ -197,8 +197,8 @@ expr: expr '.' (apply | EXPR_ID)                 # SelectExpr
     | construct_struct                           # ConstructStructExpr
     | construct_module                           # ConstructModuleExpr
     | construct_enum                             # ConstructEnumExpr
-    | IF '(' expr ')' expr (ELSE expr)?          # IfExpr
-    | MATCH expr '{' case_def+ '}'               # MatchExpr
+    | IF NL* '(' NL* expr NL* ')' NL* expr (NL* ELSE NL* expr)? # IfExpr
+    | MATCH expr '{' NL* (case_def NL*)+ NL* '}'               # MatchExpr
     | FINISH                                     # Finish
     | goto_expr                                  # GotoExpr
     | relay                                      # RelayExpr
@@ -220,27 +220,27 @@ hp_expr
     ;
 
 apply
-    : (type ':::')? EXPR_ID apply_typeparam? '(' args ')'
+    : (type ':::')? EXPR_ID apply_typeparam? NL* '(' NL* args NL* ')'
     ;
 
 apply_typeparam
-    : '[' hardware_params (',' type_params)? ']' # WithHardwareParams
-    | '[' type_params ']' # WithoutHardwareParams
+    : '[' NL* hardware_params (',' NL* type_params)? NL* ']' # WithHardwareParams
+    | '[' NL* type_params NL* ']' # WithoutHardwareParams
     ;
 
 hardware_params
-    : hp_expr (',' hp_expr)*
+    : hp_expr (',' NL* hp_expr)*
     ;
 
 type_params
-    : type (',' type)*
+    : type (',' NL* type)*
     ;
 
-args: (expr (',' expr)*)?
+args: (expr (',' NL* expr)*)?
     ;
 
 block
-    : '{' block_elem* '}'
+    : '{' NL* (block_elem NL+)* '}'
     ;
 
 block_elem
@@ -250,15 +250,15 @@ block_elem
     ;
 
 construct_struct
-    : type '{' (construct_pair (',' construct_pair)*)? '}'
+    : type '{' NL* (construct_pair (',' NL* construct_pair)*)? NL* '}'
     ;
 
 construct_module
-    : type '{' (PARENT ':' parent_pair (',' parent_pair)*)? (SIBLING ':' sibling_pair (',' sibling_pair)*)? '}'
+    : type '{' NL* (PARENT ':' parent_pair (',' NL* parent_pair)*)? NL* (SIBLING ':' sibling_pair (',' NL* sibling_pair)*)? NL* '}'
     ;
 
 construct_enum
-    : type ('(' (expr (',' expr)*)? ')')?
+    : type ('(' NL* (expr (',' NL* expr)*)? NL* ')')?
     ;
 
 construct_pair
@@ -275,7 +275,7 @@ sibling_pair
 
 
 case_def
-    : CASE pattern '=>' block_elem*
+    : CASE pattern '=>' NL* block_elem*
     ;
 
 pattern
@@ -286,19 +286,19 @@ pattern
     ;
 
 generate
-    : GENERATE EXPR_ID '(' args ')' ('#' EXPR_ID ('(' args ')')? )?
+    : GENERATE EXPR_ID NL* '(' NL* args NL* ')' NL* ('#' EXPR_ID NL* ('(' NL* args NL* ')')? )?
     ;
 
 commence
-    : COMMENCE EXPR_ID '#' EXPR_ID ('(' args ')')?
+    : COMMENCE EXPR_ID NL* '#' NL* EXPR_ID NL* ('(' NL* args NL* ')')?
     ;
 
 relay
-    : RELAY EXPR_ID '(' args ')' ('#' EXPR_ID ( '(' args ')' )? )?
+    : RELAY EXPR_ID NL* '(' NL* args NL* ')' NL* ('#' NL* EXPR_ID ( NL* '(' NL* args NL* ')' )? )?
     ;
 
 goto_expr
-    : GOTO EXPR_ID ( '(' args ')' )?
+    : GOTO EXPR_ID NL* ( '(' NL* args NL* ')' )?
     ;
 
 literal
@@ -310,8 +310,8 @@ literal
     ;
 
 type_param
-    : '[' param_defs (',' TYPE_ID)* ']' # WithDependency
-    | '[' TYPE_ID (',' TYPE_ID)* ']'    # WithoutDependency
+    : '[' NL* param_defs (',' NL* TYPE_ID)* NL* ']' # WithDependency
+    | '[' NL* TYPE_ID (',' NL* TYPE_ID)* NL* ']'    # WithoutDependency
     ;
 
 unit_lit
@@ -388,10 +388,10 @@ FALSE: 'false';
 STRING: '"' .*? '"';
 EXPR_ID: [a-z][a-zA-Z0-9]*;
 TYPE_ID: [A-Z][a-zA-Z0-9]*;
+NL: [\r\n];
 
 fragment BITLIT: '0b' [01]+;
 fragment HEXLIT: '0x' [0-9a-fA-F]+;
 fragment DIGITLIT: [0-9]+;
 
-WS  : [ \t\r\n] -> skip
-    ;
+WS: [ \t]+ -> skip;

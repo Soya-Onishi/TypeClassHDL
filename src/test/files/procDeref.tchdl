@@ -1,0 +1,22 @@
+package test
+
+import std::traits:::From
+
+module UseDeref
+impl UseDeref {
+  input def exec(v0: Bit[8], v1: Bit[8]) -> Bit[8]  {
+    val pointer = commence multCycle # init(v0, v1)
+
+    *pointer + Bit[8]:::from(1)
+  }
+
+  proc multCycle @ 0b00000000 -> &Bit[8] {
+    origin block init(operand0: Bit[8], operand1: Bit[8]) {
+      relay next(operand0 + operand1)
+    }
+
+    final block next(result: Bit[8]) {
+      return result
+    }
+  }
+}

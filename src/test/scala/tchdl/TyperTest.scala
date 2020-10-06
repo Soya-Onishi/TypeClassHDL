@@ -958,4 +958,9 @@ class TyperTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.ReturnFromNonFinal])
   }
+
+  test("use deref to increment result") {
+    val (_, global) = untilTyper("procDeref.tchdl")
+    expectNoError(global)
+  }
 }
