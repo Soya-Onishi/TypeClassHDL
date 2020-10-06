@@ -221,6 +221,7 @@ object FirrtlCodeGen {
           fir.Block(alt.map(elaborateStmt))
         )
       case ret: lir.Return => elaborateReturn(ret)
+      case deref: lir.Deref => elaborateDeref(deref)
       case read: lir.MemRead => elaborateMemRead(read)
       case write: lir.MemWrite => elaborateMemWrite(write)
     }
@@ -284,7 +285,6 @@ object FirrtlCodeGen {
       val HPElem.Num(width) = tpe.hargs.head
       fir.UIntLiteral(value, fir.IntWidth(width))
     case pointer: lir.Pointer => elaboratePointer(pointer)
-    case deref: lir.Deref => elaborateDeref(deref)
     case lir.Ops(op, args, consts, tpe) => fir.DoPrim(op, args.map(elaborateExpr), consts, toFirrtlType(tpe))
   }
 
@@ -296,7 +296,7 @@ object FirrtlCodeGen {
     fir.UIntLiteral(info.id, fir.IntWidth(width))
   }
 
-  def elaborateDeref(deref: lir.Deref)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): fir.Expression = {
+  def elaborateDeref(deref: lir.Deref)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): fir.Statement = {
     def isNeeded(dst: HWHierarchyPath): Boolean = {
       val isSamePath = dst.modulePath == modulePath
       val isSameRef = dst.component == HierarchyComponent.Deref(deref.ref)
@@ -305,17 +305,17 @@ object FirrtlCodeGen {
     }
 
     val candidates = pointers.filter(_.dest.exists(isNeeded))
-    val candidateNames = candidates.map(c => c.id -> NameTemplate.pointerWire(c.id)).toMap
-
-    candidateNames.tail.foldLeft[fir.Expression](fir.Reference(candidateNames.head._2, fir.UnknownType)) {
-      case (alt, (id, name)) =>
+    val muxResult = candidates.tail.foldLeft[fir.Expression](fir.Reference(NameTemplate.pointerWire(candidates.head.id), fir.UnknownType)) {
+      case (alt, c) =>
         val pointerRef = elaborateExpr(deref.ref)
-        val dataRef = fir.Reference(NameTemplate.pointerWire(id), fir.UnknownType)
-        val idLit = fir.UIntLiteral(id, fir.IntWidth(atLeastLength(candidates.length).toInt))
+        val dataRef = fir.Reference(NameTemplate.pointerWire(c.id), fir.UnknownType)
+        val idLit = fir.UIntLiteral(c.id, fir.IntWidth(atLeastLength(candidates.length).toInt))
         val eq = fir.DoPrim(firrtl.PrimOps.Eq, Seq(pointerRef, idLit), Seq.empty, fir.UnknownType)
 
         fir.Mux(eq, dataRef, alt)
     }
+
+    fir.DefNode(fir.NoInfo, deref.name, muxResult)
   }
 
 

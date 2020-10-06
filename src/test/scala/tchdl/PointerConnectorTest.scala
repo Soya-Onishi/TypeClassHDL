@@ -57,6 +57,6 @@ class PointerConnectorTest extends TchdlFunSuite {
   }
 
   test("pointer connection for simple proc") {
-
+    val connections = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
   }
 }

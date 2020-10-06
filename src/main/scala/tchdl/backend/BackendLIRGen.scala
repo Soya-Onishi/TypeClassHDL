@@ -812,6 +812,7 @@ object BackendLIRGen {
       case ret: backend.Return => runReturn(ret)
       case commence: backend.Commence => runCommence(commence)
       case relay: backend.RelayBlock => runRelayBlock(relay)
+      case deref: backend.Deref => runDeref(deref)
       case backend.IntLiteral(value) => DataInstance.int(value)
       case backend.BoolLiteral(value) => DataInstance.bool(value)
       case backend.UnitLiteral() => DataInstance.unit()
@@ -1601,6 +1602,21 @@ object BackendLIRGen {
       activateProcBlock(relay.procLabel, relay.blkLabel, relay.args) ++ unitStmts,
       unit
     )
+  }
+
+  def runDeref(deref: backend.Deref)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
+    val name = stack.refer(deref.id.id)
+    val instance = stack.lookup(name).asInstanceOf[DataInstance]
+    val ref = instance.refer.asInstanceOf[lir.Reference]
+    val srcTpe = instance.tpe
+
+    val tpe = BackendType(srcTpe.symbol, srcTpe.hargs, srcTpe.targs, isPointer = false)
+    val refName = stack.next("_GEN")
+    val stmt  = lir.Deref(refName.name, ref, tpe)
+    val refer = lir.Reference(refName.name, tpe)
+    val inst = DataInstance(tpe, refer)
+
+    RunResult(Vector(stmt), inst)
   }
 
   def activateProcBlock(procLabel: ProcLabel, blkLabel: ProcBlockLabel, args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {

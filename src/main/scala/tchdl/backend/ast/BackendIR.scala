@@ -45,6 +45,7 @@ case class This(tpe: BackendType) extends Expr
 case class ReferField(accessor: Term, field: FieldLabel, tpe: BackendType) extends Expr
 
 case class Ident(id: Term.Variable, tpe: BackendType) extends Expr
+case class Deref(id: Term.Temp, tpe: BackendType) extends Expr
 case class IfExpr(cond: Term.Temp, conseq: Vector[Stmt], conseqLast: Expr, alt: Vector[Stmt], altLast: Expr, tpe: BackendType) extends Expr
 
 case class Match(matched: Term.Temp, cases: Vector[Case], tpe: BackendType) extends Expr

@@ -324,20 +324,21 @@ object PointerConnector {
       case _ => Vector.empty
     }
 
-    def searchDeref(stmt: lir.Stmt): Vector[HWHierarchyPath] = stmt match {
-      case t: lir.Node => t.src match {
-        case lir.Deref(ref, _) =>
-          searchPointerRef(ref, componentRef, path.modulePath)
-            .map(_ => HWHierarchyPath(path.modulePath, HierarchyComponent.Deref(ref)))
-            .toVector
-        case _ => Vector.empty
+    def searchDeref(stmts: Vector[lir.Stmt]): Vector[HWHierarchyPath] = {
+      val derefs = stmts.collect{ case r: lir.Deref => r }
+      val whens = stmts.collect{ case w: lir.When => w }
+      val paths = derefs.flatMap{ deref =>
+        searchPointerRef(deref.ref, componentRef, path.modulePath)
+          .map(_ => HWHierarchyPath(path.modulePath, HierarchyComponent.Deref(deref.ref)))
+          .toVector
       }
-      case t: lir.When => t.conseq.flatMap(searchDeref) ++ t.alt.flatMap(searchDeref)
+
+      paths ++ whens.flatMap(w => searchDeref(w.conseq)) ++ whens.flatMap(w => searchDeref(w.alt))
     }
 
     val stmts = module.components ++ module.inits ++ module.procedures
     val nextRefs = stmts.flatMap(searchNext)
-    val derefs = stmts.flatMap(searchDeref)
+    val derefs = searchDeref(stmts)
 
     val dsts = nextRefs.flatMap(path => searchConnection(path, topModule, moduleList))
     derefs ++ dsts

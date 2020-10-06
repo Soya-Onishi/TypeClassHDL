@@ -349,6 +349,7 @@ object BackendIRGen {
       case relay: frontend.Relay => buildRelay(relay)
       case ret: frontend.Return => buildReturn(ret)
       case cast: frontend.CastExpr => buildExpr(cast.expr)
+      case deref: frontend.DeReference => buildDeref(deref)
       case frontend.IntLiteral(value) => BuildResult(backend.IntLiteral(value))
       case frontend.BitLiteral(value, length) => BuildResult(backend.BitLiteral(value, HPElem.Num(length)))
       case frontend.UnitLiteral() => BuildResult(backend.UnitLiteral())
@@ -1049,6 +1050,15 @@ object BackendIRGen {
     val retStmt = backend.Abandon(backend.Return(procLabel, expr))
 
     BuildResult(stmts :+ retStmt, Some(backend.UnitLiteral()), labels)
+  }
+
+  def buildDeref(ref: frontend.DeReference)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
+    val BuildResult(stmts, Some(expr), labels) = buildExpr(ref.expr)
+    val temp = backend.Temp(ctx.temp.get(), expr)
+    val term = backend.Term.Temp(temp.id, temp.expr.tpe)
+    val deref = backend.Deref(term, term.tpe)
+
+    BuildResult(stmts :+ temp, Some(deref), labels)
   }
 
   def finishPart(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
