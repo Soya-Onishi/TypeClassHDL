@@ -33,11 +33,11 @@ module_def
     ;
 
 trait_def
-    : TRAIT TYPE_ID type_param? NL* bounds? NL* '{' NL* ((signature_def | type_dec) NL+)* NL* '}'
+    : TRAIT TYPE_ID type_param? NL* bounds? NL* '{' NL* ((signature_def | type_dec) (NL+ (signature_def | type_dec))*)? NL* '}'
     ;
 
 interface_def
-    : INTERFACE TYPE_ID type_param? NL* bounds? NL* '{' NL* ((signature_def | type_dec) NL+)* NL* '}'
+    : INTERFACE TYPE_ID type_param? NL* bounds? NL* '{' NL* ((signature_def | type_dec) (NL+ (signature_def | type_dec))*)? NL* '}'
     ;
 
 type_dec
@@ -53,11 +53,11 @@ enum_field_def
     ;
 
 implement_class
-    : IMPLEMENT type_param? type NL* bounds? NL* '{' NL* (component NL*)* NL* '}'
+    : IMPLEMENT type_param? type NL* bounds? NL* '{' NL* (component (NL+ component)*)? NL* '}'
     ;
 
 implement_interface
-    : IMPLEMENT type_param? type FOR type NL* bounds? NL* '{' NL* (method_def | type_def NL*)* NL* '}'
+    : IMPLEMENT type_param? type FOR type NL* bounds? NL* '{' NL* ((method_def | type_def) (NL+ method_def | type_def)*)? NL* '}'
     ;
 
 type_def
@@ -87,7 +87,7 @@ struct_def
     ;
 
 proc_def
-    : PROC EXPR_ID NL* '@' expr NL* '->' NL* type NL* '{' NL* proc_block* NL* '}'
+    : PROC EXPR_ID NL* '@' expr NL* '->' NL* type NL* '{' NL* proc_block (NL+ proc_block)* NL*'}'
     ;
 
 proc_block
@@ -152,7 +152,7 @@ stage_def
     ;
 
 stage_body
-    : '{' NL* ((block_elem | state_def) NL+)* NL* '}'
+    : '{' NL* ((block_elem | state_def) (NL+ (block_elem | state_def))*)? NL* '}'
     ;
 
 state_def
@@ -198,7 +198,7 @@ expr: expr '.' NL* (apply | EXPR_ID)             # SelectExpr
     | construct_module                           # ConstructModuleExpr
     | construct_enum                             # ConstructEnumExpr
     | IF NL* '(' NL* expr NL* ')' NL* expr (NL* ELSE NL* expr)? # IfExpr
-    | MATCH expr '{' NL* (case_def NL*)+ NL* '}'               # MatchExpr
+    | MATCH expr '{' NL* (case_def NL+)+ NL* '}'               # MatchExpr
     | FINISH                                     # Finish
     | goto_expr                                  # GotoExpr
     | relay                                      # RelayExpr
@@ -240,7 +240,7 @@ args: (expr (',' NL* expr)*)?
     ;
 
 block
-    : '{' NL* (block_elem NL+)* '}'
+    : '{' NL* (block_elem (NL+ block_elem)*)? NL* '}'
     ;
 
 block_elem
@@ -254,7 +254,7 @@ construct_struct
     ;
 
 construct_module
-    : type '{' NL* (PARENT ':' parent_pair (',' NL* parent_pair)*)? NL* (SIBLING ':' sibling_pair (',' NL* sibling_pair)*)? NL* '}'
+    : type '{' NL* (PARENT ':' NL* parent_pair (',' NL* parent_pair)*)? NL* (SIBLING ':' NL* sibling_pair (',' NL* sibling_pair)*)? NL* '}'
     ;
 
 construct_enum
@@ -275,7 +275,7 @@ sibling_pair
 
 
 case_def
-    : CASE pattern '=>' NL* block_elem*
+    : CASE pattern '=>' NL* (block_elem (NL+ block_elem)*)?
     ;
 
 pattern

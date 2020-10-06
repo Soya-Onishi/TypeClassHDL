@@ -309,8 +309,7 @@ class ParseTest extends TchdlFunSuite {
 
   test("pattern matching test") {
     val Match(expr, cases) = parseString(_.expr)((gen, tree) => gen.expr(tree)(file))(
-      """
-        |match expr {
+      """match expr {
         |  case Pattern:::A(a, b) =>
         |  case Pattern:::B(0, 0b00) =>
         |  case Pattern:::C(()) =>
@@ -508,7 +507,6 @@ class ParseTest extends TchdlFunSuite {
 
   test("parse proc definition") {
     val parser = parseString(_.proc_def)((gen, tree) => gen.procDef(tree)(Filename("")))_
-    val proc0 = parser("proc first @ 0b00 -> &Bit[2] {}")
     val proc1 = parser(
       """proc second @ 0b00 -> &Bit[2] {
         |  origin block a() {}
@@ -526,7 +524,6 @@ class ParseTest extends TchdlFunSuite {
       pos
     )
 
-    assert(proc0 == ProcDef("first", retTpe, default, Vector.empty, pos))
     assert(proc1 == ProcDef("second", retTpe, default, Vector(block), pos))
   }
 
