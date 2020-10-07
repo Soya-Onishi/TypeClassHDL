@@ -599,7 +599,6 @@ object BackendLIRGen {
 
   def buildProcSignature(proc: ProcContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
     val paramss = proc.blks.map(_.params.toVector)
-    val wire = lir.Wire(proc.label.retName, proc.ret)
     val regs = paramss.flatMap(_.map{ case (name, tpe) => lir.Reg(name, Option.empty, tpe) })
 
     // add instances to stack
@@ -613,17 +612,15 @@ object BackendLIRGen {
       .map(_.label.activeName)
       .map(name => lir.Reg(name, activeOffRef.some, BackendType.boolTpe))
 
-    (regs :+ activeOffNode) ++ (blkActives :+ wire)
+    (regs :+ activeOffNode) ++ blkActives
   }
 
   def runProc(proc: ProcContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[Vector[lir.When]] = {
-    val retName = proc.label.retName
-
     // for default expression
     val stmts = proc.default.flatMap(runStmt)
     val RunResult(exprStmts, defaultInst: DataInstance) = runExpr(proc.defaultRet)
-    val defaultAssign = lir.Assign(lir.Reference(retName, proc.ret), defaultInst.refer)
-    val defaultStmts = stmts ++ exprStmts :+ defaultAssign
+    val defaultRet = lir.Return(proc.label.symbol.path, defaultInst.refer)
+    val defaultStmts = stmts ++ exprStmts :+ defaultRet
 
     val blks = proc.blks.map { blk =>
       val stmts = blk.code.flatMap(runStmt)

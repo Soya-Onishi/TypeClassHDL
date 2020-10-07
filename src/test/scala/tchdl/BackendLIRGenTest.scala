@@ -985,14 +985,15 @@ class BackendLIRGenTest extends TchdlFunSuite {
   }
 
   test("use proc and deref") {
-    val (modules, _) = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
+    val (modules, global) = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
 
     val useDeref = findModule(modules, "UseDeref").get
-    val nodes = findAllComponents[lir.Node](useDeref.procedures)
+    val nodes = findAllComponents[lir.Node](useDeref.inits ++ useDeref.procedures)
     val whens = useDeref.procedures.collect{ case w: lir.When => w }
     val exec = whens(0)
     val deref = exec.conseq.collectFirst{ case d: lir.Deref => d }.get
     val node = nodes.collectFirst{ case node if node.name == deref.ref.name => node }.get
+    val rets = findAllComponents[lir.Return](useDeref.inits ++ useDeref.procedures)
 
     assert(node.src.isInstanceOf[lir.Reference])
     val ref = node.src.asInstanceOf[lir.Reference]
@@ -1003,5 +1004,14 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val srcName = ret.expr.asInstanceOf[lir.Reference].name
     assert(ret.path.name.get == "multCycle")
     assert(srcName.matches("multCycle_[0-9a-f]+_next\\$result"), srcName)
+
+    assert(rets.length == 2)
+    assert(rets(1) eq ret)
+    assert(rets(0).path == rets(1).path)
+    assert(rets(0).expr.isInstanceOf[lir.Reference])
+    val retRef = rets(0).expr.asInstanceOf[lir.Reference]
+    val defaultNode = nodes.find(_.name == retRef.name).get
+
+    assert(defaultNode.src == lir.Literal(0, BackendType.bitTpe(8)(global)))
   }
 }
