@@ -486,7 +486,7 @@ class TyperTest extends TchdlFunSuite {
     expectError(1)(global)
 
     val err = global.repo.error.elems.head
-    assert(err.isInstanceOf[Error.RejectHeapType])
+    assert(err.isInstanceOf[Error.RequirePointerOrHWType])
   }
 
   test("match expr reject String type as return type") {

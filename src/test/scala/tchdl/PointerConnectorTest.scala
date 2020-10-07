@@ -11,7 +11,7 @@ class PointerConnectorTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
-  def untilThisPhase(pkgName: Vector[String], module: String, names: String*): (Vector[PointerConnection], GlobalData) = {
+  def untilThisPhase(pkgName: Vector[String], module: String, names: String*): (Vector[PointerConnection], Vector[lir.Module], GlobalData) = {
     val fullnames = names.map(buildName(rootDir, filePath, _))
     val filenames = fullnames ++ builtInFiles
 
@@ -54,11 +54,11 @@ class PointerConnectorTest extends TchdlFunSuite {
     val topModuleTpe = moduleContainers.head.tpe
     val connections = PointerConnector.exec(topModuleTpe, lirModules)
 
-    (connections, newGlobal)
+    (connections, lirModules, newGlobal)
   }
 
   test("pointer connection for simple proc") {
-    val (connections, global) = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
+    val (connections, _, global) = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
     assert(connections.length == 1)
     val connect = connections.head
     assert(connect.source.modulePath == Vector.empty)
@@ -68,5 +68,83 @@ class PointerConnectorTest extends TchdlFunSuite {
     assert(dest.modulePath == Vector.empty)
     assert(dest.component.isInstanceOf[HierarchyComponent.Deref])
     assert(dest.component.asInstanceOf[HierarchyComponent.Deref].ref.tpe == BackendType.bitTpe(8)(global))
+  }
+
+  test("multiple same commence proc") {
+    val (connections, modules, _) = untilThisPhase(Vector("test"), "Top", "procMultiDeref.tchdl")
+    val top = findModule(modules, "Top").get
+    val nodes = findAllComponents[lir.Node](top.procedures)
+
+    assert(connections.length == 1)
+    val connect = connections.head
+    assert(connect.source.modulePath == Vector.empty)
+    assert(connect.dest.length == 2)
+    assert(connect.dest.forall(_.component.isInstanceOf[HierarchyComponent.Deref]))
+    val dest = connect.dest.map(_.component.asInstanceOf[HierarchyComponent.Deref].ref)
+    val derefNode = dest.map(d => nodes.find(_.name == d.name).get)
+    val nodeRef = derefNode.map(_.src.asInstanceOf[lir.Reference])
+    assert(nodeRef(0).name.matches("exec0_[0-9a-f]+\\$0\\$pointer0_0"), nodeRef(0).name)
+    assert(nodeRef(1).name.matches("exec1_[0-9a-f]+\\$0\\$pointer1_0"), nodeRef(1).name)
+  }
+
+  test("two proc and one deref") {
+    val (connections, modules, _) = untilThisPhase(Vector("test"), "Top", "procTwoProcOneDeref.tchdl")
+    val top = findModule(modules, "Top").get
+    val nodes = findAllComponents[lir.Node](top.procedures)
+
+    assert(connections.length == 2)
+    val oneProc = connections.find(_.source.component.asInstanceOf[HierarchyComponent.Proc].name == "oneProc").get
+    val twoProc = connections.find(_.source.component.asInstanceOf[HierarchyComponent.Proc].name == "twoProc").get
+    assert(oneProc.dest.length == 1)
+    assert(twoProc.dest.length == 1)
+    assert(oneProc.dest.head.component == twoProc.dest.head.component)
+
+    val ref = oneProc.dest.head.component.asInstanceOf[HierarchyComponent.Deref].ref
+    val pointerNode = nodes.find(_.name == ref.name).get
+    assert(pointerNode.src.isInstanceOf[lir.Reference])
+    assert(pointerNode.src.asInstanceOf[lir.Reference].name.matches("exec_[0-9a-f]+\\$0\\$pointer_0"))
+  }
+
+  test("use deref from submodule pointer") {
+    val (connections, modules, _) = untilThisPhase(Vector("test"), "Top", "procFromSubModule.tchdl")
+    val top = findModule(modules, "Top").get
+    val node = findAllComponents[lir.Node](top.procedures)
+
+    assert(connections.length == 1)
+    val connect = connections.head
+    assert(connect.dest.length == 1)
+    val src = connect.source
+    val dst = connect.dest.head
+
+    assert(src.modulePath == Vector("sub"))
+    assert(src.component == HierarchyComponent.Proc("multCycle", "first"))
+    assert(dst.modulePath == Vector.empty)
+
+    val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
+    val derefNode = node.find(_.name == derefRef.name).get
+    val srcName = derefNode.src.asInstanceOf[lir.Reference].name
+    assert(srcName.matches("function_[0-9a-f]+\\$0\\$pointer_0"), srcName)
+  }
+
+  test("use deref from parent pointer") {
+    val (connections, modules, _) = untilThisPhase(Vector("test"), "Top", "procFromParent.tchdl")
+    val sub = findModule(modules, "Sub").get
+    val nodes = findAllComponents[lir.Node](sub.procedures)
+
+    assert(connections.length == 1)
+    val connect = connections.head
+    assert(connect.dest.length == 1)
+
+    val src = connect.source
+    val dst = connect.dest.head
+
+    assert(src.modulePath == Vector.empty)
+    assert(src.component == HierarchyComponent.Proc("multCycle", "first"))
+
+    assert(dst.modulePath == Vector("sub"))
+    val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
+    val node = nodes.find(_.name == derefRef.name).get
+    val refName = node.src.asInstanceOf[lir.Reference].name
+    assert(refName.matches("function_[0-9a-f]+\\$pointer"))
   }
 }

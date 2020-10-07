@@ -1,0 +1,24 @@
+package test
+
+module Top
+impl Top {
+  input def exec0() -> Bit[4] {
+    val pointer0 = commence procedure # first()
+    *pointer0
+  }
+
+  input def exec1() -> Bit[4] {
+    val pointer1 = commence procedure # first()
+    *pointer1
+  }
+
+  proc procedure @ 0b0000 -> &Bit[4] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b0001
+    }
+  }
+}

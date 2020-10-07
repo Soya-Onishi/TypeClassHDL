@@ -1055,8 +1055,10 @@ object Typer {
             if (altTpe != conseqTpe)
               global.repo.error.append(Error.TypeMismatch(altTpe, conseqTpe, ifexpr.cond.position))
 
-            if (!altTpe.isHardwareType(ctx.tpBounds)(ifexpr.cond.position, global))
-              global.repo.error.append(Error.RejectHeapType(altTpe, ifexpr.cond.position))
+            val isHWType = altTpe.isHardwareType(ctx.tpBounds)(ifexpr.cond.position, global)
+            val isPointerHWType = altTpe.isPointer
+            if (!isHWType && !isPointerHWType)
+              global.repo.error.append(Error.RequirePointerOrHWType(altTpe, ifexpr.cond.position))
 
             altTpe
         }

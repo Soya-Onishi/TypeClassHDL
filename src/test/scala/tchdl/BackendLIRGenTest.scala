@@ -26,18 +26,6 @@ class BackendLIRGenTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
-  def findAllComponents[T: ClassTag : TypeTag](stmts: Vector[lir.Stmt]): Vector[T] = {
-    if(stmts.isEmpty) Vector.empty
-    else {
-      val nodes = stmts.collect{ case n: T => n }
-      val whens = stmts.collect{ case w: lir.When => w }
-      val conseqs = findAllComponents(whens.flatMap(_.conseq))
-      val alts = findAllComponents(whens.flatMap(_.alt))
-
-      nodes ++ conseqs ++ alts
-    }
-  }
-
   def untilThisPhase(pkgName: Vector[String], module: String, names: String*): (Vector[lir.Module], GlobalData) = {
     val fullnames = names.map(buildName(rootDir, filePath, _))
     val filenames = fullnames ++ builtInFiles
@@ -107,31 +95,6 @@ class BackendLIRGenTest extends TchdlFunSuite {
       fail()
   }
   */
-
-  def findModule(modules: Vector[lir.Module], tpeStr: String): Option[lir.Module] = {
-    def isSameTpe(tpe: BackendType, tpeTree: TypeTree): Boolean = {
-      def toHPElem(harg: HPExpr): HPElem = harg match {
-        case IntLiteral(value) => HPElem.Num(value)
-        case StringLiteral(str) => HPElem.Str(str)
-        case _ => ???
-      }
-
-      val TypeTree(Ident(tpeName), hps, tps, _) = tpeTree
-
-      def isSameName = tpe.symbol.name == tpeName
-      def isSameHPLen = tpe.hargs.length == hps.length
-      def isSameHPElem = tpe.hargs == hps.map(toHPElem)
-      def isSameTPLen = tpe.targs.length == tps.length
-      def isSameTPElem = (tpe.targs zip tps).forall{ case (t0, t1) => isSameTpe(t0, t1) }
-
-      isSameName && isSameHPLen && isSameTPLen && isSameHPElem && isSameTPElem
-    }
-
-    val parser = parseString(_.`type`)((gen, tree) => gen.typeTree(tree)(Filename("")))_
-    val tpeTree = parser(tpeStr).asInstanceOf[TypeTree]
-
-    modules.find(mod => isSameTpe(mod.tpe, tpeTree))
-  }
 
   test("build most simple code") {
     val (modules, _) = untilThisPhase(Vector("test"), "Top[8]", "OnlyTopThrowWire.tchdl")

@@ -46,9 +46,6 @@ object Error {
   case class RequirePointerType(actual: Type.RefType, pos: Position) extends Error
   case class RequireHWAsPointer(tpe: Type.RefType, pos: Position) extends Error
 
-  case class RejectHeapType(tpe: Type.RefType, pos: Position) extends Error
-  case class RejectPointerType(tpe: TypeTree, pos: Position) extends Error
-
   case class HPConstraintSetMultitime(target: HPExpr, pos: Position) extends Error
   case class NotMeetBound(tpe: Type, constraints: Vector[Type], pos: Position) extends Error
   case class NotMeetHPBound(require: HPBound, caller: Option[HPBound], pos: Position) extends Error

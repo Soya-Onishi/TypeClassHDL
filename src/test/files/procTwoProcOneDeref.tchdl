@@ -1,0 +1,32 @@
+package test
+
+module Top
+impl Top {
+  input def exec(flag: Bool) -> Bit[4] {
+    val pointer =
+      if(flag) commence oneProc # first()
+      else     commence twoProc # first()
+
+    *pointer
+  }
+
+  proc oneProc @ 0b0000 -> &Bit[4] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b0001
+    }
+  }
+
+  proc twoProc @ 0b0000 -> &Bit[4] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b1000
+    }
+  }
+}

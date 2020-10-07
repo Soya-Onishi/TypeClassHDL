@@ -165,13 +165,6 @@ object PointerConnector {
     val module = searchModule(path.modulePath, topModule, moduleList)
     val componentRef = path.component.asInstanceOf[HierarchyComponent.Ref].ref
 
-    // TODO: current implementation is not exhaustive verification
-    //       For example,
-    //         node a.expr <= pointer(...)
-    //              ^^^^^^  <-\
-    //         node t <= a     ---- these are checked
-    //                   ^  <-/
-    //       is acceptable pattern, actually.
     def searchPointerRef(refer: lir.Ref, origin: lir.Ref, modulePath: Vector[String]): Option[lir.Ref] = (refer, origin) match {
       case (refer: lir.Reference, origin: lir.Reference) =>
         if(refer.name != origin.name) None
@@ -190,7 +183,7 @@ object PointerConnector {
         }
       case (refer: lir.SubField, origin: lir.SubField) =>
         if(refer.name != origin.name) None
-        else searchPointerRef(refer, origin, modulePath)
+        else searchPointerRef(refer.prefix, origin.prefix, modulePath)
       case (_: lir.SubField, _) =>
         // other cases like
         //
@@ -224,15 +217,6 @@ object PointerConnector {
         case sub @ lir.SubField(prefix, _, _) => sub.copy(prefix = addHead(prefix, head))
         case sub @ lir.SubIndex(prefix, _, _) => sub.copy(vec = addHead(prefix, head))
         case sub @ lir.SubAccess(prefix, _, _) => sub.copy(vec = addHead(prefix, head))
-      }
-
-      def truncateHead(subject: lir.Ref, head: lir.Ref): lir.Ref = {
-        subject match {
-          case sub @ lir.SubField(ref: lir.SubField, name, tpe) =>
-            if(sameRef(ref, head)) lir.Reference(name, tpe)
-            else sub.copy(prefix = truncateHead(ref, head))
-          case _ => throw new ImplementationErrorException("truncate from lir.Ref except lir.SubField is unacceptable")
-        }
       }
 
       // a <= b.c.d
@@ -282,12 +266,20 @@ object PointerConnector {
       val portOpt = module.ports.find(_.name == name)
       val subOpt = module.subs.find(_.name == name)
 
+      def truncateHead(subject: lir.Ref): lir.Ref = {
+        subject match {
+          case lir.SubField(_: lir.Reference, name, tpe) => lir.Reference(name, tpe)
+          case sub @ lir.SubField(ref, _, _) => sub.copy(prefix = truncateHead(ref))
+          case _ => throw new ImplementationErrorException("truncate from lir.Ref except lir.SubField is unacceptable")
+        }
+      }
+
       // TODO:
       //   In order to prevent raising exception, prohibit using pointers at top module's
       lazy val thisModuleRef = lir.Reference(modulePath.last, searchModule(modulePath, topModule, moduleList).tpe)
       val (nextModulePath, nextReference) = (portOpt, subOpt) match {
-        case (Some(next), _) => (modulePath.init, addHead(nextRef, thisModuleRef))
-        case (_, Some(next)) => (modulePath :+ next.name, truncateHead(nextRef, thisModuleRef))
+        case (Some(_), _) => (modulePath.init, addHead(nextRef, thisModuleRef))
+        case (_, Some(next)) => (modulePath :+ next.name, truncateHead(nextRef))
         case (_, _) => (modulePath, nextRef)
       }
 

@@ -368,4 +368,17 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(src.isInstanceOf[Ident])
     assert(src.asInstanceOf[Ident].id.name.matches("exec_[0-9a-f]+\\$0\\$pointer"))
   }
+
+  test("use simple if expression") {
+    val (modules, _, _) = untilThisPhase(Vector("test"), "Top", "useIfExpr.tchdl")
+    val module = modules.head
+    val interface = module.bodies.head.interfaces.head
+    assert(interface.activeName.matches("function_[0-9a-f]+\\$_active"))
+    val ifExpr = interface.ret.asInstanceOf[IfExpr]
+    val flag = interface.code.collectFirst{ case Temp(id, expr) if id == ifExpr.cond.id => expr }.get
+
+    assert(flag.isInstanceOf[Ident])
+    val flagIdent = flag.asInstanceOf[Ident]
+    assert(flagIdent.id.name.matches("function_[0-9a-f]+\\$flag"))
+  }
 }

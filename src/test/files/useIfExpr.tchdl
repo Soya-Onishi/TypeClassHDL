@@ -1,0 +1,9 @@
+package test
+
+module Top
+impl Top {
+  input def function(flag: Bool) -> Bit[2] {
+    if(flag) 0b00
+    else     0b11
+  }
+}

@@ -868,7 +868,7 @@ object BackendIRGen {
       altExpr.map(_.tpe).getOrElse(unitTpe)
     )
 
-    BuildResult(condNodes, Some(expr), condLabels ++ conseqLabels ++ altLabels)
+    BuildResult(condNodes :+ condLastNode, Some(expr), condLabels ++ conseqLabels ++ altLabels)
   }
 
   def buildMatch(matchExpr: frontend.Match)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
