@@ -193,4 +193,26 @@ class PointerConnectorTest extends TchdlFunSuite {
     val refName = node.src.asInstanceOf[lir.Reference].name
     assert(refName.matches("caller_[0-9a-f]+\\$0\\$pointer_0"))
   }
+
+  test("use deref via stage register") {
+    val (connections, modules, _) = untilThisPhase(Vector("test"), "Top", "procDerefViaStage.tchdl")
+    assert(connections.length == 1)
+    val connect = connections.head
+    assert(connect.dest.length == 1)
+
+    val top = findModule(modules, "Top").get
+    val nodes = findAllComponents[lir.Node](top.procedures)
+
+    val src = connect.source
+    val dst = connect.dest.head
+
+    assert(src.modulePath == Vector.empty)
+    assert(src.component == HierarchyComponent.Proc("multCycle", "first"))
+    assert(dst.modulePath == Vector.empty)
+
+    val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
+    val node = nodes.find(_.name == derefRef.name).get
+    val refName = node.src.asInstanceOf[lir.Reference].name
+    assert(refName.matches("receiver_[0-9a-f]+\\$pointer"))
+  }
 }

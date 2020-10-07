@@ -1,0 +1,23 @@
+package test
+
+module Top
+impl Top {
+  input def exec() -> Unit {
+    val pointer = commence multCycle # first()
+    generate receiver(pointer)
+  }
+
+  proc multCycle @ 0b0000 -> &Bit[4] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b0001
+    }
+  }
+
+  stage receiver(pointer: &Bit[4]) {
+    val value = *pointer
+  }
+}
