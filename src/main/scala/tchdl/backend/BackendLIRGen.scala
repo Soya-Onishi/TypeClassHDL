@@ -1588,11 +1588,11 @@ object BackendLIRGen {
 
   def runCommence(commence: backend.Commence)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val stmts = activateProcBlock(commence.procLabel, commence.blkLabel, commence.args)
-    val pointer = lir.Pointer(commence.procLabel.symbol.path, commence.tpe)
-    val (pointerNode, pointerRef) = makeNode(pointer)
-    val inst = DataInstance(commence.tpe, pointerRef)
+    val com = lir.Commence(commence.procLabel.symbol.path, commence.blkLabel.symbol.name, commence.tpe)
+    val (commenceNode, commenceRef) = makeNode(com)
+    val inst = DataInstance(commence.tpe, commenceRef)
 
-    RunResult(stmts :+ pointerNode, inst)
+    RunResult(stmts :+ commenceNode, inst)
   }
 
   def runRelayBlock(relay: backend.RelayBlock)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {

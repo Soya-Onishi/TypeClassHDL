@@ -47,6 +47,5 @@ object BackendLIR {
 
   case class Literal(value: BigInt, tpe: BackendType) extends Expr
   case class Commence(path: NameSpace, origin: String, tpe: BackendType) extends Expr
-  case class Pointer(path: NameSpace, tpe: BackendType) extends Expr
   case class Ops(op: PrimOp, args: Vector[Ref], consts: Vector[BigInt], tpe: BackendType) extends Expr
 }

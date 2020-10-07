@@ -15,17 +15,23 @@ object PointerConnector {
 
   private def searchSources(module: lir.Module, moduleList: Vector[lir.Module], modulePath: Vector[String], id: Int): (Vector[PointerConnection], Int) = {
     def findNodes(stmts: Vector[lir.Stmt]): Vector[lir.Node] = {
-      val nodes = stmts.collect{ case n: lir.Node => n }
-      val whens = stmts.collect{ case w: lir.When => w }
+      if(stmts.isEmpty) Vector.empty
+      else {
+        val nodes = stmts.collect{ case n: lir.Node => n }
+        val whens = stmts.collect{ case w: lir.When => w }
 
-      nodes ++ findNodes(whens.flatMap(_.conseq) ++ whens.flatMap(_.alt))
+        nodes ++ findNodes(whens.flatMap(_.conseq) ++ whens.flatMap(_.alt))
+      }
     }
 
     def findMemReads(stmts: Vector[lir.Stmt]): Vector[lir.MemRead] = {
-      val reads = stmts.collect{ case r: lir.MemRead => r }
-      val whens = stmts.collect{ case w: lir.When => w }
+      if(stmts.isEmpty) Vector.empty
+      else {
+        val reads = stmts.collect{ case r: lir.MemRead => r }
+        val whens = stmts.collect{ case w: lir.When => w }
 
-      reads ++ findMemReads(whens.flatMap(_.conseq) ++ whens.flatMap(_.alt))
+        reads ++ findMemReads(whens.flatMap(_.conseq) ++ whens.flatMap(_.alt))
+      }
     }
 
     val moduleStmts = module.components ++ module.inits ++ module.procedures
@@ -83,16 +89,19 @@ object PointerConnector {
       val stmts = module.components ++ module.inits ++ module.procedures
 
       def loop(stmts: Vector[lir.Stmt]): Vector[lir.Reference] = {
-        val whens = stmts.collect{ case when: lir.When => when }
-        val whenStmts = whens.flatMap(w => w.conseq ++ w.alt)
+        if(stmts.isEmpty) Vector.empty
+        else {
+          val whens = stmts.collect{ case when: lir.When => when }
+          val whenStmts = whens.flatMap(w => w.conseq ++ w.alt)
 
-        val commenceRefs = stmts.collect{ case node: lir.Node => node }
-          .collect{ case lir.Node(name, c: lir.Commence, _) => (name, c) }
-          .filter{ case (_, c) => c.path.name.get == procName }
-          .filter{ case (_, c) => c.origin == blockName }
-          .map{ case (name, c) => lir.Reference(name, c.tpe) }
+          val commenceRefs = stmts.collect{ case node: lir.Node => node }
+            .collect{ case lir.Node(name, c: lir.Commence, _) => (name, c) }
+            .filter{ case (_, c) => c.path.name.get == procName }
+            .filter{ case (_, c) => c.origin == blockName }
+            .map{ case (name, c) => lir.Reference(name, c.tpe) }
 
-        commenceRefs ++ loop(whenStmts)
+          commenceRefs ++ loop(whenStmts)
+        }
       }
 
       loop(stmts)
@@ -270,17 +279,15 @@ object PointerConnector {
       // In that case, nextRef's head is truncated and Add head into modulePath's last position
       val nextRef = changeHeads(pointer, dst, src)
       val lir.Reference(name, _) = getHead(nextRef)
-      val thisModuleRef = lir.Reference(modulePath.last, searchModule(modulePath, topModule, moduleList).tpe)
-      val portOpt = module.ports
-        .find(_.name == name)
-        .map(_ => (modulePath.init, addHead(nextRef, thisModuleRef)))
-      val subOpt = module.subs
-        .find(_.name == name)
-        .map(sub => (modulePath :+ sub.name, truncateHead(nextRef, thisModuleRef)))
+      val portOpt = module.ports.find(_.name == name)
+      val subOpt = module.subs.find(_.name == name)
 
+      // TODO:
+      //   In order to prevent raising exception, prohibit using pointers at top module's
+      lazy val thisModuleRef = lir.Reference(modulePath.last, searchModule(modulePath, topModule, moduleList).tpe)
       val (nextModulePath, nextReference) = (portOpt, subOpt) match {
-        case (Some(next), _) => next
-        case (_, Some(next)) => next
+        case (Some(next), _) => (modulePath.init, addHead(nextRef, thisModuleRef))
+        case (_, Some(next)) => (modulePath :+ next.name, truncateHead(nextRef, thisModuleRef))
         case (_, _) => (modulePath, nextRef)
       }
 

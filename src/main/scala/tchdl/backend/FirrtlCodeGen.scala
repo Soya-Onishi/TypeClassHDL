@@ -284,12 +284,12 @@ object FirrtlCodeGen {
     case lir.Literal(value, tpe) =>
       val HPElem.Num(width) = tpe.hargs.head
       fir.UIntLiteral(value, fir.IntWidth(width))
-    case pointer: lir.Pointer => elaboratePointer(pointer)
+    case commence: lir.Commence => elaborateCommence(commence)
     case lir.Ops(op, args, consts, tpe) => fir.DoPrim(op, args.map(elaborateExpr), consts, toFirrtlType(tpe))
   }
 
-  def elaboratePointer(pointer: lir.Pointer)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): fir.Expression = {
-    val procPath = modulePath :+ pointer.path.name.get
+  def elaborateCommence(commence: lir.Commence)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): fir.Expression = {
+    val procPath = modulePath :+ commence.path.name.get
     val info = pointers.find(_.source.modulePath == procPath).get
     val width = atLeastLength(pointers.length).toInt
 

@@ -5,12 +5,13 @@ import tchdl.typecheck._
 import tchdl.backend._
 import tchdl.ast._
 import tchdl.util.GlobalData
+import tchdl.backend.ast.{BackendLIR => lir}
 
 class PointerConnectorTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
-  def untilThisPhase(pkgName: Vector[String], module: String, names: String*): Vector[PointerConnection] = {
+  def untilThisPhase(pkgName: Vector[String], module: String, names: String*): (Vector[PointerConnection], GlobalData) = {
     val fullnames = names.map(buildName(rootDir, filePath, _))
     val filenames = fullnames ++ builtInFiles
 
@@ -53,10 +54,19 @@ class PointerConnectorTest extends TchdlFunSuite {
     val topModuleTpe = moduleContainers.head.tpe
     val connections = PointerConnector.exec(topModuleTpe, lirModules)
 
-    connections
+    (connections, newGlobal)
   }
 
   test("pointer connection for simple proc") {
-    val connections = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
+    val (connections, global) = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
+    assert(connections.length == 1)
+    val connect = connections.head
+    assert(connect.source.modulePath == Vector.empty)
+    assert(connect.source.component == HierarchyComponent.Proc("multCycle", "init"))
+    assert(connect.dest.length == 1)
+    val dest = connect.dest.head
+    assert(dest.modulePath == Vector.empty)
+    assert(dest.component.isInstanceOf[HierarchyComponent.Deref])
+    assert(dest.component.asInstanceOf[HierarchyComponent.Deref].ref.tpe == BackendType.bitTpe(8)(global))
   }
 }
