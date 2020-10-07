@@ -1,0 +1,54 @@
+package test
+
+module Top
+impl Top {
+  mod sub: Sub = Sub {
+    parent:
+      top: this
+  }
+
+  input def caller() -> Bit[4] {
+    this.sub.caller()
+  }
+
+  parent def exec() -> &Bit[4] {
+    commence multCycle # first()
+  }
+
+  proc multCycle @ 0b0000 -> &Bit[4] {
+    origin block first() {
+      relay second()
+    }
+
+    final block second() {
+      return 0b0001
+    }
+  }
+}
+
+module Sub {
+  parent:
+    top: Top
+}
+impl Sub {
+  mod subsub: SubSub = SubSub {
+    parent:
+      top: this.top
+  }
+
+  input def caller() -> Bit[4] {
+    this.subsub.caller()
+  }
+}
+
+module SubSub {
+  parent:
+    top: Top
+}
+impl SubSub {
+  input def caller() -> Bit[4] {
+    val pointer = this.top.exec()
+    *pointer
+  }
+}
+
