@@ -1593,7 +1593,7 @@ object Typer {
         _ <- verifyNoState
         pblk <- lookupBlock(relay.target, procSymbol)
         _ <- verifyArguments(pblk, args)
-      } yield relay.copy().setSymbol(pblk).setTpe(Type.unitTpe)
+      } yield relay.copy(params = args).setSymbol(pblk).setTpe(Type.unitTpe)
     }
 
     val typedArgs = relay.params.map(typedExpr)

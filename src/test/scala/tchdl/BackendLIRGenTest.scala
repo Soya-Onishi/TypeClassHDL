@@ -983,4 +983,25 @@ class BackendLIRGenTest extends TchdlFunSuite {
   test("use some vector manipulation methods") {
     untilThisPhase(Vector("test"), "Top", "useVecManipulation.tchdl")
   }
+
+  test("use proc and deref") {
+    val (modules, _) = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
+
+    val useDeref = findModule(modules, "UseDeref").get
+    val nodes = findAllComponents[lir.Node](useDeref.procedures)
+    val whens = useDeref.procedures.collect{ case w: lir.When => w }
+    val exec = whens(0)
+    val deref = exec.conseq.collectFirst{ case d: lir.Deref => d }.get
+    val node = nodes.collectFirst{ case node if node.name == deref.ref.name => node }.get
+
+    assert(node.src.isInstanceOf[lir.Reference])
+    val ref = node.src.asInstanceOf[lir.Reference]
+    assert(ref.name.matches("exec_[0-9a-f]+\\$0\\$pointer_[0-9]+"), ref.name)
+
+    val next = whens(2)
+    val ret = next.conseq.collectFirst{ case r: lir.Return => r }.get
+    val srcName = ret.expr.asInstanceOf[lir.Reference].name
+    assert(ret.path.name.get == "multCycle")
+    assert(srcName.matches("multCycle_[0-9a-f]+_next\\$result"), srcName)
+  }
 }

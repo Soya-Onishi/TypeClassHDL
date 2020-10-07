@@ -4,7 +4,7 @@ import tchdl.backend._
 import tchdl.util._
 
 sealed trait BackendIR
-sealed trait Stmt extends BackendIR
+sealed trait Stmt extends BackendIR { val expr: Expr }
 sealed trait Expr extends BackendIR with HasType
 sealed trait Literal extends Expr
 

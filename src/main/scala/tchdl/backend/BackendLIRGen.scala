@@ -309,20 +309,23 @@ object BackendLIRGen {
     val inputInterfaces = inputInterContainers.map(buildInputInterfaceSignature(_)(stack, global))
     val normalInterfaces = normalInterContainers.map(buildInternalInterfaceSignature(_)(stack, global))
     val stageSigs = module.stages.map(buildStageSignature(_)(stack, ctx, global))
+    val procSigs = module.procs.map(buildProcSignature(_)(stack, ctx, global))
 
     val ports = inputs.map(_.component) ++ outputs.map(_.component) ++ inputInterfaces.flatMap(_.component)
-    val components = internals.map(_.component) ++ registers.map(_.component) ++ normalInterfaces.flatMap(_.component) ++ stageSigs.flatMap(_.component)
+    val components = internals.map(_.component) ++ registers.map(_.component) ++ normalInterfaces.flatMap(_.component) ++ stageSigs.flatMap(_.component) ++ procSigs.flatten
     val (instances, accessCondss) = modules.map(_.component).unzip
     val mems = memories.map(_.component)
 
     val interfaceInits = inputs.flatMap(_.stmts) ++ outputs.flatMap(_.stmts) ++ internals.flatMap(_.stmts)
     val componentInits = registers.flatMap(_.stmts) ++ modules.flatMap(_.stmts) ++ memories.flatMap(_.stmts) ++ inputInterfaces.flatMap(_.stmts) ++ normalInterfaces.flatMap(_.stmts) ++ stageSigs.flatMap(_.stmts)
-    val inits = interfaceInits ++ componentInits
 
     val interfaceBodies = module.interfaces.map(runInterface(_)(stack, ctx, global))
     val alwayss = module.always.map(runAlways(_)(stack, ctx, global))
     val stageBodies = module.stages.map(runStage(_)(stack, ctx, global))
-    val procedures = accessCondss.flatten ++ interfaceBodies.map(_.component) ++ stageBodies.map(_.component) ++ alwayss.flatMap(_.stmts)
+    val procBodies = module.procs.map(runProc(_)(stack, ctx, global))
+    val procedures = accessCondss.flatten ++ interfaceBodies.map(_.component) ++ stageBodies.map(_.component) ++ procBodies.flatMap(_.component) ++ alwayss.flatMap(_.stmts)
+
+    val inits = interfaceInits ++ componentInits ++ procBodies.flatMap(_.stmts)
 
     lir.Module(tpe, ports, instances, mems, hpStmts ++ components, inits, procedures)
   }
@@ -595,14 +598,14 @@ object BackendLIRGen {
   }
 
   def buildProcSignature(proc: ProcContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
-    val params = proc.blks.flatMap(_.params.toVector)
-    val regs = params.map{ case (name, tpe) => lir.Reg(name, Option.empty, tpe) }
+    val paramss = proc.blks.map(_.params.toVector)
     val wire = lir.Wire(proc.label.retName, proc.ret)
+    val regs = paramss.flatMap(_.map{ case (name, tpe) => lir.Reg(name, Option.empty, tpe) })
 
     // add instances to stack
-    params.foreach { case (name, _) => stack.lock(name) }
-    val instances = params.map { case (name, tpe) => StructInstance(tpe, lir.Reference(name, tpe)) }
-    (params zip instances).foreach{ case ((name, _), inst) => stack.append(Name(name), inst) }
+    regs.foreach{ r => stack.lock(r.name) }
+    val instances = regs.map { reg => StructInstance(reg.tpe, lir.Reference(reg.name, reg.tpe)) }
+    (regs zip instances).foreach{ case (reg, inst) => stack.append(Name(reg.name), inst) }
 
     val activeOff = lir.Literal(0, BackendType.boolTpe)
     val (activeOffNode, activeOffRef) = makeNode(activeOff)

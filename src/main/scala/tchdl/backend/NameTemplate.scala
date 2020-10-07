@@ -1,5 +1,7 @@
 package tchdl.backend
 
+import tchdl.util._
+
 object NameTemplate {
   def temp: String = "_GEN"
   def variant: String = "_member"
@@ -8,4 +10,5 @@ object NameTemplate {
   def memEnDelay(mem: String, port: Int): String = s"${mem}_${port}_cycle"
   def pointerPort(id: Int): String = s"_poitner_$id"
   def pointerWire(id: Int): String = s"__pointer_$id"
+  def concat(names: String*): String = names.mkString("$")
 }

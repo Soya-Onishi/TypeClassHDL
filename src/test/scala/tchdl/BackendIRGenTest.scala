@@ -351,4 +351,21 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(commence.blkLabel == pblk.label)
     assert(commence.tpe == tpe)
   }
+
+  test("generate simple deref") {
+    val (modules, _, global) = untilThisPhase(Vector("test"), "UseDeref", "procDeref.tchdl")
+    expectNoError(global)
+
+    val module = modules.head
+    val input = module.bodies.head.interfaces.head
+    val derefs = input.code.collect{ case d if d.expr.isInstanceOf[Deref] => d.expr.asInstanceOf[Deref] }
+
+    assert(derefs.length == 1)
+    assert(derefs.head.tpe == BackendType.bitTpe(8)(global))
+    val deref = derefs.head
+    val src = input.code.collectFirst{ case Temp(id, expr) if id == deref.id.id => expr}.get
+
+    assert(src.isInstanceOf[Ident])
+    assert(src.asInstanceOf[Ident].id.name.matches("exec_[0-9a-f]+\\$0\\$pointer"))
+  }
 }

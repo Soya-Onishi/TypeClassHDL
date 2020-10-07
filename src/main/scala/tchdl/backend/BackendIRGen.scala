@@ -315,7 +315,7 @@ object BackendIRGen {
   }
 
   def buildProcBlock(blk: frontend.ProcBlock, label: ProcBlockLabel)(implicit ctx: BackendContext, global: GlobalData): (ProcBlockContainer, Set[BackendLabel]) = {
-    val paramNames = blk.params.map(_.name).map(param => label.toString + "_" + param)
+    val paramNames = blk.params.map(_.name).map(param => label.toString + "$" + param)
     val paramTpes = blk.params.map(_.symbol.tpe.asRefType).map(toBackendType(_, ctx.hpTable, ctx.tpTable))
     val paramSymbols = blk.params.map(_.symbol.asTermSymbol)
     val params = ListMap.from(paramNames zip paramTpes)
@@ -1054,9 +1054,11 @@ object BackendIRGen {
 
   def buildDeref(ref: frontend.DeReference)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
     val BuildResult(stmts, Some(expr), labels) = buildExpr(ref.expr)
+    val tpe = expr.tpe
+    val derefTpe = BackendType(tpe.symbol, tpe.hargs, tpe.targs, isPointer = false)
     val temp = backend.Temp(ctx.temp.get(), expr)
     val term = backend.Term.Temp(temp.id, temp.expr.tpe)
-    val deref = backend.Deref(term, term.tpe)
+    val deref = backend.Deref(term, derefTpe)
 
     BuildResult(stmts :+ temp, Some(deref), labels)
   }
