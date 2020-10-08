@@ -30,14 +30,17 @@ object BackendLIR {
   case class Wire(name: String, tpe: BackendType) extends Stmt
   case class Node(name: String, src: Expr, tpe: BackendType) extends Stmt
   case class Reg(name: String, default: Option[Ref], tpe: BackendType) extends Stmt
+  case class IDReg(proc: NameSpace, blk: String, idName: String) extends Stmt
   case class Assign(dst: Ref, src: Ref) extends Stmt
   case class PartialAssign(dst: Ref, src: Ref) extends Stmt
   case class Invalid(name: String) extends Stmt
   case class When(cond: Ref, conseq: Vector[Stmt], alt: Vector[Stmt]) extends Stmt
   case class MemRead(name: String, port: Int, addr: Ref, tpe: BackendType) extends Stmt
   case class MemWrite(name: String, port: Int, addr: Ref, data: Ref) extends Stmt
-  case class Return(path: NameSpace, expr: Ref) extends Stmt
+  // For default expression return, idRef is Option[Ref] not just Ref
+  case class Return(path: NameSpace, expr: Ref, idName: Option[String]) extends Stmt
   case class Deref(name: String, ref: Reference, tpe: BackendType) extends Stmt
+  case class PassID(dst: String, from: String) extends Stmt
   case class Stop() extends Stmt
 
   case class Reference(name: String, tpe: BackendType) extends Ref

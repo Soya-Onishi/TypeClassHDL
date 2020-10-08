@@ -58,14 +58,16 @@ object PointerConnector {
 
     var idMax = id
     val procPointers = procs.map{ proc =>
-      idMax += 1
       val hierarchy = HWHierarchyPath(modulePath, HierarchyComponent.Proc(proc.path.name.get, proc.origin))
-      PointerConnection(idMax, hierarchy, Vector.empty, proc.tpe)
+      val pointer = PointerConnection(idMax, hierarchy, Vector.empty, proc.tpe)
+      idMax += 1
+      pointer
     }
     val memPointers = mems.map{ mem =>
-      idMax += 1
       val hierarchy = HWHierarchyPath(modulePath, HierarchyComponent.Memory(mem.name, mem.port))
-      PointerConnection(idMax, hierarchy, Vector.empty, mem.tpe)
+      val pointer = PointerConnection(idMax, hierarchy, Vector.empty, mem.tpe)
+      idMax += 1
+      pointer
     }
 
     val subPointers = Vector.newBuilder[PointerConnection]

@@ -1017,20 +1017,18 @@ object BackendIRGen {
     }
 
     def procPattern(from: ProcBlockLabel): BuildResult = {
-      def procLabel(ctx: BackendContext): ProcLabel = ctx.label match {
-        case label: ProcLabel => label
-        case _ => procLabel(ctx.parent.get)
-      }
+      val srcBlkLabel = ctx.label.asInstanceOf[ProcBlockLabel]
+      val procLabel = srcBlkLabel.proc
 
       val target = relay.symbol.asProcBlockSymbol
-      val targetLabel = ProcBlockLabel(target, from.accessor, from.proc)
+      val dstBlkLabel = ProcBlockLabel(target, from.accessor, from.proc)
       val results = relay.params.map(buildExpr)
       val argCode = results.flatMap(_.nodes)
       val lasts = results.map(_.last.get)
       val labels = results.flatMap(_.labels).toSet
       val temps = lasts.map(e => backend.Temp(ctx.temp.get(), e))
       val terms = temps.map(t => backend.Term.Temp(t.id, t.expr.tpe))
-      val relayCode = backend.RelayBlock(procLabel(ctx), targetLabel, terms)
+      val relayCode = backend.RelayBlock(procLabel, dstBlkLabel, srcBlkLabel, terms)
 
       val code = argCode ++ temps
       BuildResult(code, Some(relayCode), labels)
@@ -1044,10 +1042,12 @@ object BackendIRGen {
   }
 
   def buildReturn(ret: frontend.Return)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
-    val procLabel = ctx.label.asInstanceOf[ProcBlockLabel].proc
+    val procBlkLabel = ctx.label.asInstanceOf[ProcBlockLabel]
+    val procLabel = procBlkLabel.proc
 
     val BuildResult(stmts, Some(expr), labels) = buildExpr(ret.expr)
-    val retStmt = backend.Abandon(backend.Return(procLabel, expr))
+    val r = backend.Return(procLabel, Some(procBlkLabel), expr)
+    val retStmt = backend.Abandon(r)
 
     BuildResult(stmts :+ retStmt, Some(backend.UnitLiteral()), labels)
   }

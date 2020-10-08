@@ -70,32 +70,6 @@ class BackendLIRGenTest extends TchdlFunSuite {
     (lirModule, newGlobal)
   }
 
-  /*
-  def runFirrtl(circuit: ir.Circuit, print: Boolean = false): Unit = {
-    val firrtlFile = Files.createTempFile(null, ".fir")
-    val verilogFile = Files.createTempFile(null, ".v")
-    Files.write(firrtlFile, circuit.serialize.getBytes)
-    val circuitString = Files.readString(firrtlFile)
-
-    val commandArray = Array(
-      "/home/soya/opt/firrtl/utils/bin/firrtl",
-      "-i",
-      firrtlFile.toString,
-      "-o",
-      verilogFile.toString,
-    )
-
-    val command = commandArray.mkString(" ")
-    val exit = command !
-
-    if(exit != 0 || print)
-      println(circuitString)
-
-    if(exit != 0)
-      fail()
-  }
-  */
-
   test("build most simple code") {
     val (modules, _) = untilThisPhase(Vector("test"), "Top[8]", "OnlyTopThrowWire.tchdl")
 

@@ -600,6 +600,15 @@ object BackendLIRGen {
   def buildProcSignature(proc: ProcContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
     val paramss = proc.blks.map(_.params.toVector)
     val regs = paramss.flatMap(_.map{ case (name, tpe) => lir.Reg(name, Option.empty, tpe) })
+    val idRegs = proc.blks
+      .map{ blk =>
+        val procPath = proc.label.symbol.path
+        val blkName = blk.label.symbol.name
+        val blkID = blk.label.idName
+
+        lir.IDReg(procPath, blkName, blkID)
+      }
+
 
     // add instances to stack
     regs.foreach{ r => stack.lock(r.name) }
@@ -612,14 +621,14 @@ object BackendLIRGen {
       .map(_.label.activeName)
       .map(name => lir.Reg(name, activeOffRef.some, BackendType.boolTpe))
 
-    (regs :+ activeOffNode) ++ blkActives
+    ((regs ++ idRegs) :+ activeOffNode) ++ blkActives
   }
 
   def runProc(proc: ProcContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[Vector[lir.When]] = {
     // for default expression
     val stmts = proc.default.flatMap(runStmt)
     val RunResult(exprStmts, defaultInst: DataInstance) = runExpr(proc.defaultRet)
-    val defaultRet = lir.Return(proc.label.symbol.path, defaultInst.refer)
+    val defaultRet = lir.Return(proc.label.symbol.path, defaultInst.refer, Option.empty)
     val defaultStmts = stmts ++ exprStmts :+ defaultRet
 
     val blks = proc.blks.map { blk =>
@@ -1193,7 +1202,7 @@ object BackendLIRGen {
           // At once, convert backend type into firrtl type
           // and extract each field's type, member's type and data's type.
           // Finally, reconverting each firrtl types into backend types
-          val firrtlTpe = toFirrtlType(tpe).asInstanceOf[firrtl.ir.BundleType]
+          val firrtlTpe = toFirrtlType(tpe)(global, Vector.empty).asInstanceOf[firrtl.ir.BundleType]
 
           val memberFirTpe = firrtlTpe.fields.find(_.name == "_member").map(_.tpe).get.asInstanceOf[firrtl.ir.UIntType]
           val memberWidth = memberFirTpe.width.asInstanceOf[firrtl.ir.IntWidth].width.toInt
@@ -1579,8 +1588,10 @@ object BackendLIRGen {
 
   def runReturn(ret: backend.Return)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val RunResult(stmts, instance) = runExpr(ret.expr)
+
     val DataInstance(_, refer) = instance
-    val retStmt = lir.Return(ret.proc.symbol.path, refer)
+    val idName = ret.blk.map(_.idName)
+    val retStmt = lir.Return(ret.proc.symbol.path, refer, idName)
     val RunResult(unitStmts, unit) = DataInstance.unit()
 
     RunResult((stmts :+ retStmt) ++ unitStmts, unit)
@@ -1597,9 +1608,10 @@ object BackendLIRGen {
 
   def runRelayBlock(relay: backend.RelayBlock)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val RunResult(unitStmts, unit) = DataInstance.unit()
+    val passID = lir.PassID(relay.dstBlk.idName, relay.srcBlk.idName)
 
     RunResult(
-      activateProcBlock(relay.procLabel, relay.blkLabel, relay.args) ++ unitStmts,
+      passID +: (activateProcBlock(relay.procLabel, relay.dstBlk, relay.args) ++ unitStmts),
       unit
     )
   }

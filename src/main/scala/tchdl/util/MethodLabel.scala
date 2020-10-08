@@ -79,7 +79,7 @@ case class ProcLabel(
   override type SymbolType = Symbol.ProcSymbol
   override lazy val toString: String = symbol.name + "_" + hashCode().toHexString
 
-  def retName: String = toString + "__ret"
+  def retName: String = toString + "$_ret"
 }
 
 case class ProcBlockLabel(
@@ -89,7 +89,8 @@ case class ProcBlockLabel(
 ) extends BackendLabel {
   override type SymbolType = Symbol.ProcBlockSymbol
   override lazy val toString: String = proc.toString + "_" + symbol.name
-  lazy val activeName: String = toString + "__active"
+  lazy val activeName: String = toString + "$_active"
+  lazy val idName: String = toString + "$_id"
 
   override val hps = proc.hps
   override val tps = proc.tps

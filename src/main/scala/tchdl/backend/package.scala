@@ -273,7 +273,7 @@ package object backend {
     Type.RefType(sig.symbol, hargs, targs, sig.isPointer)
   }
 
-  def toFirrtlType(tpe: BackendType)(implicit global: GlobalData): ir.Type = {
+  def toFirrtlType(tpe: BackendType)(implicit global: GlobalData, pointers: Vector[PointerConnection]): ir.Type = {
     def toBitType(width: Int): ir.UIntType = ir.UIntType(ir.IntWidth(width))
     def toVecType(length: Int, tpe: ir.Type): ir.VectorType = ir.VectorType(tpe, length)
     def toEnumType(symbol: Symbol.EnumSymbol): ir.BundleType = {
@@ -337,20 +337,37 @@ package object backend {
       ir.BundleType(fields)
     }
 
-    tpe.symbol match {
-      case symbol if symbol == Symbol.int  => toBitType(width = 32)
-      case symbol if symbol == Symbol.bool => toBitType(width = 1)
-      case symbol if symbol == Symbol.unit => toBitType(width = 0)
-      case symbol if symbol == Symbol.bit =>
-        val HPElem.Num(width) = tpe.hargs.head
-        toBitType(width)
-      case symbol if symbol == Symbol.vec =>
-        val HPElem.Num(length) = tpe.hargs.head
-        val elemType = toFirrtlType(tpe.targs.head)
+    def pointerType: ir.Type = {
+      def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
+      def atLeastLength(x: Double): Double = {
+        val width = (math.ceil _ compose log2) (x)
 
-        toVecType(length, elemType)
-      case symbol: Symbol.EnumSymbol => toEnumType(symbol)
-      case _ => toOtherType
+        if (width == 0) 1
+        else if(x == 0) 0
+        else width
+      }
+
+      val width = atLeastLength(pointers.length).toInt
+      ir.UIntType(ir.IntWidth(width))
+    }
+
+    if(tpe.isPointer) pointerType
+    else {
+      tpe.symbol match {
+        case symbol if symbol == Symbol.int  => toBitType(width = 32)
+        case symbol if symbol == Symbol.bool => toBitType(width = 1)
+        case symbol if symbol == Symbol.unit => toBitType(width = 0)
+        case symbol if symbol == Symbol.bit =>
+          val HPElem.Num(width) = tpe.hargs.head
+          toBitType(width)
+        case symbol if symbol == Symbol.vec =>
+          val HPElem.Num(length) = tpe.hargs.head
+          val elemType = toFirrtlType(tpe.targs.head)
+
+          toVecType(length, elemType)
+        case symbol: Symbol.EnumSymbol => toEnumType(symbol)
+        case _ => toOtherType
+      }
     }
   }
 
