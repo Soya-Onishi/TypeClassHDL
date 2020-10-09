@@ -53,8 +53,8 @@ object FirrtlCodeGen {
 
     val moduleName = ("Top" +: modulePath).mkString("_")
     val elaboratedModule = fir.Module(fir.NoInfo, moduleName, ports, body)
-    val subModules = module.subs.map(sub => moduleList.find(_.tpe == sub.tpe).get)
-    val subs = subModules.map(elaborate(_, moduleList))
+    val subModules = module.subs.map(sub => sub.name -> moduleList.find(_.tpe == sub.tpe).get)
+    val subs = subModules.map{ case (name, sub) => elaborate(sub, moduleList)(global, pointers, modulePath :+ name) }
 
     ElaboratedModule(moduleName, elaboratedModule, subs)
   }
@@ -417,7 +417,7 @@ object FirrtlCodeGen {
         val connect = DataRoute(from, Connection.FromParent, pointer.id, tpe)
         val anotherConnect =
           if (from == to) None
-          else Some(DataRoute(from, Connection.ToChild(from.head), pointer.id, tpe))
+          else Some(DataRoute(from, Connection.ToChild(to(idx)), pointer.id, tpe))
 
         val route = connect +: anotherConnect.toVector
 
@@ -438,7 +438,7 @@ object FirrtlCodeGen {
       //   from(also proc) --- * --- to
       val head =
       if (from == to) Vector.empty
-      else Vector(DataRoute(from, Connection.ToChild(from.head), pointer.id, tpe))
+      else Vector(DataRoute(from, Connection.ToChild(to.head), pointer.id, tpe))
 
       if (from == to) head
       else {
@@ -546,12 +546,12 @@ object FirrtlCodeGen {
             val from = refChildPort(route.id, sub)
             val to = refWire(route.id)
 
-            (Option.empty[fir.Port], fir.Connect(fir.NoInfo, from, to))
+            (Option.empty[fir.Port], fir.Connect(fir.NoInfo, to, from))
           case Connection.ToChild(sub) =>
             val from = refWire(route.id)
             val to = refChildPort(route.id, sub)
 
-            (Option.empty[fir.Port], fir.Connect(fir.NoInfo, from, to))
+            (Option.empty[fir.Port], fir.Connect(fir.NoInfo, to, from))
           case Connection.ToParent =>
             val from = refWire(route.id)
             val to = refPort(route.id)
@@ -562,7 +562,7 @@ object FirrtlCodeGen {
               toFirrtlType(route.tpe)
             )
 
-            (Some(port), fir.Connect(fir.NoInfo, from, to))
+            (Some(port), fir.Connect(fir.NoInfo, to, from))
           case Connection.FromParent =>
             val from = refPort(route.id)
             val to = refWire(route.id)
@@ -573,7 +573,7 @@ object FirrtlCodeGen {
               toFirrtlType(route.tpe)
             )
 
-            (Some(port), fir.Connect(fir.NoInfo, from, to))
+            (Some(port), fir.Connect(fir.NoInfo, to, from))
         }
       }
 

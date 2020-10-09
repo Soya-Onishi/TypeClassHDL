@@ -8,7 +8,7 @@ object NameTemplate {
   def enumData: String = "_data"
   def memPointer(mem: String, port: Int): String = s"${mem}_${port}_pointer"
   def memEnDelay(mem: String, port: Int): String = s"${mem}_${port}_cycle"
-  def pointerPort(id: Int): String = s"_poitner_$id"
+  def pointerPort(id: Int): String = s"_pointer_$id"
   def pointerWire(id: Int): String = s"__pointer_$id"
   def concat(names: String*): String = names.mkString("$")
 }

@@ -360,6 +360,7 @@ package object backend {
         case symbol if symbol == Symbol.bit =>
           val HPElem.Num(width) = tpe.hargs.head
           toBitType(width)
+        case symbol if symbol.isModuleTypeSymbol => ir.UnknownType
         case symbol if symbol == Symbol.vec =>
           val HPElem.Num(length) = tpe.hargs.head
           val elemType = toFirrtlType(tpe.targs.head)
