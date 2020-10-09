@@ -1,0 +1,21 @@
+package test
+
+module Top
+impl Top {
+  output outport: Bit[2]
+
+  input def exec(param0: Bit[2], param1: Bit[2]) -> Unit {
+    generate st() # s1(param0, param1)
+  }
+
+  stage st() {
+    state s1(value0: Bit[2], value1: Bit[2]) {
+      goto s2(value0 + value1)
+    }
+
+    state s2(value2: Bit[2]) {
+      this.outport = value2
+      finish
+    }
+  }
+}

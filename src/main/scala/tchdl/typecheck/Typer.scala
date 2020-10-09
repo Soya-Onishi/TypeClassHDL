@@ -1395,7 +1395,7 @@ object Typer {
         Symbol.ErrorSymbol
     }
 
-    goto.setSymbol(stateSymbol).setTpe(Type.unitTpe)
+    goto.copy(args = typedArgs).setSymbol(stateSymbol).setTpe(Type.unitTpe)
   }
 
   def typedCommence(commence: Commence)(implicit ctx: Context.NodeContext, global: GlobalData): Commence = {

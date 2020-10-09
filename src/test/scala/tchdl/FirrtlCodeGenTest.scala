@@ -259,4 +259,34 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(fromWires(0).loc == fir.SubField(subxRef(1), "_pointer_0", fir.UnknownType))
     assert(fromWires(1).loc == fir.SubField(subxRef(2), "_pointer_0", fir.UnknownType))
   }
+
+  test("elaborate stage") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "stageMultCycle.tchdl")
+    val top = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val topStmts = top.body.asInstanceOf[fir.Block].stmts
+    val regs = topStmts.collect{ case r: fir.DefRegister => r }
+    assert(regs.length == 5)
+
+    val outputs = top.ports.filter(_.direction == fir.Output)
+    assert(outputs.length == 1)
+    assert(outputs.head.name == "outport")
+
+    val topWhens = topStmts.collect{ case c: fir.Conditionally => c}
+    assert(topWhens.length == 2)
+
+    val execStmts = topWhens(0).conseq.asInstanceOf[fir.Block].stmts
+    val execConnects = execStmts.collect{ case c: fir.Connect => c }
+    assert(execConnects.length == 4)
+    val connectValue0 = execConnects.collectFirst{ case c @ fir.Connect(_, fir.Reference(name, _), _) if name.matches("st_[0-9a-f]+\\$s1\\$value0") => c }
+    assert(connectValue0.isDefined)
+
+    val stStmts = topWhens(1).conseq.asInstanceOf[fir.Block].stmts
+    val stWhens = stStmts.collect{ case c: fir.Conditionally => c }
+    val s2Stmts = stWhens(1).conseq.asInstanceOf[fir.Block].stmts
+    val s2Connects = s2Stmts.collect{ case c: fir.Connect => c }
+    assert(s2Connects.length == 2)
+    val connectPort = s2Connects.head
+    assert(connectPort.loc == fir.Reference("outport", fir.UIntType(fir.IntWidth(2))))
+    assert(connectPort.expr.asInstanceOf[fir.Reference].name.matches("st_[0-9a-f]+\\$s2\\$value2"))
+  }
 }
