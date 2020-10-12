@@ -449,7 +449,6 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     def genName(name: String): String = s"add_$aluHash$$$name"
     def subRef(name: String, tpe: fir.Type): fir.SubField = fir.SubField(fir.Reference("alu", fir.UnknownType), genName(name), tpe)
 
-    println(assigns.mkString("\n"))
     val bit8 = fir.UIntType(fir.IntWidth(8))
     val complex = fir.BundleType(Seq(
       fir.Field("imag", fir.Default, bit8),
