@@ -6,12 +6,21 @@ module Top
 impl Top {
   mod mem: Memory[256, 8, 2, 1, 1, 1, Bit[32]] = Memory[256, 8, 2, 1, 1, 1, Bit[32]]{}
 
-  input def read(addr: Bit[8]) -> &Option[Bit[32]] {
+  input def read(addr: Bit[8]) -> Option[Bit[32]] {
+    val dataPointer = this.reading(addr)
+    *dataPointer
+  }
+
+  input def write(addr: Bit[8], data: Bit[32]) -> Unit {
+    this.writing(addr, data)
+  }
+
+  internal def reading(addr: Bit[8]) -> &Option[Bit[32]] {
     this.mem.read[0](addr)
     this.mem.read[1](addr + 1)
   }
 
-  input def write(addr: Bit[8], data: Bit[32]) -> Unit {
+  internal def writing(addr: Bit[8], data: Bit[32]) -> Unit {
     this.mem.write[0](addr, data)
   }
 }

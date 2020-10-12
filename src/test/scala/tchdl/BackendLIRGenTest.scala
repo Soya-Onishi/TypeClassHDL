@@ -661,16 +661,6 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(ops(3).op == firrtl.PrimOps.Cat)
   }
 
-
-  /*
-  TODO: require tests using
-  test("read and write memory")  {
-
-    val (circuit, _) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
-    runFirrtl(circuit)
-  }
-  */
-
   test("read registers by static and dynamic index") {
     def contains(src: String, keywords: String*): Boolean = {
       keywords.forall(word => src.contains(word))
@@ -950,5 +940,47 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val defaultNode = nodes.find(_.name == retRef.name).get
 
     assert(defaultNode.src == lir.Literal(0, BackendType.bitTpe(8)(global)))
+  }
+
+  test("read and write memory") {
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
+    val top = modules.head
+    assert(top.mems.length == 1)
+
+    val reading = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("reading_[0-9a-f]+\\$_active") => w }.get
+    val writing = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("writing_[0-9a-f]+\\$_active") => w }.get
+    val memReads = reading.conseq.collect{ case m: lir.MemRead => m }
+    val memWrites = writing.conseq.collect{ case m: lir.MemWrite => m }
+
+    assert(memReads.length == 2)
+    assert(memWrites.length == 1)
+
+    val memRead0 = memReads(0)
+    val memRead1 = memReads(1)
+    val memWrite = memWrites.head
+
+    assert(memRead0.port == 0)
+    assert(memRead1.port == 1)
+    assert(memWrite.port == 0)
+
+    assert(memRead0.name == "_mem")
+    assert(memRead1.name == "_mem")
+    assert(memWrite.name == "_mem")
+
+    assert(memRead0.tpe.symbol.name == "Option")
+    val bit32 = BackendType.bitTpe(32)(global)
+    val option = BackendType(memRead0.tpe.symbol, Vector.empty, Vector(bit32), isPointer = true)
+    assert(memRead0.tpe == option)
+    assert(memRead1.tpe == option)
+
+    val rNodes = reading.conseq.collect{ case n: lir.Node => n }
+    val wNodes = writing.conseq.collect{ case n: lir.Node => n }
+
+    assert(memRead0.addr.isInstanceOf[lir.Reference])
+    val addrNode0 = rNodes.find(_.name == memRead0.addr.asInstanceOf[lir.Reference].name).get
+    assert(addrNode0.src.asInstanceOf[lir.Reference].name.matches("reading_[0-9a-f]+\\$addr"))
+    assert(memWrite.addr.isInstanceOf[lir.Reference])
+    val addrNode1 = wNodes.find(_.name == memWrite.addr.asInstanceOf[lir.Reference].name).get
+    assert(addrNode1.src.asInstanceOf[lir.Reference].name.matches("writing_[0-9a-f]+\\$addr"))
   }
 }
