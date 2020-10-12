@@ -468,4 +468,27 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(aExpr == fir.Reference(s"add_$addHash$$a", complex))
     assert(bExpr == fir.Reference(s"add_$addHash$$b", complex))
   }
+
+  test("use memory reading and writing") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
+    val top = circuit.modules.head.asInstanceOf[fir.Module]
+    val stmts = top.body.asInstanceOf[fir.Block].stmts
+    val mems = stmts.collect{ case m: fir.DefMemory => m }
+    assert(mems.length == 1)
+    val mem = mems.head
+
+    assert(mem.name == "_mem")
+    assert(mem.dataType == fir.UIntType(fir.IntWidth(32)))
+    assert(mem.depth == 256)
+    assert(mem.readers.length == 2)
+    assert(mem.writers.length == 1)
+    assert(mem.readLatency == 1)
+    assert(mem.writeLatency == 1)
+
+    val regs = stmts.collect{ case r: fir.DefRegister => r }
+    assert(regs.length == 2)
+
+
+
+  }
 }

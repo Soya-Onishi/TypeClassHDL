@@ -116,14 +116,17 @@ object PointerConnector {
       val stmts = module.components ++ module.inits ++ module.procedures
 
       def loop(stmts: Vector[lir.Stmt]): Vector[lir.Reference] = {
-        val whens = stmts.collect{ case when: lir.When => when }
-        val whenStmts = whens.flatMap(w => w.conseq ++ w.alt)
-        val memRefs = stmts.collect{ case node: lir.Node => node }
-          .collect{ case lir.Node(name, r: lir.Reference, _) => (name, r) }
-          .filter{ case (_, r) => r.name == NameTemplate.memPointer(memName, port) }
-          .map{ case (_, r) => r }
+        if(stmts.isEmpty) Vector.empty
+        else {
+          val whens = stmts.collect{ case when: lir.When => when }
+          val whenStmts = whens.flatMap(w => w.conseq ++ w.alt)
+          val memRefs = stmts.collect{ case node: lir.Node => node }
+            .collect{ case lir.Node(name, r: lir.Reference, _) => (name, r) }
+            .filter{ case (_, r) => r.name == NameTemplate.memPointer(memName, port) }
+            .map{ case (_, r) => r }
 
-        memRefs ++ loop(whenStmts)
+          memRefs ++ loop(whenStmts)
+        }
       }
 
       loop(stmts)

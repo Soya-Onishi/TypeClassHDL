@@ -1037,9 +1037,12 @@ object BackendLIRGen {
     val readTpe = read.tpe.copy(isPointer = true)
     val readStmt = lir.MemRead(memName, read.port, addrRef, readTpe)
     val readDataRef = lir.Reference(NameTemplate.memPointer(memName, read.port), readTpe)
-    val instance = DataInstance(readTpe, readDataRef)
+    val pointerNode = lir.Node(stack.next("_GEN").name, readDataRef, readTpe)
+    val nodeRef = lir.Reference(pointerNode.name, pointerNode.tpe)
 
-    RunResult(Vector(readStmt), instance)
+    val instance = DataInstance(readTpe, nodeRef)
+
+    RunResult(Vector(readStmt, pointerNode), instance)
   }
 
   def runWriteMemory(write: backend.WriteMemory)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {

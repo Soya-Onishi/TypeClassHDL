@@ -215,4 +215,20 @@ class PointerConnectorTest extends TchdlFunSuite {
     val refName = node.src.asInstanceOf[lir.Reference].name
     assert(refName.matches("receiver_[0-9a-f]+\\$pointer"))
   }
+
+  test("use memory read") {
+    val (connections, modules, _) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
+    assert(connections.length == 2)
+    val memRead = connections(1)
+    assert(memRead.dest.length == 1)
+    assert(memRead.dest.head.component.isInstanceOf[HierarchyComponent.Deref])
+    val component = memRead.dest.head.component
+    val deref = component.asInstanceOf[HierarchyComponent.Deref]
+
+    val nodeName = deref.ref.name
+    val nodes = findAllComponents[lir.Node](modules.head.procedures)
+    val node = nodes.find(_.name == nodeName).get
+    assert(node.src.isInstanceOf[lir.Reference])
+    assert(node.src.asInstanceOf[lir.Reference].name.matches("read_[0-9a-f]+\\$0\\$dataPointer_0"))
+  }
 }

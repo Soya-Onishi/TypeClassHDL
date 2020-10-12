@@ -139,12 +139,9 @@ object FirrtlCodeGen {
       memEnDelaysInits ++ memEnDelays ++ delaysConnections.toVector
     }
 
-    // TODO: In actual, memory has some ports
-    //       So, pointers also must exist for each ports
-    //       For now, in this method, procedures expect memory has only one port
     def getPointerWire(port: Int): fir.Reference = {
-      val path = modulePath :+ mem.name
-      val pointer = pointers.find(_.source.modulePath == path).get
+      val candidates = pointers.filter(_.source.modulePath == modulePath)
+      val pointer = candidates.find(_.source.component == HierarchyComponent.Memory(mem.name, port)).get
       val name = NameTemplate.pointerWire(pointer.id)
 
       fir.Reference(name, fir.UnknownType)
