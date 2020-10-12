@@ -1,0 +1,11 @@
+package test
+
+import std::traits:::From
+
+module Top
+impl Top {
+  input def func(in: Bit[8]) -> Bit[8] {
+    val local = in + Bit[8]:::from(1)
+    local
+  }
+}

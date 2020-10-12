@@ -11,6 +11,7 @@ lazy val antlr4Settings = Seq(
 
 lazy val compilerSettings = Seq(
   libraryDependencies ++= Seq(
+    "edu.berkeley.cs" %% "treadle" % "1.2.2" % "test",
     "edu.berkeley.cs" %% "firrtl" % "1.3.2",
     "org.scalatest" %% "scalatest" % "3.1.0" % "test",
   ),
