@@ -10,9 +10,7 @@ import tchdl.parser.Filename
 import scala.language.postfixOps
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
-import org.scalatest.tags.Slow
 
-@Slow
 class BackendLIRGenTest extends TchdlFunSuite {
   def extractHashCode(regex: String, from: String): String = {
     val r = regex.r
