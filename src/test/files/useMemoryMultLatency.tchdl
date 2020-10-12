@@ -1,0 +1,13 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  mod memory: Memory[256, 8, 1, 1, 2, 1, Bit[32]] = Memory[256, 8, 1, 1, 2, 1, Bit[32]] {}
+
+  input def read(addr: Bit[8]) -> Option[Bit[32]] {
+    val dataPointer = this.memory.read[0](addr)
+    *dataPointer
+  }
+}

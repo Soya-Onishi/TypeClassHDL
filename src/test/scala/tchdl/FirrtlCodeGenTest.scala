@@ -473,6 +473,8 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, global) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
     val top = circuit.modules.head.asInstanceOf[fir.Module]
     val stmts = top.body.asInstanceOf[fir.Block].stmts
+    val reading = stmts.collectFirst{ case w @ fir.Conditionally(_, fir.Reference(name, _), _, _) if name.matches("reading_[0-9a-f]+\\$_active") => w }.get
+    val read = stmts.collectFirst{ case w @ fir.Conditionally(_, fir.Reference(name, _), _, _) if name.matches("read_[0-9a-f]+\\$_active") => w }.get
     val mems = stmts.collect{ case m: fir.DefMemory => m }
     assert(mems.length == 1)
     val mem = mems.head
@@ -488,7 +490,54 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val regs = stmts.collect{ case r: fir.DefRegister => r }
     assert(regs.length == 2)
 
+    val readingStmts = reading.conseq.asInstanceOf[fir.Block].stmts
+    val connects = readingStmts.collect{ case c: fir.Connect => c }
 
+    val connect0 = connects.collectFirst{ case c @ fir.Connect(_, fir.SubIndex(fir.Reference("_mem_0_cycle", _), 0, _), _) => c }.get
+    val connect1 = connects.collectFirst{ case c @ fir.Connect(_, fir.SubIndex(fir.Reference("_mem_1_cycle", _), 0, _), _) => c }.get
+    assert(connect0.expr == fir.UIntLiteral(1, fir.IntWidth(1)))
+    assert(connect1.expr == fir.UIntLiteral(1, fir.IntWidth(1)))
 
+    val readStmts = read.conseq.asInstanceOf[fir.Block].stmts
+    val refPointer = readStmts.collectFirst{ case c @ fir.DefNode(_, _, fir.Reference("__pointer_1", _)) => c }.get
+    val nodeName = refPointer.name
+    val dstRef = readStmts.collectFirst{ case fir.Connect(_, r: fir.Reference, fir.Reference(name, _)) if name == nodeName => r }.get
+    assert(dstRef.name.matches("read_[0-9a-f]+\\$_ret"))
+
+    val topConnects = stmts.collect{ case c: fir.Connect => c }
+    val pointer1Ref = topConnects.collectFirst{ case fir.Connect(_, fir.SubField(sub: fir.Reference, "_member", _), fir.SubIndex(fir.Reference(name, _), 0, _)) if name == regs(1).name => sub }.get
+    assert(pointer1Ref.name == "__pointer_1")
+    val dataRefs = topConnects.collect{ case fir.Connect(_, fir.SubField(sub: fir.Reference, "_data", _), src) => src }
+    val memRef = fir.Reference("_mem", fir.UnknownType)
+    val port = fir.SubField(memRef, "r1", fir.UnknownType)
+    val data = fir.SubField(port, "data", fir.UnknownType)
+    assert(dataRefs(1) == data)
+  }
+
+  test("using multi cycle read latency memory") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "useMemoryMultLatency.tchdl")
+    val top = circuit.modules.head.asInstanceOf[fir.Module]
+    val stmts = top.body.asInstanceOf[fir.Block].stmts
+    val regs = stmts.collect{ case r: fir.DefRegister => r }
+    assert(regs.length == 1)
+    val cycleReg = regs.head
+    assert(cycleReg.tpe == fir.VectorType(fir.UIntType(fir.IntWidth(1)), 2))
+
+    val reg0Ref = fir.SubIndex(fir.Reference("memory_0_cycle", fir.UnknownType), 0, fir.UnknownType)
+    val reg1Ref = fir.SubIndex(fir.Reference("memory_0_cycle", fir.UnknownType), 1, fir.UnknownType)
+
+    val connectReg0 = stmts.collectFirst{ case fir.Connect(_, ref, src) if ref == reg0Ref => src }.get
+    val connectReg1 = stmts.collectFirst{ case fir.Connect(_, ref, src) if ref == reg1Ref => src }.get
+    val connectPointer = stmts.collectFirst{ case fir.Connect(_, ref, src) if src == reg1Ref => ref }.get
+
+    assert(connectReg0 == fir.UIntLiteral(0, fir.IntWidth(1)))
+    assert(connectReg1 == reg0Ref)
+    assert(connectPointer == fir.SubField(fir.Reference("__pointer_0", fir.UnknownType), "_member", fir.UnknownType))
+
+    val read = stmts.collectFirst{ case w: fir.Conditionally => w }.get
+    assert(read.pred.asInstanceOf[fir.Reference].name.matches("read_[0-9a-f]+\\$_active"))
+    val readStmts = read.conseq.asInstanceOf[fir.Block].stmts
+    val readNodes = readStmts.collect{ case node: fir.DefNode => node }
+    assert(readNodes.exists(_.value == fir.Reference("__pointer_0", fir.UnknownType)))
   }
 }

@@ -124,7 +124,7 @@ object FirrtlCodeGen {
 
       val delaysConnections = (0 until mem.readPorts).flatMap { portIdx =>
         var connections = Vector.newBuilder[fir.Connect]
-        val name = s"${NameTemplate.memEnDelay(mem.name, portIdx)}_init"
+        val name = NameTemplate.memEnDelay(mem.name, portIdx)
 
         (0 until mem.readLatency).foldLeft[fir.Expression](fir.UIntLiteral(0)) {
           case (expr, idx) =>
