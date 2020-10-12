@@ -25,3 +25,6 @@ gen/
 project/metals.sbt
 *.jar
 *.fir
+
+# ignore directory treadle generated
+test_run_dir/
