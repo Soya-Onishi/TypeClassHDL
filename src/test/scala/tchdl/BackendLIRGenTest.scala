@@ -238,6 +238,29 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(aAssignOpt.isDefined)
     assert(bAssignOpt.isDefined)
     assert(stateAssignOpt.isDefined)
+
+    // check current state check works correctly
+    val st1When = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("st1_[0-9a-f]+\\$_active") => w }.get
+    val st1Stmts = st1When.conseq
+    val st1Nodes = st1Stmts.collect{ case n: lir.Node => n }.collect{ case n @ lir.Node(_, lir.Ops(firrtl.PrimOps.Eq, _, _, _), _) => n }
+    val st1LitNodes = st1Stmts.collect{ case n: lir.Node => n }.filter(_.src.isInstanceOf[lir.Literal])
+
+    assert(st1Nodes.length == 2, "\n" + st1Nodes.mkString("\n"))
+    val states = st1Stmts.collect{ case w: lir.When => w }
+    val stateCondNames = states.collect{ case lir.When(lir.Reference(name, _), _, _) => name }
+    assert(stateCondNames.length == 2)
+    assert(stateCondNames.contains(st1Nodes(0).name))
+    assert(stateCondNames.contains(st1Nodes(1).name))
+    val arg00 = st1Nodes(0).src.asInstanceOf[lir.Ops].args(0)
+    val arg10 = st1Nodes(1).src.asInstanceOf[lir.Ops].args(0)
+    assert(arg00.asInstanceOf[lir.Reference].name.matches("st1_[0-9a-f]+\\$_state"))
+    assert(arg10.asInstanceOf[lir.Reference].name.matches("st1_[0-9a-f]+\\$_state"))
+    val arg01 = st1Nodes(0).src.asInstanceOf[lir.Ops].args(1).asInstanceOf[lir.Reference]
+    val arg11 = st1Nodes(1).src.asInstanceOf[lir.Ops].args(1).asInstanceOf[lir.Reference]
+    val state0 = st1LitNodes.collectFirst{ case lir.Node(name, lir.Literal(value, _), _) if name == arg01.name => value }.get
+    val state1 = st1LitNodes.collectFirst{ case lir.Node(name, lir.Literal(value, _), _) if name == arg11.name => value }.get
+    assert(state0 == 0)
+    assert(state1 == 1)
   }
 
   test("compile ALU without always statement") {

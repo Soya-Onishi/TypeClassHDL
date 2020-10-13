@@ -1,0 +1,37 @@
+package test
+
+import std::traits:::Add
+
+module Top
+impl Top {
+  input aBit8: Bit[8]
+  input bBit8: Bit[8]
+  input aBit4: Bit[4]
+  input bBit4: Bit[4]
+
+  output outBit4: Bit[4]
+  output outBit8: Bit[8]
+  output outTBit4: Bit[4]
+  output outTBit8: Bit[8]
+
+  always execute {
+    this.outBit4 = addBit4(this.aBit4, this.bBit4)
+    this.outBit8 = addBit8(this.aBit8, this.bBit8)
+    this.outTBit4 = addT[Bit[4]](this.aBit4, this.bBit4)
+    this.outTBit8 = addT[Bit[8]](this.aBit8, this.bBit8)
+  }
+}
+
+def addT[T](a: T, b: T) -> T
+  where T: Add
+{
+  a + b
+}
+
+def addBit8(a: Bit[8], b: Bit[8]) -> Bit[8] {
+  a + b
+}
+
+def addBit4(a: Bit[4], b: Bit[4]) -> Bit[4] {
+  a + b
+}

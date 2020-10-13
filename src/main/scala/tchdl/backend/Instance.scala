@@ -56,7 +56,7 @@ object DataInstance {
     val (node, ref) = makeNode(lir.Literal(0, tpe))
     val inst = StructInstance(tpe, ref)
 
-    RunResult(Vector(node), inst)
+    RunResult(Vector.empty, inst)
   }
 
   def apply(tpe: BackendType, variant: Option[Symbol.EnumMemberSymbol], refer: lir.Ref): EnumInstance =

@@ -10,6 +10,8 @@ import firrtl.{ir => fir}
 import firrtl.stage.FirrtlCircuitAnnotation
 import treadle.TreadleTester
 
+import java.util.Random
+
 class SimulationTest extends TchdlFunSuite {
   def extractHashCode(regex: String, from: String): String = {
     val r = regex.r
@@ -68,13 +70,22 @@ class SimulationTest extends TchdlFunSuite {
     circuit
   }
 
-  private def runSim(circuit: fir.Circuit)(f: TreadleTester => Unit): Unit = {
-    val annon = FirrtlCircuitAnnotation(circuit)
-    val tester = TreadleTester(Seq(annon))
+  private def runSim(circuit: fir.Circuit, enableVcd: Boolean = false)(f: TreadleTester => Unit): Unit = {
+    val clockInfo = treadle.executable.ClockInfo("CLK")
+    val annons = Seq(
+      treadle.ClockInfoAnnotation(Seq(clockInfo)),
+      treadle.ResetNameAnnotation("RST"),
+      FirrtlCircuitAnnotation(circuit)
+    )
+    val passedAnnons =
+      if(enableVcd) annons :+ treadle.WriteVcdAnnotation
+      else annons
+
+    val tester = TreadleTester(passedAnnons)
 
     f(tester)
 
-    if(tester.isOK) info(tester.reportString)
+    if(tester.finish) info(tester.reportString)
     else fail(tester.reportString)
   }
 
@@ -149,7 +160,7 @@ class SimulationTest extends TchdlFunSuite {
     val add = getNameGenFromMethod(module, "add")
     val sub = getNameGenFromMethod(module, "sub")
 
-    println(circuit.serialize)
+    info(circuit.serialize)
 
     runSim(circuit) { tester =>
       tester.poke(add("_active"), 1)
@@ -175,6 +186,59 @@ class SimulationTest extends TchdlFunSuite {
         tester.expect(add("_ret_imag"), (aImag + bImag) % 256)
         tester.expect(sub("_ret_real"), ((aReal - bReal) + 256) % 256)
         tester.expect(sub("_ret_imag"), ((aImag - bImag) + 256) % 256)
+      }
+    }
+  }
+
+  test("stage multiple add") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "stageMultAdd.tchdl")
+    val top = circuit.modules.head.asInstanceOf[fir.Module]
+    val exec = getNameGenFromMethod(top, "exec")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(255)
+
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } yield {
+        val seqs = Vector("a", "b", "c", "d").map(name => exec(name) -> next)
+        seqs.foreach { case (name, value) => tester.poke(name, value) }
+
+        tester.poke(exec("_active"), 1)
+        tester.step()
+        tester.poke(exec("_active"), 0)
+        tester.step()
+
+        val expect = seqs.map(_._2).foldLeft(0){ case (acc, x) => acc + x } % 256
+        tester.expect("result", expect)
+      }
+    }
+  }
+
+  test("using type parameter and doing add as T type works correctly") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "useTypeParamAndNormal.tchdl")
+    val rand = new Random(0)
+
+    info(circuit.serialize)
+
+    runSim(circuit, enableVcd = true) { tester =>
+      for {
+        _ <- 0 to 255
+      } yield {
+        val bit4s = Vector("aBit4", "bBit4").map(name => name -> rand.nextInt(15))
+        val bit8s = Vector("aBit8", "bBit8").map(name => name -> rand.nextInt(255))
+
+        bit4s.foreach{ case (name, value) => tester.poke(name, value) }
+        bit8s.foreach{ case (name, value) => tester.poke(name, value) }
+
+        val bit4Expect = (bit4s(0)._2 + bit4s(1)._2) % 16
+        val bit8Expect = (bit8s(0)._2 + bit8s(1)._2) % 256
+        tester.expect("outBit4", bit4Expect)
+        tester.expect("outBit8", bit8Expect)
+        tester.expect("outTBit4", bit4Expect)
+        tester.expect("outTBit8", bit8Expect)
+
+        tester.step(1)
       }
     }
   }

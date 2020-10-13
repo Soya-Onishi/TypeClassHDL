@@ -308,16 +308,17 @@ object BackendLIRGen {
     }
     val inputInterfaces = inputInterContainers.map(buildInputInterfaceSignature(_)(stack, global))
     val normalInterfaces = normalInterContainers.map(buildInternalInterfaceSignature(_)(stack, global))
-    val stageSigs = module.stages.map(buildStageSignature(_)(stack, ctx, global))
-    val procSigs = module.procs.map(buildProcSignature(_)(stack, ctx, global))
+    val stageSigPairs = module.stages.map(buildStageSignature(_)(stack, ctx, global))
+    val stageSigs = stageSigPairs.flatMap(_.stmts) ++ stageSigPairs.flatMap(_.component)
+    val procSigss = module.procs.map(buildProcSignature(_)(stack, ctx, global))
 
     val ports = inputs.map(_.component) ++ outputs.map(_.component) ++ inputInterfaces.flatMap(_.component)
-    val components = internals.map(_.component) ++ registers.map(_.component) ++ normalInterfaces.flatMap(_.component) ++ stageSigs.flatMap(_.component) ++ procSigs.flatten
+    val components = internals.map(_.component) ++ registers.map(_.component) ++ normalInterfaces.flatMap(_.component) ++ stageSigs ++ procSigss.flatten
     val (instances, accessCondss) = modules.map(_.component).unzip
     val mems = memories.map(_.component)
 
     val interfaceInits = inputs.flatMap(_.stmts) ++ outputs.flatMap(_.stmts) ++ internals.flatMap(_.stmts)
-    val componentInits = registers.flatMap(_.stmts) ++ modules.flatMap(_.stmts) ++ memories.flatMap(_.stmts) ++ inputInterfaces.flatMap(_.stmts) ++ normalInterfaces.flatMap(_.stmts) ++ stageSigs.flatMap(_.stmts)
+    val componentInits = registers.flatMap(_.stmts) ++ modules.flatMap(_.stmts) ++ memories.flatMap(_.stmts) ++ inputInterfaces.flatMap(_.stmts) ++ normalInterfaces.flatMap(_.stmts)
 
     val interfaceBodies = module.interfaces.map(runInterface(_)(stack, ctx, global))
     val alwayss = module.always.map(runAlways(_)(stack, ctx, global))
@@ -332,7 +333,7 @@ object BackendLIRGen {
 
   def runInput(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.Port] = {
     val stmts = field.code.flatMap(runStmt)
-    val retExpr = field.ret.map(throw new ImplementationErrorException("input wire with init expression is not supported yet"))
+    val retExpr = field.ret.map(_ => throw new ImplementationErrorException("input wire with init expression is not supported yet"))
     val port = lir.Port(lir.Dir.Input, field.toFirrtlString, field.tpe)
 
     BuildResult(stmts, port)
@@ -342,7 +343,7 @@ object BackendLIRGen {
     val stmts = field.code.flatMap(runStmt)
     val fieldRef = lir.Reference(field.toFirrtlString, field.tpe)
     val retStmt = field.ret.map(runExpr) match {
-      case None => Vector.empty
+      case None => Vector(lir.Invalid(fieldRef))
       case Some(RunResult(stmts, inst: DataInstance)) =>
         val connectOpt = lir.Assign(fieldRef, inst.refer)
         stmts :+ connectOpt
@@ -355,10 +356,10 @@ object BackendLIRGen {
 
   def runInternal(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.Wire] = {
     val stmts = field.code.flatMap(runStmt)
+    val fieldRef = lir.Reference(field.toFirrtlString, field.tpe)
     val retStmt = field.ret.map(runExpr) match {
-      case None => Vector.empty
+      case None => Vector(lir.Invalid(fieldRef))
       case Some(RunResult(stmts, inst: DataInstance)) =>
-        val fieldRef = lir.Reference(field.toFirrtlString, field.tpe)
         stmts :+ lir.Assign(fieldRef, inst.refer)
     }
 
@@ -566,7 +567,7 @@ object BackendLIRGen {
 
   def runStage(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.When] = {
     val stmts = stage.code.flatMap(runStmt)
-    val states = stage.states.zipWithIndex.map {
+    val statePairs = stage.states.zipWithIndex.map {
       case (state, idx) =>
         val stateLen = atLeastLength(stage.states.length).toInt
         val stateTpe = toBackendType(Type.bitTpe(stateLen))
@@ -584,13 +585,16 @@ object BackendLIRGen {
           BackendType.boolTpe
         )
         val condRef = lir.Reference(condNode.name, BackendType.boolTpe)
+        val cond = lir.When (condRef, stateStmts, Vector.empty)
 
-        lir.When (condRef, stateStmts, Vector.empty)
+        (Vector(idxNode, condNode), cond)
     }
+    val (stateNodess, states) = statePairs.unzip
+    val stateNodes = stateNodess.flatten
 
     val cond = lir.When(
       lir.Reference(stage.activeName, BackendType.boolTpe),
-      stmts ++ states,
+      stmts ++ stateNodes ++ states,
       Vector.empty
     )
 
