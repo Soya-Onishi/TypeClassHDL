@@ -1,0 +1,44 @@
+package test
+
+module Top
+impl Top {
+  input operand: Bit[8]
+
+  mod sub: Sub = Sub {
+    parent:
+      top: this
+  }
+
+  input def execute(value: Bit[8]) -> Bit[8] {
+    this.sub.execute(value)
+  }
+
+  parent def calculation(value: Bit[8]) -> Bit[8] {
+    value + this.operand
+  }
+}
+
+module Sub {
+  parent:
+    top: Top
+}
+impl Sub {
+  mod subsub: SubSub = SubSub {
+    parent:
+      top: this.top
+  }
+
+  input def execute(value: Bit[8]) -> Bit[8] {
+    this.subsub.execute(value)
+  }
+}
+
+module SubSub {
+  parent:
+    top: Top
+}
+impl SubSub {
+  input def execute(value: Bit[8]) -> Bit[8] {
+    this.top.calculation(value)
+  }
+}

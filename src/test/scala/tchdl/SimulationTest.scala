@@ -266,4 +266,33 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("use parent feature") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "useParentToAdd.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val exec = getNameGenFromMethod(module, "execute")
+    val rand = new Random(0)
+
+    info(circuit.serialize)
+
+    runSim(circuit) { tester =>
+      for {
+         _ <- 0 to 255
+      } yield {
+        val value = rand.nextInt(255)
+        val operand = rand.nextInt(255)
+
+        tester.poke(exec("_active"), 1)
+        tester.poke(exec("value"), value)
+        tester.poke("operand", operand)
+
+        val expect = (value + operand) % 256
+        tester.expect(exec("_ret"), expect)
+
+        tester.step()
+        tester.poke(exec("_active"), 0)
+        tester.step()
+      }
+    }
+  }
 }
