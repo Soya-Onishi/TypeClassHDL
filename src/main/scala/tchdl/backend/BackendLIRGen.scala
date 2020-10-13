@@ -542,7 +542,7 @@ object BackendLIRGen {
     }
 
     val activeTpe = toBackendType(Type.bitTpe(1))
-    val activeNode = lir.Node(stack.next("_GEN").name, lir.Literal(1, activeTpe), activeTpe)
+    val activeNode = lir.Node(stack.next("_GEN").name, lir.Literal(0, activeTpe), activeTpe)
     val activeRef = lir.Reference(activeNode.name, activeTpe)
     val active = lir.Reg(stage.activeName, Some(activeRef), activeTpe)
 
