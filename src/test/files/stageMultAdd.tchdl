@@ -1,0 +1,21 @@
+package test
+
+module Top
+impl Top {
+  output result: Bit[8]
+
+  input def exec(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    generate multCycle() # first(a + b, c + d)
+  }
+
+  stage multCycle() {
+    state first(x: Bit[8], y: Bit[8]) {
+      goto second(x + y)
+    }
+
+    state second(res: Bit[8]) {
+      this.result = res
+      finish
+    }
+  }
+}

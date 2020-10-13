@@ -1,0 +1,16 @@
+package test
+
+module Top
+impl Top {
+  input def function(flag: Bool) -> Bit[2] {
+    val value = 0b01
+
+    if(flag) {
+      val value = 0b11
+      value
+    } else {
+      val value = 0b10
+      value
+    }
+  }
+}

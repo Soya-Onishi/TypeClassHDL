@@ -1,8 +1,8 @@
 package tchdl.backend
 
 import tchdl.backend.ast.{BackendLIR => lir}
-import tchdl.util.GlobalData
-import tchdl.util.Symbol
+import tchdl.util._
+
 import firrtl.{ir => fir}
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
@@ -36,23 +36,44 @@ object FirrtlCodeGen {
 
   def elaborate(module: lir.Module, moduleList: Vector[lir.Module])(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): ElaboratedModule = {
     val ports = module.ports.map(elaboratePort)
+    val clkPort = fir.Port(fir.NoInfo, clockRef.name, fir.Input, fir.ClockType)
+    val rstPort = fir.Port(fir.NoInfo, resetRef.name, fir.Input, fir.UIntType(fir.IntWidth(1)))
+
     val instances = module.subs.map(elaborateSubModule)
     val (mems, memInitss) = module.mems.map(elaborateMemory).unzip
     val components = module.components.flatMap(elaborateStmt)
     val inits = module.inits.flatMap(elaborateStmt)
     val procedures = module.procedures.flatMap(elaborateStmt)
+    val priorityAssigns = findAllComponents[lir.PriorityAssign](module.procedures)
+    val (viaWires, viaInitss, condAssigns) = priorityAssigns.map(elaboratePriorityAssignToDst).unzip3
+    val viaInits = viaInitss.flatten
+
+    val clkConnects = module.subs
+      .map(sub => fir.Reference(sub.name, fir.UnknownType))
+      .map(ref => fir.SubField(ref, clockRef.name, fir.UnknownType))
+      .map(ref => fir.Connect(fir.NoInfo, ref, clockRef))
+    val rstConnects = module.subs
+      .map(sub => fir.Reference(sub.name, fir.UnknownType))
+      .map(ref => fir.SubField(ref, resetRef.name, fir.UnknownType))
+      .map(ref => fir.Connect(fir.NoInfo, ref, resetRef))
 
     val body = fir.Block(
       instances ++
+        clkConnects ++
+        rstConnects ++
         mems ++
         memInitss.flatten ++
         components ++
+        viaWires ++
         inits ++
-        procedures
+        viaInits ++
+        procedures ++
+        condAssigns
     )
 
+    val modulePorts = Vector(clkPort, rstPort) ++ ports
     val moduleName = ("Top" +: modulePath).mkString("_")
-    val elaboratedModule = fir.Module(fir.NoInfo, moduleName, ports, body)
+    val elaboratedModule = fir.Module(fir.NoInfo, moduleName, modulePorts, body)
     val subModules = module.subs.map(sub => sub.name -> moduleList.find(_.tpe == sub.tpe).get)
     val subs = subModules.map{ case (name, sub) => elaborate(sub, moduleList)(global, pointers, modulePath :+ name) }
 
@@ -71,8 +92,9 @@ object FirrtlCodeGen {
   }
 
   def elaborateSubModule(sub: lir.SubModule)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): fir.DefInstance = {
-    val name = modulePath.foldLeft("Top") { case (acc, next) => s"${acc}_$next" }
-    fir.DefInstance(fir.NoInfo, sub.name, name + sub.name)
+    val subPath = modulePath :+ sub.name
+    val name = subPath.foldLeft("Top") { case (acc, next) => s"${acc}_$next" }
+    fir.DefInstance(fir.NoInfo, sub.name, name)
   }
 
   def elaborateMemory(mem: lir.Memory)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): (fir.DefMemory, Vector[fir.Statement]) = {
@@ -186,6 +208,31 @@ object FirrtlCodeGen {
     (memory, delayStmts ++ readDataConnections)
   }
 
+  def elaboratePriorityAssignToDst(assign: lir.PriorityAssign)(implicit global: GlobalData, pointer: Vector[PointerConnection], modulePath: Vector[String]): (fir.DefWire, Vector[fir.Statement], fir.Conditionally) = {
+    val dataTpe = toFirrtlType(assign.src.tpe)
+    val enTpe = fir.UIntType(fir.IntWidth(1))
+    val enField = fir.Field(NameTemplate.priorityEnable, fir.Default, enTpe)
+    val dataField = fir.Field(NameTemplate.priorityData, fir.Default, dataTpe)
+
+    // generate wire for via
+    val viaTpe = fir.BundleType(Seq(enField, dataField))
+    val viaWire = fir.DefWire(fir.NoInfo, assign.via, viaTpe)
+
+    // generate initialization code for wire
+    val viaRef = fir.Reference(assign.via, fir.UnknownType)
+    val enRef = fir.SubField(viaRef, NameTemplate.priorityEnable, fir.UnknownType)
+    val dataRef = fir.SubField(viaRef, NameTemplate.priorityData, fir.UnknownType)
+    val defaultEn = fir.Connect(fir.NoInfo, enRef, fir.UIntLiteral(0))
+    val invalidData = fir.IsInvalid(fir.NoInfo, dataRef)
+
+    // generate code to assign to destination from via wire
+    val dstRef = elaborateExpr(assign.dst)
+    val assignDst = fir.Connect(fir.NoInfo, dstRef, dataRef)
+    val cond = fir.Conditionally(fir.NoInfo, enRef, assignDst, fir.EmptyStmt)
+
+    (viaWire, Vector(defaultEn, invalidData), cond)
+  }
+
   def elaborateStmt(stmt: lir.Stmt)(implicit global: GlobalData, pointer: Vector[PointerConnection], modulePath: Vector[String]): Vector[fir.Statement] =
     stmt match {
       case lir.Wire(name, tpe) => Vector(fir.DefWire(fir.NoInfo, name, toFirrtlType(tpe)))
@@ -213,13 +260,22 @@ object FirrtlCodeGen {
           elaborateExpr(dst),
           elaborateExpr(src)
         ))
+      case lir.PriorityAssign(_, via, src) =>
+        val viaRef = fir.Reference(via, fir.UnknownType)
+        val subEn = fir.SubField(viaRef, "_enable", fir.UnknownType)
+        val subData = fir.SubField(viaRef, "_data", fir.UnknownType)
+
+        val enable = fir.Connect(fir.NoInfo, subEn, fir.UIntLiteral(1))
+        val transfer = fir.Connect(fir.NoInfo, subData, elaborateExpr(src))
+
+        Vector(enable, transfer)
       case lir.PartialAssign(dst, src) =>
         Vector(fir.PartialConnect(
           fir.NoInfo,
           elaborateExpr(dst),
           elaborateExpr(src)
         ))
-      case lir.Invalid(name) => Vector(fir.IsInvalid(fir.NoInfo, fir.Reference(name, fir.UnknownType)))
+      case lir.Invalid(ref) => Vector(fir.IsInvalid(fir.NoInfo, elaborateExpr(ref)))
       case lir.When(cond, conseq, alt) =>
         Vector(fir.Conditionally(
           fir.NoInfo,
@@ -604,5 +660,17 @@ object FirrtlCodeGen {
 
   private def idTpe(implicit pointers: Vector[PointerConnection]): fir.UIntType = {
     fir.UIntType(idWidth)
+  }
+
+  private def findAllComponents[T <: lir.Stmt : TypeTag : ClassTag](stmts: Vector[lir.Stmt]): Vector[T] = {
+    if(stmts.isEmpty) Vector.empty
+    else {
+      val components = stmts.collect{ case t: T => t }
+      val whens = stmts.collect{ case w: lir.When => w }
+      val conseqs = whens.flatMap(_.conseq)
+      val alts = whens.flatMap(_.alt)
+
+      components ++ findAllComponents(conseqs) ++ findAllComponents(alts)
+    }
   }
 }

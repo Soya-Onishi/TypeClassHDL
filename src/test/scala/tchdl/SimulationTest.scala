@@ -142,4 +142,40 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("run ALU for complex value") {
+    val circuit = untilThisPhase(Vector("test", "alu"), "Top", "ALUwithoutAlways.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val add = getNameGenFromMethod(module, "add")
+    val sub = getNameGenFromMethod(module, "sub")
+
+    println(circuit.serialize)
+
+    runSim(circuit) { tester =>
+      tester.poke(add("_active"), 1)
+      tester.poke(sub("_active"), 1)
+
+      for {
+        aReal <- 0 to 16
+        aImag <- 0 to 16
+        bReal <- 0 to 16
+        bImag <- 0 to 16
+      } yield {
+        tester.poke(add("a_real"), aReal)
+        tester.poke(add("a_imag"), aImag)
+        tester.poke(add("b_real"), bReal)
+        tester.poke(add("b_imag"), bImag)
+
+        tester.poke(sub("a_real"), aReal)
+        tester.poke(sub("a_imag"), aImag)
+        tester.poke(sub("b_real"), bReal)
+        tester.poke(sub("b_imag"), bImag)
+
+        tester.expect(add("_ret_real"), (aReal + bReal) % 256)
+        tester.expect(add("_ret_imag"), (aImag + bImag) % 256)
+        tester.expect(sub("_ret_real"), ((aReal - bReal) + 256) % 256)
+        tester.expect(sub("_ret_imag"), ((aImag - bImag) + 256) % 256)
+      }
+    }
+  }
 }

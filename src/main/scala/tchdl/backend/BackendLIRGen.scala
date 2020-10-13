@@ -658,8 +658,10 @@ object BackendLIRGen {
       else Some(interface.retName)
 
     val output = retName.map(name => lir.Port(lir.Dir.Output, name, interface.retTpe))
+    val retInvalid = retName
+      .map(name => lir.Reference(name, interface.retTpe))
+      .map(ref => lir.Invalid(ref))
 
-    val retInvalid = retName.map(name => lir.Invalid(name))
     val ports = active +: (paramPorts ++ output)
 
     BuildResult(retInvalid.toVector, ports)
@@ -686,7 +688,7 @@ object BackendLIRGen {
       else Some(lir.Wire(interface.retName, interface.retTpe))
     val sigWires = paramWires ++ retWireOpt
     val wireRefs = sigWires.map(w => lir.Reference(w.name, w.tpe))
-    val invalids = wireRefs.map(ref => lir.Invalid(ref.name))
+    val invalids = wireRefs.map(ref => lir.Invalid(ref))
 
     val wires = active +: sigWires
     val inits = Vector(activeOffNode, activeOff) ++ invalids
@@ -735,7 +737,9 @@ object BackendLIRGen {
         val (litNode, litRef) = makeNode(lir.Literal(0, BackendType.boolTpe))
         val activeRef = lir.Reference(activeName, BackendType.boolTpe)
         val activeInit = lir.Assign(activeRef, litRef)
-        val paramInits = params.map(param => lir.Invalid(param.name))
+        val paramInits = params
+          .map(param => lir.Reference(param.name, param.tpe))
+          .map(ref => lir.Invalid(ref))
 
         (active +: (params ++ retOpt), Vector(litNode, activeInit) ++ paramInits)
     }
@@ -1294,7 +1298,7 @@ object BackendLIRGen {
 
     val retRefOpt = retWireOpt.map(wire => lir.Reference(wire.name, wire.tpe))
     val RunResult(resStmts, retInstance) = retRefOpt.map(ref => RunResult(Vector.empty, DataInstance(tpe, ref))).getOrElse(DataInstance.unit())
-    val retInvalid = retRefOpt.map(ref => lir.Invalid(ref.name))
+    val retInvalid = retRefOpt.map(ref => lir.Invalid(ref))
     val retStmts = Vector(retWireOpt, retInvalid).flatten
 
     retRefOpt.foreach(ref => stack.append(Name(ref.name), retInstance))
@@ -1361,7 +1365,9 @@ object BackendLIRGen {
           val dst = fromRef(interface.retName, interface.retTpe)
           lir.Assign(dst, targetBuilder(interface.retName, interface.retTpe)).some
         }
-      val retInvalid = assignOpt.map(_ => lir.Invalid(interface.retName))
+      val retInvalid = assignOpt
+        .map(_ => lir.Reference(interface.retName, interface.retTpe))
+        .map(ref => lir.Invalid(ref))
 
       val params = interface.params.map { case (name, tpe) => targetBuilder(name, tpe) }.toVector
       val args = interface.params.map { case (name, tpe) => fromRef(name, tpe) }.toVector
@@ -1430,7 +1436,7 @@ object BackendLIRGen {
 
           val (activeOffNode, activeOffRef) = makeNode(lir.Literal(0, BackendType.boolTpe))
           val activeOff = lir.Assign(activeRef, activeOffRef)
-          val paramInvalid = params.map(p => lir.Invalid(p.name))
+          val paramInvalid = params.map(lir.Invalid.apply)
 
           Vector(activeOffNode, activeOff) ++ paramInvalid
       }
@@ -1544,7 +1550,7 @@ object BackendLIRGen {
     val (literalNode, literalRef) = makeNode(lir.Literal(state.index, stateTpe))
     val changeState = lir.Assign(stateRef, literalRef)
 
-    val stmts = assignRegParams(stateContainer.params, goto.state.args)
+    val stmts = assignRegParams(stateContainer.params, goto.state.args, hasPriority = false)
     val RunResult(unitStmts, unitInstance) = DataInstance.unit()
 
     RunResult(Vector(literalNode, changeState) ++ stmts ++ unitStmts, unitInstance)
@@ -1554,7 +1560,8 @@ object BackendLIRGen {
     val stageContainer = ctx.stages(stack.lookupThis.get.tpe).find(_.label == generate.stage).get
     val activeRef = lir.Reference(generate.stage.activeName, BackendType.boolTpe)
     val (literalNode, literalRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
-    val activate = lir.Assign(activeRef, literalRef)
+    val activeViaName = stack.next("_GEN")
+    val activate = lir.PriorityAssign(activeRef, activeViaName.name, literalRef)
 
     val (state, node) = generate.state match {
       case None => (None, None)
@@ -1563,17 +1570,18 @@ object BackendLIRGen {
         val stateTpe = BackendType.bitTpe(stateWidth)
         val stateRef = lir.Reference(stageContainer.label.stateName, stateTpe)
         val (stateValNode, stateValRef) = makeNode(lir.Literal(label.index, stateTpe))
+        val via = stack.next("_GEN").name
 
-        (lir.Assign(stateRef, stateValRef).some, stateValNode.some)
+        (lir.PriorityAssign(stateRef, via, stateValRef).some, stateValNode.some)
     }
 
-    val stageAssigns = assignRegParams(stageContainer.params, generate.args)
+    val stageAssigns = assignRegParams(stageContainer.params, generate.args, hasPriority = true)
     val stateAssigns = generate.state.map {
       state =>
         val backend.State(stateLabel, args) = state
         val stateContainer = stageContainer.states.find(_.label.index == stateLabel.index).get
 
-        assignRegParams(stateContainer.params, args)
+        assignRegParams(stateContainer.params, args, hasPriority = true)
     }.getOrElse(Vector.empty)
 
     val stmts = Vector(literalNode, activate) ++ (node.toVector ++ state.toVector ++ stageAssigns ++ stateAssigns)
@@ -1582,11 +1590,19 @@ object BackendLIRGen {
     RunResult(stmts ++ unitStmts, unit)
   }
 
-  private def assignRegParams(params: ListMap[String, BackendType], args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
+  private def assignRegParams(params: ListMap[String, BackendType], args: Vector[backend.Term.Temp], hasPriority: Boolean)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
     val instances = args.map{ case backend.Term.Temp(id, _) => stack.refer(id) }.map(stack.lookup).map(_.asInstanceOf[DataInstance])
     val paramRefs = params.map{ case (name, tpe) => lir.Reference(name, tpe) }
 
-    (paramRefs zip instances).map{ case (p, a) => lir.Assign(p, a.refer)}.toVector
+    (paramRefs zip instances).toVector.map{
+      case (p, a) =>
+        if(hasPriority) {
+          val via = stack.next("_GEN").name
+          lir.PriorityAssign(p, via, a.refer)
+        } else {
+          lir.Assign(p, a.refer)
+        }
+    }
   }
 
   def runReturn(ret: backend.Return)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1601,7 +1617,7 @@ object BackendLIRGen {
   }
 
   def runCommence(commence: backend.Commence)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    val stmts = activateProcBlock(commence.procLabel, commence.blkLabel, commence.args)
+    val stmts = activateProcBlock(commence.procLabel, commence.blkLabel, commence.args, fromInner = false)
     val com = lir.Commence(commence.procLabel.symbol.path, commence.blkLabel.symbol.name, commence.tpe)
     val (commenceNode, commenceRef) = makeNode(com)
     val inst = DataInstance(commence.tpe, commenceRef)
@@ -1614,7 +1630,7 @@ object BackendLIRGen {
     val passID = lir.PassID(relay.dstBlk.idName, relay.srcBlk.idName)
 
     RunResult(
-      passID +: (activateProcBlock(relay.procLabel, relay.dstBlk, relay.args) ++ unitStmts),
+      passID +: (activateProcBlock(relay.procLabel, relay.dstBlk, relay.args, fromInner = true) ++ unitStmts),
       unit
     )
   }
@@ -1634,19 +1650,27 @@ object BackendLIRGen {
     RunResult(Vector(stmt), inst)
   }
 
-  def activateProcBlock(procLabel: ProcLabel, blkLabel: ProcBlockLabel, args: Vector[backend.Term.Temp])(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
+  def activateProcBlock(procLabel: ProcLabel, blkLabel: ProcBlockLabel, args: Vector[backend.Term.Temp], fromInner: Boolean)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): Vector[lir.Stmt] = {
+    def assignStmtGen(dst: lir.Ref, src: lir.Ref): lir.Stmt = {
+      if(fromInner) lir.Assign(dst, src)
+      else {
+        val via = stack.next("_GEN").name
+        lir.PriorityAssign(dst, via, src)
+      }
+    }
+
     val procContainer = ctx.procs(stack.lookupThis.get.tpe).find(_.label == procLabel).get
 
     val activeRef = lir.Reference(blkLabel.activeName, BackendType.boolTpe)
     val (litNode, litRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
-    val activate = lir.Assign(activeRef, litRef)
+    val activate = assignStmtGen(activeRef, litRef)
 
     val blkContainer = procContainer.blks.find(_.label == blkLabel).get
     val assigns = (blkContainer.params.toVector zip args).map {
       case ((param, tpe), arg) =>
         val paramRef = lir.Reference(param, tpe)
         val argRef = lir.Reference(stack.refer(arg.id).name, tpe)
-        lir.Assign(paramRef, argRef)
+        assignStmtGen(paramRef, argRef)
     }
 
     Vector(litNode, activate) ++ assigns

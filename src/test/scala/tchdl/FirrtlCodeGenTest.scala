@@ -105,7 +105,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val modules = circuit.modules.collect{ case m: fir.Module => m }
     val top = modules.head
     val stmts = top.body.asInstanceOf[fir.Block].stmts
-    val whens = stmts.collect{ case w: fir.Conditionally => w }
+    val whens = stmts.collect{ case w: fir.Conditionally => w }.filter(_.pred.isInstanceOf[fir.Reference])
 
     assert(whens.length == 3)
 
@@ -118,7 +118,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val connects = conseq.collect{ case c: fir.Connect => c }
 
     // test deref
-    val connect = connects.find(_.loc.asInstanceOf[fir.Reference].name.matches("exec_[0-9a-f]+\\$_ret")).get
+    val connect = connects.collectFirst{ case c @ fir.Connect(_, ref: fir.Reference, _) if ref.name.matches("exec_[0-9a-f]+\\$_ret") => c }.get
     val srcName = connect.expr.asInstanceOf[fir.Reference].name
     val nodes = exec.conseq.asInstanceOf[fir.Block].stmts.collect{ case n: fir.DefNode => n }
     val primNode = nodes.find(_.name == srcName).get
@@ -174,7 +174,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     val module = circuit.modules.head.asInstanceOf[fir.Module]
     val stmts = module.body.asInstanceOf[fir.Block].stmts
-    val whens = stmts.collect{ case w: fir.Conditionally => w }
+    val whens = stmts.collect{ case w: fir.Conditionally => w }.filter(_.pred.isInstanceOf[fir.Reference])
     assert(whens.length == 5)
 
     val exec = whens.head
@@ -298,14 +298,20 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(outputs.length == 1)
     assert(outputs.head.name == "outport")
 
-    val topWhens = topStmts.collect{ case c: fir.Conditionally => c}
+    val topWhens = topStmts.collect{ case c: fir.Conditionally => c }.filter(_.pred.isInstanceOf[fir.Reference])
     assert(topWhens.length == 2)
 
     val execStmts = topWhens(0).conseq.asInstanceOf[fir.Block].stmts
     val execConnects = execStmts.collect{ case c: fir.Connect => c }
-    assert(execConnects.length == 4)
-    val connectValue0 = execConnects.collectFirst{ case c @ fir.Connect(_, fir.Reference(name, _), _) if name.matches("st_[0-9a-f]+\\$s1\\$value0") => c }
-    assert(connectValue0.isDefined)
+    assert(execConnects.length == 8)
+
+    val paramNode = execStmts.collectFirst{ case n @ fir.DefNode(_, _, fir.Reference(param, _)) if param.matches("exec_[0-9a-f]+\\$param0") => n }.get
+    val connectDst = execConnects.collectFirst{ case fir.Connect(_, fir.SubField(ref: fir.Reference, "_data", _), fir.Reference(name, _)) if name == paramNode.name => ref }.get
+    val viaCond = topStmts.collectFirst{ case c @ fir.Conditionally(_, fir.SubField(fir.Reference(name, _), _, _), _, _) if name == connectDst.name => c }.get
+    assert(viaCond.conseq.isInstanceOf[fir.Connect])
+    val viaConnect = viaCond.conseq.asInstanceOf[fir.Connect]
+    assert(viaConnect.loc.asInstanceOf[fir.Reference].name.matches("st_[0-9a-f]+\\$s1\\$value0"))
+    assert(viaConnect.expr == fir.SubField(fir.Reference(connectDst.name, fir.UnknownType), "_data", fir.UnknownType))
 
     val stStmts = topWhens(1).conseq.asInstanceOf[fir.Block].stmts
     val stWhens = stStmts.collect{ case c: fir.Conditionally => c }
@@ -321,14 +327,15 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test"), "Top[8]", "OnlyTopThrowWire.tchdl")
     val top = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
 
-    assert(top.ports.length == 3)
-    assert(top.ports(0).name.matches("function_[0-9a-f]+\\$_active"))
-    assert(top.ports(1).name.matches("function_[0-9a-f]+\\$in"))
-    assert(top.ports(2).name.matches("function_[0-9a-f]+\\$_ret"))
+    val ports = top.ports.filterNot(_.name == "CLK").filterNot(_.name == "RST")
+    assert(ports.length == 3)
+    assert(ports(0).name.matches("function_[0-9a-f]+\\$_active"))
+    assert(ports(1).name.matches("function_[0-9a-f]+\\$in"))
+    assert(ports(2).name.matches("function_[0-9a-f]+\\$_ret"))
 
-    assert(top.ports(0).direction == fir.Input)
-    assert(top.ports(1).direction == fir.Input)
-    assert(top.ports(2).direction == fir.Output)
+    assert(ports(0).direction == fir.Input)
+    assert(ports(1).direction == fir.Input)
+    assert(ports(2).direction == fir.Output)
 
     val stmts = top.body.asInstanceOf[fir.Block].stmts
     val invalids = stmts.collect { case i: fir.IsInvalid => i }
@@ -341,8 +348,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, _) = untilThisPhase(Vector("test", "inner"), "Top", "InputUnitFunction.tchdl")
     val top = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
 
-    assert(top.ports.length == 1)
-    assert(top.ports.head.name.matches("f_[0-9a-f]+\\$_active"))
+    val ports = top.ports.filterNot(_.name == "CLK").filterNot(_.name == "RST")
+    assert(ports.length == 1)
+    assert(ports.head.name.matches("f_[0-9a-f]+\\$_active"))
 
     val topStmts = top.body.asInstanceOf[fir.Block].stmts
     assert(topStmts.length == 1)
@@ -354,10 +362,11 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val (circuit, global) = untilThisPhase(Vector("test"), "Top", "InputCallInternal.tchdl")
     val top = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
 
-    assert(top.ports.length == 3)
-    assert(top.ports(0).name.matches("inputFunc_[0-9a-f]+\\$_active"))
-    assert(top.ports(1).name.matches("inputFunc_[0-9a-f]+\\$in"))
-    assert(top.ports(2).name.matches("inputFunc_[0-9a-f]+\\$_ret"))
+    val ports = top.ports.filterNot(_.name == "CLK").filterNot(_.name == "RST")
+    assert(ports.length == 3)
+    assert(ports(0).name.matches("inputFunc_[0-9a-f]+\\$_active"))
+    assert(ports(1).name.matches("inputFunc_[0-9a-f]+\\$in"))
+    assert(ports(2).name.matches("inputFunc_[0-9a-f]+\\$_ret"))
 
     val topStmts = top.body.asInstanceOf[fir.Block].stmts
 
@@ -539,4 +548,27 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val readNodes = readStmts.collect{ case node: fir.DefNode => node }
     assert(readNodes.exists(_.value == fir.Reference("__pointer_0", fir.UnknownType)))
   }
+
+  test("run ALU ports") {
+    val (circuit, global) = untilThisPhase(Vector("test", "alu"), "Top", "ALUwithoutAlways.tchdl")
+    val top = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+
+    assert(top.ports.length == 10)
+    top.ports.exists(_.name.matches("add_[0-9a-f]+\\$a"))
+    top.ports.exists(_.name.matches("add_[0-9a-f]+\\$b"))
+    top.ports.exists(_.name.matches("sub_[0-9a-f]+\\$a"))
+    top.ports.exists(_.name.matches("sub_[0-9a-f]+\\$b"))
+
+    val topStmts = top.body.asInstanceOf[fir.Block].stmts
+    val connects = topStmts
+      .collect{ case c @ fir.Connect(_, _: fir.SubField, _) => c }
+      .collect{ case c @ fir.Connect(_, fir.SubField(_, name, _), _) if name.matches("\\w+_[0-9a-f]+\\$_active") => c }
+
+    assert(connects.length == 2)
+    val refs = connects.map(_.expr.asInstanceOf[fir.Reference].name)
+    val nodes = topStmts.collect{ case n: fir.DefNode => n }
+    val litNodes = refs.map(ref => nodes.find(_.name == ref).get)
+    litNodes.forall(_.value == fir.UIntLiteral(0))
+  }
+
 }
