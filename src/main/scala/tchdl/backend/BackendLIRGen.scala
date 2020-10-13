@@ -1370,7 +1370,7 @@ object BackendLIRGen {
           lir.Assign(dst, targetBuilder(interface.retName, interface.retTpe)).some
         }
       val retInvalid = assignOpt
-        .map(_ => lir.Reference(interface.retName, interface.retTpe))
+        .map(_ => fromRef(interface.retName, interface.retTpe))
         .map(ref => lir.Invalid(ref))
 
       val params = interface.params.map { case (name, tpe) => targetBuilder(name, tpe) }.toVector

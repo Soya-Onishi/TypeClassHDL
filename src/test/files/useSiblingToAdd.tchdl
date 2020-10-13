@@ -1,0 +1,40 @@
+package test
+
+module Top
+impl Top {
+  input sub1Operand: Bit[8]
+
+  mod sub0: Sub0 = Sub0 {
+    sibling:
+      sub1: this.sub1
+  }
+  mod sub1: Sub1 = Sub1 {}
+
+  always pass {
+    this.sub1.operand = this.sub1Operand
+  }
+
+  input def caller(value: Bit[8]) -> Bit[8] {
+    this.sub0.execute(value)
+  }
+}
+
+module Sub0 {
+  sibling:
+    sub1: Sub1
+}
+
+impl Sub0 {
+  input def execute(value: Bit[8]) -> Bit[8] {
+    this.sub1.adding(value)
+  }
+}
+
+module Sub1
+impl Sub1 {
+  input operand: Bit[8]
+
+  sibling def adding(value: Bit[8]) -> Bit[8] {
+    value + this.operand
+  }
+}

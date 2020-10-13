@@ -219,9 +219,7 @@ class SimulationTest extends TchdlFunSuite {
     val circuit = untilThisPhase(Vector("test"), "Top", "useTypeParamAndNormal.tchdl")
     val rand = new Random(0)
 
-    info(circuit.serialize)
-
-    runSim(circuit, enableVcd = true) { tester =>
+    runSim(circuit) { tester =>
       for {
         _ <- 0 to 255
       } yield {
@@ -239,6 +237,32 @@ class SimulationTest extends TchdlFunSuite {
         tester.expect("outTBit8", bit8Expect)
 
         tester.step(1)
+      }
+    }
+  }
+
+  test("use sibling feature") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "useSiblingToAdd.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val caller = getNameGenFromMethod(module, "caller")
+    val rand = new Random(0)
+
+    info(circuit.serialize)
+
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } yield {
+        val value = rand.nextInt(255)
+        val operand = rand.nextInt(255)
+        tester.poke(caller("_active"), 1)
+        tester.poke(caller("value"), value)
+        tester.poke("sub1Operand", operand)
+
+        tester.expect(caller("_ret"), (value + operand) % 256)
+        tester.step()
+        tester.poke(caller("_active"), 0)
+        tester.step()
       }
     }
   }
