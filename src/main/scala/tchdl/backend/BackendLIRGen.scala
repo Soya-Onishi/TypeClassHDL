@@ -313,12 +313,12 @@ object BackendLIRGen {
     val procSigss = module.procs.map(buildProcSignature(_)(stack, ctx, global))
 
     val ports = inputs.map(_.component) ++ outputs.map(_.component) ++ inputInterfaces.flatMap(_.component)
-    val components = internals.map(_.component) ++ registers.map(_.component) ++ normalInterfaces.flatMap(_.component) ++ stageSigs ++ procSigss.flatten
+    val components = internals.map(_.component) ++ registers.flatMap(_.stmts) ++ registers.map(_.component) ++ normalInterfaces.flatMap(_.component) ++ stageSigs ++ procSigss.flatten
     val (instances, accessCondss) = modules.map(_.component).unzip
     val mems = memories.map(_.component)
 
     val interfaceInits = inputs.flatMap(_.stmts) ++ outputs.flatMap(_.stmts) ++ internals.flatMap(_.stmts)
-    val componentInits = registers.flatMap(_.stmts) ++ modules.flatMap(_.stmts) ++ memories.flatMap(_.stmts) ++ inputInterfaces.flatMap(_.stmts) ++ normalInterfaces.flatMap(_.stmts)
+    val componentInits = modules.flatMap(_.stmts) ++ memories.flatMap(_.stmts) ++ inputInterfaces.flatMap(_.stmts) ++ normalInterfaces.flatMap(_.stmts)
 
     val interfaceBodies = module.interfaces.map(runInterface(_)(stack, ctx, global))
     val alwayss = module.always.map(runAlways(_)(stack, ctx, global))

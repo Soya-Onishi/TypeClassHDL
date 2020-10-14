@@ -1,0 +1,14 @@
+package test
+
+import std::traits:::From
+
+module Top
+impl Top {
+  output out: Bit[8]
+  reg register: Bit[8] = 0b00000000
+
+  always increment {
+    this.out = this.register
+    this.register = this.register + Bit[8]:::from(1)
+  }
+}

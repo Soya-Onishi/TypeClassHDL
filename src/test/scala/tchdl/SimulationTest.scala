@@ -302,7 +302,7 @@ class SimulationTest extends TchdlFunSuite {
 
     info(circuit.serialize)
 
-    runSim(circuit, enableVcd = true) { tester =>
+    runSim(circuit) { tester =>
       for {
         _ <- 0 to 255
       } yield {
@@ -320,6 +320,21 @@ class SimulationTest extends TchdlFunSuite {
 
         tester.step()
         tester.poke(exec("_active"), 0)
+        tester.step()
+      }
+    }
+  }
+
+  test("use register with init value and increment each cycle") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "useRegister.tchdl")
+
+    info(circuit.serialize)
+
+    runSim(circuit) { tester =>
+      for {
+        expect <- 0 to 512
+      } yield {
+        tester.expect("out", expect % 256)
         tester.step()
       }
     }
