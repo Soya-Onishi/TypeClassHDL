@@ -56,7 +56,7 @@ impl Sub1 {
     }
 
     final block second(res: Bit[8]) {
-      return Option[Bit[8]]:::Some(res)
+     return Option[Bit[8]]:::Some(res)
     }
   }
 }

@@ -1,0 +1,79 @@
+package test
+
+import std::types:::Option
+import std::traits:::From
+
+module Top
+impl Top {
+  output out: Bit[8]
+
+  mod sub: Sub = Sub {
+    parent:
+      top: this
+  }
+
+  always pass {
+    this.out = this.sub.out
+  }
+
+  input def caller(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    this.sub.caller(a, b, c, d)
+  }
+
+  parent def execute(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> &Option[Bit[8]] {
+    commence convolution # first(a + b, c + d)
+  }
+
+  proc convolution @ Option[Bit[8]]:::None -> &Option[Bit[8]] {
+    origin block first(x: Bit[8], y: Bit[8]) {
+      relay second(x + y)
+    }
+
+    final block second(res: Bit[8]) {
+      return Option[Bit[8]]:::Some(res)
+    }
+  }
+}
+
+module Sub {
+  parent:
+    top: Top
+}
+impl Sub {
+  output out: Bit[8]
+
+  mod subsub: SubSub = SubSub {
+    parent:
+      top: this.top
+  }
+
+  always pass {
+    this.out = this.subsub.out
+  }
+
+  input def caller(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    this.subsub.caller(a, b, c, d)
+  }
+}
+
+module SubSub {
+  parent:
+    top: Top
+}
+impl SubSub {
+  output out: Bit[8]
+
+  input def caller(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    val result = this.top.execute(a, b, c, d)
+    generate waiting(result)
+  }
+
+  stage waiting(res: &Option[Bit[8]]) {
+    match *res {
+      case Option[Bit[8]]:::None => this.out = Bit[8]:::from(0)
+      case Option[Bit[8]]:::Some(v) =>
+        this.out = v
+        finish
+    }
+  }
+}
