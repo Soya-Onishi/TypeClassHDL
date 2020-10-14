@@ -11,7 +11,9 @@ import firrtl.stage.FirrtlCircuitAnnotation
 import treadle.TreadleTester
 
 import java.util.Random
+import org.scalatest.tags.Slow
 
+@Slow
 class SimulationTest extends TchdlFunSuite {
   def extractHashCode(regex: String, from: String): String = {
     val r = regex.r
@@ -100,6 +102,19 @@ class SimulationTest extends TchdlFunSuite {
       .get
 
     (name: String) => s"${methodName}_$hashCode$$$name"
+  }
+
+  private def getNameGenFromProc(module: fir.Module, proc: String, block: String): String => String = {
+    val stmts = module.body.asInstanceOf[fir.Block].stmts
+    val conds = stmts.collect{ case c: fir.Conditionally => c }
+    val predRefs = conds.map(_.pred).collect{ case r: fir.Reference => r }
+
+    val hashCode = predRefs.find(_.name.matches(s"${proc}_[0-9a-f]+_$block\\$$_active"))
+      .map(_.name)
+      .map(name => extractHashCode(s"${proc}_([0-9a-f]+)_$block\\$$_active", name))
+      .get
+
+    (name: String) => s"${proc}_${hashCode}_$block$$$name"
   }
 
   test("very simple hardware") {
@@ -328,13 +343,47 @@ class SimulationTest extends TchdlFunSuite {
   test("use register with init value and increment each cycle") {
     val circuit = untilThisPhase(Vector("test"), "Top", "useRegister.tchdl")
 
-    info(circuit.serialize)
-
     runSim(circuit) { tester =>
       for {
         expect <- 0 to 512
       } yield {
         tester.expect("out", expect % 256)
+        tester.step()
+      }
+    }
+  }
+
+  test("use simple proc and deref in stage block") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "useProcAndDeref.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val exec = getNameGenFromMethod(module, "execute")
+    val wait = getNameGenFromMethod(module, "waiting")
+    val procFirst = getNameGenFromProc(module, "convolution", "first")
+    val procSecond = getNameGenFromProc(module, "convolution", "second")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(8)
+
+    info(circuit.serialize)
+
+    runSim(circuit, enableVcd = true) { tester =>
+      for {
+        _ <- 0 to 255
+      } yield {
+        val ports = Seq("a", "b", "c", "d")
+        val pairs = ports.map(exec).map(name => name -> next)
+        tester.poke(exec("_active"), 1)
+        pairs.foreach{ case (name, value) => tester.poke(name, value) }
+
+        val expect = pairs.foldLeft(0){ case (acc, (_, v)) => acc + v } % 256
+
+        tester.step()
+        tester.poke(exec("_active"), 0)
+        tester.step()
+        tester.expect("out", expect)
+        tester.step()
+        tester.expect(procFirst("_active"), 0)
+        tester.expect(procSecond("_active"), 0)
+        tester.expect(wait("_active"), 0)
         tester.step()
       }
     }

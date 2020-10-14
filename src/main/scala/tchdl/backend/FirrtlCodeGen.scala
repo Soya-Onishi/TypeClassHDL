@@ -380,15 +380,10 @@ object FirrtlCodeGen {
         toFirrtlType(tpe)
       )
     case lir.Literal(value, tpe) =>
-      val width = tpe.symbol match {
-        case sym if sym == Symbol.unit => 0
-        case sym if sym == Symbol.int => 32
-        case sym if sym == Symbol.bit =>
-          val HPElem.Num(width) = tpe.hargs.head
-          width
-      }
+      val firTpe = toFirrtlType(tpe)
+      val fir.UIntType(width) = firTpe
 
-      fir.UIntLiteral(value, fir.IntWidth(width))
+      fir.UIntLiteral(value, width)
     case commence: lir.Commence => elaborateCommence(commence)
     case lir.Ops(op, args, consts, tpe) => fir.DoPrim(op, args.map(elaborateExpr), consts, toFirrtlType(tpe))
   }

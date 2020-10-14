@@ -231,4 +231,13 @@ class PointerConnectorTest extends TchdlFunSuite {
     assert(node.src.isInstanceOf[lir.Reference])
     assert(node.src.asInstanceOf[lir.Reference].name.matches("read_[0-9a-f]+\\$0\\$dataPointer_0"))
   }
+
+  test("use simple proc and deref in stage block") {
+    val (connections, modules, _) = untilThisPhase(Vector("test"), "Top", "useProcAndDeref.tchdl")
+    assert(connections.length == 1)
+    val connect = connections.head
+
+    assert(connect.dest.length == 1)
+    assert(connect.source.component == HierarchyComponent.Proc("convolution", "first"))
+  }
 }

@@ -64,11 +64,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(methods.isEmpty)
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
-    val topTpe = BackendType(topSymbol, Vector.empty, Vector.empty, isPointer = false)
+    val topTpe = BackendType(BackendTypeFlag.NoFlag, topSymbol, Vector.empty, Vector.empty)
     val top = modules.find(_.tpe == topTpe).get.bodies.head
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
-    val subTpe = BackendType(subSymbol, Vector.empty, Vector.empty, isPointer = false)
+    val subTpe = BackendType(BackendTypeFlag.NoFlag, subSymbol, Vector.empty, Vector.empty)
 
     assert(top.interfaces.isEmpty)
     assert(top.stages.isEmpty)
@@ -92,11 +92,11 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(methods.isEmpty)
 
     val topSymbol = tree.topDefs.find(_.symbol.name == "Top").map(_.symbol.asModuleSymbol).get
-    val topTpe = BackendType(topSymbol, Vector(HPElem.Num(4)), Vector.empty, isPointer = false)
+    val topTpe = BackendType(BackendTypeFlag.NoFlag, topSymbol, Vector(HPElem.Num(4)), Vector.empty)
     val top = modules.find(_.tpe == topTpe).get.bodies.head
 
     val subSymbol = tree.topDefs.find(_.symbol.name == "Sub").map(_.symbol.asModuleSymbol).get
-    val subTpe = BackendType(subSymbol, Vector(HPElem.Num(4)), Vector.empty, isPointer = false)
+    val subTpe = BackendType(BackendTypeFlag.NoFlag, subSymbol, Vector(HPElem.Num(4)), Vector.empty)
     val sub = modules.find(_.tpe == subTpe).get.bodies.head
 
     val subFieldSymbol = tree.topDefs
@@ -114,7 +114,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val add = sub.interfaces.head
 
     val bit = global.builtin.types.lookup("Bit")
-    val bit4 = BackendType(bit, Vector(HPElem.Num(4)), Vector.empty, isPointer = false)
+    val bit4 = BackendType(BackendTypeFlag.NoFlag, bit, Vector(HPElem.Num(4)), Vector.empty)
 
     assert(function.code(0) == Temp(3, This(topTpe)))
     assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, Some(topTpe), ListMap.empty, ListMap.empty), subTpe)))
@@ -345,7 +345,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val pblk = proc.blks.find(_.label.symbol.name == "first").get
 
     assert(method.ret.isInstanceOf[Commence])
-    val tpe = BackendType(Symbol.bit(global), Vector(HPElem.Num(2)), Vector.empty, isPointer = true)
+    val tpe = BackendType(BackendTypeFlag.Pointer, Symbol.bit(global), Vector(HPElem.Num(2)), Vector.empty)
     assert(method.ret.tpe == tpe)
     val commence = method.ret.asInstanceOf[Commence]
     assert(commence.blkLabel == pblk.label)

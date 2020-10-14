@@ -1,0 +1,33 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  output out: Bit[8]
+
+  input def execute(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    val result = commence convolution # first(a + b, c + d)
+    generate waiting(result)
+  }
+
+  proc convolution @ Option[Bit[8]]:::None -> &Option[Bit[8]] {
+    origin block first(x: Bit[8], y: Bit[8]) {
+      relay second(x + y)
+    }
+
+    final block second(res: Bit[8]) {
+      return Option[Bit[8]]:::Some(res)
+    }
+  }
+
+  stage waiting(res: &Option[Bit[8]]) {
+    match *res {
+      case Option[Bit[8]]:::None    =>
+        this.out = 0
+      case Option[Bit[8]]:::Some(v) =>
+        this.out = v
+        finish
+    }
+  }
+}

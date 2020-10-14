@@ -1042,7 +1042,7 @@ object BackendLIRGen {
     val ModuleLocation.Sub(lir.Reference(memName, _)) = location
     val DataInstance(_, addrRef) = stack.lookup(getName(read.addr))
 
-    val readTpe = read.tpe.copy(isPointer = true)
+    val readTpe = read.tpe.copy(flag = read.tpe.flag | BackendTypeFlag.Pointer)
     val readStmt = lir.MemRead(memName, read.port, addrRef, readTpe)
     val readDataRef = lir.Reference(NameTemplate.memPointer(memName, read.port), readTpe)
     val pointerNode = lir.Node(stack.next("_GEN").name, readDataRef, readTpe)
@@ -1209,19 +1209,10 @@ object BackendLIRGen {
         case backend.LiteralPattern(lit) => literalPattern(lit)
         case backend.IdentPattern(name) => identPattern(name)
         case backend.EnumPattern(variant, patterns, tpe) =>
-          // This may be the easiest way
-          // At once, convert backend type into firrtl type
-          // and extract each field's type, member's type and data's type.
-          // Finally, reconverting each firrtl types into backend types
-          val firrtlTpe = toFirrtlType(tpe)(global, Vector.empty).asInstanceOf[firrtl.ir.BundleType]
-
-          val memberFirTpe = firrtlTpe.fields.find(_.name == "_member").map(_.tpe).get.asInstanceOf[firrtl.ir.UIntType]
-          val memberWidth = memberFirTpe.width.asInstanceOf[firrtl.ir.IntWidth].width.toInt
-          val memberTpe = BackendType.bitTpe(memberWidth)
+          val memberTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumFlag)
           val memberRef = lir.SubField(instance.refer, "_member", memberTpe)
 
-          val dataFirTpe = firrtlTpe.fields.find(_.name == "_data").map(_.tpe).get.asInstanceOf[firrtl.ir.UIntType]
-          val dataTpe = BackendType.bitTpe(dataFirTpe.width.asInstanceOf[firrtl.ir.IntWidth].width.toInt)
+          val dataTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData)
           val dataRef = lir.SubField(instance.refer, "_data", dataTpe)
 
           val (litNode, litRef) = makeNode(lir.Literal(variant, memberTpe))
@@ -1485,7 +1476,7 @@ object BackendLIRGen {
 
     val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
     val temporaryNodes = Vector.newBuilder[lir.Node]
-    val value = insts
+    val valueOpt = insts
       .map(_.asInstanceOf[DataInstance])
       .flatMap(inst => makeLeafs(inst.tpe, inst.refer))
       .reduceLeftOption[lir.Ref] {
@@ -1499,8 +1490,6 @@ object BackendLIRGen {
           temporaryNodes += tempNode
           tempRef
       }
-      .getOrElse(lir.Literal(0, BackendType.unitTpe))
-    val (valueNode, valueRef) = makeNode(value)
 
     val variants = enum.tpe.symbol.tpe.declares
       .toMap.toVector
@@ -1517,16 +1506,25 @@ object BackendLIRGen {
     val enumRef = lir.Reference(enumName.name, enum.tpe)
     val wireDef = lir.Wire(enumName.name, enum.tpe)
 
+    val memberTpe = enum.tpe.copy(flag = enum.tpe.flag | BackendTypeFlag.EnumFlag)
     val connectFlag = lir.Assign(
-      lir.SubField(enumRef, "_member", flagValue.tpe),
+      lir.SubField(enumRef, "_member", memberTpe),
       flagRef
     )
-    val connectData = lir.Assign(
-      lir.SubField(enumRef, "_data", value.tpe),
-      valueRef
-    )
 
-    val runResultStmts = wireDef +: (temporaryNodes.result() ++ Vector(valueNode, flagNode, connectFlag, connectData))
+    val dataTpe = enum.tpe.copy(flag = enum.tpe.flag | BackendTypeFlag.EnumData)
+    val dataInvalid = lir.Invalid(lir.SubField(enumRef, "_data", dataTpe))
+    val valuePairOpt = valueOpt.map(makeNode)
+    val connectDataOpt = valuePairOpt.map{ case (_, ref) =>
+      lir.Assign(
+        lir.SubField(enumRef, "_data", dataTpe),
+        ref
+      )
+    }
+
+    val flagStmts = Vector(flagNode, connectFlag)
+    val dataStmts = dataInvalid +: Vector(valuePairOpt.map(_._1), connectDataOpt).flatten
+    val runResultStmts = wireDef +: (temporaryNodes.result() ++ flagStmts ++ dataStmts)
     val instance = DataInstance(enum.tpe, enumRef)
 
     RunResult(runResultStmts, instance)
@@ -1612,12 +1610,20 @@ object BackendLIRGen {
   def runReturn(ret: backend.Return)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val RunResult(stmts, instance) = runExpr(ret.expr)
 
+    val disableLit = lir.Literal(0, BackendType.boolTpe)
+    val disableNode = lir.Node(stack.next("_GEN").name, disableLit, BackendType.boolTpe)
+    val disableRef = lir.Reference(disableNode.name, disableNode.tpe)
+    val activeRef = lir.Reference(ret.blk.activeName, BackendType.boolTpe)
+    val disableAssign = lir.Assign(activeRef, disableRef)
+    val disableStmts = Vector(disableNode, disableAssign)
+
     val DataInstance(_, refer) = instance
-    val idName = ret.blk.map(_.idName)
-    val retStmt = lir.Return(ret.proc.symbol.path, refer, idName)
+    val idName = ret.blk.idName
+    val retStmt = lir.Return(ret.proc.symbol.path, refer, Some(idName))
     val RunResult(unitStmts, unit) = DataInstance.unit()
 
-    RunResult((stmts :+ retStmt) ++ unitStmts, unit)
+    val headStmts = stmts ++ disableStmts
+    RunResult((headStmts :+ retStmt) ++ unitStmts, unit)
   }
 
   def runCommence(commence: backend.Commence)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1632,9 +1638,15 @@ object BackendLIRGen {
   def runRelayBlock(relay: backend.RelayBlock)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val RunResult(unitStmts, unit) = DataInstance.unit()
     val passID = lir.PassID(relay.dstBlk.idName, relay.srcBlk.idName)
+    val srcActiveRef = lir.Reference(relay.srcBlk.activeName, BackendType.bitTpe(1))
+    val disableLit = lir.Literal(0, BackendType.bitTpe(1))
+    val disableNode = lir.Node(stack.next("_GEN").name, disableLit, disableLit.tpe)
+    val disableRef = lir.Reference(disableNode.name, disableNode.tpe)
+    val disableBlock = lir.Assign(srcActiveRef, disableRef)
 
+    val headStmts = Vector(passID, disableNode, disableBlock)
     RunResult(
-      passID +: (activateProcBlock(relay.procLabel, relay.dstBlk, relay.args, fromInner = true) ++ unitStmts),
+      headStmts ++ activateProcBlock(relay.procLabel, relay.dstBlk, relay.args, fromInner = true) ++ unitStmts,
       unit
     )
   }
@@ -1645,7 +1657,7 @@ object BackendLIRGen {
     val ref = instance.refer.asInstanceOf[lir.Reference]
     val srcTpe = instance.tpe
 
-    val tpe = BackendType(srcTpe.symbol, srcTpe.hargs, srcTpe.targs, isPointer = false)
+    val tpe = BackendType(BackendTypeFlag.NoFlag, srcTpe.symbol, srcTpe.hargs, srcTpe.targs)
     val refName = stack.next("_GEN")
     val stmt  = lir.Deref(refName.name, ref, tpe)
     val refer = lir.Reference(refName.name, tpe)

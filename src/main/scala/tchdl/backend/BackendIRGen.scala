@@ -1046,7 +1046,7 @@ object BackendIRGen {
     val procLabel = procBlkLabel.proc
 
     val BuildResult(stmts, Some(expr), labels) = buildExpr(ret.expr)
-    val r = backend.Return(procLabel, Some(procBlkLabel), expr)
+    val r = backend.Return(procLabel, procBlkLabel, expr)
     val retStmt = backend.Abandon(r)
 
     BuildResult(stmts :+ retStmt, Some(backend.UnitLiteral()), labels)
@@ -1055,7 +1055,7 @@ object BackendIRGen {
   def buildDeref(ref: frontend.DeReference)(implicit ctx: BackendContext, global: GlobalData): BuildResult = {
     val BuildResult(stmts, Some(expr), labels) = buildExpr(ref.expr)
     val tpe = expr.tpe
-    val derefTpe = BackendType(tpe.symbol, tpe.hargs, tpe.targs, isPointer = false)
+    val derefTpe = BackendType(BackendTypeFlag.NoFlag, tpe.symbol, tpe.hargs, tpe.targs)
     val temp = backend.Temp(ctx.temp.get(), expr)
     val term = backend.Term.Temp(temp.id, temp.expr.tpe)
     val deref = backend.Deref(term, derefTpe)

@@ -32,7 +32,42 @@ package object backend {
     }
   }
 
-  case class BackendType(symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType], isPointer: Boolean) extends ToFirrtlString {
+  class BackendTypeFlag(flagSeed: Int) {
+    val flag = 1 << flagSeed
+
+    def |(other: BackendTypeFlag): BackendTypeFlag = {
+      val newFlag = this.flag | other.flag
+      new BackendTypeFlag(0) {
+        override val flag = newFlag
+      }
+    }
+
+    def &(other: BackendTypeFlag): BackendTypeFlag = {
+      val newFlag = this.flag & other.flag
+      new BackendTypeFlag(0) {
+        override val flag = newFlag
+      }
+    }
+
+    def hasFlag(flag: BackendTypeFlag): Boolean = {
+      val result = this & flag
+      result.flag == flag.flag
+    }
+
+    override def equals(obj: Any): Boolean = obj match {
+      case that: BackendTypeFlag => this.flag == that.flag
+      case _ => false
+    }
+
+    override def hashCode(): Int = this.flag
+  }
+  object BackendTypeFlag {
+    case object NoFlag extends BackendTypeFlag(0)
+    case object Pointer extends BackendTypeFlag(1)
+    case object EnumData extends BackendTypeFlag(2)
+    case object EnumFlag extends BackendTypeFlag(3)
+  }
+  case class BackendType(flag: BackendTypeFlag, symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType]) extends ToFirrtlString {
     override def hashCode(): Int = symbol.hashCode + hargs.hashCode + targs.hashCode
     override def equals(obj: Any): Boolean = obj match {
       case that: BackendType =>
@@ -43,13 +78,15 @@ package object backend {
     }
 
     override def toString: String = {
-      val pointer = if(isPointer) "&" else ""
+      val pointer = if(flag.hasFlag(BackendTypeFlag.Pointer)) "&" else ""
       val head = symbol.name
       val args = hargs.map(_.toString) ++ targs.map(_.toString)
+      val dataOf = if(flag.hasFlag(BackendTypeFlag.EnumData)) "Data of " else ""
+      val flagOf = if(flag.hasFlag(BackendTypeFlag.EnumFlag)) "Flag of " else ""
 
       args match {
         case Vector() => head
-        case args => s"$pointer$head[${args.mkString(",")}]"
+        case args => s"$pointer$dataOf$flagOf$head[${args.mkString(",")}]"
       }
     }
 
@@ -226,7 +263,11 @@ package object backend {
       case sym: Symbol.EntityTypeSymbol =>
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
-        BackendType(tpe.origin, hargs, targs, tpe.isPointer)
+        val flag =
+          if(tpe.isPointer) BackendTypeFlag.Pointer
+          else BackendTypeFlag.NoFlag
+
+        BackendType(flag, tpe.origin, hargs, targs)
       case symbol: Symbol.FieldTypeSymbol =>
         val accessor = tpe.accessor.getOrElse(throw new ImplementationErrorException(s"$symbol should have accessor"))
         val accessorTPTable = tpTable.map { case (tp, tpe) => tp -> toRefType(tpe)}
@@ -269,16 +310,19 @@ package object backend {
 
     val hargs = sig.hargs.map(intoLiteral)
     val targs = sig.targs.map(toRefType)
+    val isPointer = sig.flag.hasFlag(BackendTypeFlag.Pointer)
+    if(sig.flag.hasFlag(BackendTypeFlag.EnumData) | sig.flag.hasFlag(BackendTypeFlag.EnumFlag))
+      throw new ImplementationErrorException("converting into RefType for enum data or enum member does not support")
 
-    Type.RefType(sig.symbol, hargs, targs, sig.isPointer)
+    Type.RefType(sig.symbol, hargs, targs, isPointer)
   }
 
   def toFirrtlType(tpe: BackendType)(implicit global: GlobalData, pointers: Vector[PointerConnection]): ir.Type = {
     def toBitType(width: Int): ir.UIntType = ir.UIntType(ir.IntWidth(width))
     def toVecType(length: Int, tpe: ir.Type): ir.VectorType = ir.VectorType(tpe, length)
-    def toEnumType(symbol: Symbol.EnumSymbol): ir.BundleType = {
+    def toEnumType(symbol: Symbol.EnumSymbol): ir.Type = {
       def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
-      def flagWidth(x: Double): Double = (math.ceil _ compose log2)(x)
+      def flagWidth(x: Double): Int = ((math.ceil _ compose log2)(x)).toInt.max(1)
 
       def makeBitLength(
         member: Type.EnumMemberType,
@@ -304,26 +348,24 @@ package object backend {
         .sortWith{ case ((left, _), (right, _)) => left < right }
         .map{ case (_, symbol) => symbol }
 
-      val kind =
-        if(members.length <= 1) None
-        else Some(ir.Field(
-          "_member",
-          ir.Default,
-          ir.UIntType(ir.IntWidth(flagWidth(members.length).toInt))
-        ))
-
       val hpTable = (symbol.hps zip tpe.hargs).toMap
       val tpTable = (symbol.tps zip tpe.targs).toMap
-
+      val memberTpe = ir.UIntType(ir.IntWidth(flagWidth(members.length)))
       val maxLength = members
         .map(_.tpe.asEnumMemberType)
         .map(makeBitLength(_, hpTable, tpTable))
         .max
+      val dataTpe = ir.UIntType(ir.IntWidth(maxLength))
 
-      val dataStorage = Some(ir.Field("_data", ir.Default, ir.UIntType(ir.IntWidth(maxLength))))
+      if(tpe.flag.hasFlag(BackendTypeFlag.EnumData)) dataTpe
+      else if(tpe.flag.hasFlag(BackendTypeFlag.EnumFlag)) memberTpe
+      else {
+        val member = ir.Field("_member", ir.Default, memberTpe)
+        val data = ir.Field("_data", ir.Default, dataTpe)
+        val field = Seq(member, data)
 
-      val field = Seq(kind, dataStorage).flatten
-      ir.BundleType(field)
+        ir.BundleType(field)
+      }
     }
 
     def toOtherType: ir.BundleType = {
@@ -351,7 +393,7 @@ package object backend {
       ir.UIntType(ir.IntWidth(width))
     }
 
-    if(tpe.isPointer) pointerType
+    if(tpe.flag.hasFlag(BackendTypeFlag.Pointer)) pointerType
     else {
       tpe.symbol match {
         case symbol if symbol == Symbol.int  => toBitType(width = 32)

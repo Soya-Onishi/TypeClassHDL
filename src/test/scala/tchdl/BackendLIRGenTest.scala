@@ -379,14 +379,11 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val wire = when.conseq.collectFirst{ case wire: lir.Wire => wire }.get
     val connects = when.conseq.collect{ case connect: lir.Assign => connect }
 
-    val temp = initFieldName.name
     val enum = wire.name
-    val bit1 = toBackendType(Type.bitTpe(1)(global))(global)
-    val bit2 = toBackendType(Type.bitTpe(2)(global))(global)
     val opt = wire.tpe
 
-    assert(connects(0).dst == lir.SubField(lir.Reference(enum, opt), "_member", bit1))
-    assert(connects(1).dst == lir.SubField(lir.Reference(enum, opt), "_data", bit2))
+    assert(connects(0).dst == lir.SubField(lir.Reference(enum, opt), "_member", opt.copy(flag = opt.flag | BackendTypeFlag.EnumFlag)))
+    assert(connects(1).dst == lir.SubField(lir.Reference(enum, opt), "_data", opt.copy(flag = opt.flag | BackendTypeFlag.EnumData)))
 
     assert(connects(0).src.isInstanceOf[lir.Reference])
     assert(connects(1).src.isInstanceOf[lir.Reference])
@@ -404,12 +401,14 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val bit32 = toBackendType(Type.bitTpe(32)(global))(global)
 
     assert(elems(0) == lir.Node("_GEN_0", lir.Literal(1, bit32), bit32))
-    assert(elems(5).isInstanceOf[lir.Assign])
-    val opt = elems(6).asInstanceOf[lir.Assign].dst.asInstanceOf[lir.SubField].prefix.tpe
+    assert(elems(5).isInstanceOf[lir.Invalid])
+    assert(elems(7).isInstanceOf[lir.Assign])
+    val dstTpe = elems(7).asInstanceOf[lir.Assign].dst.asInstanceOf[lir.SubField].prefix.tpe
+    val opt = BackendType(BackendTypeFlag.NoFlag, dstTpe.symbol, dstTpe.hargs, dstTpe.targs)
     assert(opt.symbol.name == "Opt")
-    val dst = lir.SubField(lir.Reference("_ENUM_0", opt), "_data", bit32)
-    val src = lir.Reference("_GEN_1", bit32)
-    assert(elems(6) == lir.Assign(dst, src))
+    val dst = lir.SubField(lir.Reference("_ENUM_0", opt), "_data", opt.copy(flag = opt.flag | BackendTypeFlag.EnumData))
+    val src = lir.Reference("_GEN_2", bit32)
+    assert(elems(7) == lir.Assign(dst, src))
   }
 
   test("construct hardware simple enum Option[Bit[2]]] however None") {
@@ -428,7 +427,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val connect = connects.find(_.src == ref).get
     val opt = connect.dst.asInstanceOf[lir.SubField].prefix.tpe
 
-    assert(connect.dst == lir.SubField(lir.Reference("_ENUM_0", opt), "_member", bit1))
+    assert(connect.dst == lir.SubField(lir.Reference("_ENUM_0", opt), "_member", opt.copy(flag = opt.flag | BackendTypeFlag.EnumFlag)))
   }
 
   test("construct hardware complex enum three patterns") {
@@ -771,7 +770,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val f = top.procedures.collectFirst{ case w: lir.When => w }.get
 
     val bit1 = BackendType.boolTpe(global)
-    val bool = BackendType(Symbol.bool(global), Vector.empty, Vector.empty, isPointer = false)
+    val bool = BackendType(BackendTypeFlag.NoFlag, Symbol.bool(global), Vector.empty, Vector.empty)
     val nodes = findAllComponents[lir.Node](f.conseq)
     val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_[0-9a-f]+\\$a") => n }.get
     val lit1Node = nodes.collectFirst{ case n @ lir.Node(_, lir.Literal(v, _), _) if v == 1 => n }.get
@@ -998,7 +997,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
     assert(memRead0.tpe.symbol.name == "Option")
     val bit32 = BackendType.bitTpe(32)(global)
-    val option = BackendType(memRead0.tpe.symbol, Vector.empty, Vector(bit32), isPointer = true)
+    val option = BackendType(BackendTypeFlag.Pointer, memRead0.tpe.symbol, Vector.empty, Vector(bit32))
     assert(memRead0.tpe == option)
     assert(memRead1.tpe == option)
 

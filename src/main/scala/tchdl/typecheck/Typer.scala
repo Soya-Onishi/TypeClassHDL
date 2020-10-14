@@ -590,9 +590,14 @@ object Typer {
           Case(caseDef.pattern, caseDef.exprs, caseDef.position).setTpe(Type.ErrorType).setID(caseDef.id)
         case Right(pattern) =>
           val blockElems = caseDef.exprs.map(typedBlockElem(_)(caseCtx, global))
-          val retTpe = blockElems.last.asInstanceOf[Expression].tpe
+          val (typedElems, retTpe) = blockElems.last match {
+            case expr: Expression => (blockElems, expr.tpe)
+            case _ =>
+              val unitLit = UnitLiteral(Position.empty).setTpe(Type.unitTpe)
+              (blockElems :+ unitLit, Type.unitTpe)
+          }
 
-          Case(pattern, blockElems, caseDef.position).setTpe(retTpe).setID(caseDef.id)
+          Case(pattern, typedElems, caseDef.position).setTpe(retTpe).setID(caseDef.id)
       }
     }
 
@@ -1433,9 +1438,9 @@ object Typer {
       case LookupResult.LookupSuccess(result) => verifyCallBlock(result, typedArgs) match {
         case Left(err) => Left(err)
         case Right(blk) =>
-          commence.block.setSymbol(blk)
-          commence.setSymbol(result.proc).setTpe(result.retTpe)
-          Right(commence)
+          val typedBlk = commence.block.copy(args = typedArgs).setSymbol(blk)
+          val typedCommence = commence.copy(block = typedBlk).setSymbol(result.proc).setTpe(result.retTpe)
+          Right(typedCommence)
       }
     }
 

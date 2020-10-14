@@ -38,7 +38,7 @@ case class CallBuiltIn(label: String, accessorTpe: Option[BackendType], args: Ve
 case class CallInterface(label: MethodLabel, accessor: Term, args: Vector[Term], tpe: BackendType) extends Expr
 case class ReadMemory(accessor: Term, addr: Term, port: Int, tpe: BackendType) extends Expr
 case class WriteMemory(accessor: Term, addr: Term, data: Term, port: Int)(implicit global: GlobalData) extends Expr {
-  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty, isPointer = false)
+  val tpe: BackendType = BackendType(BackendTypeFlag.NoFlag, Symbol.unit, Vector.empty, Vector.empty)
 }
 
 case class This(tpe: BackendType) extends Expr
@@ -72,24 +72,24 @@ case class Commence(procLabel: ProcLabel, blkLabel: ProcBlockLabel, args: Vector
 case class RelayBlock(procLabel: ProcLabel, dstBlk: ProcBlockLabel, srcBlk: ProcBlockLabel, args: Vector[Term.Temp])(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
 }
-case class Return(proc: ProcLabel, blk: Option[ProcBlockLabel], expr: Expr)(implicit global: GlobalData) extends Expr {
+case class Return(proc: ProcLabel, blk: ProcBlockLabel, expr: Expr)(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
 }
 
 case class IntLiteral(value: Int)(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType (Symbol.int, Vector.empty, Vector.empty, isPointer = false)
+  val tpe: BackendType = BackendType (BackendTypeFlag.NoFlag, Symbol.int, Vector.empty, Vector.empty)
 }
 
 case class BitLiteral(value: BigInt, length: HPElem.Num)(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType (Symbol.bit, Vector(length), Vector.empty, isPointer = false)
+  val tpe: BackendType = BackendType (BackendTypeFlag.NoFlag, Symbol.bit, Vector(length), Vector.empty)
 }
 
 case class BoolLiteral(value: Boolean)(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType (Symbol.bool, Vector.empty, Vector.empty, isPointer = false)
+  val tpe: BackendType = BackendType (BackendTypeFlag.NoFlag, Symbol.bool, Vector.empty, Vector.empty)
 }
 
 case class UnitLiteral()(implicit global: GlobalData) extends Literal {
-  val tpe: BackendType = BackendType(Symbol.unit, Vector.empty, Vector.empty, isPointer = false)
+  val tpe: BackendType = BackendType(BackendTypeFlag.NoFlag, Symbol.unit, Vector.empty, Vector.empty)
 }
 
 sealed trait Term { val tpe: BackendType }

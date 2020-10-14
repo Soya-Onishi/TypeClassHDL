@@ -59,7 +59,7 @@ object PointerConnector {
     var idMax = id
     val procPointers = procs.map{ proc =>
       val hierarchy = HWHierarchyPath(modulePath, HierarchyComponent.Proc(proc.path.name.get, proc.origin))
-      val tpe = BackendType(proc.tpe.symbol, proc.tpe.hargs, proc.tpe.targs, isPointer = false)
+      val tpe = BackendType(BackendTypeFlag.NoFlag, proc.tpe.symbol, proc.tpe.hargs, proc.tpe.targs)
       val pointer = PointerConnection(idMax, hierarchy, Vector.empty, tpe)
       idMax += 1
       pointer
@@ -303,6 +303,15 @@ object PointerConnector {
           )}
           .toVector
       case t: lir.Assign =>
+        searchPointerRef(t.src, componentRef, path.modulePath)
+          .map { pointer => nextReference(
+            t.dst,
+            t.src,
+            pointer,
+            path.modulePath
+          )}
+          .toVector
+      case t: lir.PriorityAssign =>
         searchPointerRef(t.src, componentRef, path.modulePath)
           .map { pointer => nextReference(
             t.dst,

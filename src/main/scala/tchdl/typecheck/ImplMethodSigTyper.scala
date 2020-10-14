@@ -362,10 +362,15 @@ object ImplMethodSigTyper {
   }
 
   def verifyProcDef(pdef: ProcDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.ProcSymbol] = {
-    val retTpe = pdef.symbol.tpe.asMethodType.returnType
+    pdef.symbol.tpe match {
+      case Type.ErrorType => Left(Error.DummyError)
+      case procTpe: Type.MethodType =>
+        val retTpe = procTpe.returnType
 
-    if(retTpe.isPointer) Right(pdef.symbol.asProcSymbol)
-    else Left(Error.RequirePointerTypeAsProcRet(retTpe, pdef.retTpe.position))
+        if(retTpe.isPointer) Right(pdef.symbol.asProcSymbol)
+        else Left(Error.RequirePointerTypeAsProcRet(retTpe, pdef.retTpe.position))
+      case tpe => throw new ImplementationErrorException(s"Expect MethodType for proc symbol but actual: ${tpe.getClass}")
+    }
   }
 
   def verifyValDef(vdef: ValDef)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Symbol.VariableSymbol] = {
