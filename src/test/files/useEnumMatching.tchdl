@@ -1,0 +1,13 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  input def execute(in: Option[Bit[4]]) -> Bit[4] {
+    match in {
+      case Option[Bit[4]]:::Some(value) => value + 0b0001
+      case Option[Bit[4]]:::None        => 0b0000
+    }
+  }
+}

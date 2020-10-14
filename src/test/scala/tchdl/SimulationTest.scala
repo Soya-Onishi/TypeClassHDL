@@ -273,8 +273,6 @@ class SimulationTest extends TchdlFunSuite {
     val exec = getNameGenFromMethod(module, "execute")
     val rand = new Random(0)
 
-    info(circuit.serialize)
-
     runSim(circuit) { tester =>
       for {
          _ <- 0 to 255
@@ -287,6 +285,37 @@ class SimulationTest extends TchdlFunSuite {
         tester.poke("operand", operand)
 
         val expect = (value + operand) % 256
+        tester.expect(exec("_ret"), expect)
+
+        tester.step()
+        tester.poke(exec("_active"), 0)
+        tester.step()
+      }
+    }
+  }
+
+  test("use enum and pattern matching") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "useEnumMatching.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val exec = getNameGenFromMethod(module, "execute")
+    val rand = new Random(0)
+
+    info(circuit.serialize)
+
+    runSim(circuit, enableVcd = true) { tester =>
+      for {
+        _ <- 0 to 255
+      } yield {
+        val value = rand.nextInt(15)
+        val member = rand.nextInt(1)
+
+        tester.poke(exec("_active"), 1)
+        tester.poke(exec("in__member"), member)
+        tester.poke(exec("in__data"), value)
+
+        val expect =
+          if(member == 1) (value + 1) % 16
+          else 0
         tester.expect(exec("_ret"), expect)
 
         tester.step()
