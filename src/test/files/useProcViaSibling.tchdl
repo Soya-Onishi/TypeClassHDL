@@ -1,0 +1,62 @@
+package test
+
+import std::types:::Option
+import std::traits:::From
+
+module Top
+impl Top {
+  output out: Bit[8]
+
+  mod sub0: Sub0 = Sub0 {
+    sibling:
+      sub1: this.sub1
+  }
+  mod sub1: Sub1 = Sub1 {}
+
+  always passer {
+    this.out = this.sub0.out
+  }
+
+  input def caller(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    this.sub0.caller(a, b, c, d)
+  }
+}
+
+module Sub0 {
+  sibling:
+    sub1: Sub1
+}
+impl Sub0 {
+  output out: Bit[8]
+
+  input def caller(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    val result = this.sub1.execute(a, b, c, d)
+    generate waiting(result)
+  }
+
+  stage waiting(res: &Option[Bit[8]]) {
+    match *res {
+      case Option[Bit[8]]:::None => this.out = Bit[8]:::from(0)
+      case Option[Bit[8]]:::Some(v) =>
+        this.out = v
+        finish
+    }
+  }
+}
+
+module Sub1
+impl Sub1 {
+  sibling def execute(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> &Option[Bit[8]] {
+    commence convolution # first(a + b, c + d)
+  }
+
+  proc convolution @ Option[Bit[8]]:::None -> &Option[Bit[8]] {
+    origin block first(x: Bit[8], y: Bit[8]) {
+      relay second(x + y)
+    }
+
+    final block second(res: Bit[8]) {
+      return Option[Bit[8]]:::Some(res)
+    }
+  }
+}

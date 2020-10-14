@@ -547,7 +547,8 @@ object FirrtlCodeGen {
         val (ports, stmts) = generateRoute(routes)
         val newPorts = circuit.module.ports ++ ports
         val oldBody = circuit.module.body.asInstanceOf[fir.Block]
-        val newBody = fir.Block(stmts ++ oldBody.stmts)
+        val (instances, others) = oldBody.stmts.collectPartition{ case inst: fir.DefInstance => inst }
+        val newBody = fir.Block(instances ++ stmts ++ others)
 
         circuit.module.copy(ports = newPorts, body = newBody)
     }

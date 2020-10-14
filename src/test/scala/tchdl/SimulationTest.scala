@@ -365,7 +365,7 @@ class SimulationTest extends TchdlFunSuite {
 
     info(circuit.serialize)
 
-    runSim(circuit, enableVcd = true) { tester =>
+    runSim(circuit) { tester =>
       for {
         _ <- 0 to 255
       } yield {
@@ -385,6 +385,34 @@ class SimulationTest extends TchdlFunSuite {
         tester.expect(procSecond("_active"), 0)
         tester.expect(wait("_active"), 0)
         tester.step()
+      }
+    }
+  }
+
+  test("use proc via sibling module") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "useProcViaSibling.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val call = getNameGenFromMethod(module, "caller")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(255)
+
+    info(circuit.serialize)
+
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } yield {
+        val pairs = Seq("a", "b", "c", "d").map(call).map(name => name -> next)
+        tester.poke(call("_active"), 1)
+        pairs.foreach{ case (name, value) => tester.poke(name, value) }
+
+        val expect = pairs.foldLeft(0){ case (acc, (_, v)) => acc + v } % 256
+
+        tester.step()
+        tester.poke(call("_active"), 0)
+        tester.step()
+        tester.expect("out", expect)
+        tester.step(2)
       }
     }
   }
