@@ -1,0 +1,46 @@
+package test
+
+import std::traits:::From
+
+trait GetRawID {
+  type Output
+
+  def get() -> Output
+}
+
+trait GetTypeID {
+  type Output
+
+  def get() -> Output
+}
+
+impl[m: Num] GetRawID for Bit[m]
+  where m: min 1
+{
+  type Output = Bit[m]
+
+  def get() -> Bit[m] {
+    this
+  }
+}
+
+impl[m: Num] GetTypeID for Bit[m]
+  where m: min 1
+{
+  type Output = Bit[m]
+
+  def get() -> Bit[m] {
+    Bit[m]:::from(1)
+  }
+}
+
+module Top
+impl Top {
+  input def callTypeID(in: Bit[8]) -> Bit[8] {
+    (in as GetTypeID).get()
+  }
+
+  input def callRawID(in: Bit[8]) -> Bit[8] {
+    (in as GetRawID).get()
+  }
+}

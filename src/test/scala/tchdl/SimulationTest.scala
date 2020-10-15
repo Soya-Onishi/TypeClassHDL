@@ -528,4 +528,30 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("cast type to use specific type class method") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "castTypeToTC.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val typeID = getNameGenFromMethod(module, "callTypeID")
+    val rawID =  getNameGenFromMethod(module, "callRawID")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(255)
+
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } {
+        val raw = next
+        tester.poke(typeID("_active"), 1)
+        tester.poke(typeID("in"), next)
+        tester.poke(rawID("_active"), 1)
+        tester.poke(rawID("in"), raw)
+
+        tester.expect(typeID("_ret"), 1)
+        tester.expect(rawID("_ret"), raw)
+
+        tester.step()
+      }
+    }
+  }
 }
