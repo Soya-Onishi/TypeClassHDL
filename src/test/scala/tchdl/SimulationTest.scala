@@ -444,4 +444,26 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("construct complex struct") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "constructStruct.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val const = getNameGenFromMethod(module, "construct")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(255)
+
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } yield {
+        val pairs = Seq("a", "b").map(const).map(_ -> next)
+        tester.poke(const("_active"), 1)
+        pairs.foreach{ case (name, value) => tester.poke(name, value)}
+
+        val Seq(a, b) = pairs.map(_._2)
+        tester.expect(const("_ret_real"), a)
+        tester.expect(const("_ret_imag"), b)
+      }
+    }
+  }
 }

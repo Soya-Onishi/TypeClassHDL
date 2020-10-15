@@ -1,0 +1,16 @@
+package test
+
+struct Complex[T] {
+  real: T,
+  imag: T
+}
+
+module Top
+impl Top {
+  input def construct(a: Bit[8], b: Bit[8]) -> Complex[Bit[8]] {
+    Complex[Bit[8]] {
+      real: a,
+      imag: b
+    }
+  }
+}
