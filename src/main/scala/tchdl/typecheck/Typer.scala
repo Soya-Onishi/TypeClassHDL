@@ -218,6 +218,7 @@ object Typer {
     stageDef.states.foreach(Namer.namedStateDef(_)(stageBodyCtx, global))
 
     val typedBodyElems = stageDef.blk.map {
+      case assign: Assign => typedAssign(assign)(stageBodyCtx, global)
       case vdef: ValDef => typedExprValDef(vdef)(stageBodyCtx, global)
       case expr: Expression => typedExpr(expr)(stageBodyCtx, global)
     }
@@ -1549,7 +1550,7 @@ object Typer {
       else for {
         stage <- lookupStage
         state <- verifyInitState(stage, relay.state, relay.position)
-      } yield relay.copy(state = state).setSymbol(stage.stage).setTpe(Type.unitTpe(global))
+      } yield relay.copy(params = args, state = state).setSymbol(stage.stage).setTpe(Type.unitTpe(global))
     }
 
     def typedProcRelay(args: Vector[Expression]): Either[Error, Relay] = {

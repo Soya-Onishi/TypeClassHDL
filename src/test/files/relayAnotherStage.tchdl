@@ -1,0 +1,19 @@
+package test
+
+module Top
+impl Top {
+  output out: Bit[8]
+
+  input def execute(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    generate st0(a + b, c + d)
+  }
+
+  stage st0(x: Bit[8], y: Bit[8]) {
+    relay st1(x + y)
+  }
+
+  stage st1(res: Bit[8]) {
+    this.out = res
+    finish
+  }
+}

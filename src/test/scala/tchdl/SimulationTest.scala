@@ -8,6 +8,7 @@ import tchdl.util._
 
 import firrtl.{ir => fir}
 import firrtl.stage.FirrtlCircuitAnnotation
+import firrtl.transforms.NoDCEAnnotation
 import treadle.TreadleTester
 
 import java.util.Random
@@ -77,7 +78,8 @@ class SimulationTest extends TchdlFunSuite {
     val annons = Seq(
       treadle.ClockInfoAnnotation(Seq(clockInfo)),
       treadle.ResetNameAnnotation("RST"),
-      FirrtlCircuitAnnotation(circuit)
+      FirrtlCircuitAnnotation(circuit),
+      NoDCEAnnotation
     )
     val passedAnnons =
       if(enableVcd) annons :+ treadle.WriteVcdAnnotation
@@ -463,6 +465,66 @@ class SimulationTest extends TchdlFunSuite {
         val Seq(a, b) = pairs.map(_._2)
         tester.expect(const("_ret_real"), a)
         tester.expect(const("_ret_imag"), b)
+      }
+    }
+  }
+
+  test("simulate if expression") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "runIfExpr.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val select = getNameGenFromMethod(module, "select")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(255)
+
+    runSim(circuit) { tester =>
+      for {
+        flag <- 0 to 1
+        _ <- 0 to 255
+      } {
+        val seq = Seq("a", "b").map(select).map(_ -> next)
+        tester.poke(select("_active"), 1)
+        seq.foreach{ case (name, value) => tester.poke(name, value) }
+        tester.poke(select("flag"), flag)
+
+        val Seq(a, b) = seq.map(_._2)
+        val expect = if(flag == 1) a else b
+
+        tester.expect(select("_ret"), expect)
+      }
+    }
+  }
+
+  test("relay another stage") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "relayAnotherStage.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val exec = getNameGenFromMethod(module, "execute")
+    val st0 = getNameGenFromMethod(module, "st0")
+    val st1 = getNameGenFromMethod(module, "st1")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(255)
+
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } {
+        val seq = Seq("a", "b", "c", "d").map(exec).map(_ -> next)
+        tester.poke(exec("_active"), 1)
+        seq.foreach{ case (name, value) => tester.poke(name, value) }
+
+        tester.step()
+
+        tester.poke(exec("_active"), 0)
+        tester.expect(st0("_active"), 1)
+        tester.expect(st1("_active"), 0)
+
+        tester.step()
+
+        val expect = seq.map(_._2).foldLeft(0){ case (acc, v) => acc + v } % 256
+        tester.expect(st0("_active"), 0)
+        tester.expect(st1("_active"), 1)
+        tester.expect("out", expect)
+
+        tester.step()
       }
     }
   }

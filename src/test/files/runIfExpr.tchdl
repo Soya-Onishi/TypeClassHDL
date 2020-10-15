@@ -1,0 +1,9 @@
+package test
+
+module Top
+impl Top {
+  input def select(flag: Bool, a: Bit[8], b: Bit[8]) -> Bit[8] {
+    if(flag) a
+    else     b
+  }
+}

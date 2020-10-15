@@ -69,9 +69,11 @@ object RefCheck {
 
     val stageBlkCtx = Context(stageSigCtx)
     stageDef.blk.foreach {
+      case Assign(loc, _) => verifyAssignLoc(loc)(stageBlkCtx, global)
       case v: ValDef => verifyValDef(v)(stageBlkCtx, global)
       case expr: Expression => verifyExpr(expr)(stageBlkCtx, global)
     }
+
     stageDef.states.foreach(verifyStateDef(_)(stageBlkCtx, global))
   }
 
