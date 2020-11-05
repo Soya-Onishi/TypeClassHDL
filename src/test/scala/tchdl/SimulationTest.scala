@@ -554,4 +554,148 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("procedure proc example code") {
+    val circuit = untilThisPhase(Vector("test"), "Module", "TchdlProsProc.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val executeID = getNameGenFromMethod(module, "execute")
+    val receiveID = getNameGenFromMethod(module, "receiver")
+    val rand = new Random(0)
+    def nextBool: Boolean = rand.nextBoolean()
+    def nextBit8: Int = rand.nextInt(255)
+    def calc(a: Int, b: Int, c: Int, d: Int)(f: (Int, Int) => Int): Int = {
+      Vector(a, b, c, d).reduceLeft[Int]{ case (acc, x) => f(acc, x) & 255 }
+    }
+
+    // for simulation using convolutionAdd
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } {
+        val Vector(a, b, c, d) = Vector.fill(4)(nextBit8)
+        val e = calc(a, b, c, d)(_ + _)
+
+        tester.poke(executeID("useAdd"), 1)
+        tester.poke(executeID("_active"), 1)
+        tester.poke(executeID("a"), a)
+        tester.poke(executeID("b"), b)
+        tester.poke(executeID("c"), c)
+        tester.poke(executeID("d"), d)
+
+        tester.step()
+        tester.poke(executeID("_active"), 0)
+        tester.expect("out", 0)
+        tester.expect(receiveID("_active"), 1)
+        tester.step()
+        tester.expect("out", e)
+        tester.expect(receiveID("_active"), 1)
+        tester.step()
+        tester.expect(receiveID("_active"), 0)
+        tester.step()
+      }
+    }
+
+    runSim(circuit) { tester =>
+      for {
+        _ <- 0 to 255
+      } {
+        val Vector(a, b, c, d) = Vector.fill(4)(nextBit8)
+        val e = calc(a, b, c, d)(_ - _)
+
+        tester.poke(executeID("useAdd"), 0)
+        tester.poke(executeID("_active"), 1)
+        tester.poke(executeID("a"), a)
+        tester.poke(executeID("b"), b)
+        tester.poke(executeID("c"), c)
+        tester.poke(executeID("d"), d)
+
+        tester.step()
+        tester.poke(executeID("_active"), 0)
+        tester.expect("out", 0)
+        tester.expect(receiveID("_active"), 1)
+
+        tester.step()
+        tester.expect("out", 0)
+        tester.expect(receiveID("_active"), 1)
+
+        tester.step()
+        tester.expect("out", e)
+        tester.expect(receiveID("_active"), 1)
+
+        tester.step()
+
+        tester.expect(receiveID("_active"), 0)
+        tester.step()
+      }
+    }
+  }
+
+  test("run pattern matching sample") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "patternMatchSample.tchdl")
+    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
+    val initID = getNameGenFromMethod(module, "initRegister")
+    val execID = getNameGenFromMethod(module, "execute")
+    val rand = new Random(0)
+    def next: Int = rand.nextInt(255)
+
+    val IMM = 0
+    val REG = 1
+
+    val ADD = 0
+    val SUB = 1
+
+    def combine(op0: Int, op0Data: Int, op1: Int, op1Data: Int): BigInt = {
+      val flag0 = BigInt(op0)
+      val data0 = BigInt(op0Data)
+      val flag1 = BigInt(op1)
+      val data1 = BigInt(op1Data)
+
+      flag0 | (data0 << 1) | (flag1 << 9) | (data1 << 10)
+    }
+
+    def calc(op: Int, reg: Map[Int, Int], flags: Seq[Int], data: Seq[Int]): Int = {
+      val f: (Int, Int) => Int = if(op == ADD) _ + _ else _ - _
+
+      val operands = (flags zip data).map{ case (flag, data) => if(flag == IMM) data else reg(data) }
+
+      f(operands(0), operands(1)) & 255
+    }
+
+    println(circuit.serialize)
+
+    runSim(circuit, enableVcd = true) { tester =>
+      tester.poke(initID(NameTemplate.active), 1)
+      val initRegs = (0 until 16).map(_ -> next).toMap
+      initRegs
+        .map{ case (idx, v) => s"${initID("data")}_$idx" -> v }
+        .foreach{ case (name, v) => tester.poke(name, v) }
+
+      tester.step()
+
+      tester.poke(initID(NameTemplate.active), 0)
+
+      tester.step()
+
+      for {
+        _ <- 0 to 255
+      } {
+        val flags = Seq(REG, next % 2)
+        val values = flags.map(flag => if(flag == IMM) next else next % 16)
+
+        val op = next % 2
+        tester.poke(execID(NameTemplate.active), 1)
+        tester.poke(execID("opType"), op)
+        tester.poke(execID("flag0"), flags(0))
+        tester.poke(execID("flag1"), flags(1))
+        tester.poke(execID("data0"), values(0))
+        tester.poke(execID("data1"), values(1))
+
+        val expect = calc(op, initRegs, flags, values)
+        val actual = tester.peek(execID(NameTemplate.ret))
+
+        tester.step()
+        tester.expect(execID(NameTemplate.ret), expect)
+      }
+    }
+  }
 }

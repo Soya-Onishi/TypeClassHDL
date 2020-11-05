@@ -1,0 +1,52 @@
+package test
+
+import std::traits:::From
+import std::types:::Option
+
+module Module
+impl Module {
+  output out: Bit[8]
+
+  input def execute(useAdd: Bool, a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) -> Unit {
+    val ans: &Option[Bit[8]] =
+      if(useAdd) commence convolutionAdd # first(a, b, c, d)
+      else       commence convolutionSub # first(a, b, c, d)
+
+    generate receiver(ans)
+  }
+
+  proc convolutionAdd @ Option[Bit[8]]:::None -> &Option[Bit[8]] {
+    origin block first(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) {
+      relay second(a + b, c + d)
+    }
+
+    final block second(x: Bit[8], y: Bit[8]) {
+      return Option[Bit[8]]:::Some(x + y)
+    }
+  }
+
+  proc convolutionSub @ Option[Bit[8]]:::None -> &Option[Bit[8]] {
+    origin block first(a: Bit[8], b: Bit[8], c: Bit[8], d: Bit[8]) {
+      relay second(a - b, c, d)
+    }
+
+    block second(x: Bit[8], y: Bit[8], z: Bit[8]) {
+      relay third(x - y, z)
+    }
+
+    final block third(m: Bit[8], n: Bit[8]) {
+      return Option[Bit[8]]:::Some(m - n)
+    }
+  }
+
+  stage receiver(ans: &Option[Bit[8]]) {
+    val res = *ans
+
+    match res {
+      case Option[Bit[8]]:::None => this.out = Bit[8]:::from(0)
+      case Option[Bit[8]]:::Some(ans) =>
+        this.out = ans
+        finish
+    }
+  }
+}

@@ -1112,7 +1112,7 @@ object BackendLIRGen {
   }
 
   def runMatch(matchExpr: backend.Match)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    def extractFieldData(source: lir.SubField, srcTpe: BackendType, bitIdx: BigInt): (Vector[lir.Stmt], Name, BigInt) = {
+    def extractFieldData(source: lir.SubField, srcTpe: BackendType, history: Vector[BackendType], localStack: StackFrame): (Vector[lir.Stmt], Name, Vector[BackendType]) = {
       def convertHWType(tpe: BackendType): BackendType = tpe.symbol match {
         case sym if sym == Symbol.int => BackendType.bitTpe(32)
         case sym if sym == Symbol.unit => BackendType.bitTpe(0)
@@ -1123,53 +1123,75 @@ object BackendLIRGen {
 
       tpe.symbol match {
         case sym if sym == Symbol.bit =>
-          val name = stack.next("_EXTRACT")
+          val name = localStack.next("_EXTRACT")
           val HPElem.Num(width) = tpe.hargs(0)
           val dataTpe = BackendType.bitTpe(width)
-          val expr = lir.Ops(PrimOps.Bits, Vector(source), Vector(bitIdx + width - 1, bitIdx), dataTpe)
+          val addedHistory = dataTpe +: history
+          val expr = lir.Extract(source, addedHistory, dataTpe)
           val node = lir.Node(name.name, expr, dataTpe)
 
-          (Vector(node), name, bitIdx + width)
+          (Vector(node), name, addedHistory)
         case sym if sym == Symbol.vec =>
-          val vecName = stack.next("_EXTRACT")
+          val vecName = localStack.next("_EXTRACT")
           val wire = lir.Wire(vecName.name, tpe)
           val wireRef = lir.Reference(wire.name, wire.tpe)
           val HPElem.Num(length) = tpe.hargs(0)
           val elemTpe = tpe.targs(0)
 
-          val (stmts, nextIdx) = (0 to length).foldLeft(Vector.empty[lir.Stmt], bitIdx){
-            case ((stmts, bitIdx), idx) =>
-              val (leafStmts, name, nextIdx) = extractFieldData(source, elemTpe, bitIdx)
+          val (stmts, addedHistory) = (0 to length).foldLeft(Vector.empty[lir.Stmt], history){
+            case ((stmts, history), idx) =>
+              val (leafStmts, name, addedHistory) = extractFieldData(source, elemTpe, history, localStack)
               val assign = lir.Assign(
                 lir.SubIndex(wireRef, idx, elemTpe),
                 lir.Reference(name.name, elemTpe)
               )
 
-              (stmts ++ leafStmts :+ assign, nextIdx)
+              (stmts ++ leafStmts :+ assign, addedHistory)
           }
 
-          (wire +: stmts, vecName, nextIdx)
+          (wire +: stmts, vecName, addedHistory)
+        case sym if sym.isEnumSymbol =>
+          val enumName = localStack.next("_EXTRACT")
+          val wire = lir.Wire(enumName.name, tpe)
+          val wireRef = lir.Reference(wire.name, tpe)
+
+          val memberTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumFlag)
+          val dataTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData)
+
+          val data = lir.Extract(source, dataTpe +: history, memberTpe)
+          val member = lir.Extract(source, Vector(memberTpe, dataTpe) ++ history, memberTpe)
+          val dataRef = lir.SubField(wireRef, NameTemplate.enumData, dataTpe)
+          val memberRef = lir.SubField(wireRef, NameTemplate.enumFlag, memberTpe)
+          val (dataNode, dataNodeRef) = makeNode(data)(localStack)
+          val (memberNode, memberNodeRef) = makeNode(member)(localStack)
+          val assignData = lir.Assign(dataRef, dataNodeRef)
+          val assignMember = lir.Assign(memberRef, memberNodeRef)
+
+          val stmts = Vector(wire, dataNode, memberNode, assignData, assignMember)
+          val addedHistory = Vector(memberTpe, dataTpe) ++ history
+
+          (stmts, enumName, addedHistory)
         case _ =>
-          val bundleName = stack.next("_EXTRACT")
+          val bundleName = localStack.next("_EXTRACT")
           val wire = lir.Wire(bundleName.name, tpe)
           val fields = tpe.fields.toVector.sortWith{ case ((left, _), (right, _)) => left < right }
 
-          val (stmts, nextIdx) = fields.foldLeft((Vector.empty[lir.Stmt], bitIdx)) {
-            case ((stmts, idx), (name, fieldTpe)) =>
+          val (stmts, nextIdx) = fields.foldLeft((Vector.empty[lir.Stmt], history)) {
+            case ((stmts, history), (name, fieldTpe)) =>
               val subField = lir.SubField(source, name, fieldTpe)
-              val (leafStmts, extractName, nextIdx) = extractFieldData(subField, fieldTpe, idx)
+              val (leafStmts, extractName, addedHistory) = extractFieldData(subField, fieldTpe, history, localStack)
               val dstField = lir.SubField(lir.Reference(bundleName.name, tpe), name, fieldTpe)
               val extractField = lir.Reference(extractName.name, fieldTpe)
               val assign = lir.Assign(dstField, extractField)
 
-              (stmts ++ leafStmts :+ assign, nextIdx)
+              (stmts ++ leafStmts :+ assign, addedHistory)
           }
 
           (wire +: stmts, bundleName, nextIdx)
       }
     }
 
-    def runPattern(instance: DataInstance, pattern: backend.MatchPattern): RunResult = {
+    def runPattern(instance: DataInstance, pattern: backend.MatchPattern, caseStack: StackFrame): RunResult = {
       def toLIRForm(lit: backend.Literal): lir.Literal = {
         def toLit(value: Int, width: Int): lir.Literal = lir.Literal(value, BackendType.bitTpe(width))
 
@@ -1182,10 +1204,10 @@ object BackendLIRGen {
       }
 
       def literalPattern(lit: backend.Literal): RunResult = {
-        val locName = stack.next("_GEN")
+        val locName = caseStack.next("_GEN")
         val loc = lir.Reference(locName.name, lit.tpe)
         val literal = toLIRForm(lit)
-        val (literalNode, literalRef) = makeNode(literal)
+        val (literalNode, literalRef) = makeNode(literal)(caseStack)
         val cmp = lir.Ops(PrimOps.Eq, Vector(instance.refer, literalRef), Vector.empty, BackendType.boolTpe)
         val node = lir.Node(locName.name, cmp, BackendType.boolTpe)
         val inst = DataInstance(BackendType.boolTpe, lir.Reference(node.name, node.tpe))
@@ -1194,18 +1216,18 @@ object BackendLIRGen {
       }
 
       def identPattern(variable: backend.Term.Variable): RunResult = {
-        val locName = stack.next(variable.name)
+        val locName = caseStack.next(variable.name)
         val loc = lir.Reference(locName.name, variable.tpe)
         val node = lir.Node(locName.name, instance.refer, variable.tpe)
         val locInstance = DataInstance(instance.tpe, loc)
-        stack.append(locName, locInstance)
-        val RunResult(stmts, inst: DataInstance) = DataInstance.bool(bool = true)
+        caseStack.append(locName, locInstance)
+        val RunResult(stmts, inst: DataInstance) = DataInstance.bool(bool = true)(caseStack, global)
 
         RunResult(node +: stmts, inst)
       }
 
       pattern match {
-        case backend.WildCardPattern(_) => DataInstance.bool(bool = true)
+        case backend.WildCardPattern(_) => DataInstance.bool(bool = true)(caseStack, global)
         case backend.LiteralPattern(lit) => literalPattern(lit)
         case backend.IdentPattern(name) => identPattern(name)
         case backend.EnumPattern(variant, patterns, tpe) =>
@@ -1215,7 +1237,7 @@ object BackendLIRGen {
           val dataTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData)
           val dataRef = lir.SubField(instance.refer, "_data", dataTpe)
 
-          val (litNode, litRef) = makeNode(lir.Literal(variant, memberTpe))
+          val (litNode, litRef) = makeNode(lir.Literal(variant, memberTpe))(caseStack)
           val variantEq = lir.Ops(
             PrimOps.Eq,
             Vector(memberRef, litRef),
@@ -1225,13 +1247,13 @@ object BackendLIRGen {
 
           val stmtBuilder = Vector.newBuilder[lir.Stmt]
           val refBuilder = Vector.newBuilder[lir.Reference]
-          patterns.map(_.tpe).scanLeft(BigInt(0)) {
-            case (idx, tpe) =>
-              val (stmts, name, nextIdx) = extractFieldData(dataRef, tpe, idx)
+          patterns.map(_.tpe).scanLeft(Vector.empty[BackendType]) {
+            case (history, tpe) =>
+              val (stmts, name, addedHistory) = extractFieldData(dataRef, tpe, history, caseStack)
               stmtBuilder ++= stmts
               refBuilder += lir.Reference(name.name, tpe)
 
-              nextIdx
+              addedHistory
           }
 
           val stmts = stmtBuilder.result()
@@ -1240,7 +1262,7 @@ object BackendLIRGen {
           val trueRef = lir.Literal(1, BackendType.boolTpe)
           val results = (patterns zip refs)
             .map{ case (pattern, ref) => pattern -> DataInstance(pattern.tpe, ref) }
-            .map{ case (pattern, inst) => runPattern(inst, pattern) }
+            .map{ case (pattern, inst) => runPattern(inst, pattern, caseStack) }
 
           val conds = results.map(_.instance.asInstanceOf[DataInstance])
           val patternStmts = results.flatMap(_.stmts)
@@ -1248,7 +1270,7 @@ object BackendLIRGen {
           val leftNodes = Vector.newBuilder[lir.Node]
           val condition = conds.foldLeft[lir.Expr](variantEq) {
             case (left, right) =>
-              val (leftNode, leftRef) = makeNode(left)
+              val (leftNode, leftRef) = makeNode(left)(caseStack)
               leftNodes += leftNode
 
               lir.Ops(
@@ -1259,10 +1281,10 @@ object BackendLIRGen {
             )
           }
 
-          val condName = stack.next("_GEN")
+          val condName = caseStack.next("_GEN")
           val condRef = lir.Reference(condName.name, condition.tpe)
           val connect = lir.Node(condName.name, condition, condition.tpe)
-          val returnStmts = litNode +: (stmts ++ leftNodes.result() ++ patternStmts) :+ connect
+          val returnStmts = litNode +: ((stmts ++ patternStmts) ++ (leftNodes.result() :+ connect))
           val returnInst = DataInstance(BackendType.boolTpe, condRef)
 
           RunResult(returnStmts, returnInst)
@@ -1270,9 +1292,10 @@ object BackendLIRGen {
     }
 
     def runCase(instance: DataInstance, caseExpr: backend.Case, retLoc: Option[lir.Reference]): (Vector[lir.Stmt], lir.When) = {
-      val RunResult(patternStmts, condInstance: DataInstance) = runPattern(instance, caseExpr.pattern)
-      val bodyStmts = caseExpr.stmts.flatMap(runStmt)
-      val RunResult(exprStmts, retInstance: DataInstance) = runExpr(caseExpr.ret)
+      val newStack = StackFrame(stack, stack.lookupThis)
+      val RunResult(patternStmts, condInstance: DataInstance) = runPattern(instance, caseExpr.pattern, newStack)
+      val bodyStmts = caseExpr.stmts.flatMap(runStmt(_)(newStack, ctx, global))
+      val RunResult(exprStmts, retInstance: DataInstance) = runExpr(caseExpr.ret)(newStack, ctx, global)
 
       val retConnect = retLoc.map(loc => lir.Assign(loc, retInstance.refer))
       val conseqStmts = bodyStmts ++ exprStmts ++ retConnect
@@ -1465,6 +1488,11 @@ object BackendLIRGen {
           val HPElem.Num(length) = tpe.hargs.head
           val elemTpe = tpe.targs.head
           (0 to length).flatMap(idx => makeLeafs(elemTpe, lir.SubIndex(refer, idx, elemTpe))).toVector
+        case sym if sym.isEnumSymbol =>
+          val dataRef = lir.SubField(refer, NameTemplate.enumData, tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData))
+          val memberRef = lir.SubField(refer, NameTemplate.enumFlag, tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumFlag))
+
+          Vector(dataRef, memberRef)
         case _ =>
           val fields = tpe.fields.toVector.sortWith{ case ((left, _), (right, _)) => left < right }
           fields.flatMap { case (name, fieldTpe) =>
@@ -1476,20 +1504,13 @@ object BackendLIRGen {
 
     val insts = enum.passed.map(temp => stack.lookup(stack.refer(temp.id)))
     val temporaryNodes = Vector.newBuilder[lir.Node]
-    val valueOpt = insts
+    val values = insts
       .map(_.asInstanceOf[DataInstance])
       .flatMap(inst => makeLeafs(inst.tpe, inst.refer))
-      .reduceLeftOption[lir.Ref] {
-        case (prefix, refer) =>
-          val HPElem.Num(prefixWidth) = prefix.tpe.hargs.head
-          val HPElem.Num(referWidth) = refer.tpe.hargs.head
-          val catWidth = prefixWidth + referWidth
-          val cat = lir.Ops(PrimOps.Cat, Vector(refer, prefix), Vector.empty, BackendType.bitTpe(catWidth))
-          val (tempNode, tempRef) = makeNode(cat)
 
-          temporaryNodes += tempNode
-          tempRef
-      }
+    val concatOpt =
+      if(values.isEmpty) None
+      else lir.Concat(values, enum.tpe.copy(flag = enum.tpe.flag | BackendTypeFlag.EnumData)).some
 
     val variants = enum.tpe.symbol.tpe.declares
       .toMap.toVector
@@ -1514,8 +1535,10 @@ object BackendLIRGen {
 
     val dataTpe = enum.tpe.copy(flag = enum.tpe.flag | BackendTypeFlag.EnumData)
     val dataInvalid = lir.Invalid(lir.SubField(enumRef, "_data", dataTpe))
-    val valuePairOpt = valueOpt.map(makeNode)
-    val connectDataOpt = valuePairOpt.map{ case (_, ref) =>
+    val concatPairOpt = concatOpt.map(makeNode)
+    val concatNodeOpt = concatPairOpt.map(_._1)
+    val concatRefOpt = concatPairOpt.map(_._2)
+    val connectDataOpt = concatRefOpt.map{ ref =>
       lir.Assign(
         lir.SubField(enumRef, "_data", dataTpe),
         ref
@@ -1523,7 +1546,7 @@ object BackendLIRGen {
     }
 
     val flagStmts = Vector(flagNode, connectFlag)
-    val dataStmts = dataInvalid +: Vector(valuePairOpt.map(_._1), connectDataOpt).flatten
+    val dataStmts = dataInvalid +: Vector(concatNodeOpt, connectDataOpt).flatten
     val runResultStmts = wireDef +: (temporaryNodes.result() ++ flagStmts ++ dataStmts)
     val instance = DataInstance(enum.tpe, enumRef)
 

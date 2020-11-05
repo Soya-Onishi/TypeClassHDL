@@ -1,0 +1,21 @@
+package test
+
+enum Outer {
+  A(Inner, Inner)
+  B(Inner)
+}
+
+enum Inner {
+  C(Bit[2], Bit[8])
+  D(Bit[4])
+}
+
+module Top
+impl Top {
+  input def execute(outer: Outer) -> Bit[2] {
+    match outer {
+      case Outer:::A(Inner:::C(a, b), Inner:::C(c, d)) => 0b00
+      case Outer:::A(Inner:::D(x), Inner:::D(y)) => 0b01
+    }
+  }
+}

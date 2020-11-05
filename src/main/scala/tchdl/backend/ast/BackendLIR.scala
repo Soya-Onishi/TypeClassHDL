@@ -52,4 +52,11 @@ object BackendLIR {
   case class Literal(value: BigInt, tpe: BackendType) extends Expr
   case class Commence(path: NameSpace, origin: String, tpe: BackendType) extends Expr
   case class Ops(op: PrimOp, args: Vector[Ref], consts: Vector[BigInt], tpe: BackendType) extends Expr
+
+  // Below two IRs are for Enum
+  case class Concat(subjects: Vector[Ref], tpe: BackendType) extends Expr
+
+  // history's head is newest size(i.e. use length head has to extract bits)
+  // tail elements are for calculating index to initiate extracting
+  case class Extract(target: Ref, history: Vector[BackendType], tpe: BackendType) extends Expr
 }

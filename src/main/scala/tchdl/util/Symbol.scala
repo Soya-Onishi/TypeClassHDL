@@ -78,6 +78,7 @@ sealed abstract class Symbol(__tpe: Type, __flag: Modifier) {
   def isEntityTypeSymbol: Boolean = this.isInstanceOf[Symbol.EntityTypeSymbol]
   def isModuleTypeSymbol: Boolean = this.isInstanceOf[Symbol.ModuleSymbol]
   def isFieldTypeSymbol: Boolean = this.isInstanceOf[Symbol.FieldTypeSymbol]
+  def isEnumSymbol: Boolean = this.isInstanceOf[Symbol.EnumSymbol]
   def isEnumMemberSymbol: Boolean = this.isInstanceOf[Symbol.EnumMemberSymbol]
   def isTermSymbol: Boolean = this.isInstanceOf[Symbol.TermSymbol]
   def isMethodSymbol: Boolean = this.isInstanceOf[Symbol.MethodSymbol]

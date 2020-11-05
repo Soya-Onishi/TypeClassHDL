@@ -1,0 +1,58 @@
+package test
+
+import std::traits:::From
+
+enum Ref {
+  Imm(Bit[8])
+  Reg(Bit[4])
+}
+
+enum Operation {
+  Add(Ref, Ref)
+  Sub(Ref, Ref)
+}
+
+module Top
+impl Top {
+  reg regFile: Vector[16, Bit[8]]
+
+  input def initRegister(data: Vector[16, Bit[8]]) -> Unit {
+    this.regFile = data
+  }
+
+  def genRef(flag: Bool, data: Bit[8]) -> Ref {
+    if(flag) Ref:::Reg(Bit[4]:::from(data))
+    else     Ref:::Imm(data)
+  }
+
+  input def execute(opType: Bool, flag0: Bool, flag1: Bool, data0: Bit[8], data1: Bit[8]) -> Bit[8] {
+    val op =
+      if(opType) Operation:::Sub(this.genRef(flag0, data0), this.genRef(flag1, data1))
+      else       Operation:::Add(this.genRef(flag0, data0), this.genRef(flag1, data1))
+
+    this.operation(op)
+  }
+
+  internal def operation(op: Operation) -> Bit[8] {
+     match op {
+       case Operation:::Add(Ref:::Reg(idx0), Ref:::Reg(idx1)) =>
+         val x = this.regFile.idxDyn[4](idx0)
+         val y = this.regFile.idxDyn[4](idx1)
+
+         x + y
+       case Operation:::Add(Ref:::Reg(idx), Ref:::Imm(imm)) =>
+         val elem = this.regFile.idxDyn[4](idx)
+
+         elem + imm
+       case Operation:::Sub(Ref:::Reg(idx0), Ref:::Reg(idx1)) =>
+         val x = this.regFile.idxDyn[4](idx0)
+         val y = this.regFile.idxDyn[4](idx1)
+
+         x - y
+       case Operation:::Sub(Ref:::Reg(idx), Ref:::Imm(imm)) =>
+         val elem = this.regFile.idxDyn[4](idx)
+
+         elem - imm
+     }
+  }
+}

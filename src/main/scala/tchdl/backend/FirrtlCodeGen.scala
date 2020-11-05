@@ -170,7 +170,7 @@ object FirrtlCodeGen {
     }
 
     def createReadDataConnections(port: Int): Vector[fir.Statement] = {
-      val member = fir.SubField(getPointerWire(port), NameTemplate.variant, fir.UnknownType)
+      val member = fir.SubField(getPointerWire(port), NameTemplate.enumFlag, fir.UnknownType)
       val data = fir.SubField(getPointerWire(port), NameTemplate.enumData, fir.UnknownType)
       val delayRef = fir.Reference(NameTemplate.memEnDelay(mem.name, port), fir.UnknownType)
       val memRef = fir.Reference(mem.name, fir.UnknownType)
@@ -386,6 +386,24 @@ object FirrtlCodeGen {
       fir.UIntLiteral(value, width)
     case commence: lir.Commence => elaborateCommence(commence)
     case lir.Ops(op, args, consts, tpe) => fir.DoPrim(op, args.map(elaborateExpr), consts, toFirrtlType(tpe))
+    case lir.Concat(subjects, _) =>
+      val refs = subjects.map(elaborateExpr)
+      val cats = refs.tail.foldLeft(refs.head) {
+        case (prefix, next) => fir.DoPrim(firrtl.PrimOps.Cat, Seq(next, prefix), Seq.empty, fir.UnknownType)
+      }
+
+      cats
+    case lir.Extract(target, history, tpe) =>
+      def getWidth(tpe: BackendType): BigInt =
+        toFirrtlType(tpe)
+          .asInstanceOf[fir.UIntType].width
+          .asInstanceOf[fir.IntWidth].width
+
+      val from = history.tail.foldLeft(BigInt(0)) { case (idx, tpe) => idx + getWidth(tpe) }
+      val to = from + getWidth(history.head) - 1
+
+      val targetRef = elaborateExpr(target)
+      fir.DoPrim(firrtl.PrimOps.Bits, Seq(targetRef), Seq(to, from), toFirrtlType(tpe))
   }
 
   def elaborateCommence(commence: lir.Commence)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): fir.Expression = {

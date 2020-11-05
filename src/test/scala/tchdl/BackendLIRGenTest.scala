@@ -1022,4 +1022,29 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val values = wires.filter(_.name.contains("function"))
     assert(values.forall(_.name.matches("function_[0-9a-f]+[\\$[0-9]+]+value_0")))
   }
+
+  test("run simple module but use same names at parameter and ident pattern in pattern matching") {
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "useSameName.tchdl")
+    val top = modules.head
+    val execute = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val nodes = findAllComponents[lir.Node](execute.conseq)
+
+    val overlaps = nodes.map(_.name).groupBy(identity).values.toVector.filter(_.length != 1)
+    assert(overlaps.isEmpty, s"${overlaps.length} overlaps. [${overlaps.map(_.head).mkString(",")}]")
+  }
+
+  test("pattern matching with Enum that has Enum field") {
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "patternMatchEnumInEnum.tchdl")
+    val top = modules.head
+    val execute = top.procedures.collectFirst{ case w: lir.When => w }.get
+    val nodes = findAllComponents[lir.Node](execute.conseq)
+    val extracts = nodes.collect{ case lir.Node(_, e: lir.Extract, _) => e }
+    val first = extracts.head
+    val second = extracts.tail.head
+
+    assert(first.history.length == 1)
+    assert(first.history.head.flag.hasFlag(BackendTypeFlag.EnumFlag))
+    assert(second.history.length == 2)
+    assert(second.history.head.flag.hasFlag(BackendTypeFlag.EnumData))
+  }
 }
