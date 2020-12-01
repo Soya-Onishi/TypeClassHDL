@@ -323,7 +323,7 @@ package object backend {
     def toVecType(length: Int, tpe: ir.Type): ir.VectorType = ir.VectorType(tpe, length)
     def toEnumType(symbol: Symbol.EnumSymbol): ir.Type = {
       def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
-      def flagWidth(x: Double): Int = ((math.ceil _ compose log2)(x)).toInt.max(1)
+      def flagWidth(x: BigInt): Int = math.ceil(log2(x.toDouble + 1)).toInt
 
       def makeBitLength(
         member: Type.EnumMemberType,
@@ -346,12 +346,12 @@ package object backend {
       val members = symbol.tpe.declares
         .toMap
         .toVector
-        .sortWith{ case ((left, _), (right, _)) => left < right }
-        .map{ case (_, symbol) => symbol }
+        .map{ case (_, symbol) => symbol.asEnumMemberSymbol }
+      val maxID = members.map(_.memberID).max
 
       val hpTable = (symbol.hps zip tpe.hargs).toMap
       val tpTable = (symbol.tps zip tpe.targs).toMap
-      val memberTpe = ir.UIntType(ir.IntWidth(flagWidth(members.length)))
+      val memberTpe = ir.UIntType(ir.IntWidth(flagWidth(maxID)))
       val maxLength = members
         .map(_.tpe.asEnumMemberType)
         .map(makeBitLength(_, hpTable, tpTable))
