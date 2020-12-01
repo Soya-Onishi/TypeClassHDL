@@ -120,7 +120,11 @@ class ASTGenerator {
       val fieldName = ctx.TYPE_ID.getText
       val fields = ctx.`type`.asScala.map(typeTree).toVector
       val intOpt = Option(ctx.INT).map(_.getText).map(BigInt.apply)
-      val bitOpt = Option(ctx.BIT).map(_.getText).map(_.substring(2)).map(BigInt.apply(_, 2))
+      val bitOpt = Option(ctx.BIT)
+        .map(_.getText)
+        .map(_.substring(2))
+        .map(_.filterNot(_ == '_'))
+        .map(BigInt.apply(_, 2))
       val member = intOpt orElse bitOpt
 
       EnumMemberDef(fieldName, fields, member, Position(ctx))
@@ -782,7 +786,7 @@ class ASTGenerator {
 
   def literal(ctx: TP.LiteralContext)(implicit file: Filename): Literal = ctx match {
     case ctx: TP.BitLitContext =>
-      val raw = ctx.BIT.getText.substring(2)
+      val raw = ctx.BIT.getText.substring(2).filter(_ != '_')
       BitLiteral(BigInt(raw, 2), raw.length, Position(ctx))
     case ctx: TP.IntLitContext =>
       ctx.INT.getText.toIntOption match {

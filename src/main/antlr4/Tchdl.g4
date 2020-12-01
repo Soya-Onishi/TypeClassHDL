@@ -390,7 +390,7 @@ EXPR_ID: [a-z][a-zA-Z0-9]*;
 TYPE_ID: [A-Z][a-zA-Z0-9]*;
 NL: [\r\n];
 
-fragment BITLIT: '0b' [01]+;
+fragment BITLIT: '0b' [01_]+;
 fragment HEXLIT: '0x' [0-9a-fA-F]+;
 fragment DIGITLIT: [0-9]+;
 
