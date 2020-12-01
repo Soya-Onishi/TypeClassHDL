@@ -686,4 +686,35 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("use ALU that accepts 4 commands") {
+    val circuit = untilThisPhase(Vector("test"), "ALU", "useUserDefinedVariantID.tchdl")
+    def exec(name: String) = NameTemplate.concat("execute", name)
+    val rnd = new Random(0)
+
+    runSim(circuit) { tester =>
+      for{
+        op <- 0 until   4
+         _ <- 0    to 100
+      } yield {
+        val  a = BigInt(8, rnd)
+        val b0 = BigInt(8, rnd)
+        val  b = if(b0 == 0 && op == 3) BigInt(1) else b0
+        val expect = op match {
+          case 0 => (a + b) % 256
+          case 1 => (a - b + 256) % 256
+          case 2 => (a * b) % 256
+          case 3 => (a / b) % 256
+        }
+
+        val bits = (b << 8) | a
+
+        tester.poke(exec(NameTemplate.active), 1)
+        tester.poke(exec(NameTemplate.concat("ops", NameTemplate.enumFlag)), op)
+        tester.poke(exec(NameTemplate.concat("ops", NameTemplate.enumData)), bits)
+
+        tester.expect(exec(NameTemplate.ret), expect)
+      }
+    }
+  }
 }

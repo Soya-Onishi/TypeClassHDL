@@ -381,4 +381,17 @@ class BackendIRGenTest extends TchdlFunSuite {
     val flagIdent = flag.asInstanceOf[Ident]
     assert(flagIdent.id.name.matches("function_flag"))
   }
+
+  test("use enum that has user defined variant ID") {
+    val (modules, _, _) = untilThisPhase(Vector("test"), "ALU", "useUserDefinedVariantID.tchdl")
+    val module = modules.head
+    val interface = module.bodies.head.interfaces.head
+
+    assert(interface.activeName == NameTemplate.concat("execute", NameTemplate.active))
+
+    val m = interface.ret.asInstanceOf[Match]
+    m.cases.foreach{ c => assert(c.pattern.isInstanceOf[EnumPattern])}
+    val patterns = m.cases.map(c => c.pattern.asInstanceOf[EnumPattern])
+    patterns.zipWithIndex.foreach{ case (p, idx) => assert(p.variant == idx) }
+  }
 }

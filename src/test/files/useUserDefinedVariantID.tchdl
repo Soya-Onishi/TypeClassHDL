@@ -1,0 +1,20 @@
+package test
+
+enum Ops {
+  Add(Bit[8], Bit[8]) = 0b00
+  Sub(Bit[8], Bit[8]) = 0b01
+  Mul(Bit[8], Bit[8]) = 0b10
+  Div(Bit[8], Bit[8]) = 0b11
+}
+
+module ALU
+impl ALU {
+  input def execute(ops: Ops) -> Bit[8] {
+    match ops {
+      case Ops:::Add(a, b) => a + b
+      case Ops:::Sub(a, b) => a - b
+      case Ops:::Mul(a, b) => a * b
+      case Ops:::Div(a, b) => a / b
+    }
+  }
+}
