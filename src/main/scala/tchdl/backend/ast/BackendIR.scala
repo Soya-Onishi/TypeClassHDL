@@ -55,7 +55,7 @@ trait MatchPattern { def tpe: BackendType }
 case class IdentPattern(name: Term.Variable) extends MatchPattern { def tpe: BackendType = name.tpe }
 case class LiteralPattern(lit: Literal) extends MatchPattern { def tpe: BackendType = lit.tpe }
 case class WildCardPattern(tpe: BackendType) extends MatchPattern
-case class EnumPattern(variant: Int, patterns: Vector[MatchPattern], tpe: BackendType) extends MatchPattern
+case class EnumPattern(variant: BigInt, patterns: Vector[MatchPattern], tpe: BackendType) extends MatchPattern
 
 case class Finish(stage: StageLabel)(implicit global: GlobalData) extends Expr {
   val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)

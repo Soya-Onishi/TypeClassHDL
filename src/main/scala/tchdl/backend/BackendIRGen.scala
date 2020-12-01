@@ -876,17 +876,10 @@ object BackendIRGen {
         backend.WildCardPattern(tpe)
       case frontend.EnumPattern(variant, patterns) =>
         val tpe = toBackendType(variant.tpe.asRefType, ctx.hpTable, ctx.tpTable)
-        val allVariants = variant.tpe.declares.toMap
-          .values.toVector
-          .sortWith { case (left, right) => left.name < right.name }
-
+        val symbol = variant.symbol.asEnumMemberSymbol
         val conds = patterns.map(buildPatternMatching)
-        val idx = allVariants.indexOf(variant.symbol) match {
-          case -1 => throw new ImplementationErrorException(s"${variant.symbol} cannot find from $allVariants")
-          case idx => idx
-        }
 
-        backend.EnumPattern(idx, conds, tpe)
+        backend.EnumPattern(symbol.memberID, conds, tpe)
     }
 
     def buildCase(caseDef: frontend.Case): (backend.Case, Set[BackendLabel]) = {
