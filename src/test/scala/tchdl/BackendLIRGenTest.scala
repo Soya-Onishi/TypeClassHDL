@@ -12,13 +12,9 @@ import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
 
 class BackendLIRGenTest extends TchdlFunSuite {
-  def extractHashCode(regex: String, from: String): String = {
-    val r = regex.r
-    r.findAllIn(from).matchData.map{ _.group(1) }.toVector.head
-  }
-
   def concatNames(function: String, code: String, remains: String*): String = {
-    function + "_" + code + "$" + remains.mkString("$")
+    if(remains.isEmpty) NameTemplate.concat(function, code)
+    else NameTemplate.concat(function, code, remains.mkString(NameTemplate.concatCh))
   }
 
   def parse(filename: String): CompilationUnit =
@@ -80,9 +76,9 @@ class BackendLIRGenTest extends TchdlFunSuite {
     }.get
 
     assert(top.ports.length == 3)
-    assert(top.ports(0).name.matches("function_[0-9a-f]+\\$_active"))
-    assert(top.ports(1).name.matches("function_[0-9a-f]+\\$in"))
-    assert(top.ports(2).name.matches("function_[0-9a-f]+\\$_ret"))
+    assert(top.ports(0).name.matches("function__active"))
+    assert(top.ports(1).name.matches("function_in"))
+    assert(top.ports(2).name.matches("function__ret"))
 
     assert(top.ports(0).dir == lir.Dir.Input)
     assert(top.ports(1).dir == lir.Dir.Input)
@@ -98,15 +94,15 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(when.cond.isInstanceOf[lir.Reference])
     assert(when.alt.isEmpty)
     val condRef = when.cond.asInstanceOf[lir.Reference]
-    assert(condRef.name.matches("function_[0-9a-f]+\\$_active"), condRef.name)
+    assert(condRef.name.matches("function__active"), condRef.name)
     assert(when.conseq.length == 1)
     assert(when.conseq.head.isInstanceOf[lir.Assign])
     val assign = when.conseq.head.asInstanceOf[lir.Assign]
     assert(assign.dst.isInstanceOf[lir.Reference])
     val dst = assign.dst.asInstanceOf[lir.Reference]
-    assert(dst.name.matches("function_[0-9a-f]+\\$_ret"), dst.name)
+    assert(dst.name.matches("function__ret"), dst.name)
     val src = assign.src.asInstanceOf[lir.Reference]
-    assert(src.name.matches("function_[0-9a-f]+\\$in"))
+    assert(src.name.matches("function_in"))
   }
 
   test("input interface with Unit return type") {
@@ -114,7 +110,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val top = findModule(modules, "Top").get
 
     assert(top.ports.length == 1)
-    assert(top.ports.head.name.matches("f_[0-9a-f]+\\$_active"))
+    assert(top.ports.head.name.matches("f__active"))
 
     assert(top.inits.isEmpty)
     assert(top.components.isEmpty)
@@ -129,16 +125,16 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val top = findModule(modules, "Top").get
 
     assert(top.ports.length == 3)
-    assert(top.ports(0).name.matches("inputFunc_[0-9a-f]+\\$_active"))
-    assert(top.ports(1).name.matches("inputFunc_[0-9a-f]+\\$in"))
-    assert(top.ports(2).name.matches("inputFunc_[0-9a-f]+\\$_ret"))
+    assert(top.ports(0).name.matches("inputFunc__active"))
+    assert(top.ports(1).name.matches("inputFunc_in"))
+    assert(top.ports(2).name.matches("inputFunc__ret"))
 
     assert(top.components.length == 3)
     val wires = top.components.collect{ case w: lir.Wire => w }
     assert(wires.length == 3)
-    assert(wires(0).name.matches("internalFunc_[0-9a-f]+\\$_active"))
-    assert(wires(1).name.matches("internalFunc_[0-9a-f]+\\$x"))
-    assert(wires(2).name.matches("internalFunc_[0-9a-f]+\\$_ret"))
+    assert(wires(0).name.matches("internalFunc__active"))
+    assert(wires(1).name.matches("internalFunc_x"))
+    assert(wires(2).name.matches("internalFunc__ret"))
 
     assert(top.inits.length == 5)
     val (invalids, others) = top.inits.collectPartition{ case invalid: lir.Invalid => invalid }
@@ -153,33 +149,30 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
     val lir.Reference(inputFuncPred, _) = inputFunc.cond
     val lir.Reference(internalFuncPred, _) = internalFunc.cond
-    assert(inputFuncPred.matches("inputFunc_[0-9a-f]+\\$_active"))
-    assert(internalFuncPred.matches("internalFunc_[0-9a-f]+\\$_active"))
-
-    val internalFuncPattern = "internalFunc_([0-9a-f]+)\\$\\w+".r
-    val internalFuncCode = internalFuncPattern.findAllIn(internalFuncPred).matchData.map{ _.group(1) }.toVector.head
+    assert(inputFuncPred.matches("inputFunc__active"))
+    assert(internalFuncPred.matches("internalFunc__active"))
 
     assert(inputFunc.conseq.length == 5)
     val Vector(paramNode, litNode, activate, assignArg, retConnect) = inputFunc.conseq
     assert(paramNode.isInstanceOf[lir.Node])
-    assert(paramNode.asInstanceOf[lir.Node].src.asInstanceOf[lir.Reference].name.matches("inputFunc_[0-9a-f]+\\$in"))
+    assert(paramNode.asInstanceOf[lir.Node].src.asInstanceOf[lir.Reference].name.matches("inputFunc_in"))
     assert(litNode.asInstanceOf[lir.Node].src.isInstanceOf[lir.Literal])
     val lir.Assign(activeDst: lir.Reference, _) = activate
     val lir.Assign(argDst: lir.Reference, argSrc: lir.Reference) = assignArg
     val lir.Assign(retDst: lir.Reference, retSrc: lir.Reference) = retConnect
 
-    assert(activeDst.name.matches("internalFunc_[0-9a-f]+\\$_active"))
-    assert(argDst.name.matches("internalFunc_[0-9a-f]+\\$x"))
+    assert(activeDst.name.matches("internalFunc__active"))
+    assert(argDst.name.matches("internalFunc_x"))
     assert(argSrc.name == paramNode.asInstanceOf[lir.Node].name)
-    assert(retDst.name.matches("inputFunc_[0-9a-f]+\\$_ret"))
-    assert(retSrc.name.matches("internalFunc_[0-9a-f]+\\$_ret"))
+    assert(retDst.name.matches("inputFunc__ret"))
+    assert(retSrc.name.matches("internalFunc__ret"))
 
     assert(internalFunc.conseq.length == 1)
     val Vector(lir.Assign(dst, src)) = internalFunc.conseq
     val dstRef = dst.asInstanceOf[lir.Reference]
     val srcRef = src.asInstanceOf[lir.Reference]
-    assert(dstRef.name.matches("internalFunc_[0-9a-f]+\\$_ret"))
-    assert(srcRef.name.matches("internalFunc_[0-9a-f]+\\$x"))
+    assert(dstRef.name.matches("internalFunc__ret"))
+    assert(srcRef.name.matches("internalFunc_x"))
 
     assert(internalFunc.alt.isEmpty)
   }
@@ -196,10 +189,9 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(wires.length == 1)
     val wire = wires.head
 
-    val funcCode = extractHashCode("func_([0-9a-f]+)\\$0\\$local_0", wire.name)
-    val localName = concatNames("func", funcCode, "0", "local_0")
-    val inName = concatNames("func", funcCode, "in")
-    val retName = concatNames("func", funcCode, "_ret")
+    val localName = concatNames("func", "0", "local_0")
+    val inName = concatNames("func", "in")
+    val retName = concatNames("func", NameTemplate.ret)
 
     val bit8 = toBackendType(Type.bitTpe(8)(global))(global)
     assert(when.conseq(0) == lir.Wire(localName, bit8))
@@ -212,21 +204,21 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val top = findModule(modules, "Top").get
 
     val wires = top.procedures.collect{ case w: lir.Wire => w }
-    wires.find(_.name == "adding$0$a_0").get
-    wires.find(_.name == "adding$0$b_0").get
+
+    assert(wires.exists(_.name == NameTemplate.concat("adding", "0", "a_0")))
+    assert(wires.exists(_.name == NameTemplate.concat("adding", "0", "b_0")))
   }
 
   test("compile sequential circuit") {
     val (modules, _) = untilThisPhase(Vector("test"), "M", "validSequenceCircuit.tchdl")
     val top = findModule(modules, "M").get
     val name = top.components.collectFirst{ case lir.Reg(name, _, _) => name }.get
-    val hash = extractHashCode("st1_([0-9a-f]+)\\$[_a-zA-Z0-9]+", name)
     val when = top.procedures
       .collect{ case w: lir.When => w }
       .collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("function") => w }
       .get
 
-    def genName(name: String): String = s"st1_$hash$$$name"
+    def genName(name: String): String = s"st1_$name"
 
     val assigns = when.conseq.collect{ case a: lir.PriorityAssign => a }
     val activeAssignOpt = assigns.find(_.dst.asInstanceOf[lir.Reference].name == genName("_active"))
@@ -240,7 +232,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(stateAssignOpt.isDefined)
 
     // check current state check works correctly
-    val st1When = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("st1_[0-9a-f]+\\$_active") => w }.get
+    val st1When = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("st1__active") => w }.get
     val st1Stmts = st1When.conseq
     val st1Nodes = st1Stmts.collect{ case n: lir.Node => n }.collect{ case n @ lir.Node(_, lir.Ops(firrtl.PrimOps.Eq, _, _, _), _) => n }
     val st1LitNodes = st1Stmts.collect{ case n: lir.Node => n }.filter(_.src.isInstanceOf[lir.Literal])
@@ -253,8 +245,8 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(stateCondNames.contains(st1Nodes(1).name))
     val arg00 = st1Nodes(0).src.asInstanceOf[lir.Ops].args(0)
     val arg10 = st1Nodes(1).src.asInstanceOf[lir.Ops].args(0)
-    assert(arg00.asInstanceOf[lir.Reference].name.matches("st1_[0-9a-f]+\\$_state"))
-    assert(arg10.asInstanceOf[lir.Reference].name.matches("st1_[0-9a-f]+\\$_state"))
+    assert(arg00.asInstanceOf[lir.Reference].name.matches("st1__state"))
+    assert(arg10.asInstanceOf[lir.Reference].name.matches("st1__state"))
     val arg01 = st1Nodes(0).src.asInstanceOf[lir.Ops].args(1).asInstanceOf[lir.Reference]
     val arg11 = st1Nodes(1).src.asInstanceOf[lir.Ops].args(1).asInstanceOf[lir.Reference]
     val state0 = st1LitNodes.collectFirst{ case lir.Node(name, lir.Literal(value, _), _) if name == arg01.name => value }.get
@@ -267,24 +259,22 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val (modules, global) = untilThisPhase(Vector("test", "alu"), "Top", "ALUwithoutAlways.tchdl")
     val top = findModule(modules, "Top").get
     val add = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("add") => w }.get
-    val addHash = extractHashCode("add_([0-9a-f]+)\\$_active", add.cond.asInstanceOf[lir.Reference].name)
 
     val alu = top.subs.find(_.name == "alu").get
     val aluMod = findModule(modules, "ALU[Complex[Bit[8]]]").get
     val complex = aluMod.tpe.targs.head
     val aluAdd = aluMod.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("add") => w }.get
     val lir.Reference(aluAddName, _) = aluAdd.cond
-    val aluHash = extractHashCode("add_([0-9a-f]+)\\$_active", aluAddName)
     val assigns = add.conseq.collect{ case a: lir.Assign => a }
 
     // check Port definition
     assert(top.ports.length == 8)
-    assert(top.ports.exists(_.name.matches("add_[0-9a-f]+\\$a")))
-    assert(top.ports.exists(_.name.matches("add_[0-9a-f]+\\$b")))
-    assert(top.ports.exists(_.name.matches("sub_[0-9a-f]+\\$a")))
-    assert(top.ports.exists(_.name.matches("sub_[0-9a-f]+\\$b")))
+    assert(top.ports.exists(_.name.matches("add_a")))
+    assert(top.ports.exists(_.name.matches("add_b")))
+    assert(top.ports.exists(_.name.matches("sub_a")))
+    assert(top.ports.exists(_.name.matches("sub_b")))
 
-    def genName(name: String): String = s"add_$aluHash$$$name"
+    def genName(name: String): String = s"add_$name"
     def subRef(name: String, tpe: BackendType): lir.SubField = lir.SubField(lir.Reference("alu", alu.tpe), genName(name), tpe)
     val activeAssign = assigns.find(_.dst == subRef("_active", BackendType.bitTpe(1)(global))).get
     val aAssign = assigns.find(_.dst == subRef("a", complex)).get
@@ -296,8 +286,8 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val aExpr = add.conseq.collectFirst{ case lir.Node(name, expr, _) if name == aSrc => expr }.get
     val bExpr = add.conseq.collectFirst{ case lir.Node(name, expr, _) if name == bSrc => expr }.get
 
-    assert(aExpr == lir.Reference(s"add_$addHash$$a", complex))
-    assert(bExpr == lir.Reference(s"add_$addHash$$b", complex))
+    assert(aExpr == lir.Reference(s"add_a", complex))
+    assert(bExpr == lir.Reference(s"add_b", complex))
   }
 
   test("module that calls sibling modules") {
@@ -306,11 +296,10 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val sub1 = findModule(modules, "Sub1").get
     val when = sub0.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("callSibling") => w }.get
     val fromSiblingActive = sub1.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("fromSibling") => name }.get
-    val siblingHash = extractHashCode("fromSibling_([0-9a-f]+)\\$_active", fromSiblingActive)
 
     val assigns = when.conseq.collect{ case a: lir.Assign => a }
     val activeAssign = assigns.head
-    assert(activeAssign.dst == lir.Reference(s"s1_fromSibling_$siblingHash$$_active", BackendType.bitTpe(1)(global)))
+    assert(activeAssign.dst == lir.Reference(s"s1_fromSibling__active", BackendType.bitTpe(1)(global)))
     val nodeName = activeAssign.src.asInstanceOf[lir.Reference].name
     val node = when.conseq.collectFirst{ case n @ lir.Node(name, _, _) if nodeName == name => n }.get
     assert(node.src == lir.Literal(1, BackendType.bitTpe(1)(global)))
@@ -323,10 +312,9 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val calledFromSub = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("calledFromSub") => w }.get
     val callParent = sub.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.contains("callParent") => w }.get
     val fromSubName = calledFromSub.cond.asInstanceOf[lir.Reference].name
-    val fromSubHash = extractHashCode("calledFromSub_([0-9a-f]+)\\$_active", fromSubName)
 
     val active = callParent.conseq.collectFirst{ case lir.Assign(lir.Reference(name, _), _) if name.contains("_active") => name }.get
-    assert(active == s"top_calledFromSub_$fromSubHash$$_active")
+    assert(active == s"top_calledFromSub__active")
   }
 
   test("module that is called from two indirect sibling modules") {
@@ -337,15 +325,14 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val sub2 = findModule(modules, "Sub2").get
 
     val callName = sub0.procedures.collectFirst{ case lir.When(ref @ lir.Reference(name, _), _, _) if name.contains("call") => ref }.get
-    val sub0Hash = extractHashCode("call_([0-9a-f]+)\\$_active", callName.name)
     val whens = top.procedures.collect{ case w: lir.When => w }
     val sub1Call = whens.collectFirst{ case w @ lir.When(lir.SubField(lir.Reference("sub1", _), _, _), _, _) => w }.get
     val sub2Call = whens.collectFirst{ case w @ lir.When(lir.SubField(lir.Reference("sub2", _), _, _), _, _) => w }.get
     val sub1sub0Assign = sub1Call.conseq.collectFirst{ case a @ lir.Assign(lir.SubField(_, name, _), _) if name.contains("_active") => a }.get
     val sub2sub0Assign = sub2Call.conseq.collectFirst{ case a @ lir.Assign(lir.SubField(_, name, _), _) if name.contains("_active") => a }.get
 
-    assert(sub1sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call_$sub0Hash$$_active", BackendType.bitTpe(1)(global)))
-    assert(sub2sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call_$sub0Hash$$_active", BackendType.bitTpe(1)(global)))
+    assert(sub1sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call__active", BackendType.bitTpe(1)(global)))
+    assert(sub2sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call__active", BackendType.bitTpe(1)(global)))
   }
 
   test("use enum type as interface's parameter type") {
@@ -365,8 +352,8 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(when.conseq.head.isInstanceOf[lir.Assign])
     val lir.Assign(dst: lir.Reference, src: lir.Reference) = when.conseq.head
 
-    assert(dst.name.matches("f_[0-9a-f]+\\$_ret"), dst.name)
-    assert(src.name.matches("f_[0-9a-f]+\\$opt"), src.name)
+    assert(dst.name.matches("f__ret"), dst.name)
+    assert(src.name.matches("f_opt"), src.name)
   }
 
   test("construct hardware simple enum Option[Bit[2]]") {
@@ -405,9 +392,10 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(elems(7).isInstanceOf[lir.Assign])
     val dstTpe = elems(7).asInstanceOf[lir.Assign].dst.asInstanceOf[lir.SubField].prefix.tpe
     val opt = BackendType(BackendTypeFlag.NoFlag, dstTpe.symbol, dstTpe.hargs, dstTpe.targs)
+    val optData = opt.copy(flag = opt.flag | BackendTypeFlag.EnumData)
     assert(opt.symbol.name == "Opt")
-    val dst = lir.SubField(lir.Reference("_ENUM_0", opt), "_data", opt.copy(flag = opt.flag | BackendTypeFlag.EnumData))
-    val src = lir.Reference("_GEN_2", bit32)
+    val dst = lir.SubField(lir.Reference("_ENUM_0", opt), "_data", optData)
+    val src = lir.Reference("_GEN_2", optData)
     assert(elems(7) == lir.Assign(dst, src))
   }
 
@@ -475,7 +463,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val (modules, _) = untilThisPhase(Vector("test"), "Top", "PatternMatch7.tchdl")
     val top = findModule(modules, "Top").get
     val whens = top.procedures.collect{ case w: lir.When => w }
-    val when = whens.find(_.cond.asInstanceOf[lir.Reference].name.matches("function1_[0-9a-f]+\\$_active")).get
+    val when = whens.find(_.cond.asInstanceOf[lir.Reference].name.matches("function1__active")).get
 
     val extWireOpt = when.conseq.collectFirst{ case a @ lir.Node("_EXTRACT_2", _, _) => a }
     assert(extWireOpt.isDefined)
@@ -538,8 +526,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val regs = findAllComponents[lir.Reg](top.components ++ top.inits ++ top.procedures)
 
     val execActive = top.components.collectFirst{ case r @ lir.Reg(name, _, _) if name.contains("exec") && name.contains("_active") => r }.get
-    val execHash = extractHashCode("exec_([0-9a-f]+)\\$_active", execActive.name)
-    def execName(name: String): String = s"exec_$execHash$$$name"
+    def execName(name: String): String = s"exec_$name"
 
     // node node_name <= source_wire_name
     //      ^^^^^^^^^    ^^^^^^^^^^^^^^^^
@@ -735,7 +722,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     test("function1", "vec") { assign =>
       assert(assign.src.isInstanceOf[lir.Reference])
       val refName = assign.src.asInstanceOf[lir.Reference].name
-      assert(refName.matches("function1_[0-9a-f]+\\$vec"))
+      assert(refName.matches("function1_vec"))
     }
 
   }
@@ -743,15 +730,15 @@ class BackendLIRGenTest extends TchdlFunSuite {
   test("use vector update") {
     val (modules, global) = untilThisPhase(Vector("test"), "Top", "useVectorUpdate.tchdl")
     val top = findModule(modules, "Top").get
-    val updateReg = top.procedures.collectFirst{ case w @ lir.When(ref: lir.Reference, _, _) if ref.name.matches("updateReg_[0-9a-f]+\\$_active") => w }.get
-    val updateFirstReg = top.procedures.collectFirst{ case w @ lir.When(ref: lir.Reference, _, _) if ref.name.matches("updateFirstReg_[0-9a-f]+\\$_active") => w }.get
+    val updateReg = top.procedures.collectFirst{ case w @ lir.When(ref: lir.Reference, _, _) if ref.name.matches("updateReg__active") => w }.get
+    val updateFirstReg = top.procedures.collectFirst{ case w @ lir.When(ref: lir.Reference, _, _) if ref.name.matches("updateFirstReg__active") => w }.get
 
     {
       val nodes = findAllComponents[lir.Node](updateReg.conseq)
       val assigns = findAllComponents[lir.Assign](updateReg.conseq)
       val refRegs = nodes.find(_.src.asInstanceOf[lir.Reference].name == "regs").get
-      val refIdx = nodes.find(_.src.asInstanceOf[lir.Reference].name.matches("updateReg_[0-9a-f]+\\$idx")).get
-      val refElem = nodes.find(_.src.asInstanceOf[lir.Reference].name.matches("updateReg_[0-9a-f]+\\$elem")).get
+      val refIdx = nodes.find(_.src.asInstanceOf[lir.Reference].name.matches("updateReg_idx")).get
+      val refElem = nodes.find(_.src.asInstanceOf[lir.Reference].name.matches("updateReg_elem")).get
 
       val assignUpdate = assigns.collectFirst { case a @ lir.Assign(lir.Reference("_VEC_UPDATED_0", _), _) => a }.get
       val assignAccess = assigns.find(_.dst.isInstanceOf[lir.SubAccess]).get
@@ -772,7 +759,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val bit1 = BackendType.boolTpe(global)
     val bool = BackendType(BackendTypeFlag.NoFlag, Symbol.bool(global), Vector.empty, Vector.empty)
     val nodes = findAllComponents[lir.Node](f.conseq)
-    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_[0-9a-f]+\\$a") => n }.get
+    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_a") => n }.get
     val lit1Node = nodes.collectFirst{ case n @ lir.Node(_, lir.Literal(v, _), _) if v == 1 => n }.get
     val lit0Node = nodes.collectFirst{ case n @ lir.Node(_, lir.Literal(v, _), _) if v == 0 => n }.get
     val eqNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Ops, _) => n }
@@ -794,7 +781,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val int = BackendType.intTpe(global)
     val bool = BackendType.boolTpe(global)
     val nodes = f.conseq.collect{ case n: lir.Node => n }
-    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_[0-9a-f]+\\$a") => n }.get
+    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_a") => n }.get
     val litNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Literal, _) => n }
     val eqNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Ops, _) => n }
 
@@ -825,7 +812,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val bit = BackendType.bitTpe(2)(global)
     val bool = BackendType.boolTpe(global)
     val nodes = f.conseq.collect{ case n: lir.Node => n }
-    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_[0-9a-f]+\\$a") => n }.get
+    val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_a") => n }.get
     val litNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Literal, _) => n }
     val eqNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Ops, _) => n }
 
@@ -868,9 +855,9 @@ class BackendLIRGenTest extends TchdlFunSuite {
   test("use cast method to cast some types into Bit[8]") {
     val (modules, global) = untilThisPhase(Vector("test"), "Top", "useFroms.tchdl")
     val top = findModule(modules, "Top").get
-    val f0 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function0_[0-9a-f]+\\$_active") => w }.get
-    val f1 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function1_[0-9a-f]+\\$_active") => w }.get
-    val f2 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function2_[0-9a-f]+\\$_active") => w }.get
+    val f0 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function0__active") => w }.get
+    val f1 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function1__active") => w }.get
+    val f2 = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("function2__active") => w }.get
     val bit8 = BackendType.bitTpe(8)(global)
 
     {
@@ -880,7 +867,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
       assert(ops.op == firrtl.PrimOps.Pad)
       assert(assign.dst.isInstanceOf[lir.Reference])
-      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function0_[0-9a-f]+\\$_ret"))
+      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function0__ret"))
       assert(assign.src == lir.Reference(opNode.name, bit8))
     }
 
@@ -891,7 +878,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
       assert(ops.op == firrtl.PrimOps.Bits)
       assert(assign.dst.isInstanceOf[lir.Reference])
-      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function1_[0-9a-f]+\\$_ret"))
+      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function1__ret"))
       assert(assign.src == lir.Reference(opNode.name, bit8))
     }
 
@@ -902,7 +889,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
       assert(ops.op == firrtl.PrimOps.Pad)
       assert(assign.dst.isInstanceOf[lir.Reference])
-      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function2_[0-9a-f]+\\$_ret"))
+      assert(assign.dst.asInstanceOf[lir.Reference].name.matches("function2__ret"))
       assert(assign.src == lir.Reference(opNode.name, bit8))
     }
   }
@@ -915,17 +902,16 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
     val function = top.procedures.collectFirst{ case w: lir.When => w }.get
     val inc = sub.procedures.collectFirst{ case w: lir.When => w }.get
-    val incHash = extractHashCode("TopInterface__inc_([0-9a-f]+)\\$_active", inc.cond.asInstanceOf[lir.Reference].name)
-    assert(inc.cond.asInstanceOf[lir.Reference].name == s"TopInterface__inc_$incHash$$_active")
+    assert(inc.cond.asInstanceOf[lir.Reference].name == s"TopInterface__inc__active")
 
     val addNode = inc.conseq.collectFirst{ case n @ lir.Node(_, lir.Ops(firrtl.PrimOps.Add, _, _, _), _) => n }.get
     val assignInc = inc.conseq.collectFirst{ case a: lir.Assign => a }.get
-    assert(assignInc.dst == lir.Reference(s"TopInterface__inc_$incHash$$_ret", addNode.tpe))
+    assert(assignInc.dst == lir.Reference(s"TopInterface__inc__ret", addNode.tpe))
     assert(assignInc.src == lir.Reference(addNode.name, addNode.tpe))
 
     val bool = BackendType.boolTpe(global)
     val assignFunc = function.conseq.collectFirst{ case a @ lir.Assign(lir.SubField(_, field, _), _) if field.contains("_active") => a }.get
-    assert(assignFunc.dst == lir.SubField(lir.Reference("sub", sub.tpe), s"TopInterface__inc_$incHash$$_active", bool))
+    assert(assignFunc.dst == lir.SubField(lir.Reference("sub", sub.tpe), s"TopInterface__inc__active", bool))
     assert(assignFunc.src.tpe == bool)
   }
 
@@ -952,13 +938,13 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
     assert(node.src.isInstanceOf[lir.Reference])
     val ref = node.src.asInstanceOf[lir.Reference]
-    assert(ref.name.matches("exec_[0-9a-f]+\\$0\\$pointer_[0-9]+"), ref.name)
+    assert(ref.name.matches("exec_0_pointer_[0-9]+"), ref.name)
 
     val next = whens(2)
     val ret = next.conseq.collectFirst{ case r: lir.Return => r }.get
     val srcName = ret.expr.asInstanceOf[lir.Reference].name
     assert(ret.path.name.get == "multCycle")
-    assert(srcName.matches("multCycle_[0-9a-f]+_next\\$result"), srcName)
+    assert(srcName.matches("multCycle_next_result"), srcName)
 
     assert(rets.length == 2)
     assert(rets(1) eq ret)
@@ -975,8 +961,8 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val top = modules.head
     assert(top.mems.length == 1)
 
-    val reading = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("reading_[0-9a-f]+\\$_active") => w }.get
-    val writing = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("writing_[0-9a-f]+\\$_active") => w }.get
+    val reading = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("reading__active") => w }.get
+    val writing = top.procedures.collectFirst{ case w @ lir.When(lir.Reference(name, _), _, _) if name.matches("writing__active") => w }.get
     val memReads = reading.conseq.collect{ case m: lir.MemRead => m }
     val memWrites = writing.conseq.collect{ case m: lir.MemWrite => m }
 
@@ -1006,10 +992,10 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
     assert(memRead0.addr.isInstanceOf[lir.Reference])
     val addrNode0 = rNodes.find(_.name == memRead0.addr.asInstanceOf[lir.Reference].name).get
-    assert(addrNode0.src.asInstanceOf[lir.Reference].name.matches("reading_[0-9a-f]+\\$addr"))
+    assert(addrNode0.src.asInstanceOf[lir.Reference].name.matches("reading_addr"))
     assert(memWrite.addr.isInstanceOf[lir.Reference])
     val addrNode1 = wNodes.find(_.name == memWrite.addr.asInstanceOf[lir.Reference].name).get
-    assert(addrNode1.src.asInstanceOf[lir.Reference].name.matches("writing_[0-9a-f]+\\$addr"))
+    assert(addrNode1.src.asInstanceOf[lir.Reference].name.matches("writing_addr"))
   }
 
   test("if expr multiple same name local variable") {
@@ -1020,7 +1006,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val wires = findAllComponents[lir.Wire](fStmts)
 
     val values = wires.filter(_.name.contains("function"))
-    assert(values.forall(_.name.matches("function_[0-9a-f]+[\\$[0-9]+]+value_0")))
+    assert(values.forall(_.name.matches("function_(\\d_)+value_0")))
   }
 
   test("run simple module but use same names at parameter and ident pattern in pattern matching") {
@@ -1043,8 +1029,8 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val second = extracts.tail.head
 
     assert(first.history.length == 1)
-    assert(first.history.head.flag.hasFlag(BackendTypeFlag.EnumFlag))
+    assert(first.history.head.flag.hasFlag(BackendTypeFlag.EnumData))
     assert(second.history.length == 2)
-    assert(second.history.head.flag.hasFlag(BackendTypeFlag.EnumData))
+    assert(second.history.head.flag.hasFlag(BackendTypeFlag.EnumFlag))
   }
 }

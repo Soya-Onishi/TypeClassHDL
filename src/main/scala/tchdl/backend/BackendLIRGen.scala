@@ -1429,7 +1429,7 @@ object BackendLIRGen {
         val target: (String, BackendType) => lir.Ref = refer match {
           case ModuleLocation.This => throw new ImplementationErrorException("refer this module as sibling module")
           case ModuleLocation.Sub(refer) => (name: String, tpe: BackendType) => lir.SubField(refer, name, tpe)
-          case ModuleLocation.Upper(refer) => (name: String, tpe: BackendType) => lir.Reference(refer + "$" + name, tpe)
+          case ModuleLocation.Upper(refer) => (name: String, tpe: BackendType) => lir.Reference(NameTemplate.concat(refer, name), tpe)
         }
 
         val (invalid, stmtss) = siblings.map(buildIndirectAccessCond(_, fromName)(target)).unzip

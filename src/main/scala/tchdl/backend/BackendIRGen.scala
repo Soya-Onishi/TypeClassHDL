@@ -149,7 +149,7 @@ object BackendIRGen {
         tpBounds.toMap
       }
 
-      val containerHPs = hpTable.map { case (hp, elem) => hp.path.rootPath.last + "$" + hp.path.innerPath.mkString("$") -> elem }
+      val containerHPs = hpTable.map { case (hp, elem) => NameTemplate.concat(hp.path.rootPath.last, hp.path.innerPath.mkString(NameTemplate.concatCh)) -> elem }
       val moduleBody = ModuleContainerBody.empty(containerHPs)
       val implTree = findImplClassTree(impl.symbol.asImplementSymbol, global).getOrElse(throw new ImplementationErrorException("impl tree should be found"))
 
@@ -222,13 +222,13 @@ object BackendIRGen {
   def buildMethod(methodDef: frontend.MethodDef, label: MethodLabel)(implicit ctx: BackendContext, global: GlobalData): (MethodContainer, Set[BackendLabel]) = {
     val methodName = label.toString
 
-    val hparamNames = methodDef.hp.map(hp => methodName + "$" + hp.name)
+    val hparamNames = methodDef.hp.map(hp => NameTemplate.concat(methodName, hp.name))
     val hparamTpes = methodDef.hp.view.map(_.symbol.tpe.asRefType).map(toBackendType(_, label.hps, label.tps))
     val hparams = ListMap.from(hparamNames zip hparamTpes)
     val hparamSymbols = methodDef.hp.map(_.symbol.asHardwareParamSymbol)
     (hparamSymbols zip hparamNames).foreach { case (symbol, name) => ctx.append(symbol, name) }
 
-    val paramNames = methodDef.params.map(param => methodName + "$" + param.name)
+    val paramNames = methodDef.params.map(param => NameTemplate.concat(methodName, param.name))
     val paramTpes = methodDef.params.map(_.symbol.tpe.asRefType).map(toBackendType(_, label.hps, label.tps))
     val params = ListMap.from(paramNames zip paramTpes)
     val paramSymbols = methodDef.params.map(_.symbol.asVariableSymbol)
@@ -243,7 +243,7 @@ object BackendIRGen {
   }
 
   def buildStage(stageDef: frontend.StageDef, stageLabel: StageLabel)(implicit ctx: BackendContext, global: GlobalData): (StageContainer, Set[BackendLabel]) = {
-    val paramNames = stageDef.params.map(param => ctx.label.toString + "$" + param.name)
+    val paramNames = stageDef.params.map(param => NameTemplate.concat(ctx.label.toString, param.name))
     val paramTpes = stageDef.params.view.map(_.symbol.tpe.asRefType).map(toBackendType(_, ctx.hpTable, ctx.tpTable))
     val params = ListMap.from(paramNames zip paramTpes)
     val paramSymbols = stageDef.params.map(_.symbol.asVariableSymbol)
@@ -283,7 +283,7 @@ object BackendIRGen {
   }
 
   def buildState(stateDef: frontend.StateDef, label: StateLabel)(implicit ctx: BackendContext, global: GlobalData): (StateContainer, Set[BackendLabel]) = {
-    val paramNames = stateDef.params.map(_.name).map(param => label.toString + "$" + param)
+    val paramNames = stateDef.params.map(_.name).map(param => NameTemplate.concat(label.toString, param))
     val paramTpes = stateDef.params.map(_.symbol.tpe.asRefType).map(toBackendType(_, ctx.hpTable, ctx.tpTable))
     val paramSymbols = stateDef.params.map(_.symbol.asTermSymbol)
     (paramSymbols zip paramNames).foreach { case (symbol, name) => ctx.append(symbol, name) }
@@ -315,7 +315,7 @@ object BackendIRGen {
   }
 
   def buildProcBlock(blk: frontend.ProcBlock, label: ProcBlockLabel)(implicit ctx: BackendContext, global: GlobalData): (ProcBlockContainer, Set[BackendLabel]) = {
-    val paramNames = blk.params.map(_.name).map(param => label.toString + "$" + param)
+    val paramNames = blk.params.map(_.name).map(param => NameTemplate.concat(label.toString, param))
     val paramTpes = blk.params.map(_.symbol.tpe.asRefType).map(toBackendType(_, ctx.hpTable, ctx.tpTable))
     val paramSymbols = blk.params.map(_.symbol.asTermSymbol)
     val params = ListMap.from(paramNames zip paramTpes)
@@ -877,7 +877,7 @@ object BackendIRGen {
 
     def buildPatternMatching(pattern: frontend.MatchPattern): backend.MatchPattern = pattern match {
       case frontend.IdentPattern(ident) =>
-        val name = ctx.label.toString + "$" + ident.symbol.path.innerPath.mkString("$")
+        val name = NameTemplate.concat(ctx.label.toString, ident.symbol.path.innerPath.mkString(NameTemplate.concatCh))
         ctx.append(ident.symbol.asTermSymbol, name)
 
         val tpe = toBackendType(ident.tpe.asRefType, ctx.hpTable, ctx.tpTable)
@@ -1142,7 +1142,7 @@ object BackendIRGen {
 
         BuildResult(nodes :+ lastNode, None, labels)
       case vdef: frontend.ValDef =>
-        val name = ctx.label.toString + "$" + vdef.symbol.path.innerPath.mkString("$")
+        val name = NameTemplate.concat(ctx.label.toString, vdef.symbol.path.innerPath.mkString(NameTemplate.concatCh))
         ctx.append(vdef.symbol.asTermSymbol, name)
 
         val refTpe = vdef.symbol.tpe.asRefType

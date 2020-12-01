@@ -16,11 +16,6 @@ import org.scalatest.tags.Slow
 
 @Slow
 class SimulationTest extends TchdlFunSuite {
-  def extractHashCode(regex: String, from: String): String = {
-    val r = regex.r
-    r.findAllIn(from).matchData.map{ _.group(1) }.toVector.head
-  }
-
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
@@ -93,46 +88,19 @@ class SimulationTest extends TchdlFunSuite {
     else fail(tester.reportString)
   }
 
-  private def getNameGenFromMethod(module: fir.Module, methodName: String): String => String = {
-    val stmts = module.body.asInstanceOf[fir.Block].stmts
-    val conds = stmts.collect{ case c: fir.Conditionally => c }
-    val predRefs = conds.map(_.pred).collect{ case r: fir.Reference => r }
-
-    val hashCode = predRefs.find(_.name.matches(s"${methodName}_[0-9a-f]+\\$$_active"))
-      .map(_.name)
-      .map(name => extractHashCode(s"${methodName}_([0-9a-f]+)\\$$_active", name))
-      .get
-
-    (name: String) => s"${methodName}_$hashCode$$$name"
-  }
-
-  private def getNameGenFromProc(module: fir.Module, proc: String, block: String): String => String = {
-    val stmts = module.body.asInstanceOf[fir.Block].stmts
-    val conds = stmts.collect{ case c: fir.Conditionally => c }
-    val predRefs = conds.map(_.pred).collect{ case r: fir.Reference => r }
-
-    val hashCode = predRefs.find(_.name.matches(s"${proc}_[0-9a-f]+_$block\\$$_active"))
-      .map(_.name)
-      .map(name => extractHashCode(s"${proc}_([0-9a-f]+)_$block\\$$_active", name))
-      .get
-
-    (name: String) => s"${proc}_${hashCode}_$block$$$name"
-  }
-
   test("very simple hardware") {
     val circuit = untilThisPhase(Vector("test"), "Top[4]", "OnlyTopThrowWire.tchdl")
     val top = circuit.modules.head.asInstanceOf[fir.Module]
     val topStmts = top.body.asInstanceOf[fir.Block].stmts
     val topPred = topStmts.collectFirst{ case fir.Conditionally(_, pred: fir.Reference, _, _) => pred }.get
-    val hashCode = extractHashCode("function_([0-9a-f]+)\\$_active", topPred.name)
 
     runSim(circuit) { tester =>
       for {
         v <- 0 to 15
       } yield {
-        tester.poke(s"function_$hashCode$$_active", 1)
-        tester.poke(s"function_$hashCode$$in", v)
-        tester.expect(s"function_$hashCode$$_ret", v)
+        tester.poke(s"function__active", 1)
+        tester.poke(s"function_in", v)
+        tester.expect(s"function__ret", v)
       }
     }
   }
@@ -142,15 +110,14 @@ class SimulationTest extends TchdlFunSuite {
     val top = circuit.modules.head.asInstanceOf[fir.Module]
     val topStmts = top.body.asInstanceOf[fir.Block].stmts
     val pred = topStmts.collectFirst{ case fir.Conditionally(_, pred: fir.Reference, _, _) => pred }.get
-    val hashCode = extractHashCode("inputFunc_([0-9a-f]+)\\$_active", pred.name)
 
     runSim(circuit) { tester =>
       for {
         v <- 0 to 255
       } yield {
-        tester.poke(s"inputFunc_$hashCode$$_active", 1)
-        tester.poke(s"inputFunc_$hashCode$$in", v)
-        tester.expect(s"inputFunc_$hashCode$$_ret", (v + 1) % 256)
+        tester.poke(s"inputFunc__active", 1)
+        tester.poke(s"inputFunc_in", v)
+        tester.expect(s"inputFunc__ret", (v + 1) % 256)
       }
     }
   }
@@ -158,30 +125,29 @@ class SimulationTest extends TchdlFunSuite {
   test("use local variable in Top module") {
     val circuit = untilThisPhase(Vector("test"), "Top", "UseLocalVariableAdd.tchdl")
     val module = circuit.modules.head.asInstanceOf[fir.Module]
-    val name = getNameGenFromMethod(module, "func")
 
     runSim(circuit) { tester =>
       for {
         v <- 0 to 255
       } yield {
-        tester.poke(name("_active"), 1)
-        tester.poke(name("in"), v)
-        tester.expect(name("_ret"), (v + 1) % 256)
+        tester.poke("func__active", 1)
+        tester.poke("func_in", v)
+        tester.expect("func__ret", (v + 1) % 256)
       }
     }
   }
 
   test("run ALU for complex value") {
     val circuit = untilThisPhase(Vector("test", "alu"), "Top", "ALUwithoutAlways.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val add = getNameGenFromMethod(module, "add")
-    val sub = getNameGenFromMethod(module, "sub")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val add = (n: String) => s"add_$n"
+    val sub = (n: String) => s"sub_$n"
 
     info(circuit.serialize)
 
     runSim(circuit) { tester =>
-      tester.poke(add("_active"), 1)
-      tester.poke(sub("_active"), 1)
+      tester.poke("add__active", 1)
+      tester.poke("sub__active", 1)
 
       for {
         aReal <- 0 to 16
@@ -210,7 +176,7 @@ class SimulationTest extends TchdlFunSuite {
   test("stage multiple add") {
     val circuit = untilThisPhase(Vector("test"), "Top", "stageMultAdd.tchdl")
     val top = circuit.modules.head.asInstanceOf[fir.Module]
-    val exec = getNameGenFromMethod(top, "exec")
+    val exec = (n: String) => s"exec_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 
@@ -260,8 +226,8 @@ class SimulationTest extends TchdlFunSuite {
 
   test("use sibling feature") {
     val circuit = untilThisPhase(Vector("test"), "Top", "useSiblingToAdd.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val caller = getNameGenFromMethod(module, "caller")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val caller = (n: String) => s"caller_$n"
     val rand = new Random(0)
 
     info(circuit.serialize)
@@ -286,8 +252,8 @@ class SimulationTest extends TchdlFunSuite {
 
   test("use parent feature") {
     val circuit = untilThisPhase(Vector("test"), "Top", "useParentToAdd.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val exec = getNameGenFromMethod(module, "execute")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val exec = (n: String) => s"execute_$n"
     val rand = new Random(0)
 
     runSim(circuit) { tester =>
@@ -313,8 +279,8 @@ class SimulationTest extends TchdlFunSuite {
 
   test("use enum and pattern matching") {
     val circuit = untilThisPhase(Vector("test"), "Top", "useEnumMatching.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val exec = getNameGenFromMethod(module, "execute")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val exec = (n: String) => s"execute_$n"
     val rand = new Random(0)
 
     info(circuit.serialize)
@@ -357,11 +323,11 @@ class SimulationTest extends TchdlFunSuite {
 
   test("use simple proc and deref in stage block") {
     val circuit = untilThisPhase(Vector("test"), "Top", "useProcAndDeref.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val exec = getNameGenFromMethod(module, "execute")
-    val wait = getNameGenFromMethod(module, "waiting")
-    val procFirst = getNameGenFromProc(module, "convolution", "first")
-    val procSecond = getNameGenFromProc(module, "convolution", "second")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val exec = (n: String) => s"execute_$n"
+    val wait = (n: String) => s"waiting_$n"
+    val procFirst = (n: String) => s"convolution_first_$n"
+    val procSecond = (n: String) => s"convolution_second_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(8)
 
@@ -393,8 +359,8 @@ class SimulationTest extends TchdlFunSuite {
 
   test("use proc via sibling module") {
     val circuit = untilThisPhase(Vector("test"), "Top", "useProcViaSibling.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val call = getNameGenFromMethod(module, "caller")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val call = (n: String) => s"caller_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 
@@ -421,8 +387,8 @@ class SimulationTest extends TchdlFunSuite {
 
   test("use proc via parent module") {
     val circuit = untilThisPhase(Vector("test"), "Top", "useProcViaParent.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val call = getNameGenFromMethod(module, "caller")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val call = (n: String) => s"caller_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 
@@ -449,8 +415,8 @@ class SimulationTest extends TchdlFunSuite {
 
   test("construct complex struct") {
     val circuit = untilThisPhase(Vector("test"), "Top", "constructStruct.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val const = getNameGenFromMethod(module, "construct")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val const = (n: String) => s"construct_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 
@@ -471,8 +437,8 @@ class SimulationTest extends TchdlFunSuite {
 
   test("simulate if expression") {
     val circuit = untilThisPhase(Vector("test"), "Top", "runIfExpr.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val select = getNameGenFromMethod(module, "select")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val select = (n: String) => s"select_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 
@@ -496,10 +462,10 @@ class SimulationTest extends TchdlFunSuite {
 
   test("relay another stage") {
     val circuit = untilThisPhase(Vector("test"), "Top", "relayAnotherStage.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val exec = getNameGenFromMethod(module, "execute")
-    val st0 = getNameGenFromMethod(module, "st0")
-    val st1 = getNameGenFromMethod(module, "st1")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val exec = (n: String) => s"execute_$n"
+    val st0 = (n: String) => s"st0_$n"
+    val st1 = (n: String) => s"st1_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 
@@ -531,9 +497,9 @@ class SimulationTest extends TchdlFunSuite {
 
   test("cast type to use specific type class method") {
     val circuit = untilThisPhase(Vector("test"), "Top", "castTypeToTC.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val typeID = getNameGenFromMethod(module, "callTypeID")
-    val rawID =  getNameGenFromMethod(module, "callRawID")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val typeID = (n: String) => s"callTypeID_$n"
+    val rawID = (n: String) => s"callRawID_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 
@@ -557,9 +523,9 @@ class SimulationTest extends TchdlFunSuite {
 
   test("procedure proc example code") {
     val circuit = untilThisPhase(Vector("test"), "Module", "TchdlProsProc.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val executeID = getNameGenFromMethod(module, "execute")
-    val receiveID = getNameGenFromMethod(module, "receiver")
+    val module = circuit.modules.find(_.name == "Module_0").get.asInstanceOf[fir.Module]
+    val executeID = (n: String) => s"execute_$n"
+    val receiveID = (n: String) => s"receiver_$n"
     val rand = new Random(0)
     def nextBool: Boolean = rand.nextBoolean()
     def nextBit8: Int = rand.nextInt(255)
@@ -632,9 +598,9 @@ class SimulationTest extends TchdlFunSuite {
 
   test("run pattern matching sample") {
     val circuit = untilThisPhase(Vector("test"), "Top", "patternMatchSample.tchdl")
-    val module = circuit.modules.find(_.name == "Top").get.asInstanceOf[fir.Module]
-    val initID = getNameGenFromMethod(module, "initRegister")
-    val execID = getNameGenFromMethod(module, "execute")
+    val module = circuit.modules.find(_.name == "Top_0").get.asInstanceOf[fir.Module]
+    val initID = (n: String) => s"initRegister_$n"
+    val execID = (n: String) => s"execute_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(255)
 

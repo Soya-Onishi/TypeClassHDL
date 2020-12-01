@@ -83,8 +83,8 @@ class PointerConnectorTest extends TchdlFunSuite {
     val dest = connect.dest.map(_.component.asInstanceOf[HierarchyComponent.Deref].ref)
     val derefNode = dest.map(d => nodes.find(_.name == d.name).get)
     val nodeRef = derefNode.map(_.src.asInstanceOf[lir.Reference])
-    assert(nodeRef(0).name.matches("exec0_[0-9a-f]+\\$0\\$pointer0_0"), nodeRef(0).name)
-    assert(nodeRef(1).name.matches("exec1_[0-9a-f]+\\$0\\$pointer1_0"), nodeRef(1).name)
+    assert(nodeRef(0).name.matches("exec0_0_pointer0_0"), nodeRef(0).name)
+    assert(nodeRef(1).name.matches("exec1_0_pointer1_0"), nodeRef(1).name)
   }
 
   test("two proc and one deref") {
@@ -102,7 +102,7 @@ class PointerConnectorTest extends TchdlFunSuite {
     val ref = oneProc.dest.head.component.asInstanceOf[HierarchyComponent.Deref].ref
     val pointerNode = nodes.find(_.name == ref.name).get
     assert(pointerNode.src.isInstanceOf[lir.Reference])
-    assert(pointerNode.src.asInstanceOf[lir.Reference].name.matches("exec_[0-9a-f]+\\$0\\$pointer_0"))
+    assert(pointerNode.src.asInstanceOf[lir.Reference].name.matches("exec_0_pointer_0"))
   }
 
   test("use deref from submodule pointer") {
@@ -123,7 +123,7 @@ class PointerConnectorTest extends TchdlFunSuite {
     val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
     val derefNode = node.find(_.name == derefRef.name).get
     val srcName = derefNode.src.asInstanceOf[lir.Reference].name
-    assert(srcName.matches("function_[0-9a-f]+\\$0\\$pointer_0"), srcName)
+    assert(srcName.matches("function_0_pointer_0"), srcName)
   }
 
   test("use deref from parent pointer") {
@@ -145,7 +145,7 @@ class PointerConnectorTest extends TchdlFunSuite {
     val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
     val node = nodes.find(_.name == derefRef.name).get
     val refName = node.src.asInstanceOf[lir.Reference].name
-    assert(refName.matches("function_[0-9a-f]+\\$pointer"))
+    assert(refName.matches("function_pointer"))
   }
 
   test("use deref from sibling pointer") {
@@ -168,7 +168,7 @@ class PointerConnectorTest extends TchdlFunSuite {
     val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
     val node = nodes.find(_.name == derefRef.name).get
     val refName = node.src.asInstanceOf[lir.Reference].name
-    assert(refName.matches("function_[0-9a-f]+\\$0\\$pointer_0"))
+    assert(refName.matches("function_0_pointer_0"))
   }
 
   test("use deref from indirect parent pointer") {
@@ -191,7 +191,7 @@ class PointerConnectorTest extends TchdlFunSuite {
     val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
     val node = nodes.find(_.name == derefRef.name).get
     val refName = node.src.asInstanceOf[lir.Reference].name
-    assert(refName.matches("caller_[0-9a-f]+\\$0\\$pointer_0"))
+    assert(refName.matches("caller_0_pointer_0"))
   }
 
   test("use deref via stage register") {
@@ -213,7 +213,7 @@ class PointerConnectorTest extends TchdlFunSuite {
     val derefRef = dst.component.asInstanceOf[HierarchyComponent.Deref].ref
     val node = nodes.find(_.name == derefRef.name).get
     val refName = node.src.asInstanceOf[lir.Reference].name
-    assert(refName.matches("receiver_[0-9a-f]+\\$pointer"))
+    assert(refName.matches("receiver_pointer"))
   }
 
   test("use memory read") {
@@ -229,7 +229,7 @@ class PointerConnectorTest extends TchdlFunSuite {
     val nodes = findAllComponents[lir.Node](modules.head.procedures)
     val node = nodes.find(_.name == nodeName).get
     assert(node.src.isInstanceOf[lir.Reference])
-    assert(node.src.asInstanceOf[lir.Reference].name.matches("read_[0-9a-f]+\\$0\\$dataPointer_0"))
+    assert(node.src.asInstanceOf[lir.Reference].name.matches("read_0_dataPointer_0"))
   }
 
   test("use simple proc and deref in stage block") {

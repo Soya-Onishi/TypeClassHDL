@@ -120,8 +120,8 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, Some(topTpe), ListMap.empty, ListMap.empty), subTpe)))
     val Temp(_, Ident(Term.Variable(functionA, _), _)) = function.code(2)
     val Temp(_, Ident(Term.Variable(functionB, _), _)) = function.code(3)
-    assert(functionA.matches("function_[0-9a-f]+\\$a"))
-    assert(functionB.matches("function_[0-9a-f]+\\$b"))
+    assert(functionA.matches("function_a"))
+    assert(functionB.matches("function_b"))
 
     assert(function.ret == CallInterface(add.label, Term.Temp(4, subTpe), Vector(Term.Temp(1, bit4), Term.Temp(2, bit4)), bit4))
   }
@@ -223,8 +223,8 @@ class BackendIRGenTest extends TchdlFunSuite {
     val (st1AName, _) = st1.params.head
     val (st1BName, _) = st1.params.tail.head
 
-    assert(st1AName.matches("st1_[0-9a-f]+\\$a"), s"actual[$st1AName]")
-    assert(st1BName.matches("st1_[0-9a-f]+\\$b"), s"actual[$st1BName]")
+    assert(st1AName.matches("st1_a"), s"actual[$st1AName]")
+    assert(st1BName.matches("st1_b"), s"actual[$st1BName]")
   }
 
   test("local variable also has hashcode") {
@@ -233,7 +233,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val body = modules.head.bodies.head
     val local = body.interfaces.head.code.collectFirst{ case Variable(name, _, _) => name }.get
 
-    assert(local.matches("func_[0-9a-f]+\\$0\\$local"))
+    assert(local.matches("func_0_local"))
   }
 
   test("construct enum value") {
@@ -366,19 +366,19 @@ class BackendIRGenTest extends TchdlFunSuite {
     val src = input.code.collectFirst{ case Temp(id, expr) if id == deref.id.id => expr}.get
 
     assert(src.isInstanceOf[Ident])
-    assert(src.asInstanceOf[Ident].id.name.matches("exec_[0-9a-f]+\\$0\\$pointer"))
+    assert(src.asInstanceOf[Ident].id.name.matches("exec_0_pointer"))
   }
 
   test("use simple if expression") {
     val (modules, _, _) = untilThisPhase(Vector("test"), "Top", "useIfExpr.tchdl")
     val module = modules.head
     val interface = module.bodies.head.interfaces.head
-    assert(interface.activeName.matches("function_[0-9a-f]+\\$_active"))
+    assert(interface.activeName.matches("function__active"))
     val ifExpr = interface.ret.asInstanceOf[IfExpr]
     val flag = interface.code.collectFirst{ case Temp(id, expr) if id == ifExpr.cond.id => expr }.get
 
     assert(flag.isInstanceOf[Ident])
     val flagIdent = flag.asInstanceOf[Ident]
-    assert(flagIdent.id.name.matches("function_[0-9a-f]+\\$flag"))
+    assert(flagIdent.id.name.matches("function_flag"))
   }
 }

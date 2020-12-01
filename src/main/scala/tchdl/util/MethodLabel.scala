@@ -31,8 +31,8 @@ case class MethodLabel(
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
-  def activeName: String = toString + "$_active"
-  def retName: String = toString + "$_ret"
+  def activeName: String = NameTemplate.concat(this.toString, NameTemplate.active)
+  def retName: String    = NameTemplate.concat(this.toString, NameTemplate.ret)
 
   override type SymbolType = Symbol.MethodSymbol
 
@@ -40,7 +40,7 @@ case class MethodLabel(
     val interface = this.interface.map(_.symbol.name + "__").getOrElse("")
     val name = symbol.name
 
-    interface + name + "_" + hashCode().toHexString
+    interface + name
   }
 }
 
@@ -50,12 +50,12 @@ case class StageLabel(
   hps: ListMap[Symbol.HardwareParamSymbol, HPElem],
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
-  def activeName: String = toString + "$_active"
-  def retName: String = toString + "$_ret"
-  def stateName: String = toString + "$_state"
+  def activeName: String = NameTemplate.concat(this.toString, NameTemplate.active)
+  def retName: String    = NameTemplate.concat(this.toString, NameTemplate.ret)
+  def stateName: String  = NameTemplate.concat(this.toString, NameTemplate.state)
 
   override type SymbolType = Symbol.StageSymbol
-  override lazy val toString: String = symbol.name + "_" + hashCode().toHexString
+  override lazy val toString: String = symbol.name
 }
 
 case class StateLabel(
@@ -67,7 +67,7 @@ case class StateLabel(
   tps: ListMap[Symbol.TypeParamSymbol, BackendType]
 ) extends BackendLabel {
   override type SymbolType = Symbol.StateSymbol
-  override lazy val toString: String = stage.toString + "$" + symbol.name
+  override lazy val toString: String = NameTemplate.concat(stage.toString, symbol.name)
 }
 
 case class ProcLabel(
@@ -77,9 +77,9 @@ case class ProcLabel(
   tps: ListMap[Symbol.TypeParamSymbol, BackendType],
 ) extends BackendLabel {
   override type SymbolType = Symbol.ProcSymbol
-  override lazy val toString: String = symbol.name + "_" + hashCode().toHexString
+  override lazy val toString: String = symbol.name
 
-  def retName: String = toString + "$_ret"
+  def retName: String = NameTemplate.concat(this.toString, NameTemplate.ret)
 }
 
 case class ProcBlockLabel(
@@ -88,9 +88,9 @@ case class ProcBlockLabel(
   proc: ProcLabel,
 ) extends BackendLabel {
   override type SymbolType = Symbol.ProcBlockSymbol
-  override lazy val toString: String = proc.toString + "_" + symbol.name
-  lazy val activeName: String = toString + "$_active"
-  lazy val idName: String = toString + "$_id"
+  override lazy val toString: String = NameTemplate.concat(proc.toString, symbol.name)
+  lazy val activeName: String        = NameTemplate.concat(this.toString, NameTemplate.active)
+  lazy val idName: String            = NameTemplate.concat(this.toString, NameTemplate.id)
 
   override val hps = proc.hps
   override val tps = proc.tps

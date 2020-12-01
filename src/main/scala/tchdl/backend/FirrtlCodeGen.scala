@@ -6,9 +6,10 @@ import tchdl.util._
 import firrtl.{ir => fir}
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe.TypeTag
+import scala.collection.mutable
 
 object FirrtlCodeGen {
-  case class ElaboratedModule(name: String, module: fir.Module, subs: Vector[ElaboratedModule])
+  case class ElaboratedModule(name: String, path: Vector[String], module: fir.Module, subs: Vector[ElaboratedModule])
 
   val clockRef = fir.Reference("CLK", fir.ClockType)
   val resetRef = fir.Reference("RST", fir.UIntType(fir.IntWidth(1)))
@@ -18,7 +19,9 @@ object FirrtlCodeGen {
     moduleList: Vector[lir.Module],
     pointers: Vector[PointerConnection],
   )(implicit global: GlobalData): fir.Circuit = {
-    val elaborated = elaborate(top, moduleList)(global, pointers, Vector.empty)
+    val suffixTable = mutable.Map.empty[String, Int]
+    val moduleName = getNameWithSuffix(top.tpe)(suffixTable)
+    val elaborated = elaborate(top, moduleName, moduleList)(global, pointers, Vector.empty, suffixTable)
     val connectionMap = pointers
       .map(createPointerDataRoute)
       .flatMap(_.toVector)
@@ -31,15 +34,25 @@ object FirrtlCodeGen {
       }
 
     val modules = addPointerConnection(elaborated, connectionMap)(global, pointers)
-    fir.Circuit(fir.NoInfo, modules, "Top")
+    fir.Circuit(fir.NoInfo, modules, moduleName)
   }
 
-  def elaborate(module: lir.Module, moduleList: Vector[lir.Module])(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): ElaboratedModule = {
+  def getNameWithSuffix(tpe: BackendType)(implicit moduleSuffix: mutable.Map[String, Int]): String = {
+    val tpeName = tpe.symbol.toString
+    val suffix = moduleSuffix.get(tpeName) match {
+      case None => 0
+      case Some(suffix) => suffix
+    }
+    moduleSuffix(tpeName) = suffix + 1
+
+    NameTemplate.concat(tpeName, suffix.toString)
+  }
+
+  def elaborate(module: lir.Module, moduleName: String, moduleList: Vector[lir.Module])(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String], moduleSuffix: mutable.Map[String, Int]): ElaboratedModule = {
     val ports = module.ports.map(elaboratePort)
     val clkPort = fir.Port(fir.NoInfo, clockRef.name, fir.Input, fir.ClockType)
     val rstPort = fir.Port(fir.NoInfo, resetRef.name, fir.Input, fir.UIntType(fir.IntWidth(1)))
 
-    val instances = module.subs.map(elaborateSubModule)
     val (mems, memInitss) = module.mems.map(elaborateMemory).unzip
     val components = module.components.flatMap(elaborateStmt)
     val inits = module.inits.flatMap(elaborateStmt)
@@ -57,8 +70,18 @@ object FirrtlCodeGen {
       .map(ref => fir.SubField(ref, resetRef.name, fir.UnknownType))
       .map(ref => fir.Connect(fir.NoInfo, ref, resetRef))
 
+    val modulePorts = Vector(clkPort, rstPort) ++ ports
+    val subModules = module.subs.map(sub => sub.name -> moduleList.find(_.tpe == sub.tpe).get)
+    val subTuples = subModules.map{ case (name, sub) =>
+      val modName = getNameWithSuffix(sub.tpe)
+      val mod = elaborate(sub, modName, moduleList)(global, pointers, modulePath :+ name, moduleSuffix)
+
+      (name, modName, mod)
+    }
+    val instances = subTuples.map { case (instanceName, modName, _) => fir.DefInstance(fir.NoInfo, instanceName, modName) }
+    val subs = subTuples.map(_._3)
     val body = fir.Block(
-      instances ++
+        instances ++
         clkConnects ++
         rstConnects ++
         mems ++
@@ -71,13 +94,9 @@ object FirrtlCodeGen {
         condAssigns
     )
 
-    val modulePorts = Vector(clkPort, rstPort) ++ ports
-    val moduleName = ("Top" +: modulePath).mkString("_")
     val elaboratedModule = fir.Module(fir.NoInfo, moduleName, modulePorts, body)
-    val subModules = module.subs.map(sub => sub.name -> moduleList.find(_.tpe == sub.tpe).get)
-    val subs = subModules.map{ case (name, sub) => elaborate(sub, moduleList)(global, pointers, modulePath :+ name) }
 
-    ElaboratedModule(moduleName, elaboratedModule, subs)
+    ElaboratedModule(moduleName, modulePath, elaboratedModule, subs)
   }
 
   def elaboratePort(port: lir.Port)(implicit global: GlobalData, pointers: Vector[PointerConnection]): fir.Port = {
@@ -91,10 +110,8 @@ object FirrtlCodeGen {
     fir.Port(fir.NoInfo, name, direction, firrtlTpe)
   }
 
-  def elaborateSubModule(sub: lir.SubModule)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): fir.DefInstance = {
-    val subPath = modulePath :+ sub.name
-    val name = subPath.foldLeft("Top") { case (acc, next) => s"${acc}_$next" }
-    fir.DefInstance(fir.NoInfo, sub.name, name)
+  def elaborateSubModule(sub: lir.SubModule)(implicit moduleSuffix: mutable.Map[String, Int]): fir.DefInstance = {
+    fir.DefInstance(fir.NoInfo, sub.name, getNameWithSuffix(sub.tpe))
   }
 
   def elaborateMemory(mem: lir.Memory)(implicit global: GlobalData, pointers: Vector[PointerConnection], modulePath: Vector[String]): (fir.DefMemory, Vector[fir.Statement]) = {
@@ -559,7 +576,9 @@ object FirrtlCodeGen {
   }
 
   def addPointerConnection(circuit: ElaboratedModule, map: Map[String, Vector[DataRoute]])(implicit global: GlobalData, pointers: Vector[PointerConnection]): Vector[fir.Module] = {
-    val newModule = map.get(circuit.name) match {
+    val modulePath = "Top" +: circuit.path
+    val key = modulePath.mkString("_")
+    val newModule = map.get(key) match {
       case None => circuit.module
       case Some(routes) =>
         val (ports, stmts) = generateRoute(routes)
