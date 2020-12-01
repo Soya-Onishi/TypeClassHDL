@@ -1033,4 +1033,23 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(second.history.length == 2)
     assert(second.history.head.flag.hasFlag(BackendTypeFlag.EnumFlag))
   }
+
+  test("use an output and an input port works correctly") {
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "usePorts.tchdl")
+    val top = modules.head
+    val assigns = top.procedures.collect{ case a: lir.Assign => a }
+
+    assert(assigns.length == 2)
+    val dsts = assigns.map(_.dst).collect{ case lir.SubField(_, name, _) => name }
+    assert(dsts.length == 1)
+    assert(dsts.contains("in"))
+    val srcs = assigns.map(_.src).collect{ case lir.SubField(_, name, _) => name }
+    assert(srcs.length == 1)
+    assert(srcs.contains("out"))
+
+    val sub = modules.find(_.tpe.symbol.toString == "Sub").get
+    assert(sub.ports.length == 2)
+    assert(sub.ports.exists(p => p.dir == lir.Dir.Input && p.name == "in"))
+    assert(sub.ports.exists(p => p.dir == lir.Dir.Output && p.name == "out"))
+  }
 }

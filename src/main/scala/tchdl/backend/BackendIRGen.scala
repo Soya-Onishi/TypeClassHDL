@@ -537,23 +537,6 @@ object BackendIRGen {
         lazy val isMemRead = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "read"
         lazy val isMemWrite = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "write"
 
-        /*
-        lazy val forBuiltin = forBuiltInMethod(_, Some(accessor), hargs, retTpe)
-        val (call, label) = () match {
-          case _ if isBuiltin => (forBuiltin(referredMethodSymbol), None)
-          case _ if isMemRead => (backend.ReadMemory(accessor, argSummary.terms.head, retTpe), None)
-          case _ if isMemWrite => (backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1)), None)
-          case _ =>
-            val label = makeLabel(referredMethodSymbol, Some(accessor.tpe), argSummary.terms.map(_.tpe), hargs, targs)
-            val call = select.symbol match {
-              case _: Symbol.MethodSymbol if isInterface => backend.CallInterface(label, accessor, argSummary.terms, retTpe)
-              case _: Symbol.MethodSymbol => backend.CallMethod(label, Some(accessor), hargs, argSummary.terms, retTpe)
-            }
-
-            (call, Some(label))
-        }
-        */
-
         def readMem(idx: Int) = backend.ReadMemory(accessor, argSummary.terms.head, idx, retTpe)
         def writeMem(idx: Int) = backend.WriteMemory(accessor, argSummary.terms(0), argSummary.terms(1), idx)
 

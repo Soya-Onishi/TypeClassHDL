@@ -1,0 +1,24 @@
+package test
+
+module Top
+impl Top {
+  input in: Bit[4]
+  output out: Bit[4]
+
+  mod sub: Sub = Sub {}
+
+  always connection {
+    this.sub.in = this.in
+    this.out = this.sub.out
+  }
+}
+
+module Sub
+impl Sub {
+  input  in: Bit[4]
+  output out: Bit[4]
+
+  always connection {
+    this.out = this.in
+  }
+}

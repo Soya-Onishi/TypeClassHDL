@@ -411,114 +411,6 @@ object BackendLIRGen {
 
     val mem = lir.Memory(memory.label.toString, readPort, writePort, readLatency, writeLatency, depth, dataType, memory.tpe)
     BuildResult(Vector.empty, mem)
-
-    /*
-    val memDef = ir.DefMemory(
-      ir.NoInfo,
-      memory.label.toString,
-      dataType,
-      depth,
-      writeLatency,
-      readLatency,
-      (0 until readPort).map(idx => s"read$idx"),
-      (0 until writePort).map(idx => s"write$idx"),
-      Seq.empty,
-      ir.ReadUnderWrite.Undefined
-    )
-
-    def memSubField(fields: String*): ir.Expression =
-      fields.foldLeft[ir.Expression](ir.Reference(memory.toFirrtlString, ir.UnknownType)) {
-        case (accessor, name) => ir.SubField(accessor, name, ir.UnknownType)
-      }
-
-    def buildWriteMaskInit(tpe: ir.Type, idx: Int): Vector[ir.Connect] = {
-      def loop(fieldTpe: ir.Type, accessor: ir.SubField): Vector[ir.SubField] = {
-        fieldTpe match {
-          case ir.UIntType(_) => Vector(accessor.copy(tpe = ir.UIntType(ir.IntWidth(1))))
-          case bundle: ir.BundleType =>
-            bundle.fields.toVector.flatMap(
-              field => loop(field.tpe, ir.SubField(accessor, field.name, ir.UnknownType))
-            )
-        }
-      }
-
-      val port = s"write$idx"
-      val subField = memSubField(port, "mask").asInstanceOf[ir.SubField]
-      val leafs = tpe match {
-        case ir.UIntType(_) => Vector(subField.copy(tpe = ir.UIntType(ir.IntWidth(1))))
-        case bundle: ir.BundleType => loop(bundle, subField)
-      }
-
-      leafs.map(loc => ir.Connect(ir.NoInfo, loc, ir.UIntLiteral(0)))
-    }
-
-    def buildReadStmts(idx: Int): Vector[ir.Statement] = {
-      val readFlagRegNames = (0 until readLatency).map(latency => memory.label.toString + "$" + s"_reading${latency}_$idx").toVector
-      val readFlagRegs = readFlagRegNames.map(ir.DefRegister(ir.NoInfo, _, ir.UIntType(ir.IntWidth(1)), clockRef, resetRef, ir.UIntLiteral(0)))
-      val readingRegDefault = readFlagRegNames.headOption.map(name => ir.Connect(ir.NoInfo, ir.Reference(name, ir.UnknownType), ir.UIntLiteral(0)))
-      val port = s"read$idx"
-      val readEnable = ir.Connect(ir.NoInfo, memSubField(port, "en"), ir.UIntLiteral(0))
-      val readAddr = ir.IsInvalid(ir.NoInfo, memSubField(port, "addr"))
-      val readClk = ir.Connect(ir.NoInfo, memSubField(port, "clk"), clockRef)
-
-      val readDataName = memory.toFirrtlString + "$" + s"_${port}_data"
-      val readDataFuture = ir.BundleType(Seq(
-        ir.Field("_member", ir.Default, ir.UIntType(ir.IntWidth(1))),
-        ir.Field("_data", ir.Default, dataType)
-      ))
-
-      val readDataWire = ir.DefWire(ir.NoInfo, readDataName, readDataFuture)
-      def memberConnect(from: ir.Expression): ir.Connect = ir.Connect(
-        ir.NoInfo,
-        ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_member", ir.UnknownType),
-        from
-      )
-
-      val readingRegConnects = readFlagRegNames match {
-        case Vector() => Vector.empty
-        case names => (names zip names.tail).map{
-          case (from, loc) =>
-            val fromRef = ir.Reference(from, ir.UnknownType)
-            val locRef = ir.Reference(loc, ir.UnknownType)
-
-            ir.Connect(ir.NoInfo, locRef, fromRef)
-        }
-      }
-
-      val readDataMemberConnect = readFlagRegNames.lastOption match {
-        case None => memberConnect(ir.UIntLiteral(0))
-        case Some(name) => memberConnect(ir.Reference(name, ir.UnknownType))
-      }
-
-      val readDataDataConnect = ir.Connect(
-        ir.NoInfo,
-        ir.SubField(ir.Reference(readDataName, ir.UnknownType), "_data", ir.UnknownType),
-        memSubField(port, "data")
-      )
-
-      val stmts = Vector(readEnable, readAddr, readClk, readDataWire)
-      val connects = Vector(readDataMemberConnect, readDataDataConnect)
-
-      readFlagRegs ++ readingRegDefault ++ stmts ++ readingRegConnects ++ connects
-    }
-
-    def buildWriteStmts(idx: Int): Vector[ir.Statement] = {
-      val port = s"write$idx"
-
-      val writeMask = buildWriteMaskInit(dataType, idx)
-      val writeEnable = ir.Connect(ir.NoInfo, memSubField(port, "en"), ir.UIntLiteral(0))
-      val writeAddr = ir.IsInvalid(ir.NoInfo, memSubField(port, "addr"))
-      val writeData = ir.IsInvalid(ir.NoInfo, memSubField(port, "data"))
-      val writeClk = ir.Connect(ir.NoInfo, memSubField(port, "clk"), clockRef)
-
-      writeMask ++ Vector(writeEnable, writeAddr, writeData, writeClk)
-    }
-
-    val readStmts = (0 until readPort).flatMap(buildReadStmts).toVector
-    val writeStmts = (0 until writePort).flatMap(buildWriteStmts).toVector
-
-    BuildResult(memDef +: (readStmts ++ writeStmts), ())
-    */
   }
 
   private def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
@@ -1441,7 +1333,7 @@ object BackendLIRGen {
     // default:
     //   active     = false
     //   parameters = undefined
-    val inputInitss = ctx.interfaces(construct.tpe) // get interfaces submodule has
+    val inputInitss = ctx.interfaces(construct.tpe) // get interfaces an instantiated submodule has
       .filter(interface => interface.label.symbol.hasFlag(Modifier.Input) || interface.label.symbol.hasFlag(Modifier.Sibling))
       .map {
         interface =>
