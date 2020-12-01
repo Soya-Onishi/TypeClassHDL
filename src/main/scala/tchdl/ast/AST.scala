@@ -361,13 +361,13 @@ object EnumDef {
   }
 }
 
-abstract case class EnumMemberDef private (name: String, fields: Vector[TypeTree]) extends Definition {
-  def copy(name: String = this.name, fields: Vector[TypeTree] = this.fields): EnumMemberDef = {
+abstract case class EnumMemberDef private (name: String, fields: Vector[TypeTree], member: Option[BigInt]) extends Definition {
+  def copy(name: String = this.name, fields: Vector[TypeTree] = this.fields, member: Option[BigInt] = this.member): EnumMemberDef = {
     val pos = this.position
     val sym = this._symbol
     val oldId = this._id
 
-    new EnumMemberDef(name, fields) {
+    new EnumMemberDef(name, fields, member) {
       override val position = pos
       _id = oldId
       _symbol = sym
@@ -376,8 +376,8 @@ abstract case class EnumMemberDef private (name: String, fields: Vector[TypeTree
 }
 
 object EnumMemberDef {
-  def apply(name: String, fields: Vector[TypeTree], pos: Position): EnumMemberDef = {
-    new EnumMemberDef(name, fields) {
+  def apply(name: String, fields: Vector[TypeTree], member: Option[BigInt], pos: Position): EnumMemberDef = {
+    new EnumMemberDef(name, fields, member) {
       override val position = pos
     }
   }

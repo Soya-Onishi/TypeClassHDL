@@ -100,6 +100,7 @@ object Error {
   case class ModifierMismatch(expect: Modifier, actual: Modifier, pos: Position) extends Error
 
   case class ConstructEnumForm(tpe: Type.RefType, pos: Position) extends Error
+  case class EnumMemberIDConflict(sym0: Symbol.EnumMemberSymbol, sym1: Symbol.EnumMemberSymbol, id: BigInt, pos: Position) extends Error
 
   case class CallInterfaceFromInternal(method: Symbol.MethodSymbol, pos: Position) extends Error
   case class CallPrivate(method: Symbol.MethodSymbol, pos: Position) extends Error

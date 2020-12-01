@@ -100,9 +100,18 @@ object Namer {
     vdef.setSymbol(symbol)
   }
 
-  def namedEnumMember(member: EnumMemberDef)(implicit ctx: Context.NodeContext, global: GlobalData): EnumMemberDef = {
+  def namedEnumMember(member: EnumMemberDef, symbols: Vector[Symbol.EnumMemberSymbol])(implicit ctx: Context.NodeContext, global: GlobalData): EnumMemberDef = {
+    val nextID =
+      if(symbols.isEmpty) BigInt(0)
+      else symbols.map(_.memberID).max + 1
+
+    val memberID = member.member.getOrElse(nextID)
     val generator = Type.EnumMemberTypeGenerator(member, ctx, global)
-    val symbol = Symbol.EnumMemberSymbol(member.name, ctx.path, generator)
+    val symbol = Symbol.EnumMemberSymbol(memberID, member.name, ctx.path, generator)
+
+    symbols.find(_.memberID == memberID).foreach { sym =>
+      global.repo.error.append(Error.EnumMemberIDConflict(sym, symbol, memberID, member.position))
+    }
 
     ctx.append(symbol).left.foreach(global.repo.error.append)
     member.setSymbol(symbol)
@@ -287,7 +296,6 @@ object Namer {
     val namedTree = ast match {
       case always: AlwaysDef => namedAlways(always)
       case method: MethodDef => namedMethod(method)
-      case enum: EnumMemberDef => namedEnumMember(enum)
       case vdef: ValDef if vdef.flag.hasFlag(Modifier.Field) => namedFieldDef(vdef)
       case vdef: ValDef => namedLocalDef(vdef)
       case stage: StageDef => namedStageDef(stage)

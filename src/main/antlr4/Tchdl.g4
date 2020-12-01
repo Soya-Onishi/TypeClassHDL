@@ -49,7 +49,7 @@ enum_def
     ;
 
 enum_field_def
-    : TYPE_ID ('(' type (',' type)* ')')?
+    : TYPE_ID ('(' type (',' type)* ')')? ('=' (INT | BIT))?
     ;
 
 implement_class

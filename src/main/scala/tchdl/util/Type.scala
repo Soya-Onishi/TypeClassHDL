@@ -102,7 +102,11 @@ object Type {
       sigCtx.reAppend(structSymbol.hps ++ structSymbol.tps: _*)(global)
 
       val fieldCtx = Context(sigCtx)
-      enum.members.map(Namer.nodeLevelNamed(_)(fieldCtx, global))
+      enum.members.foldLeft(Vector.empty[Symbol.EnumMemberSymbol]){
+        case (seq, member) =>
+          val memDef = Namer.namedEnumMember(member, seq)(fieldCtx, global)
+          seq :+ memDef.symbol.asEnumMemberSymbol
+      }
       EntityType(enum.name, ctx.path, fieldCtx.scope)
     }
   }

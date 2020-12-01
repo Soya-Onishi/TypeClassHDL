@@ -183,14 +183,15 @@ object Symbol {
 
   class EnumMemberSymbol(
     val path: NameSpace,
+    val memberID: BigInt,
     tpe: Type
   ) extends TypeSymbol(tpe, Modifier.NoModifier) {
     override val accessibility: Accessibility = Accessibility.Public
   }
 
   object EnumMemberSymbol {
-    def apply(name: String, path: NameSpace, tpe: Type): EnumMemberSymbol = {
-      new EnumMemberSymbol(path.appendComponentName(name), tpe)
+    def apply(memberID: BigInt, name: String, path: NameSpace, tpe: Type): EnumMemberSymbol = {
+      new EnumMemberSymbol(path.appendComponentName(name), memberID, tpe)
     }
   }
 
