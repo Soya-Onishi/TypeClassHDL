@@ -120,7 +120,7 @@ class ASTGenerator {
       val fieldName = ctx.TYPE_ID.getText
       val fields = ctx.`type`.asScala.map(typeTree).toVector
       val intOpt = Option(ctx.INT).map(_.getText).map(BigInt.apply)
-      val bitOpt = Option(ctx.INT).map(_.getText).map(_.substring(2)).map(BigInt.apply(_, 2))
+      val bitOpt = Option(ctx.BIT).map(_.getText).map(_.substring(2)).map(BigInt.apply(_, 2))
       val member = intOpt orElse bitOpt
 
       EnumMemberDef(fieldName, fields, member, Position(ctx))

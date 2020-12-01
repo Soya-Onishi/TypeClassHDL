@@ -1,0 +1,19 @@
+package test
+
+enum Ops {
+  Add = 0b000
+  Sub = 0b001
+  Mul = 0b010
+  Div = 0b011
+}
+
+enum Command {
+  Load = 1
+  Store = 3
+}
+
+enum State {
+  Idle = 0b0
+  Ready = 1
+  Busy = 0b111
+}

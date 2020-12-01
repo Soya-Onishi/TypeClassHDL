@@ -142,4 +142,23 @@ class BuildContainerTest extends TchdlFunSuite {
     val err = global.repo.error.elems.head
     assert(err.isInstanceOf[Error.DefinitionNameConflict])
   }
+
+  test("enum variant ID works correctly") {
+    val (Seq(cu), global) = untilThisPhase("UserDefinedVariantID.tchdl")
+    expectNoError(global)
+
+    val members = cu.topDefs.collectFirst{ case e: EnumDef => e.members }.get
+    val mems = Map("Add" -> 0, "Sub" -> 1, "Mul" -> 2, "Div" -> 3)
+    members.foreach { member =>
+      assert(mems(member.symbol.toString) == member.member.get)
+      assert(mems(member.symbol.toString) == member.symbol.asEnumMemberSymbol.memberID)
+    }
+  }
+
+  test("same ID in enum variants causes error") {
+    val (_, global) = untilThisPhase("UserDefinedVariantIDConflict.tchdl")
+
+    assert(global.repo.error.counts == 1)
+    assert(global.repo.error.elems.head.isInstanceOf[Error.EnumMemberIDConflict])
+  }
 }
