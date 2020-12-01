@@ -160,7 +160,7 @@ state_def
     ;
 
 port_def
-    : modifier=(INPUT | INTERNAL | OUTPUT) EXPR_ID ':' type
+    : modifier=(INPUT | INTERNAL | OUTPUT) EXPR_ID ':' type NL* ('=' NL* expr)?
     ;
 
 reg_def

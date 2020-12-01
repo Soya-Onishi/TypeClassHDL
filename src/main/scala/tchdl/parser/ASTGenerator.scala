@@ -302,8 +302,9 @@ class ASTGenerator {
     val modifier = Modifier(ctx.modifier.getText) | Modifier.Field
     val name = ctx.EXPR_ID.getText
     val tpe = typeTree(ctx.`type`)
+    val initExpr = Option(ctx.expr).map(expr)
 
-    ValDef(modifier, name, Some(tpe), None, Position(ctx))
+    ValDef(modifier, name, Some(tpe), initExpr, Position(ctx))
   }
 
   def submoduleDef(ctx: TP.Submodule_defContext)(implicit file: Filename): ValDef = {

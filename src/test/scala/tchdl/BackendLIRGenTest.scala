@@ -1038,6 +1038,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val (modules, global) = untilThisPhase(Vector("test"), "Top", "usePorts.tchdl")
     val top = modules.head
     val assigns = top.procedures.collect{ case a: lir.Assign => a }
+    val invalids = top.inits.collect{ case i @ lir.Invalid(_: lir.SubField) => i }
 
     assert(assigns.length == 2)
     val dsts = assigns.map(_.dst).collect{ case lir.SubField(_, name, _) => name }
@@ -1047,9 +1048,42 @@ class BackendLIRGenTest extends TchdlFunSuite {
     assert(srcs.length == 1)
     assert(srcs.contains("out"))
 
+    assert(invalids.length == 1)
+    assert(invalids.head.name.isInstanceOf[lir.SubField])
+
     val sub = modules.find(_.tpe.symbol.toString == "Sub").get
     assert(sub.ports.length == 2)
     assert(sub.ports.exists(p => p.dir == lir.Dir.Input && p.name == "in"))
     assert(sub.ports.exists(p => p.dir == lir.Dir.Output && p.name == "out"))
+  }
+
+  test("define input and output ports that have default value") {
+    val (modules, global) = untilThisPhase(Vector("test"), "Top", "portWithDefault.tchdl")
+    val top = modules.head
+    val assigns = top.procedures
+      .collectFirst{ case w: lir.When => w }.get
+      .conseq
+      .collect{ case a: lir.Assign => a }
+
+    assert(assigns.length == 3)
+    val dsts = assigns.map(_.dst).collect{ case s: lir.SubField => s }
+    assert(dsts.length == 2)
+    assert(dsts.exists(_.name == NameTemplate.portActive))
+    assert(dsts.exists(_.name == NameTemplate.portBits))
+    assert(dsts.forall(_.prefix.asInstanceOf[lir.SubField].name == "__in"))
+
+    val sub = modules.tail.head
+    val inits = sub.inits
+    val wires = inits.collect{ case w: lir.Wire => w }
+    val whens = inits.collect{ case w: lir.When => w}
+    val outer = whens.head.conseq.head.asInstanceOf[lir.Assign].src.asInstanceOf[lir.SubField]
+    val inputs = sub.ports.filter(_.dir == lir.Dir.Input)
+
+    assert(wires.length == 1)
+    assert(wires.exists(_.name == "in"))
+    assert(whens.length == 1)
+    assert(outer.name == NameTemplate.portBits)
+    assert(inputs.length == 1)
+    assert(inputs.head.tpe.flag.hasFlag(BackendTypeFlag.DefaultInput))
   }
 }

@@ -66,6 +66,7 @@ package object backend {
     case object Pointer extends BackendTypeFlag(1)
     case object EnumData extends BackendTypeFlag(2)
     case object EnumFlag extends BackendTypeFlag(3)
+    case object DefaultInput extends BackendTypeFlag(4)
   }
   case class BackendType(flag: BackendTypeFlag, symbol: Symbol.TypeSymbol, hargs: Vector[HPElem], targs: Vector[BackendType]) extends ToFirrtlString {
     override def hashCode(): Int = symbol.hashCode + hargs.hashCode + targs.hashCode
@@ -395,7 +396,7 @@ package object backend {
 
     if(tpe.flag.hasFlag(BackendTypeFlag.Pointer)) pointerType
     else {
-      tpe.symbol match {
+      val baseTpe = tpe.symbol match {
         case symbol if symbol == Symbol.int  => toBitType(width = 32)
         case symbol if symbol == Symbol.bool => toBitType(width = 1)
         case symbol if symbol == Symbol.unit => toBitType(width = 0)
@@ -411,6 +412,13 @@ package object backend {
         case symbol: Symbol.EnumSymbol => toEnumType(symbol)
         case _ => toOtherType
       }
+
+      if(tpe.flag.hasFlag(BackendTypeFlag.DefaultInput)) {
+        ir.BundleType(Seq(
+          ir.Field(  NameTemplate.portBits, ir.Default, baseTpe),
+          ir.Field(NameTemplate.portActive, ir.Default, ir.UIntType(ir.IntWidth(1)))
+        ))
+      } else baseTpe
     }
   }
 

@@ -598,4 +598,24 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(bits(2).args == ref)
     assert(bits(3).args == ref)
   }
+
+  test("input with default expression") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "portWithDefault.tchdl")
+    val sub = circuit.modules.find(_.name == "Sub_0").get.asInstanceOf[fir.Module]
+
+    val inputs = sub.ports.filter(_.direction == fir.Input)
+    assert(inputs.length == 3)
+    assert(inputs.exists(_.name == NameTemplate.portPrefix + "in"))
+    val __in = inputs.filter(_.name == NameTemplate.portPrefix + "in").head
+    val portTpe = fir.BundleType(Seq(
+      fir.Field(  NameTemplate.portBits, fir.Default, fir.UIntType(fir.IntWidth(4))),
+      fir.Field(NameTemplate.portActive, fir.Default, fir.UIntType(fir.IntWidth(1))),
+    ))
+    assert(__in.tpe == portTpe)
+
+    val wires = sub.body.asInstanceOf[fir.Block].stmts.collect{ case w: fir.DefWire => w }
+    assert(wires.length == 1)
+    assert(wires.head.name == "in")
+    assert(wires.head.tpe == fir.UIntType(fir.IntWidth(4)))
+  }
 }

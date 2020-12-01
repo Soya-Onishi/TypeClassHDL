@@ -14,6 +14,9 @@ object NameTemplate {
   def ret: String                  = "_ret"
   def state: String                = "_state"
   def id: String                   = "_id"
+  def portPrefix: String           = "__"
+  def portActive: String           = "active"
+  def portBits: String             = "bits"
 
   def memPointer(mem: String, port: Int): String = s"${mem}_${port}_pointer"
   def memEnDelay(mem: String, port: Int): String = s"${mem}_${port}_cycle"

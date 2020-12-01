@@ -4,8 +4,8 @@ import tchdl.backend.{ast => backend}
 import tchdl.backend.ast.{BackendLIR => lir}
 import tchdl.util._
 import tchdl.util.TchdlException._
-
 import firrtl.PrimOps
+
 import scala.annotation.tailrec
 import scala.collection.immutable.ListMap
 import scala.collection.mutable
@@ -17,7 +17,8 @@ object BackendLIRGen {
     stages: Map[BackendType, Vector[StageContainer]],
     procs: Map[BackendType, Vector[ProcContainer]],
     methods: Map[BackendType, Vector[MethodContainer]],
-    functions: Vector[MethodContainer]
+    inputs: Map[BackendType, Vector[FieldContainer]],
+    functions: Vector[MethodContainer],
   )
 
   abstract class StackFrame {
@@ -209,12 +210,18 @@ object BackendLIRGen {
     val methodTable = methods
       .collect { case method if method.label.accessor.isDefined => method }
       .groupBy(_.label.accessor.get)
+    val inputs = modules
+      .map(module => module.tpe -> module.bodies.flatMap(_.fields))
+      .map{ case (tpe, fields) => tpe -> fields.filter(_.flag.hasFlag(Modifier.Input)) }
+      .toMap
+
     val functionTable = methods.collect { case method if method.label.accessor.isEmpty => method }
     val context = FirrtlContext(
       interfaceTable,
       stageTable,
       procTable,
       methodTable,
+      inputs,
       functionTable
     )
 
@@ -333,10 +340,32 @@ object BackendLIRGen {
 
   def runInput(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.Port] = {
     val stmts = field.code.flatMap(runStmt)
-    val retExpr = field.ret.map(_ => throw new ImplementationErrorException("input wire with init expression is not supported yet"))
-    val port = lir.Port(lir.Dir.Input, field.toFirrtlString, field.tpe)
 
-    BuildResult(stmts, port)
+    val (portStmts, port) = field.ret.map(runExpr) match {
+      case None => (Vector.empty, lir.Port(lir.Dir.Input, field.toFirrtlString, field.tpe))
+      case Some(RunResult(stmts, inst)) =>
+        val portName = NameTemplate.portPrefix + field.label.toString
+        val portTpe = field.tpe.copy(flag = field.tpe.flag | BackendTypeFlag.DefaultInput)
+        val port = lir.Port(lir.Dir.Input, portName, portTpe)
+        val portActual = lir.Wire(field.label.toString, field.tpe)
+        def portRef(name: String, tpe: BackendType): lir.SubField = lir.SubField(
+          lir.Reference(portName, portTpe), name, tpe
+        )
+
+        val portActualRef = lir.Reference(portActual.name, portActual.tpe)
+        val assignFromOuter = lir.Assign(portActualRef, portRef(NameTemplate.portBits, field.tpe))
+        val assignFromDefault = lir.Assign(portActualRef, inst.asInstanceOf[DataInstance].refer)
+
+        val condition = lir.When(
+          portRef(NameTemplate.portActive, BackendType.boolTpe),
+          Vector(assignFromOuter),
+          Vector(assignFromDefault)
+        )
+
+        (stmts ++ Vector(portActual, condition), port)
+    }
+
+    BuildResult(stmts ++ portStmts, port)
   }
 
   def runOutput(field: FieldContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[lir.Port] = {
@@ -686,6 +715,24 @@ object BackendLIRGen {
 
         stack.append(tempName, nodeInst)
         exprStmts ++ nodeOpt
+      case backend.Assign(target, expr) if target.head._2.symbol.isModuleTypeSymbol =>
+        val (moduleName, moduleTpe) = target.head
+        val (portName, rawTpe) = target.tail.head
+        val input = ctx.inputs.get(moduleTpe).flatMap(_.find(_.label.toString == portName)).get
+        def portRef(name: String, tpe: BackendType): lir.SubField = lir.SubField(lir.Reference(moduleName, moduleTpe), name, tpe)
+
+        input.ret match {
+          case None    => buildConnect(portRef(portName, rawTpe), expr)._2
+          case Some(_) =>
+            val portTpe = rawTpe.copy(flag = rawTpe.flag | BackendTypeFlag.DefaultInput)
+            val port = portRef(NameTemplate.portPrefix ++ portName, portTpe)
+            val (_, stmts)  = buildConnect(lir.SubField(port, NameTemplate.portBits, portTpe), expr)
+            val (trueNode, trueRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
+            val assignValid =  lir.Assign(lir.SubField(port, NameTemplate.portActive, BackendType.boolTpe), trueRef)
+
+            stmts ++ Vector(trueNode, assignValid)
+        }
+
       case backend.Assign(target, expr) =>
         val (headName, headTpe) = target.head
         val loc = target.tail.foldLeft[lir.Ref](lir.Reference(headName, headTpe)) {
@@ -1351,12 +1398,38 @@ object BackendLIRGen {
           Vector(activeOffNode, activeOff) ++ paramInvalid
       }
 
+    val inputPortWithoutDefaultInits = ctx.inputs(construct.tpe)
+      .filter(_.ret.isEmpty)
+      .map { port =>
+        val portRef = lir.SubField(moduleRef, port.label.toString, port.tpe)
+        val invalid = lir.Invalid(portRef)
+
+        invalid
+      }
+
+    val inputPortWithDefaultInits = ctx.inputs(construct.tpe)
+      .filter(_.ret.isDefined)
+      .flatMap { port =>
+        val portName = NameTemplate.portPrefix + port.label.toString
+        val portTpe = port.tpe.copy(flag = port.tpe.flag | BackendTypeFlag.DefaultInput)
+        val portRef = lir.SubField(moduleRef, portName, portTpe)
+        val portActive = lir.SubField(portRef, NameTemplate.portActive, BackendType.boolTpe)
+        val portBits = lir.SubField(portRef, NameTemplate.portBits, port.tpe)
+
+        val (offNode, offLitRef) = makeNode(lir.Literal(0, BackendType.boolTpe))
+        val activeOff = lir.Assign(portActive, offLitRef)
+        val portInvalid = lir.Invalid(portBits)
+
+        Vector(offNode, activeOff, portInvalid)
+      }
+
+    val inputPortInits = inputPortWithoutDefaultInits ++ inputPortWithDefaultInits
     val parentStmts = parentStmtss.toVector.flatten
     val siblingStmts = siblingStmtss.toVector.flatten
     val inputStmts = inputInitss.flatten
     val conds = (siblingCondss.toVector ++ parentCondss.toVector).flatten
 
-    val stmts = inputStmts ++ parentStmts ++ siblingStmts ++ conds
+    val stmts = inputPortInits ++ inputStmts ++ parentStmts ++ siblingStmts ++ conds
 
     RunResult(stmts, instance)
   }

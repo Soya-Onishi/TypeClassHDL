@@ -1,0 +1,21 @@
+package test
+
+module Top
+impl Top {
+  mod sub: Sub = Sub {}
+
+  input def exec(in: Bit[4]) -> Bit[4] {
+    this.sub.in = in
+    this.sub.out
+  }
+}
+
+module Sub
+impl Sub {
+  input in: Bit[4] = 0b0000
+  output out: Bit[4] = 0b1111
+
+  always connection {
+    this.out = this.in
+  }
+}

@@ -627,8 +627,6 @@ class SimulationTest extends TchdlFunSuite {
       f(operands(0), operands(1)) & 255
     }
 
-    println(circuit.serialize)
-
     runSim(circuit, enableVcd = true) { tester =>
       tester.poke(initID(NameTemplate.active), 1)
       val initRegs = (0 until 16).map(_ -> next).toMap
@@ -661,6 +659,30 @@ class SimulationTest extends TchdlFunSuite {
 
         tester.step()
         tester.expect(execID(NameTemplate.ret), expect)
+      }
+    }
+  }
+
+  test("input port with default value works correctly") {
+    val circuit = untilThisPhase(Vector("test"), "Top", "portWithDefault.tchdl")
+    def exec(name: String) = NameTemplate.concat("exec", name)
+    val rnd = new Random(0)
+
+    runSim(circuit) { tester =>
+      for(_ <- 0 to 1000) {
+        val value = rnd.nextInt(15)
+        tester.poke(exec("in"), value)
+        tester.poke(exec(NameTemplate.active), 1)
+
+        tester.expect(exec(NameTemplate.ret), value)
+      }
+
+      for(_ <- 0 to 1000) {
+        val value = rnd.nextInt(15)
+        tester.poke(exec(NameTemplate.active), 0)
+        tester.poke(exec("in"), value)
+
+        tester.expect(exec(NameTemplate.ret), 0)
       }
     }
   }
