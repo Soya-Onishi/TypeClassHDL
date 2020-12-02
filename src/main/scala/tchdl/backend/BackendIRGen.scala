@@ -590,24 +590,7 @@ object BackendIRGen {
       backend.CallMethod(label, None, Vector.empty, Vector(left, right), retTpe)
     }
 
-    def tpTableFromTypes(tps: Vector[Symbol.TypeParamSymbol], params: Vector[Type.RefType], args: Vector[Type.RefType]): Map[Symbol.TypeParamSymbol, Type.RefType] = {
-      def assignTP(paramTpe: Type.RefType, argTpe: Type.RefType, table: Map[Symbol.TypeParamSymbol, Option[Type.RefType]]): Map[Symbol.TypeParamSymbol, Option[Type.RefType]] = {
-        paramTpe.origin match {
-          case tp: Symbol.TypeParamSymbol if table.contains(tp) => table.updated(tp, Some(argTpe))
-          case _ => (paramTpe.typeParam zip argTpe.typeParam).foldLeft(table) {
-            case (table, (param, arg)) => assignTP(param, arg, table)
-          }
-        }
-      }
-
-      val initTable = tps.map(_ -> Option.empty[Type.RefType]).toMap
-      val assigned = (params zip args).foldLeft(initTable) { case (table, (param, arg)) => assignTP(param, arg, table) }
-
-      assigned.map{ case (key, value) => key -> value.get }
-    }
-
     val method = binop.symbol.asMethodSymbol
-    val methodTpe = method.tpe.asMethodType
     val annons = method.annons
     val argSymbols = Vector(left.tpe.symbol, right.tpe.symbol)
     val retTpe = toBackendType(binop.tpe.asRefType, ctx.hpTable, ctx.tpTable)
@@ -689,17 +672,28 @@ object BackendIRGen {
       backend.CallMethod(label, None, Vector.empty, Vector(operand), retTpe)
     }
 
-    val call = builtInPairs.get(unaryOp.op) match {
-      case None => buildCallMethod
-      case Some(candidates) =>
-        val operandTpeSymbol = operandExpr.tpe.symbol
-        val called = candidates.find { case (ops, _) => ops == operandTpeSymbol }
-        val retTpe = operandExpr.tpe
 
-        called match {
-          case None => buildCallMethod
-          case Some((_, name)) => backend.CallBuiltIn(name, None, Vector(operand), Vector.empty, retTpe)
-        }
+    val method = unaryOp.symbol.asMethodSymbol
+    val annons = method.annons
+    val argSymbol = operand.tpe.symbol
+    val retTpe = toBackendType(unaryOp.tpe.asRefType, ctx.hpTable, ctx.tpTable)
+    val builtins = annons.collect{ case x: frontend.Annotation.BuiltIn => x }
+    val builtinName = builtins.find { builtin =>
+      def verify(expect: String, actual: Symbol.TypeSymbol): Boolean = expect match {
+        case "*" => true
+        case tpe => global.builtin.types.lookupSafe(tpe).contains(actual)
+      }
+
+      lazy val isSameLength = builtin.args.length == 1
+      lazy val sameArgs = verify(builtin.args.head, argSymbol)
+      lazy val sameRet = verify(builtin.ret, retTpe.symbol)
+
+      isSameLength && sameArgs && sameRet
+    }
+
+    val call = builtinName match {
+      case None => buildCallMethod
+      case Some(name) => backend.CallBuiltIn(name.name, None, Vector(operand), Vector.empty, retTpe)
     }
 
     val returnedLabels = call match {
