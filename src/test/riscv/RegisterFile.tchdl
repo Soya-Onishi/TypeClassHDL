@@ -1,0 +1,20 @@
+package riscv
+
+module RegisterFile
+impl RegisterFile {
+  reg regs: Vector[32, Bit[32]]
+
+  sibling def rs1(addr: Bit[5]) -> Bit[32] {
+    this.regs.idxDyn[5](addr)
+  }
+
+  sibling def rs2(addr: Bit[5]) -> Bit[32] {
+    this.regs.idxDyn[5](addr)
+  }
+
+  input def write(addr: Bit[5], data: Bit[32]) -> Unit {
+    if(addr != 0b00000) {
+      this.regs = this.regs.updatedDyn[5](addr, data)
+    }
+  }
+}
