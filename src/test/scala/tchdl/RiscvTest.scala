@@ -123,5 +123,39 @@ class RiscvTest extends TchdlFunSuite {
     }
   }
 
+  test("comparator unit test") {
+    val rnd = new Random(0)
+    val circuit = untilThisPhase(Vector("riscv"), "Comparator", "Comparator.tchdl", "Types.tchdl")
+    def next = BigInt(32, rnd)
 
+    def lt(a: BigInt, b: BigInt): Boolean = {
+      val tmp0 = a ^ (BigInt(1) << 31)
+      val tmp1 = b ^ (BigInt(1) << 31)
+      val comp = (tmp0 - tmp1) & (BigInt(1) << 32)
+
+      comp != 0
+    }
+
+    def ge(a: BigInt, b: BigInt): Boolean = lt(b, a)
+
+    runSim(circuit) { tester =>
+      val ops: Seq[(BigInt, BigInt) => Boolean] = Seq(_ == _, _ != _, lt, ge, _ < _, _ >= _)
+
+      for{
+        (op, rawOp) <- ops.zipWithIndex
+        _ <- 0 to 1000
+      } {
+        val a = next
+        val b = next
+        val v = (b << 32) | a
+
+        tester.poke("execute__active", 1)
+        tester.poke("execute_op__member", rawOp)
+        tester.poke("execute_op__data", v)
+
+        val expect = if(op(a, b)) 1 else 0
+        tester.expect("execute__ret", expect)
+      }
+    }
+  }
 }

@@ -1,0 +1,25 @@
+package riscv
+
+import std::traits:::From
+
+module Comparator
+impl Comparator {
+  input def execute(op: Compare) -> Bit[32] {
+    match op {
+      case Compare:::Eq(x, y)  => Bit[32]:::from(x == y)
+      case Compare:::Ne(x, y)  => Bit[32]:::from(x != y)
+      case Compare:::Lt(x, y)  => this.signedLT(x, y)
+      case Compare:::Ge(x, y)  => this.signedLT(y, x)
+      case Compare:::Ltu(x, y) => Bit[32]:::from(x  < y)
+      case Compare:::Geu(x, y) => Bit[32]:::from(x >= y)
+    }
+  }
+
+  internal def signedLT(x: Bit[32], y: Bit[32]) -> Bit[32] {
+    val tmp0 = 0b0.concat[1](!x.msb()).concat[31](x.truncate[30, 0]())
+    val tmp1 = 0b0.concat[1](!y.msb()).concat[31](y.truncate[30, 0]())
+    val comp = (tmp0 - tmp1).msb()
+
+    Bit[32]:::from(comp)
+  }
+}
