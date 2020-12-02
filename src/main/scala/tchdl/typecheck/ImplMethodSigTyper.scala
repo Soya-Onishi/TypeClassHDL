@@ -257,6 +257,7 @@ object ImplMethodSigTyper {
         case None => Vector(Modifier.NoModifier)
         case Some(tpe) => tpe.origin match {
           case _: Symbol.StructSymbol => Vector(Modifier.NoModifier, Modifier.Static)
+          case _: Symbol.EnumSymbol => Vector(Modifier.NoModifier, Modifier.Static)
           case _: Symbol.ModuleSymbol =>
             Vector(
               Modifier.Input | Modifier.Sibling,
