@@ -247,9 +247,9 @@ package object backend {
 
   object BackendType {
     def bitTpe(width: Int)(implicit global: GlobalData) = toBackendType(Type.bitTpe(width))
-    def intTpe(implicit global: GlobalData) = bitTpe(32)
-    def boolTpe(implicit global: GlobalData) = bitTpe(1)
-    def unitTpe(implicit global: GlobalData) = bitTpe(0)
+    def intTpe(implicit global: GlobalData) = BackendType(BackendTypeFlag.NoFlag, Symbol.int, Vector.empty, Vector.empty)
+    def boolTpe(implicit global: GlobalData) = BackendType(BackendTypeFlag.NoFlag, Symbol.bool, Vector.empty, Vector.empty)
+    def unitTpe(implicit global: GlobalData) = BackendType(BackendTypeFlag.NoFlag, Symbol.unit, Vector.empty, Vector.empty)
   }
 
   def toBackendType(tpe: Type.RefType)(implicit global: GlobalData): BackendType = toBackendType(tpe, Map.empty, Map.empty)
@@ -261,7 +261,7 @@ package object backend {
     def replace(tpe: Type.RefType): BackendType = tpe.origin match {
       case tp: Symbol.TypeParamSymbol =>
         tpTable.getOrElse(tp, throw new ImplementationErrorException(s"$tp should be found in tpTable"))
-      case sym: Symbol.EntityTypeSymbol =>
+      case _: Symbol.EntityTypeSymbol =>
         val hargs = tpe.hardwareParam.map(evalHPExpr(_, hpTable))
         val targs = tpe.typeParam.map(replace)
         val flag =

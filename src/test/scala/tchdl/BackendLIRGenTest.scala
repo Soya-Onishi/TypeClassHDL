@@ -276,7 +276,7 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
     def genName(name: String): String = s"add_$name"
     def subRef(name: String, tpe: BackendType): lir.SubField = lir.SubField(lir.Reference("alu", alu.tpe), genName(name), tpe)
-    val activeAssign = assigns.find(_.dst == subRef("_active", BackendType.bitTpe(1)(global))).get
+    val activeAssign = assigns.find(_.dst == subRef("_active", BackendType.boolTpe(global))).get
     val aAssign = assigns.find(_.dst == subRef("a", complex)).get
     val bAssign = assigns.find(_.dst == subRef("b", complex)).get
 
@@ -299,10 +299,10 @@ class BackendLIRGenTest extends TchdlFunSuite {
 
     val assigns = when.conseq.collect{ case a: lir.Assign => a }
     val activeAssign = assigns.head
-    assert(activeAssign.dst == lir.Reference(s"s1_fromSibling__active", BackendType.bitTpe(1)(global)))
+    assert(activeAssign.dst == lir.Reference(s"s1_fromSibling__active", BackendType.boolTpe(global)))
     val nodeName = activeAssign.src.asInstanceOf[lir.Reference].name
     val node = when.conseq.collectFirst{ case n @ lir.Node(name, _, _) if nodeName == name => n }.get
-    assert(node.src == lir.Literal(1, BackendType.bitTpe(1)(global)))
+    assert(node.src == lir.Literal(1, BackendType.boolTpe(global)))
   }
 
   test("module that call parent modules") {
@@ -331,8 +331,8 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val sub1sub0Assign = sub1Call.conseq.collectFirst{ case a @ lir.Assign(lir.SubField(_, name, _), _) if name.contains("_active") => a }.get
     val sub2sub0Assign = sub2Call.conseq.collectFirst{ case a @ lir.Assign(lir.SubField(_, name, _), _) if name.contains("_active") => a }.get
 
-    assert(sub1sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call__active", BackendType.bitTpe(1)(global)))
-    assert(sub2sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call__active", BackendType.bitTpe(1)(global)))
+    assert(sub1sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call__active", BackendType.boolTpe(global)))
+    assert(sub2sub0Assign.dst == lir.SubField(lir.Reference("sub0", sub0.tpe), s"call__active", BackendType.boolTpe(global)))
   }
 
   test("use enum type as interface's parameter type") {
@@ -385,9 +385,9 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val when = top.procedures.head.asInstanceOf[lir.When]
 
     val elems = when.conseq
-    val bit32 = toBackendType(Type.bitTpe(32)(global))(global)
+    val intTpe = BackendType.intTpe(global)
 
-    assert(elems(0) == lir.Node("_GEN_0", lir.Literal(1, bit32), bit32))
+    assert(elems(0) == lir.Node("_GEN_0", lir.Literal(1, intTpe), intTpe))
     assert(elems(5).isInstanceOf[lir.Invalid])
     assert(elems(7).isInstanceOf[lir.Assign])
     val dstTpe = elems(7).asInstanceOf[lir.Assign].dst.asInstanceOf[lir.SubField].prefix.tpe
@@ -756,21 +756,20 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val top = findModule(modules, "Top").get
     val f = top.procedures.collectFirst{ case w: lir.When => w }.get
 
-    val bit1 = BackendType.boolTpe(global)
-    val bool = BackendType(BackendTypeFlag.NoFlag, Symbol.bool(global), Vector.empty, Vector.empty)
+    val bool = BackendType.boolTpe(global)
     val nodes = findAllComponents[lir.Node](f.conseq)
     val aNode = nodes.collectFirst{ case n @ lir.Node(_, lir.Reference(name, _), _) if name.matches("f_a") => n }.get
     val lit1Node = nodes.collectFirst{ case n @ lir.Node(_, lir.Literal(v, _), _) if v == 1 => n }.get
     val lit0Node = nodes.collectFirst{ case n @ lir.Node(_, lir.Literal(v, _), _) if v == 0 => n }.get
     val eqNodes = nodes.collect{ case n @ lir.Node(_, _: lir.Ops, _) => n }
     val eqs = eqNodes.map(_.src.asInstanceOf[lir.Ops])
-    assert(eqs(0).args == Vector(lir.Reference(aNode.name, bool), lir.Reference(lit1Node.name, bit1)))
-    assert(eqs(1).args == Vector(lir.Reference(aNode.name, bool), lir.Reference(lit0Node.name, bit1)))
+    assert(eqs(0).args == Vector(lir.Reference(aNode.name, bool), lir.Reference(lit1Node.name, bool)))
+    assert(eqs(1).args == Vector(lir.Reference(aNode.name, bool), lir.Reference(lit0Node.name, bool)))
 
     val when0 = f.conseq.collectFirst{ case w: lir.When => w }.get
-    assert(when0.cond == lir.Reference(eqNodes(0).name, bit1))
+    assert(when0.cond == lir.Reference(eqNodes(0).name, bool))
     val when1 = when0.alt.collectFirst{ case w: lir.When => w }.get
-    assert(when1.cond == lir.Reference(eqNodes(1).name, bit1))
+    assert(when1.cond == lir.Reference(eqNodes(1).name, bool))
   }
 
   test("pattern match with Int type") {

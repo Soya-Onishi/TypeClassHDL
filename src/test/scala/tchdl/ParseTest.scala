@@ -552,4 +552,21 @@ class ParseTest extends TchdlFunSuite {
     assert(localExpr == StdBinOp(Operation.Mul, Ident("v0", pos), Ident("v1", pos), pos))
     assert(blk.last == StdBinOp(Operation.Add, DeReference(Ident("pointer", pos), pos), Ident("local", pos), pos))
   }
+
+  test("parse if statement with assignment") {
+    val parser = parseString(_.block)((gen, tree) => gen.block(tree)(Filename("")))_
+    val blk = parser(
+      """{
+        |  if(x == 0b0000) { this.r = value }
+        |}
+        |""".stripMargin
+    ).asInstanceOf[Block]
+
+    assert(blk.last.isInstanceOf[IfExpr])
+    assert(blk.elems.isEmpty)
+    val ifBlk = blk.last.asInstanceOf[IfExpr].conseq.asInstanceOf[Block]
+    assert(ifBlk.last == UnitLiteral(pos))
+    assert(ifBlk.elems.length == 1)
+    assert(ifBlk.elems.head.isInstanceOf[Assign])
+  }
 }

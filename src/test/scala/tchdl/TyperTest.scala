@@ -963,4 +963,16 @@ class TyperTest extends TchdlFunSuite {
     val (_, global) = untilTyper("procDeref.tchdl")
     expectNoError(global)
   }
+
+  test("using unaryop save typed operand") {
+    val (Vector(cu), global) = untilTyper("useUnaryOp.tchdl")
+    expectNoError(global)
+
+    val interface = cu.topDefs(1).asInstanceOf[ImplementClass].components.head.asInstanceOf[MethodDef]
+    val unary = interface.blk.get.last.asInstanceOf[UnaryOp]
+
+    unary.tpe // expect to have type
+    unary.operand.tpe // expect to have type
+
+  }
 }

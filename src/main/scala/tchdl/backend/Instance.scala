@@ -35,7 +35,7 @@ object ModuleLocation {
 
 object DataInstance {
   def int(int: Int)(implicit stack: StackFrame, global: GlobalData): RunResult = {
-    val intTpe = toBackendType(Type.bitTpe(32))
+    val intTpe = BackendType.intTpe
     val (node, ref) = makeNode(lir.Literal(BigInt(int), intTpe))
     val inst = StructInstance(intTpe, ref)
 
@@ -43,8 +43,8 @@ object DataInstance {
   }
 
   def bool(bool: Boolean)(implicit stack: StackFrame, global: GlobalData): RunResult = {
+    val tpe = BackendType.boolTpe
     val value = if(bool) 1 else 0
-    val tpe = toBackendType(Type.bitTpe(1))
     val (node, ref) = makeNode(lir.Literal(value, tpe))
     val inst = StructInstance(tpe, ref)
 
@@ -52,7 +52,7 @@ object DataInstance {
   }
 
   def unit()(implicit stack: StackFrame, global: GlobalData): RunResult = {
-    val tpe = toBackendType(Type.unitTpe)
+    val tpe = BackendType.unitTpe
     val (node, ref) = makeNode(lir.Literal(0, tpe))
     val inst = StructInstance(tpe, ref)
 

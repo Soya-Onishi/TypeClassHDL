@@ -244,9 +244,9 @@ block
     ;
 
 block_elem
-    : val_def       # ValDefPattern
-    | expr '=' expr # AssignPattern
-    | expr          # ExprPattern
+    : val_def                   # ValDefPattern
+    | THIS ('.' EXPR_ID)+ '=' expr # AssignPattern
+    | expr                      # ExprPattern
     ;
 
 construct_struct

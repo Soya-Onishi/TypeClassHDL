@@ -647,8 +647,14 @@ class ASTGenerator {
     case ctx: TP.ValDefPatternContext => valDef(ctx.val_def)
     case ctx: TP.ExprPatternContext => expr(ctx.expr)
     case ctx: TP.AssignPatternContext =>
-      val loc = expr(ctx.expr(0))
-      val rhs = expr(ctx.expr(1))
+      val symbols = ctx.THIS().getSymbol +: ctx.EXPR_ID().asScala.map(_.getSymbol).toVector
+      val rhs = expr(ctx.expr)
+      val loc = symbols.tail.foldLeft[Expression](This(Position(symbols.head))) {
+        case (prefix, name) =>
+          val end = Point(name.getLine, name.getStopIndex)
+          val pos = prefix.position.copy(`end` = end)
+          Select(prefix, name.getText, pos)
+      }
 
       Assign(loc, rhs, Position(ctx))
   }

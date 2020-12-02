@@ -230,9 +230,9 @@ trait Ord {
 
 impl Ord for Int {
   def cmp(that: Int) -> Ordering {
-    if(this == that)     Ordering:::Eq
-    else if(this < that) Ordering:::Lt
-    else                 Ordering:::Gt
+    if(this == that)     { Ordering:::Eq }
+    else if(this < that) { Ordering:::Lt }
+    else                 { Ordering:::Gt }
   }
 }
 
@@ -240,9 +240,9 @@ impl[m: Num] Ord for Bit[m]
   where m: min 1
 {
   def cmp(that: Bit[m]) -> Ordering {
-    if(this == that)     Ordering:::Eq
-    else if(this < that) Ordering:::Lt
-    else                 Ordering:::Gt
+    if(this == that)     { Ordering:::Eq }
+    else if(this < that) { Ordering:::Lt }
+    else                 { Ordering:::Gt }
   }
 }
 

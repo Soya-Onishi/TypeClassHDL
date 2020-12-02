@@ -948,7 +948,7 @@ object Typer {
         global.repo.error.append(err)
         unaryOp.setSymbol(Symbol.ErrorSymbol).setTpe(Type.ErrorType)
       case LookupResult.LookupSuccess((symbol, tpe)) =>
-        unaryOp.setSymbol(symbol).setTpe(tpe.returnType)
+        unaryOp.copy(operand = typedOperand).setSymbol(symbol).setTpe(tpe.returnType)
     }
   }
 

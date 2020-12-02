@@ -1704,6 +1704,13 @@ object Position {
     Position(file.name, start, end)
   }
 
+  def apply(token: org.antlr.v4.runtime.Token)(implicit file: Filename): Position = {
+    val start = Point(token.getLine, token.getStartIndex)
+    val end = Point(token.getLine, token.getStopIndex)
+
+    Position(file.name, start, end)
+  }
+
   def apply(start: AST, end: AST): Position = {
     val filename = start.position.filename
     val startPos = start.position.start

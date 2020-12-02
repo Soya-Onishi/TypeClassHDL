@@ -1053,23 +1053,29 @@ object BackendLIRGen {
   def runMatch(matchExpr: backend.Match)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def extractFieldData(source: lir.SubField, srcTpe: BackendType, history: Vector[BackendType], localStack: StackFrame): (Vector[lir.Stmt], Name, Vector[BackendType]) = {
       def convertHWType(tpe: BackendType): BackendType = tpe.symbol match {
-        case sym if sym == Symbol.int => BackendType.bitTpe(32)
-        case sym if sym == Symbol.unit => BackendType.bitTpe(0)
+        case sym if sym == Symbol.int => BackendType.intTpe
+        case sym if sym == Symbol.unit => BackendType.unitTpe
         case _ => tpe
+      }
+
+      def extractPrimitive(tpe: BackendType): (Vector[lir.Node], Name, Vector[BackendType]) = {
+        val name = localStack.next("_EXTRACT")
+        val addedHistory = tpe +: history
+        val expr = lir.Extract(source, addedHistory, tpe)
+        val node = lir.Node(name.name, expr, tpe)
+
+        (Vector(node), name, addedHistory)
       }
 
       val tpe = convertHWType(srcTpe)
 
       tpe.symbol match {
+        case sym if sym == Symbol.int => extractPrimitive(BackendType.intTpe)
+        case sym if sym == Symbol.bool => extractPrimitive(BackendType.boolTpe)
+        case sym if sym == Symbol.unit => extractPrimitive(BackendType.unitTpe)
         case sym if sym == Symbol.bit =>
-          val name = localStack.next("_EXTRACT")
           val HPElem.Num(width) = tpe.hargs(0)
-          val dataTpe = BackendType.bitTpe(width)
-          val addedHistory = dataTpe +: history
-          val expr = lir.Extract(source, addedHistory, dataTpe)
-          val node = lir.Node(name.name, expr, dataTpe)
-
-          (Vector(node), name, addedHistory)
+          extractPrimitive(BackendType.bitTpe(width))
         case sym if sym == Symbol.vec =>
           val vecName = localStack.next("_EXTRACT")
           val wire = lir.Wire(vecName.name, tpe)
@@ -1132,13 +1138,13 @@ object BackendLIRGen {
 
     def runPattern(instance: DataInstance, pattern: backend.MatchPattern, caseStack: StackFrame): RunResult = {
       def toLIRForm(lit: backend.Literal): lir.Literal = {
-        def toLit(value: Int, width: Int): lir.Literal = lir.Literal(value, BackendType.bitTpe(width))
+        def toLit(value: Int, tpe: BackendType): lir.Literal = lir.Literal(value, tpe)
 
         lit match {
-          case backend.IntLiteral(value) => toLit(value, 32)
-          case backend.BitLiteral(value, HPElem.Num(width)) => toLit(value.toInt, width)
-          case backend.BoolLiteral(value) => toLit(if(value) 1 else 0, 1)
-          case backend.UnitLiteral() => toLit(0, 0)
+          case backend.IntLiteral(value) => toLit(value, BackendType.intTpe)
+          case backend.BitLiteral(value, HPElem.Num(width)) => toLit(value.toInt, BackendType.bitTpe(width))
+          case backend.BoolLiteral(value) => toLit(if(value) 1 else 0, BackendType.boolTpe)
+          case backend.UnitLiteral() => toLit(0, BackendType.unitTpe)
         }
       }
 
@@ -1447,8 +1453,10 @@ object BackendLIRGen {
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def makeLeafs(tpe: BackendType, refer: lir.Ref): Vector[lir.Ref] = {
+      val primitives = Seq(Symbol.int, Symbol.bool, Symbol.unit, Symbol.bit)
+
       tpe.symbol match {
-        case sym if sym == Symbol.bit => Vector(refer)
+        case sym if primitives.contains(sym) => Vector(refer)
         case sym if sym == Symbol.vec =>
           val HPElem.Num(length) = tpe.hargs.head
           val elemTpe = tpe.targs.head
