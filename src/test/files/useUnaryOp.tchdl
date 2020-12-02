@@ -1,0 +1,8 @@
+package test
+
+module Top
+impl Top {
+  input def execute(a: Bit[8], b: Bit[8]) -> Bool {
+    !(a == b)
+  }
+}
