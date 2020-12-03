@@ -1,0 +1,65 @@
+package riscv
+
+import std::types:::Option
+import std::traits:::From
+
+module ForwardingUnit
+impl ForwardingUnit {
+  input execRd: Option[Bit[5]] = Option[Bit[5]]:::None
+  input memRd: Option[Bit[5]] = Option[Bit[5]]:::None
+  input wbRd: Option[Bit[5]] = Option[Bit[5]]:::None
+
+  input execData: Option[Bit[32]] = Option[Bit[32]]:::None
+  input memData: Option[Bit[32]] = Option[Bit[32]]:::None
+  input wbData: Option[Bit[32]] = Option[Bit[32]]:::None
+
+  input isExeLoad: Bool = false
+  input isMemLoad: Bool = false
+  input isLoadDone: Bool = false
+
+  sibling def rs1(addr: Bit[5], data: Bit[32]) -> Bit[32] {
+    if(addr == 0b00000) Bit[32]:::from(0)
+    else this.forwarding(addr, data)
+  }
+
+  sibling def rs2(addr: Bit[5], data: Bit[32]) -> Bit[32] {
+    if(addr == 0b00000) Bit[32]:::from(0)
+    else this.forwarding(addr, data)
+  }
+
+  def forwarding(addr: Bit[5], data: Bit[32]) -> Bit[32] {
+    match this.forward(addr, this.execRd, this.execData) {
+      case Option[Bit[32]]:::Some(d) => d
+      case _ => match this.forward(addr, this.memRd, this.memData) {
+        case Option[Bit[32]]:::Some(d) => d
+        case _ => match this.forward(addr, this.wbRd, this.wbData) {
+          case Option[Bit[32]]:::Some(d) => d
+          case _ => data
+        }
+      }
+    }
+  }
+
+  def forward(addr: Bit[5], rd: Option[Bit[5]], data: Option[Bit[32]]) -> Option[Bit[32]] {
+    match rd {
+      case Option[Bit[5]]:::None => Option[Bit[32]]:::None
+      case Option[Bit[5]]:::Some(rd) =>
+        if(addr == rd) data
+        else Option[Bit[32]]:::None
+    }
+  }
+
+  input def isLoadHazard(rs1: Bit[5], rs2: Bit[5]) -> Bool {
+    val execHazard = match this.execRd {
+      case Option[Bit[5]]:::None     => false
+      case Option[Bit[5]]:::Some(rd) => this.isExeLoad & (rd == rs1 | rd == rs2)
+    }
+
+    val memHazard = match this.memRd {
+      case Option[Bit[5]]:::None     => false
+      case Option[Bit[5]]:::Some(rd) => this.isMemLoad & !this.isLoadDone & (rd == rs1 | rd == rs2)
+    }
+
+    execHazard | memHazard
+  }
+}
