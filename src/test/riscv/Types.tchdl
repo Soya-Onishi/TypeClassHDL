@@ -1,0 +1,95 @@
+package riscv
+
+import std::traits:::From
+import std::types:::Option
+
+enum Opcode {
+  LUI    = 0b011_0111
+  AUIPC  = 0b001_0111
+  JAL    = 0b110_1111
+  JALR   = 0b110_0111
+  BRANCH = 0b110_0011
+  LOAD   = 0b000_0011
+  STORE  = 0b010_0011
+  IMM    = 0b001_0011
+  REG    = 0b011_0011
+  SYSTEM = 0b111_0011
+}
+
+impl From[Bit[7]] for Opcode {
+  static def from(op: Bit[7]) -> Opcode {
+    match op {
+      case 0b011_0111 => Opcode:::LUI
+      case 0b001_0111 => Opcode:::AUIPC
+      case 0b110_1111 => Opcode:::JAL
+      case 0b110_0111 => Opcode:::JALR
+      case 0b110_0011 => Opcode:::BRANCH
+      case 0b000_0011 => Opcode:::LOAD
+      case 0b010_0011 => Opcode:::STORE
+      case 0b001_0011 => Opcode:::IMM
+      case 0b011_0011 => Opcode:::REG
+      case 0b111_0011 => Opcode:::SYSTEM
+    }
+  }
+}
+
+enum Operation {
+  Arith(  ALUOps, Bit[32], Bit[32], Bit[5])           = 0
+  Shift(ShiftOps, Bit[32], Bit[ 5], Bit[5])           = 1
+    Cmp(Compare, Bit[5])                              = 2
+    Jmp(Jump, Bit[32], Bit[32])                       = 3
+   Load(DataType, Bit[32], Bit[32], Bit[5])           = 4
+  Store(DataType, Bit[32], Bit[32], Bit[32])          = 5
+}
+
+impl Operation {
+  def rdAddr() -> Option[Bit[5]] {
+    match this {
+      case Operation:::Arith(_, _, _, rd)               => Option[Bit[5]]:::Some(rd)
+      case Operation:::Shift(_, _, _, rd)               => Option[Bit[5]]:::Some(rd)
+      case   Operation:::Cmp(_, rd)                     => Option[Bit[5]]:::Some(rd)
+      case   Operation:::Jmp(   Jump:::Branch(_), _, _) => Option[Bit[5]]:::None
+      case   Operation:::Jmp(  Jump:::Direct(rd), _, _) => Option[Bit[5]]:::Some(rd)
+      case   Operation:::Jmp(Jump:::Indirect(rd), _, _) => Option[Bit[5]]:::Some(rd)
+      case  Operation:::Load(_, _, _, rd)               => Option[Bit[5]]:::Some(rd)
+      case Operation:::Store(_, _, _, _)              => Option[Bit[5]]:::None
+    }
+  }
+}
+
+enum ALUOps {
+  Add = 0
+  Sub = 1
+  And = 2
+   Or = 3
+  Xor = 4
+}
+
+enum ShiftOps {
+  Sll = 0
+  Srl = 1
+  Sra = 2
+}
+
+enum Jump {
+  Branch(Compare) = 0
+  Direct(Bit[5])          = 1
+  Indirect(Bit[5])        = 2
+}
+
+enum Compare {
+   Eq(Bit[32], Bit[32]) = 0
+   Ne(Bit[32], Bit[32]) = 1
+   Lt(Bit[32], Bit[32]) = 2
+   Ge(Bit[32], Bit[32]) = 3
+  Ltu(Bit[32], Bit[32]) = 4
+  Geu(Bit[32], Bit[32]) = 5
+}
+
+enum DataType {
+  Byte  = 0
+  Half  = 1
+  Word  = 2
+  UByte = 3
+  UHalf = 4
+}
