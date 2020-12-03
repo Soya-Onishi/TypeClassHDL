@@ -1,0 +1,11 @@
+package test
+
+module Top
+impl Top {
+  input in: Bit[16]
+  output out: Bit[1]
+
+  always useHead {
+    this.out = this.in.msb()
+  }
+}

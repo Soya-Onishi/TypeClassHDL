@@ -754,4 +754,19 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("use msb method of Bit[m]") {
+    val rnd = new Random(0)
+    val circuit = untilThisPhase(Vector("test"), "Top", "useMSB.tchdl")
+
+    runSim(circuit) { tester =>
+      for(_ <- 0 to 1000) {
+        val in = BigInt(16, rnd)
+        val out = in >> 15
+
+        tester.poke("in", in)
+        tester.expect("out", out)
+      }
+    }
+  }
 }

@@ -1,0 +1,13 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  input in: Option[Bit[4]] = Option[Bit[4]]:::None
+  output out: Option[Bit[4]]
+
+  always tmp {
+    this.out = this.in
+  }
+}

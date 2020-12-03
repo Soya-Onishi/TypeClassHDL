@@ -56,6 +56,9 @@ class TchdlFunSuite extends AnyFunSuite {
     assert(global.repo.error.counts == count, showErrors(global))
   }
 
+  def showErrorsSimple(implicit global: GlobalData): String =
+    global.repo.error.elems.map(_.toString).mkString("\n")
+
   def findModule(modules: Vector[lir.Module], tpeStr: String): Option[lir.Module] = {
     def isSameTpe(tpe: BackendType, tpeTree: TypeTree): Boolean = {
       def toHPElem(harg: HPExpr): HPElem = harg match {
