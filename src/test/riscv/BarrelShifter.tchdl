@@ -1,0 +1,45 @@
+package riscv
+
+import std::traits:::From
+
+module BarrelShifter
+impl BarrelShifter {
+  input def execute(ops: ShiftOps, operand: Bit[32], shamt: Bit[5]) -> Bit[32] {
+    match ops {
+      case ShiftOps:::Sll => this.sll(operand, shamt)
+      case ShiftOps:::Srl => this.srl(operand, shamt)
+      case ShiftOps:::Sra => this.sra(operand, shamt)
+    }
+  }
+
+  internal def sll(op: Bit[32], shamt: Bit[5]) -> Bit[32] {
+    val o1 = if(shamt.bit[0]() == 0b1) op.truncate[30, 0]().concat[ 1](Bit[ 1]:::from(0)) else op
+    val o2 = if(shamt.bit[1]() == 0b1) o1.truncate[29, 0]().concat[ 2](Bit[ 2]:::from(0)) else o1
+    val o3 = if(shamt.bit[2]() == 0b1) o2.truncate[27, 0]().concat[ 4](Bit[ 4]:::from(0)) else o2
+    val o4 = if(shamt.bit[3]() == 0b1) o3.truncate[23, 0]().concat[ 8](Bit[ 8]:::from(0)) else o3
+    val o5 = if(shamt.bit[4]() == 0b1) o4.truncate[15, 0]().concat[16](Bit[16]:::from(0)) else o4
+
+    o5
+  }
+
+  internal def srl(op: Bit[32], shamt: Bit[5]) -> Bit[32] {
+    val o1 = if(shamt.bit[0]() == 0b1) Bit[ 1]:::from(0).concat[31](op.truncate[31,  1]()) else op
+    val o2 = if(shamt.bit[1]() == 0b1) Bit[ 2]:::from(0).concat[30](o1.truncate[31,  2]()) else o1
+    val o3 = if(shamt.bit[2]() == 0b1) Bit[ 4]:::from(0).concat[28](o2.truncate[31,  4]()) else o2
+    val o4 = if(shamt.bit[3]() == 0b1) Bit[ 8]:::from(0).concat[24](o3.truncate[31,  8]()) else o3
+    val o5 = if(shamt.bit[4]() == 0b1) Bit[16]:::from(0).concat[16](o4.truncate[31, 16]()) else o4
+
+    o5
+  }
+
+  internal def sra(op: Bit[32], shamt: Bit[5]) -> Bit[32] {
+    val msb = op.msb()
+    val o1 = if(shamt.bit[0]() == 0b1) Bit[ 1]:::signExt[1](msb).concat[31](op.truncate[31,  1]()) else op
+    val o2 = if(shamt.bit[1]() == 0b1) Bit[ 2]:::signExt[1](msb).concat[30](o1.truncate[31,  2]()) else o1
+    val o3 = if(shamt.bit[2]() == 0b1) Bit[ 4]:::signExt[1](msb).concat[28](o2.truncate[31,  4]()) else o2
+    val o4 = if(shamt.bit[3]() == 0b1) Bit[ 8]:::signExt[1](msb).concat[24](o3.truncate[31,  8]()) else o3
+    val o5 = if(shamt.bit[4]() == 0b1) Bit[16]:::signExt[1](msb).concat[16](o4.truncate[31, 16]()) else o4
+
+    o5
+  }
+}
