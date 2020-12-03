@@ -28,35 +28,35 @@ class RiscvTest extends TchdlFunSuite {
     implicit val global: GlobalData = GlobalData(pkgName, moduleTree)
 
     trees.foreach(Namer.exec)
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     trees.foreach(NamerPost.exec)
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     trees.foreach(BuildImplContainer.exec)
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     VerifyImplConflict.verifyImplConflict()
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     val trees0 = trees.map(TopDefTyper.exec)
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     trees0.foreach(ImplMethodSigTyper.exec)
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     val trees1 = trees0.map(Typer.exec)
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     trees1.foreach(RefCheck.exec)
-    expectNoError
+    assert(global.repo.error.counts == 0, showErrorsSimple(global))
 
     val newGlobal = global.assignCompilationUnits(trees1.toVector)
     val modules = BuildGeneratedModuleList.exec(newGlobal)
-    expectNoError(newGlobal)
+    assert(newGlobal.repo.error.counts == 0, showErrorsSimple(newGlobal))
 
     val (moduleContainers, methodContainers) = BackendIRGen.exec(modules)(newGlobal)
-    expectNoError(newGlobal)
+    assert(newGlobal.repo.error.counts == 0, showErrorsSimple(newGlobal))
 
     val lirModules = BackendLIRGen.exec(moduleContainers, methodContainers)
     val topModuleTpe = moduleContainers.head.tpe
@@ -273,6 +273,140 @@ class RiscvTest extends TchdlFunSuite {
 
         tester.step(1)
       }
+    }
+  }
+
+  test("BarrelShifter unit test") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "BarrelShifter", "BarrelShifter.tchdl", "Types.tchdl")
+
+    def exec(name: String*): String = NameTemplate.concat("execute" +: name: _*)
+
+    runSim(circuit, enableVcd = true) { tester =>
+      for{
+        op <- 0 until 3
+        _ <- 0 to 1
+      } {
+        val operand = next(32)
+        val shamt = next(5).toInt
+
+        tester.poke(exec(NameTemplate.active), 1)
+        tester.poke(exec("ops", NameTemplate.enumFlag), op)
+        tester.poke(exec("operand"), operand)
+        tester.poke(exec("shamt"), shamt)
+
+        val mask = (BigInt(1) << 32) - 1
+        val expect = op match {
+          case 0 => (operand << shamt) & mask
+          case 1 =>  operand >> shamt
+          case 2 =>
+            val tmp = operand >> shamt
+            if((operand & (BigInt(1) << 31)) == 0) tmp
+            else tmp | ((BigInt(1) << shamt) - 1) << (32 - shamt - 1)
+        }
+
+        val actual = tester.peek(exec(NameTemplate.ret))
+        val message = s"ops: $op, operand: 0b${operand.toString(2)}, shamt: ${shamt} expect: 0b${expect.toString(2)}, actual: 0b${actual.toString(2)}"
+        tester.step(1)
+        tester.expect(exec(NameTemplate.ret), expect, message)
+      }
+    }
+  }
+
+  test("Decoder unit test") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "Types.tchdl")
+
+    def truncate(v: BigInt, widthes: Int*): Seq[BigInt] = {
+      val builder = Seq.newBuilder[BigInt]
+
+      widthes.reverse.foldLeft(v) {
+        case (remain, width) =>
+          val mask = (1 << width) - 1
+          builder += remain & mask
+          remain >> width
+      }
+
+      builder.result()
+    }
+
+    def concat(bits: (Int, BigInt)*): BigInt = {
+      val (_, res) = bits.reverse.foldLeft((0, BigInt(0))) {
+        case ((offset, acc), (width, bits)) =>
+          val res = acc | (bits << offset)
+          (offset + width, res)
+      }
+
+      res
+    }
+
+    def luiInst(): { val inst: BigInt; val imm: BigInt; val rd: BigInt } = {
+      val _imm = next(20)
+      val _rd = next(5)
+      val opcode = BigInt("0110111", 2)
+      val _inst = _imm << 12 | _rd << 7 | opcode
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rd = _rd
+      }
+    }
+
+    def auipcInst(): { val inst: BigInt; val imm: BigInt; val rd: BigInt } = {
+      val _imm = next(20)
+      val _rd = next(5)
+      val opcode = BigInt("0010111", 2)
+      val _inst = _imm << 12 | _rd << 7 | opcode
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rd = _rd
+      }
+    }
+
+    def jalInst(): { val inst: BigInt; val imm: BigInt; val rd: BigInt } = {
+      val immRaw = next(20)
+      val _rd = next(5)
+      val opcode = BigInt("1101111", 2)
+      val Seq(bit20, bit10_1, bit11, bit19_12) = truncate(immRaw, 1, 10, 1, 8)
+      val imm = concat((1, bit20), (8, bit19_12), (1, bit11), (10, bit10_1), (1, BigInt(0)))
+      val _imm =
+        if(bit20 == 1) BigInt("0xFFF00000", 16) | imm
+        else imm
+      val _inst = concat((20, immRaw), (5, _rd), (7, opcode))
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rd = _rd
+      }
+    }
+
+    def jalrInst(): { val inst: BigInt; val imm: BigInt; val rs1: BigInt; val rd: BigInt } = {
+      val immRaw = next(12)
+      val _rs1 = next(5)
+      val _rd = next(5)
+      val opcode = BigInt("1100111", 2)
+      val _inst = immRaw << 20 | _rs1 << 15 | _rd << 7 | opcode
+      val _imm =
+        if((immRaw & (1 << 11)) == 0) immRaw
+        else BigInt("0xFFFFF000", 16) | immRaw
+
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rs1 = _rs1
+        val rd = _rd
+      }
+    }
+
+    runSim(circuit) { tester =>
+
     }
   }
 }
