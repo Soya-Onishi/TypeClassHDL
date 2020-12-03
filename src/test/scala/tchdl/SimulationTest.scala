@@ -733,4 +733,25 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("use signExt to extend bit by sign") {
+    val rnd = new Random(0)
+    val circuit = untilThisPhase(Vector("test"), "Top", "useSignExt.tchdl")
+    runSim(circuit) { tester =>
+      for(_ <- 0 to 1000) {
+        val in = BigInt(16, rnd)
+        val out =
+          if((in & (1 << 15)) == 0) in
+          else {
+            val mask = ((BigInt(1) << 32) - 1) ^ ((BigInt(1) << 16) - 1)
+            mask | in
+          }
+
+        tester.poke("in", in)
+        val actual = tester.peek("out")
+        val message = s"expect: ${out.toString(2)}, actual: ${actual.toString(2)}"
+        tester.expect("out", out, message)
+      }
+    }
+  }
 }

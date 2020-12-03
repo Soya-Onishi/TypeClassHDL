@@ -182,6 +182,53 @@ package object builtin {
     bitUnaryOps(operand, PrimOps.Not, stack)
   }
 
+  def bitSignExt(bitTpe: BackendType, operand: Instance, stack: StackFrame, global: GlobalData): RunResult = {
+    val HPElem.Num(toWidth) = bitTpe.hargs(0)
+    val DataInstance(fromTpe, fromRef) = operand
+    val HPElem.Num(fromWidth) =  fromTpe.hargs(0)
+    val bit1Tpe = BackendType.bitTpe(1)(global)
+    val retTpe = BackendType.bitTpe(toWidth)(global)
+
+    if(toWidth <= fromWidth) {
+      val op = lir.Ops(PrimOps.Bits, Vector(fromRef), Vector(toWidth - 1, 0), retTpe)
+      val node = lir.Node(stack.next(NameTemplate.temp).name, op, retTpe)
+      val instance = DataInstance(retTpe, lir.Reference(node.name, node.tpe))
+      RunResult(Vector(node), instance)
+    } else {
+      val zeroPad = lir.Literal(0, retTpe)
+      val onePad = lir.Literal(((BigInt(1) << toWidth) - 1) ^ ((BigInt(1) << fromWidth) - 1), retTpe)
+      val zeroNode = lir.Node(stack.next(NameTemplate.temp).name, zeroPad, retTpe)
+      val oneNode = lir.Node(stack.next(NameTemplate.temp).name, onePad, retTpe)
+      val wireName = stack.next(NameTemplate.temp)
+      val padWire = lir.Wire(wireName.name, retTpe)
+      val msbExpr = lir.Ops(PrimOps.Head, Vector(fromRef), Vector(1), bit1Tpe)
+      val msb = lir.Node(stack.next(NameTemplate.temp).name, msbExpr, bit1Tpe)
+      val msbRef = lir.Reference(msb.name, msb.tpe)
+      val mux = lir.When(
+        msbRef,
+        Vector(lir.Assign(lir.Reference(padWire.name, padWire.tpe), lir.Reference( oneNode.name,  oneNode.tpe))),
+        Vector(lir.Assign(lir.Reference(padWire.name, padWire.tpe), lir.Reference(zeroNode.name, zeroNode.tpe)))
+      )
+      val padding = lir.Ops(
+        PrimOps.Or,
+        Vector(lir.Reference(padWire.name, padWire.tpe), fromRef),
+        Vector.empty,
+        retTpe
+      )
+      val paddingNode = lir.Node(
+        stack.next(NameTemplate.temp).name,
+        padding,
+        retTpe
+      )
+
+      val stmts = Vector(zeroNode, oneNode, padWire, msb, mux, paddingNode)
+      val retRef = lir.Reference(paddingNode.name, paddingNode.tpe)
+      val instance = DataInstance(retRef.tpe, retRef)
+
+      RunResult(stmts, instance)
+    }
+  }
+
   def bitTruncate(operand: Instance, hi: HPElem, lo: HPElem, stack: StackFrame, global: GlobalData): RunResult = {
     val HPElem.Num(hiIndex) = hi
     val HPElem.Num(loIndex) = lo

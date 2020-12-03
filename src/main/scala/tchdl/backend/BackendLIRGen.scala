@@ -965,6 +965,7 @@ object BackendLIRGen {
       case "leBit" => builtin.bitLe(insts(0), insts(1), stack, global)
       case "negBit" => builtin.bitNeg(insts(0))
       case "notBit" => builtin.bitNot(insts(0))
+      case "signExtBit" => builtin.bitSignExt(call.accessorTpe.get, insts(0), stack, global)
       case "truncateBit" => builtin.bitTruncate(insts(0), call.hargs(0), call.hargs(1), stack, global)
       case "bitBit" => builtin.bitBit(insts(0), call.hargs(0), stack, global)
       case "concatBit" => builtin.bitConcat(insts(0), insts(1), stack, global)

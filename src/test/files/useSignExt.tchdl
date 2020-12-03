@@ -1,0 +1,11 @@
+package test
+
+module Top
+impl Top {
+  input in: Bit[16]
+  output out: Bit[32]
+
+  always signExt {
+    this.out = Bit[32]:::signExt[16](this.in)
+  }
+}

@@ -12,6 +12,13 @@ struct Bool {}
 struct Vector[m: Num, T] where m: min 0, T: HW
 
 impl[m: Num] Bit[m] where m: min 1 {
+  @built_in[signExtBit: (Bit) => Bit]
+  static def signExt[n: Num](bit: Bit[n]) -> Bit[m]
+    where n: min 1
+  {
+    This:::signExt[n](bit)
+  }
+
   @built_in[truncateBit: () => Bit]
   def truncate[x: Num, y: Num]() -> Bit[x - y + 1]
     where x: min 0 & max m - 1,
