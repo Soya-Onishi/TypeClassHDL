@@ -158,4 +158,121 @@ class RiscvTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("unit test of forwarding unit") {
+    val rnd = new Random(0)
+    val circuit = untilThisPhase(Vector("riscv"), "ForwardingUnit", "ForwardingUnit.tchdl", "Types.tchdl")
+    def next = BigInt(32, rnd)
+
+    def setRs(interface: String, addr: BigInt, data: BigInt, tester: TreadleTester): BigInt = {
+      def nme(name: String): String = NameTemplate.concat(interface, name)
+
+      tester.poke(nme(NameTemplate.active), 1)
+      tester.poke(nme("addr"), addr)
+      tester.poke(nme("data"), data)
+      tester.peek(nme(NameTemplate.ret))
+    }
+    def hazard(name: String): String = NameTemplate.concat("isLoadHazard", name)
+    def forward(stage: String, isSome: Boolean, rd: BigInt, data: BigInt, tester: TreadleTester): Unit = {
+      val prefix = s"__$stage"
+      val rdName = s"${prefix}Rd"
+      val dataName = s"${prefix}Data"
+
+      tester.poke(s"${rdName}_active", 1)
+      tester.poke(s"${rdName}_bits__member", if(isSome) 1 else 0)
+      tester.poke(s"${rdName}_bits__data", rd)
+      tester.poke(s"${dataName}_active", 1)
+      tester.poke(s"${dataName}_bits__member", if(isSome) 1 else 0)
+      tester.poke(s"${dataName}_bits__data", data)
+    }
+    def disable(stage: String, tester: TreadleTester): Unit = {
+      val prefix = s"__$stage"
+      val rdName = s"${prefix}Rd"
+      val dataName = s"${prefix}Data"
+
+      tester.poke(s"${rdName}_active", 0)
+      tester.poke(s"${dataName}_active", 0)
+    }
+
+    def execute(infos: Seq[(Boolean, BigInt, BigInt)], name: String, tester: TreadleTester): Unit = {
+      val addr = next % 32
+      val data = if(addr == 0) BigInt(0) else next
+      setRs(name, addr, data, tester)
+      val expect =
+        if(addr == 0) BigInt(0)
+        else infos.filter(_._1)
+          .find(_._2 == addr)
+          .map{ case (_, _, data) => data }
+          .getOrElse(data)
+
+      val message =
+        s"""
+           |exe: active(${infos(0)._1}), rd(${infos(0)._2}), data(${infos(0)._3})
+           |mem: active(${infos(1)._1}), rd(${infos(1)._2}), data(${infos(1)._3})
+           | wb: active(${infos(2)._1}), rd(${infos(2)._2}), data(${infos(2)._3})
+           |act: rd($addr), data($data)
+           |""".stripMargin
+
+      tester.expect(
+        NameTemplate.concat(name, NameTemplate.ret),
+        expect,
+        message
+      )
+    }
+
+    runSim(circuit) { tester =>
+      disable("exec", tester)
+      disable("mem", tester)
+      disable("wb", tester)
+      tester.poke("__isExeLoad_active", 0)
+      tester.poke("__isMemLoad_active", 0)
+      tester.poke("__isLoadDone_active", 0)
+      tester.poke(NameTemplate.concat("rs1", NameTemplate.active), 0)
+      tester.poke(NameTemplate.concat("rs2", NameTemplate.active), 0)
+      tester.poke(hazard(NameTemplate.active), 0)
+
+      for(_ <- 0 to 100000) {
+        val execForward = rnd.nextBoolean()
+        val memForward = rnd.nextBoolean()
+        val wbForward = rnd.nextBoolean()
+        val forwardFlags = Seq(execForward, memForward, wbForward)
+
+        val tuples = (forwardFlags zip Seq("exec", "mem", "wb")).map {
+          case (bool, name) =>
+            val rd = next % 32
+            val data = next
+
+            if(bool) forward(name, isSome = true, rd, data, tester)
+            else disable(name, tester)
+
+            (rd, data)
+        }
+
+        val infos = (forwardFlags zip tuples).map{ case (flag, (rd, data)) => (flag, rd, data) }
+        execute(infos, "rs1", tester)
+        execute(infos, "rs2", tester)
+
+        val execLoad = rnd.nextBoolean() && infos(0)._1
+        val memLoad = rnd.nextBoolean() && infos(1)._1
+        val loadDone = memLoad & rnd.nextBoolean()
+        val rs1Addr = next % 32
+        val rs2Addr = next % 32
+        tester.poke("__isExeLoad_active", 1)
+        tester.poke("__isMemLoad_active", 1)
+        tester.poke("__isLoadDone_active", 1)
+        tester.poke("__isExeLoad_bits", if(execLoad) 1 else 0)
+        tester.poke("__isMemLoad_bits", if(memLoad) 1 else 0)
+        tester.poke("__isLoadDone_bits", if(loadDone) 1 else 0)
+        tester.poke("isLoadHazard__active", 1)
+        tester.poke("isLoadHazard_rs1", rs1Addr)
+        tester.poke("isLoadHazard_rs2", rs2Addr)
+
+        val exeHazard = infos(0)._1 && (infos(0)._2 == rs1Addr || infos(0)._2 == rs2Addr) && execLoad
+        val memHazard = infos(1)._1 && (infos(1)._2 == rs1Addr || infos(1)._2 == rs2Addr) && memLoad && !loadDone
+        tester.expect("isLoadHazard__ret", if(exeHazard | memHazard) 1 else 0)
+
+        tester.step(1)
+      }
+    }
+  }
 }

@@ -1,0 +1,11 @@
+package test
+
+module Top
+impl Top {
+  input in: Bool = false
+  output out: Bool
+
+  always runThrough {
+    this.out = !this.in
+  }
+}

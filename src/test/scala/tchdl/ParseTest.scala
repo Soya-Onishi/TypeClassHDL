@@ -569,4 +569,11 @@ class ParseTest extends TchdlFunSuite {
     assert(ifBlk.elems.length == 1)
     assert(ifBlk.elems.head.isInstanceOf[Assign])
   }
+
+  test("parse unary op for this.variable") {
+    val parser = parseString(_.expr)((gen, tree) => gen.expr(tree)(Filename("")))_
+    val e = parser("!this.abc").asInstanceOf[Expression]
+
+    assert(e.isInstanceOf[StdUnaryOp])
+  }
 }

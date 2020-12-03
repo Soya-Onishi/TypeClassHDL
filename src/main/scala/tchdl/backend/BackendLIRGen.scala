@@ -27,6 +27,7 @@ object BackendLIRGen {
     private val scope: mutable.Map[Name, Instance] = mutable.Map.empty
     protected val namer: FirrtlNamer
     val lookupThis: Option[Instance]
+    val isBlockStack: Boolean
 
     def next(name: String): Name = {
       namer.variable.next(name)
@@ -46,8 +47,13 @@ object BackendLIRGen {
       refer(id)
     }
 
-    def refer(name: String): Name = namer.variable.refer(name)
-    def refer(id: Int): Name = namer.temp.refer(id)
+    def refer(name: String): Name = namer.variable.refer(name) match {
+      case Some(name) => name
+      case None if isBlockStack => parent.refer(name)
+      case None => throw new ImplementationErrorException(s"there is no count or lock for [$name]")
+    }
+
+    def refer(id: Int): Name = namer.temp.refer(id).get
 
     def lock(name: String): Unit = namer.variable.lock(name)
 
@@ -67,7 +73,8 @@ object BackendLIRGen {
 
     def lookup(name: Name): Instance = scope.get(name) match {
       case Some(instance) => instance
-      case None => throw new ImplementationErrorException("instance must be there")
+      case None if isBlockStack => parent.lookup(name)
+      case None => throw new ImplementationErrorException(s"instance must be there (name: ${name.toString})")
     }
 
     def append(name: Name, instance: Instance): Unit = {
@@ -81,16 +88,19 @@ object BackendLIRGen {
         override val namer = new FirrtlNamer
         override val parent = null
         override val lookupThis = Some(thisTerm)
+        override val isBlockStack = false
       }
     }
 
-    def apply(parent: StackFrame, thisTerm: Option[Instance]): StackFrame = {
+    def apply(parent: StackFrame, thisTerm: Option[Instance], isBlockStack: Boolean): StackFrame = {
       val _parent = parent
+      val _blkStack = isBlockStack
 
       new StackFrame {
         override val namer = _parent.namer.copy
         override val parent = _parent
         override val lookupThis = thisTerm
+        override val isBlockStack = _blkStack
       }
     }
   }
@@ -115,7 +125,7 @@ object BackendLIRGen {
 
     def next(key: T): Name
     def count(key: T): Unit
-    def refer(key: T): Name
+    def refer(key: T): Option[Name]
     def lock(key: T): Unit
     def copy: Counter[T]
   }
@@ -135,9 +145,9 @@ object BackendLIRGen {
       max = max + 1
     }
 
-    def refer(key: Int): Name = {
+    def refer(key: Int): Option[Name] = {
       val value = table(key)
-      Name(s"_TEMP_$value")
+      Some(Name(s"_TEMP_$value"))
     }
 
     def lock(key: Int): Unit = throw new ImplementationErrorException("lock is not allowed to temp counter")
@@ -180,11 +190,11 @@ object BackendLIRGen {
       }
     }
 
-    def refer(key: String): Name = {
+    def refer(key: String): Option[Name] = {
       table.get(key) match {
-        case Some(count) => Name(s"${key}_$count")
-        case None if locked(key) => Name(key)
-        case None => throw new ImplementationErrorException(s"there is no count or lock for [$key]")
+        case Some(count) => Some(Name(s"${key}_$count"))
+        case None if locked(key) => Some(Name(key))
+        case None => None
       }
     }
 
@@ -847,7 +857,7 @@ object BackendLIRGen {
     val hargs = hargResults.map(_.instance)
     val hargStmts = hargResults.flatMap(_.stmts)
 
-    val newStack = StackFrame(stack, accessor)
+    val newStack = StackFrame(stack, accessor, isBlockStack = false)
 
     val hargNames = method.hparams.keys.map(newStack.next)
     val argNames = method.params.keys.map(newStack.next)
@@ -930,12 +940,12 @@ object BackendLIRGen {
       case "leInt" => builtin.intLe(insts(0), insts(1), stack, global)
       case "negInt" => builtin.intNeg(insts(0), stack, global)
       case "notInt" => builtin.intNot(insts(0), stack, global)
-      case "orBool"  => builtin.boolOr(insts(0), insts(1))
-      case "andBool" => builtin.boolAnd(insts(0), insts(1))
-      case "xorBool" => builtin.boolXor(insts(0), insts(1))
-      case "eqBool" => builtin.boolEq(insts(0), insts(1), global)
-      case "neBool" => builtin.boolNe(insts(0), insts(1), global)
-      case "notBool" => builtin.boolNot(insts(0), stack, global)
+      case "orBool"  => builtin.bitOr(insts(0), insts(1))
+      case "andBool" => builtin.bitAnd(insts(0), insts(1))
+      case "xorBool" => builtin.bitXor(insts(0), insts(1))
+      case "eqBool" => builtin.bitEq(insts(0), insts(1), stack, global)
+      case "neBool" => builtin.bitNe(insts(0), insts(1), stack, global)
+      case "notBool" => builtin.bitNot(insts(0))
       case "addBit" => builtin.bitAdd(insts(0), insts(1))
       case "subBit" => builtin.bitSub(insts(0), insts(1))
       case "mulBit" => builtin.bitMul(insts(0), insts(1))
@@ -1237,7 +1247,7 @@ object BackendLIRGen {
     }
 
     def runCase(instance: DataInstance, caseExpr: backend.Case, retLoc: Option[lir.Reference]): (Vector[lir.Stmt], lir.When) = {
-      val newStack = StackFrame(stack, stack.lookupThis)
+      val newStack = StackFrame(stack, stack.lookupThis, isBlockStack = true)
       val RunResult(patternStmts, condInstance: DataInstance) = runPattern(instance, caseExpr.pattern, newStack)
       val bodyStmts = caseExpr.stmts.flatMap(runStmt(_)(newStack, ctx, global))
       val RunResult(exprStmts, retInstance: DataInstance) = runExpr(caseExpr.ret)(newStack, ctx, global)

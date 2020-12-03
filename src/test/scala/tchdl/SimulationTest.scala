@@ -717,4 +717,20 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("use unary op for this.variable") {
+    val rnd = new Random(0)
+    val circuit = untilThisPhase(Vector("test"), "Top", "useNotForPort.tchdl")
+
+    runSim(circuit) { tester =>
+      for(_ <- 0 to 10) {
+        val active = rnd.nextBoolean()
+        val in = rnd.nextBoolean()
+
+        tester.poke("__in_active", if(active) 1 else 0)
+        tester.poke("__in_bits", if(in) 1 else 0)
+        tester.expect("out", if(active & in) 0 else 1)
+      }
+    }
+  }
 }
