@@ -1160,4 +1160,199 @@ class RiscvTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("ALU unit test for Arithmetic") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "ALU", "ALU.tchdl", "BarrelShifter.tchdl", "Comparator.tchdl", "Types.tchdl")
+
+    runSim(circuit, createFile = true) { tester =>
+      for{
+        op <- 0 to 4
+        _ <- 0 until 1000
+      } {
+        val operand0 = next(32)
+        val operand1 = next(32)
+        val rd = BigInt(0)
+        val operationBits = concat((5, rd), (32, operand1), (32, operand0), (3, op))
+
+        tester.poke("execute__active", 1)
+        tester.poke("execute_op__member", 0)
+        tester.poke("execute_op__data", operationBits)
+
+        val expect = op match {
+          case 0 => truncate(operand0 + operand1, 32).head
+          case 1 => truncate(operand0 - operand1, 32).head
+          case 2 => operand0 & operand1
+          case 3 => operand0 | operand1
+          case 4 => operand0 ^ operand1
+        }
+
+        tester.expect("execute__ret", expect)
+      }
+    }
+  }
+
+  test("ALU unit test for Shift") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "ALU", "ALU.tchdl", "BarrelShifter.tchdl", "Comparator.tchdl", "Types.tchdl")
+
+    runSim(circuit, createFile = true) { tester =>
+      for{
+        op <- 0 to 2
+        _ <- 0 until 1000
+      } {
+        val operand0 = next(32)
+        val operand1 = next(32)
+        val rd = BigInt(0)
+        val operationBits = concat((5, rd), (5, operand1), (32, operand0), (2, op))
+
+        tester.poke("execute__active", 1)
+        tester.poke("execute_op__member", 1)
+        tester.poke("execute_op__data", operationBits)
+
+        val shamt = truncate(operand1, 5).head.toInt
+        val expect = op match {
+          case 0 => truncate(operand0 << shamt, 32).head
+          case 1 => truncate(operand0 >> shamt, 32).head
+          case 2 =>
+            val tmp = truncate(operand0 >> shamt, 32).head
+            val idx = 32 - shamt - 1
+            signExt(tmp, idx, 32)
+        }
+
+        val message =
+          s"""
+             |    op: $op
+             |   rs1: ${operand0.toString(16).reverse.padTo(8, '0').reverse}
+             | shamt: $shamt
+             |expect: ${expect.toString(16).reverse.padTo(8, '0').reverse}
+             |actual: ${tester.peek("execute__ret").toString(16).reverse.padTo(8, '0').reverse}
+             |""".stripMargin
+        tester.expect("execute__ret", expect, message)
+      }
+    }
+  }
+
+  test("ALU unit test for Compare") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "ALU", "ALU.tchdl", "BarrelShifter.tchdl", "Comparator.tchdl", "Types.tchdl")
+
+    def lessThanSigned(a: BigInt, b: BigInt): Boolean = {
+      val Seq(aRemain, aMsb) = truncate(a, 1, 31)
+      val Seq(bRemain, bMsb) = truncate(b, 1, 31)
+      val tmp0 = concat((1, BigInt(0)), (1, ~aMsb), (31, aRemain))
+      val tmp1 = concat((1, BigInt(0)), (1, ~bMsb), (31, bRemain))
+      val comp = tmp0 - tmp1
+
+      val Seq(_, msb) = truncate(comp,  1, 32)
+      msb == 1
+    }
+
+    runSim(circuit, createFile = true) { tester =>
+      for{
+        op <- 0 to 5
+        _ <- 0 until 1000
+      } {
+        val operand0 = next(32)
+        val operand1 = next(32)
+        val rd = BigInt(0)
+        val operationBits = concat((5, rd), (32, operand1), (32, operand0), (3, op))
+
+        tester.poke("execute__active", 1)
+        tester.poke("execute_op__member", 2)
+        tester.poke("execute_op__data", operationBits)
+
+        val bool = op match {
+          case 0 => operand0 == operand1
+          case 1 => operand0 != operand1
+          case 2 => lessThanSigned(operand0, operand1)
+          case 3 => lessThanSigned(operand1, operand0)
+          case 4 => operand0  < operand1
+          case 5 => operand0 >= operand1
+        }
+        val expect = if(bool) BigInt(1) else BigInt(0)
+
+        val message =
+          s"""
+             |    op: $op
+             |   rs1: ${operand0.toString(16).reverse.padTo(8, '0').reverse}
+             |   rs2: ${operand1.toString(16).reverse.padTo(8, '0').reverse}
+             |expect: $expect
+             |actual: ${tester.peek("execute__ret").toString(16).reverse.padTo(8, '0').reverse}
+             |""".stripMargin
+        tester.expect("execute__ret", expect, message)
+      }
+    }
+  }
+
+  test("ALU unit test for Load") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "ALU", "ALU.tchdl", "BarrelShifter.tchdl", "Comparator.tchdl", "Types.tchdl")
+
+    runSim(circuit, createFile = true) { tester =>
+      for{
+        op <- 0 to 4
+        _ <- 0 until 1000
+      } {
+        val addr = next(32)
+        val offset = next(32)
+        val rd = BigInt(0)
+        val operationBits = concat((5, rd), (32, offset), (32, addr), (3, op))
+
+        tester.poke("execute__active", 1)
+        tester.poke("execute_op__member", 4)
+        tester.poke("execute_op__data", operationBits)
+
+        val expect = truncate(addr + offset, 32).head
+
+        val message =
+          s"""
+             |    op: $op
+             |   rs1: ${  addr.toString(16).reverse.padTo(8, '0').reverse}
+             |   rs2: ${offset.toString(16).reverse.padTo(8, '0').reverse}
+             |expect: $expect
+             |actual: ${tester.peek("execute__ret").toString(16).reverse.padTo(8, '0').reverse}
+             |""".stripMargin
+        tester.expect("execute__ret", expect, message)
+      }
+    }
+  }
+
+  test("ALU unit test for Store") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "ALU", "ALU.tchdl", "BarrelShifter.tchdl", "Comparator.tchdl", "Types.tchdl")
+
+    runSim(circuit, createFile = true) { tester =>
+      for{
+        op <- 0 to 2
+        _ <- 0 until 1000
+      } {
+        val addr = next(32)
+        val offset = next(32)
+        val storeData = next(32)
+        val operationBits = concat((32, storeData), (32, offset), (32, addr), (3, op))
+
+        tester.poke("execute__active", 1)
+        tester.poke("execute_op__member", 5)
+        tester.poke("execute_op__data", operationBits)
+
+        val expect = truncate(addr + offset, 32).head
+
+        val message =
+          s"""
+             |    op: $op
+             |   rs1: ${  addr.toString(16).reverse.padTo(8, '0').reverse}
+             |   rs2: ${offset.toString(16).reverse.padTo(8, '0').reverse}
+             |expect: $expect
+             |actual: ${tester.peek("execute__ret").toString(16).reverse.padTo(8, '0').reverse}
+             |""".stripMargin
+        tester.expect("execute__ret", expect, message)
+      }
+    }
+  }
 }

@@ -1,0 +1,33 @@
+package riscv
+
+import std::traits:::From
+
+module ALU
+impl ALU {
+  mod shifter: BarrelShifter = BarrelShifter {}
+  mod comp: Comparator       = Comparator {}
+
+  input def execute(op: Operation) -> Bit[32] {
+    match op {
+      case Operation:::Arith(ops, op0, op1, _) => match ops {
+        case ALUOps:::Add => this.add(op0,  op1, 0b0)
+        case ALUOps:::Sub => this.add(op0, !op1, 0b1)
+        case ALUOps:::And => op0 & op1
+        case ALUOps:::Or  => op0 | op1
+        case ALUOps:::Xor => op0 ^ op1
+      }
+      case Operation:::Shift(ops, operand, shamt, _) => this.shifter.execute(ops, operand, shamt)
+      case Operation:::Cmp(ops, _) => this.comp.execute(ops)
+      case Operation:::Jmp(ops, _, _) => match ops {
+        case Jump:::Branch(cmp) => this.comp.execute(cmp)
+        case _                  => Bit[32]:::from(0b1)
+      }
+      case Operation:::Load(_, addr, offset, _)     => this.add(addr, offset, 0b0)
+      case Operation:::Store(_, addr, offset, _) => this.add(addr, offset, 0b0)
+    }
+  }
+
+  internal def add(a: Bit[32], b: Bit[32], cin: Bit[1]) -> Bit[32] {
+    a + b + Bit[32]:::from(cin)
+  }
+}
