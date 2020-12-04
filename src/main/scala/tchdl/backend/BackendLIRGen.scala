@@ -452,14 +452,8 @@ object BackendLIRGen {
     BuildResult(Vector.empty, mem)
   }
 
-  private def log2(x: Double): Double = math.log10(x) / math.log10(2.0)
-  private def atLeastLength(x: Double): Double = {
-    val width = (math.ceil _ compose log2) (x)
-
-    if (width == 0) 1
-    else if(x == 0) 0
-    else width
-  }
+  private def log2(x: Double): Double = math.log(x) / math.log(2)
+  private def atLeastLength(x: Double): Int = math.ceil(log2(x + 1)).toInt
 
   def buildStageSignature(stage: StageContainer)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): BuildResult[Vector[lir.Reg]] = {
     def buildParams(paramPairs: Vector[(String, BackendType)]): Vector[lir.Reg] = {
@@ -481,7 +475,7 @@ object BackendLIRGen {
     val stageRegs = buildParams(stage.params.toVector)
     val stateRegs = buildParams(stage.states.flatMap(_.params))
 
-    val stateLen = atLeastLength(stage.states.length).toInt
+    val stateLen = atLeastLength(stage.states.length)
     val stateTpe = toBackendType(Type.bitTpe(stateLen))
     val state =
       if (stage.states.isEmpty) None
@@ -1114,8 +1108,9 @@ object BackendLIRGen {
           val memberTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumFlag)
           val dataTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData)
 
-          val data = lir.Extract(source, dataTpe +: history, memberTpe)
-          val member = lir.Extract(source, Vector(memberTpe, dataTpe) ++ history, memberTpe)
+
+          val member = lir.Extract(source, memberTpe +: history, memberTpe)
+          val data = lir.Extract(source, Vector(dataTpe, memberTpe) ++ history, dataTpe)
           val dataRef = lir.SubField(wireRef, NameTemplate.enumData, dataTpe)
           val memberRef = lir.SubField(wireRef, NameTemplate.enumFlag, memberTpe)
           val (dataNode, dataNodeRef) = makeNode(data)(localStack)
@@ -1260,7 +1255,7 @@ object BackendLIRGen {
       (patternStmts, when)
     }
 
-    val backend.Match(matched, cases, tpe) = matchExpr
+    val backend.Match(matched, cases, tpe, _) = matchExpr
     val instance = stack.lookup(stack.refer(matched.id))
 
     val retWireOpt =
@@ -1280,7 +1275,8 @@ object BackendLIRGen {
     val (patternStmtss, conds) = cases.map(runCase(instance.asInstanceOf[DataInstance], _, retRefOpt)).unzip
 
     val patternStmts = patternStmtss.flatten
-    val caseConds = conds.foldRight[lir.Stmt](lir.Stop()) {
+    val errorMsg = s"Pattern matching is failed at [${matchExpr.pos}]"
+    val caseConds = conds.foldRight[lir.Stmt](lir.Stop(errorMsg)) {
       case (cond, elsePart) =>  cond.copy(alt = Vector(elsePart))
     }
 
@@ -1476,7 +1472,7 @@ object BackendLIRGen {
           val dataRef = lir.SubField(refer, NameTemplate.enumData, tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData))
           val memberRef = lir.SubField(refer, NameTemplate.enumFlag, tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumFlag))
 
-          Vector(dataRef, memberRef)
+          Vector(memberRef, dataRef)
         case _ =>
           val fields = tpe.fields.toVector.sortWith{ case ((left, _), (right, _)) => left < right }
           fields.flatMap { case (name, fieldTpe) =>
@@ -1500,11 +1496,10 @@ object BackendLIRGen {
       .toMap.toVector
       .sortWith { case ((left, _), (right, _)) => left < right }
       .map { case (_, symbol) => symbol }
-    val variantWidth = atLeastLength(variants.length).toInt
-    val flagValue = variants.zipWithIndex
-      .find { case (symbol, _) => symbol == enum.variant }
-      .map { case (_, idx) => lir.Literal(idx, BackendType.bitTpe(variantWidth)) }
-      .getOrElse(throw new ImplementationErrorException(s"${enum.variant} was not found"))
+      .map(_.asEnumMemberSymbol)
+    val variantMax = variants.map(_.memberID).max
+    val variantWidth = atLeastLength(variantMax.toInt)
+    val flagValue = lir.Literal(enum.variant.memberID, BackendType.bitTpe(variantWidth))
     val (flagNode, flagRef) = makeNode(flagValue)
 
     val enumName = stack.next("_ENUM")

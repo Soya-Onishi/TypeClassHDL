@@ -42,7 +42,7 @@ object BackendLIR {
   case class Return(path: NameSpace, expr: Ref, idName: Option[String]) extends Stmt
   case class Deref(name: String, ref: Reference, tpe: BackendType) extends Stmt
   case class PassID(dst: String, from: String) extends Stmt
-  case class Stop() extends Stmt
+  case class Stop(msg: String) extends Stmt
 
   case class Reference(name: String, tpe: BackendType) extends Ref
   case class SubField(prefix: Ref, name: String, tpe: BackendType) extends Ref

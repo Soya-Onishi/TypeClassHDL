@@ -1,5 +1,6 @@
 package tchdl.backend.ast
 
+import tchdl.ast
 import tchdl.backend._
 import tchdl.util._
 
@@ -48,7 +49,7 @@ case class Ident(id: Term.Variable, tpe: BackendType) extends Expr
 case class Deref(id: Term.Temp, tpe: BackendType) extends Expr
 case class IfExpr(cond: Term.Temp, conseq: Vector[Stmt], conseqLast: Expr, alt: Vector[Stmt], altLast: Expr, tpe: BackendType) extends Expr
 
-case class Match(matched: Term.Temp, cases: Vector[Case], tpe: BackendType) extends Expr
+case class Match(matched: Term.Temp, cases: Vector[Case], tpe: BackendType, pos: ast.Position) extends Expr
 case class Case(pattern: MatchPattern, stmts: Vector[Stmt], ret: Expr) extends BackendIR
 
 trait MatchPattern { def tpe: BackendType }

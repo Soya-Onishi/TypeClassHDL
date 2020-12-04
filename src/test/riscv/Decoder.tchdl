@@ -1,0 +1,133 @@
+package riscv
+
+import std::traits:::From
+
+module Decoder {
+  sibling:
+    regFile: RegisterFile,
+    fu: ForwardingUnit
+}
+
+impl Decoder {
+  input def decode(inst: Bit[32], pc: Bit[32]) -> Operation {
+    val opcode = Opcode:::from(inst.truncate[6, 0]())
+    val funct3 = inst.truncate[14, 12]()
+    val funct7 = inst.truncate[31, 25]()
+    val rs1Addr = inst.truncate[19, 15]()
+    val rs2Addr = inst.truncate[24, 20]()
+    val rdAddr = inst.truncate[11, 7]()
+    val imm = this.getImm(opcode, funct3, funct7, inst)
+
+    this.getOperation(opcode, funct3, funct7, rs1Addr, rs2Addr, rdAddr, pc, imm)
+  }
+
+  internal def getImm(opcode: Opcode, f3: Bit[3], f7: Bit[7], inst: Bit[32]) -> Bit[32] {
+    match opcode {
+      case Opcode:::LUI    => this.utypeImm(inst)
+      case Opcode:::AUIPC  => this.utypeImm(inst)
+      case Opcode:::JAL    => this.jtypeImm(inst)
+      case Opcode:::JALR   => this.itypeImm(inst)
+      case Opcode:::BRANCH => this.btypeImm(inst)
+      case Opcode:::LOAD   => this.itypeImm(inst)
+      case Opcode:::STORE  => this.stypeImm(inst)
+      case Opcode:::IMM    => this.itypeImm(inst)
+      case Opcode:::REG    => this.rtypeImm(inst)
+      case Opcode:::SYSTEM => Bit[32]:::from(0)
+    }
+  }
+
+  internal def itypeImm(inst: Bit[32]) -> Bit[32] {
+    Bit[32]:::signExt[12](inst.truncate[31, 20]())
+  }
+
+  internal def rtypeImm(inst: Bit[32]) -> Bit[32] {
+    Bit[32]:::from(0)
+  }
+
+  internal def stypeImm(inst: Bit[32]) -> Bit[32] {
+    Bit[32]:::signExt[12](inst.truncate[31, 25]().concat[5](inst.truncate[11, 7]()))
+  }
+
+  internal def btypeImm(inst: Bit[32]) -> Bit[32] {
+    Bit[32]:::signExt[13](inst.bit[31]().concat[1](inst.bit[7]()).concat[6](inst.truncate[30, 25]()).concat[4](inst.truncate[11, 8]()).concat[1](0b0))
+  }
+
+  internal def utypeImm(inst: Bit[32]) -> Bit[32] {
+    inst.truncate[31, 12]().concat[12](Bit[12]:::from(0))
+  }
+
+  internal def jtypeImm(inst: Bit[32]) -> Bit[32] {
+    Bit[32]:::signExt[21](inst.bit[31]().concat[8](inst.truncate[19, 12]()).concat[1](inst.bit[20]()).concat[10](inst.truncate[30, 21]()).concat[1](0b0))
+  }
+
+  internal def getOperation(opcode: Opcode, f3: Bit[3], f7: Bit[7], rs1Addr: Bit[5], rs2Addr: Bit[5], rd: Bit[5], pc: Bit[32], imm: Bit[32]) -> Operation {
+    val rs1 = this.fu.rs1(rs1Addr, this.regFile.rs1(rs1Addr))
+    val rs2 = this.fu.rs2(rs2Addr, this.regFile.rs2(rs2Addr))
+
+    match opcode {
+      case Opcode:::LUI => Operation:::Arith(ALUOps:::Add, imm, Bit[32]:::from(0), rd)
+      case Opcode:::AUIPC => Operation:::Arith(ALUOps:::Add, pc, imm, rd)
+      case Opcode:::JAL => Operation:::Jmp(Jump:::Direct(rd), pc, imm)
+      case Opcode:::JALR => Operation:::Jmp(Jump:::Indirect(rd), rs1, imm)
+      case Opcode:::LOAD =>
+        val data = match f3 {
+          case 0b000 => DataType:::Byte
+          case 0b001 => DataType:::Half
+          case 0b010 => DataType:::Word
+          case 0b100 => DataType:::UByte
+          case 0b101 => DataType:::UHalf
+        }
+
+        Operation:::Load(data, rs1, imm, rd)
+      case Opcode:::STORE =>
+        val data = match f3 {
+          case 0b000 => DataType:::Byte
+          case 0b001 => DataType:::Half
+          case 0b010 => DataType:::Word
+        }
+
+        Operation:::Store(data, rs1, imm, rs2)
+      case Opcode:::BRANCH =>
+        val cmp = match f3 {
+          case 0b000 => Compare:::Eq(rs1, rs2)
+          case 0b001 => Compare:::Ne(rs1, rs2)
+          case 0b100 => Compare:::Lt(rs1, rs2)
+          case 0b101 => Compare:::Ge(rs1, rs2)
+          case 0b110 => Compare:::Ltu(rs1, rs2)
+          case 0b111 => Compare:::Geu(rs1, rs2)
+        }
+
+        Operation:::Jmp(Jump:::Branch(cmp), pc, imm)
+      case Opcode:::IMM =>
+        val shamt = imm.truncate[4, 0]()
+        match f3 {
+          case 0b000 => Operation:::Arith(ALUOps:::Add, rs1, imm, rd)
+          case 0b001 => Operation:::Shift(ShiftOps:::Sll, rs1, shamt, rd)
+          case 0b010 => Operation:::Cmp(Compare:::Lt(rs1, imm), rd)
+          case 0b011 => Operation:::Cmp(Compare:::Ltu(rs1, imm), rd)
+          case 0b100 => Operation:::Arith(ALUOps:::Xor, rs1, imm, rd)
+          case 0b110 => Operation:::Arith(ALUOps:::Or, rs1, imm, rd)
+          case 0b111 => Operation:::Arith(ALUOps:::And, rs1, imm, rd)
+          case 0b101 =>
+            if(f7 == 0b000_0000) Operation:::Shift(ShiftOps:::Srl, rs1, shamt, rd)
+            else                 Operation:::Shift(ShiftOps:::Sra, rs1, shamt, rd)
+        }
+      case Opcode:::REG =>
+        val shamt = rs2.truncate[4, 0]()
+        match f3 {
+        case 0b000 =>
+          if(f7 == 0b000_0000) Operation:::Arith(ALUOps:::Add, rs1, rs2, rd)
+          else                 Operation:::Arith(ALUOps:::Sub, rs1, rs2, rd)
+        case 0b001 => Operation:::Shift(ShiftOps:::Sll, rs1, shamt, rd)
+        case 0b010 => Operation:::Cmp( Compare:::Lt(rs1, rs2), rd)
+        case 0b011 => Operation:::Cmp(Compare:::Ltu(rs1, rs2), rd)
+        case 0b100 => Operation:::Arith(ALUOps:::Xor, rs1, rs2, rd)
+        case 0b110 => Operation:::Arith( ALUOps:::Or, rs1, rs2, rd)
+        case 0b111 => Operation:::Arith(ALUOps:::And, rs1, rs2, rd)
+        case 0b101 =>
+          if(f7 == 0b000_0000) Operation:::Shift(ShiftOps:::Srl, rs1, shamt, rd)
+          else                 Operation:::Shift(ShiftOps:::Sra, rs1, shamt, rd)
+      }
+    }
+  }
+}

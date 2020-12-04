@@ -12,9 +12,42 @@ import firrtl.transforms.NoDCEAnnotation
 import treadle.TreadleTester
 
 import java.util.Random
+import java.nio.file.Paths
 import org.scalatest.tags.Slow
 
 class RiscvTest extends TchdlFunSuite {
+  def truncate(v: BigInt, widths: Int*): Seq[BigInt] = {
+    val builder = Seq.newBuilder[BigInt]
+
+    widths.reverse.foldLeft(v) {
+      case (remain, width) =>
+        val mask = (BigInt(1) << width) - 1
+        builder += remain & mask
+        remain >> width
+    }
+
+    builder.result()
+  }
+
+  def concat(bits: (Int, BigInt)*): BigInt = {
+    val (_, res) = bits.reverse.foldLeft((0, BigInt(0))) {
+      case ((offset, acc), (width, bits)) =>
+        val res = acc | (bits << offset)
+        (offset + width, res)
+    }
+
+    res
+  }
+
+  def signExt(bits: BigInt, msbIdx: Int, to: Int): BigInt = {
+    val msb = bits & (BigInt(1) << msbIdx)
+    if(msb == 0) bits
+    else {
+      val mask = ((BigInt(1) << to) - 1) ^ ((BigInt(1) << (msbIdx + 1)) - 1)
+      bits | mask
+    }
+  }
+
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
 
@@ -68,7 +101,13 @@ class RiscvTest extends TchdlFunSuite {
     circuit
   }
 
-  private def runSim(circuit: fir.Circuit, enableVcd: Boolean = false)(f: TreadleTester => Unit): Unit = {
+  private def runSim(circuit: fir.Circuit, enableVcd: Boolean = false, createFile: Boolean = false)(f: TreadleTester => Unit): Unit = {
+    if(createFile) {
+      val filename = s"${circuit.main}.fir"
+      val path =Paths.get(s"./$filename")
+      java.nio.file.Files.write(path, circuit.serialize.getBytes())
+    }
+
     val clockInfo = treadle.executable.ClockInfo("CLK")
     val annons = Seq(
       treadle.ClockInfoAnnotation(Seq(clockInfo)),
@@ -314,52 +353,64 @@ class RiscvTest extends TchdlFunSuite {
     }
   }
 
-  test("Decoder unit test") {
+  test("Decoder for lui instruction unit test") {
     val rnd = new Random(0)
     def next(width: Int): BigInt = BigInt(width, rnd)
-    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "Types.tchdl")
-
-    def truncate(v: BigInt, widthes: Int*): Seq[BigInt] = {
-      val builder = Seq.newBuilder[BigInt]
-
-      widthes.reverse.foldLeft(v) {
-        case (remain, width) =>
-          val mask = (1 << width) - 1
-          builder += remain & mask
-          remain >> width
-      }
-
-      builder.result()
-    }
-
-    def concat(bits: (Int, BigInt)*): BigInt = {
-      val (_, res) = bits.reverse.foldLeft((0, BigInt(0))) {
-        case ((offset, acc), (width, bits)) =>
-          val res = acc | (bits << offset)
-          (offset + width, res)
-      }
-
-      res
-    }
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
 
     def luiInst(): { val inst: BigInt; val imm: BigInt; val rd: BigInt } = {
       val _imm = next(20)
       val _rd = next(5)
       val opcode = BigInt("0110111", 2)
-      val _inst = _imm << 12 | _rd << 7 | opcode
+      val _inst = concat((20, _imm), (5, _rd), (7, opcode))
 
       new {
         val inst = _inst
-        val imm = _imm
+        val imm = _imm << 12
         val rd = _rd
       }
     }
+
+    runSim(circuit, enableVcd = true) { tester =>
+      for(_ <- 0 to 100) {
+
+        val pc = next(32)
+        val inst = luiInst()
+
+        tester.poke("decode__active", 1)
+        tester.poke("decode_inst", inst.inst)
+        tester.poke("decode_pc", pc)
+
+        tester.step(1)
+
+        val bits = tester.peek("decode__ret__data")
+        val Seq(aluOps, imm, zero, rd) = truncate(bits, 5, 32, 32, 3)
+        val expectBits = concat((5, inst.rd), (32, BigInt(0)), (32, inst.imm), (3, BigInt(0)))
+        tester.expect("decode__ret__member", 0)
+        val message =
+          s"""
+             |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
+             |[ops] expect: 0, actual: $aluOps
+             |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
+             |[zer] expect: 0, actual: $zero
+             |[ rd] expect: ${inst.rd}, actual: $rd
+             |""".stripMargin
+        tester.expect("decode__ret__data", expectBits, message)
+      }
+    }
+  }
+
+  test("Decoder unit test for AUIPC") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
 
     def auipcInst(): { val inst: BigInt; val imm: BigInt; val rd: BigInt } = {
-      val _imm = next(20)
+      val immRaw = next(20)
       val _rd = next(5)
       val opcode = BigInt("0010111", 2)
-      val _inst = _imm << 12 | _rd << 7 | opcode
+      val _inst = concat((20, immRaw), (5, _rd), (7, opcode))
+      val _imm = concat((20, immRaw), (12, BigInt(0)))
 
       new {
         val inst = _inst
@@ -367,16 +418,47 @@ class RiscvTest extends TchdlFunSuite {
         val rd = _rd
       }
     }
+
+    runSim(circuit) { tester =>
+      for(_ <- 0 until 100) {
+        val inst = auipcInst()
+        val pc = next(32)
+
+        tester.poke("decode__active", 1)
+        tester.poke("decode_inst", inst.inst)
+        tester.poke("decode_pc", pc)
+        tester.step(1)
+
+        tester.expect("decode__ret__member", 0)
+
+        val bits = tester.peek("decode__ret__data")
+        val Seq(aluOps, pcValue, imm, rd) = truncate(bits, 5, 32, 32, 3)
+        val expectBits = concat((5, inst.rd), (32, inst.imm), (32, pc), (3, BigInt(0)))
+        val message =
+          s"""
+             |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
+             |[ops] expect: 0, actual: $aluOps
+             |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
+             |[ pc] expect: ${pc.toString(16)}, actual: ${pcValue.toString(16)}
+             |[ rd] expect: ${inst.rd}, actual: $rd
+             |""".stripMargin
+        tester.expect("decode__ret__data", expectBits, message)
+      }
+    }
+  }
+
+  test("Decoder unit test for JAL") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
 
     def jalInst(): { val inst: BigInt; val imm: BigInt; val rd: BigInt } = {
       val immRaw = next(20)
       val _rd = next(5)
       val opcode = BigInt("1101111", 2)
-      val Seq(bit20, bit10_1, bit11, bit19_12) = truncate(immRaw, 1, 10, 1, 8)
+      val Seq(bit19_12, bit11, bit10_1, bit20) = truncate(immRaw, 1, 10, 1, 8)
       val imm = concat((1, bit20), (8, bit19_12), (1, bit11), (10, bit10_1), (1, BigInt(0)))
-      val _imm =
-        if(bit20 == 1) BigInt("0xFFF00000", 16) | imm
-        else imm
+      val _imm = signExt(imm, 20, 32)
       val _inst = concat((20, immRaw), (5, _rd), (7, opcode))
 
       new {
@@ -386,16 +468,47 @@ class RiscvTest extends TchdlFunSuite {
       }
     }
 
+    runSim(circuit, enableVcd = true, createFile = true) { tester =>
+      for(_ <- 0 until 100) {
+        val inst = jalInst()
+        val pc = next(32)
+
+        tester.poke("decode__active", 1)
+        tester.poke("decode_inst", inst.inst)
+        tester.poke("decode_pc", pc)
+        tester.step(1)
+
+        tester.expect("decode__ret__member", 3)
+        val bits = tester.peek("decode__ret__data")
+        val Seq(jmpMember, jmpBits, pcValue, imm) = truncate(bits, 32, 32, 3 + 32 + 32, 2)
+        val Seq(rd) = truncate(jmpBits, 5)
+        val expectBits = concat((32, inst.imm), (32, pc), (62, BigInt(0)), (5, inst.rd), (2, BigInt(1)))
+        val message =
+          s"""
+             |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
+             |[mem] expect: 1, actual: $jmpMember
+             |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
+             |[ pc] expect: ${pc.toString(16)}, actual: ${pcValue.toString(16)}
+             |[ rd] expect: ${inst.rd}, actual: $rd
+             |""".stripMargin
+        tester.expect("decode__ret__data", expectBits, message)
+      }
+    }
+  }
+
+  test("Decoder unit test for JALR") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
+    val regs = BigInt(0) +: Seq.fill(31)(next(32))
+
     def jalrInst(): { val inst: BigInt; val imm: BigInt; val rs1: BigInt; val rd: BigInt } = {
       val immRaw = next(12)
       val _rs1 = next(5)
       val _rd = next(5)
       val opcode = BigInt("1100111", 2)
-      val _inst = immRaw << 20 | _rs1 << 15 | _rd << 7 | opcode
-      val _imm =
-        if((immRaw & (1 << 11)) == 0) immRaw
-        else BigInt("0xFFFFF000", 16) | immRaw
-
+      val _inst = concat((12, immRaw), (5, _rs1), (3, BigInt(0)), (5, _rd), (7, opcode))
+      val _imm = signExt(immRaw, 11, 32)
 
       new {
         val inst = _inst
@@ -406,7 +519,314 @@ class RiscvTest extends TchdlFunSuite {
     }
 
     runSim(circuit) { tester =>
+      for(_ <- 0 until 100) {
+        val inst = jalrInst()
+        val pc = next(32)
 
+        tester.poke("decode__active", 1)
+        tester.poke("decode_inst", inst.inst)
+        tester.poke("decode_pc", pc)
+
+        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
+        val rs1Data = regs(rs1Addr)
+        tester.poke("regFile_rs1__ret", rs1Data)
+        tester.poke("fu_rs1__ret", regs(tester.peek("fu_rs1_addr").toInt))
+        tester.step(1)
+
+        tester.expect("decode__ret__member", 3)
+        val bits = tester.peek("decode__ret__data")
+        val Seq(jmpMember, jmpBits, rs1, imm) = truncate(bits, 32, 32, 3 + 32 + 32, 2)
+        val Seq(rd) = truncate(jmpBits, 5)
+        val expectBits = concat((32, inst.imm), (32, rs1Data), (62, BigInt(0)), (5, inst.rd), (2, BigInt(2)))
+        val message =
+          s"""
+             |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
+             |[mem] expect: 2, actual: $jmpMember
+             |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
+             |[rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
+             |[ rd] expect: ${inst.rd}, actual: $rd
+             |""".stripMargin
+        tester.expect("decode__ret__data", expectBits, message)
+      }
+    }
+  }
+
+  test("Decoder unit test for BRANCH") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
+
+    def branchInst(f3: Int): { val inst: BigInt; val imm: BigInt; val rs1: BigInt; val rs2: BigInt } = {
+      val immRaw0 = next(5)
+      val immRaw1 = next(7)
+      val Seq(bit11, bit4_1) = truncate(immRaw0, 4, 1)
+      val Seq(bit10_5, bit12) = truncate(immRaw1, 1, 6)
+      val opcode = BigInt("1100011", 2)
+      val _rs1 = next(5)
+      val _rs2 = next(5)
+      val immRaw = concat((1, bit12), (1, bit11), (6, bit10_5), (4, bit4_1), (1, BigInt(0)))
+      val _imm = signExt(immRaw, 12, 32)
+      val _inst = concat((7, immRaw1), (5, _rs2), (5, _rs1), (3, BigInt(f3)), (5, immRaw0), (7, opcode))
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rs1 = _rs1
+        val rs2 = _rs2
+      }
+    }
+
+    val branches = Seq(0 -> 0, 1 -> 1, 2 -> 4, 3 -> 5, 4 -> 6, 5 -> 7)
+    val regs = BigInt(0) +: Seq.fill(31)(next(32))
+
+    runSim(circuit) { tester =>
+      for {
+        (op, f3) <- branches
+        _ <- 0 until 100
+      } {
+        val inst = branchInst(f3)
+        val pc = next(32)
+
+        tester.poke("decode__active", 1)
+        tester.poke("decode_inst", inst.inst)
+        tester.poke("decode_pc", pc)
+
+        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
+        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
+        val rs1Data = regs(rs1Addr)
+        val rs2Data = regs(rs2Addr)
+        tester.poke("regFile_rs1__ret", rs1Data)
+        tester.poke("regFile_rs2__ret", rs2Data)
+        tester.poke("fu_rs1__ret", rs1Data)
+        tester.poke("fu_rs2__ret", rs2Data)
+
+        tester.step(1)
+
+        tester.expect("decode__ret__member", 3)
+        val bits = tester.peek("decode__ret__data")
+        val Seq(jmpMember, jmpData, pcValue, imm) = truncate(bits, 32, 32, 32 + 32 + 3, 2)
+        val Seq(cmpMember, rs1Value, rs2Value) = truncate(jmpData, 32, 32, 3)
+        val expectCmp = concat((32, rs2Data), (32, rs1Data), (3, op))
+        val expectBits = concat((32, inst.imm), (32, pc), (67, expectCmp), (2, BigInt(0)))
+        val message =
+          s"""
+            |[jmpMem] expect: 0, actual: $jmpMember
+            |[cmpMem] expect: $op, actual: $cmpMember
+            |[   rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1Value.toString(16)}
+            |[   rs2] expect: ${rs2Data.toString(16)}, actual: ${rs2Value.toString(16)}
+            |[    pc] expect: ${pc.toString(16)}, actual: ${pcValue.toString(16)}
+            |[   imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
+            |""".stripMargin
+        tester.expect("decode__ret__data", expectBits, message)
+      }
+    }
+  }
+
+  test("Decoder unit test for LOAD") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
+
+    def load(f3: Int): { val inst: BigInt; val imm: BigInt; val rs1: BigInt; val rd: BigInt } = {
+      val immRaw = next(12)
+      val _rs1 = next(5)
+      val _rd = next(5)
+      val opcode = BigInt("0000011", 2)
+      val _imm = signExt(immRaw, 11, 32)
+      val _inst = concat((12, immRaw), (5, _rs1), (3, BigInt(f3)), (5, _rd), (7, opcode))
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rs1 = _rs1
+        val rd = _rd
+      }
+    }
+
+    val regs = BigInt(0) +: Seq.fill(31)(next(32))
+    val ops = Seq(0 -> 0, 1 -> 1, 2 -> 2, 3 -> 4, 4 -> 5)
+
+    runSim(circuit) { tester =>
+      for{
+        (op, f3) <- ops
+        _ <- 0 until 100
+      } {
+        val inst = load(f3)
+        val pc = next(32)
+
+        tester.poke("decode__active", 1)
+        tester.poke("decode_inst", inst.inst)
+        tester.poke("decode_pc", pc)
+
+        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
+        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
+        val rs1Data = regs(rs1Addr)
+        val rs2Data = regs(rs2Addr)
+        tester.poke("regFile_rs1__ret", rs1Data)
+        tester.poke("regFile_rs2__ret", rs2Data)
+        tester.poke("fu_rs1__ret", rs1Data)
+        tester.poke("fu_rs2__ret", rs2Data)
+
+        tester.step(1)
+
+        tester.expect("decode__ret__member", 4)
+        val bits = tester.peek("decode__ret__data")
+        val Seq(dataType, rs1, imm, rd) = truncate(bits, 5, 32, 32, 3)
+        val expectBits = concat((5, inst.rd), (32, inst.imm), (32, rs1Data), (3, BigInt(op)))
+        val message =
+          s"""
+             |[data] expect $op, actual $dataType
+             |[ rs1] expect ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
+             |[ imm] expect ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
+             |[  rd] expect ${inst.rd}, actual: $rd
+             |""".stripMargin
+        tester.expect("decode__ret__data", expectBits, message)
+      }
+    }
+  }
+
+  test("Decoder unit test for STORE") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
+
+    def store(f3: Int): { val inst: BigInt; val imm: BigInt; val rs1: BigInt; val rs2: BigInt } = {
+      val immRaw0 = next(5)
+      val immRaw1 = next(7)
+      val _rs1 = next(5)
+      val _rs2 = next(5)
+      val opcode = BigInt("0100011", 2)
+      val _imm = signExt(concat((7, immRaw1), (5, immRaw0)), 11, 32)
+      val _inst = concat((7, immRaw1), (5, _rs2), (5, _rs1), (3, BigInt(f3)), (5, immRaw0), (7, opcode))
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rs1 = _rs1
+        val rs2 = _rs2
+      }
+    }
+
+    val regs = BigInt(0) +: Seq.fill(31)(next(32))
+    val ops = Seq(0 -> 0, 1 -> 1, 2 -> 2)
+
+    runSim(circuit) { tester =>
+      for {
+        (op, f3) <- ops
+        _ <- 0 until 100
+      } {
+        val inst = store(f3)
+        val pc = next(32)
+
+        tester.poke("decode__active", 1)
+        tester.poke("decode_inst", inst.inst)
+        tester.poke("decode_pc", pc)
+
+        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
+        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
+        val rs1Data = regs(rs1Addr)
+        val rs2Data = regs(rs2Addr)
+        tester.poke("regFile_rs1__ret", rs1Data)
+        tester.poke("regFile_rs2__ret", rs2Data)
+        tester.poke("fu_rs1__ret", rs1Data)
+        tester.poke("fu_rs2__ret", rs2Data)
+
+        tester.step(1)
+
+        tester.expect("decode__ret__member", 5)
+        val bits = tester.peek("decode__ret__data")
+        val Seq(dataType, rs1, imm, rs2) = truncate(bits, 32, 32, 32, 3)
+        val expectedBits = concat((32, rs2Data), (32, inst.imm), (32, rs1Data), (3, dataType))
+        val message =
+          s"""
+             |[data] expect $op, actual $dataType
+             |[ rs1] expect ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
+             |[ imm] expect ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
+             |[  rd] expect ${rs2Data.toString(16)}, actual: ${rs2.toString(16)}
+             |""".stripMargin
+        tester.expect("decode__ret__data", expectedBits, message)
+      }
+    }
+  }
+
+  test("Decoder unit test") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
+
+    def store(f3: Int): { val inst: BigInt; val imm: BigInt; val rs1: BigInt; val rs2: BigInt } = {
+      val immRaw0 = next(5)
+      val immRaw1 = next(7)
+      val _rs1 = next(5)
+      val _rs2 = next(5)
+      val opcode = BigInt("0100011", 2)
+      val _imm = signExt(concat((7, immRaw1), (5, immRaw0)), 11, 32)
+      val _inst = concat((7, immRaw1), (5, _rs2), (5, _rs1), (3, BigInt(f3)), (5, immRaw0), (7, opcode))
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rs1 = _rs1
+        val rs2 = _rs2
+      }
+    }
+
+    def arithImm(f3: Int): { val inst: BigInt; val imm: BigInt; val rs1: BigInt; val rd: BigInt } = {
+      val immRaw = next(12)
+      val _rs1 = next(5)
+      val _rd = next(5)
+      val opcode = BigInt("0010011", 2)
+      val _imm = signExt(immRaw, 11, 32)
+      val _inst = concat((12, immRaw), (5, _rs1), (3, BigInt(f3)), (5, _rd), (7, opcode))
+
+      new {
+        val inst = _inst
+        val imm = _imm
+        val rs1 = _rs1
+        val rd = _rd
+      }
+    }
+
+    def shiftImm(op: Int): { val inst: BigInt; val shamt: BigInt; val rs1: BigInt; val rd: BigInt } = {
+      val _shamt = next(5)
+      val _rs1 = next(5)
+      val _rd = next(5)
+      val opcode = BigInt("0010011", 2)
+
+      val f7 = op match {
+        case 0 => BigInt("0000000", 2)
+        case 1 => BigInt("0000000", 2)
+        case 2 => BigInt("0100000", 2)
+      }
+      val f3 = op match {
+        case 0 => BigInt("001", 2)
+        case 1 => BigInt("101", 2)
+        case 2 => BigInt("101", 2)
+      }
+
+      val _inst = concat((7, f7), (5, _shamt), (5, _rs1), (3, f3), (5, _rd), (7, opcode))
+
+      new {
+        val inst = _inst
+        val shamt = _shamt
+        val rs1 = _rs1
+        val rd = _rd
+      }
+    }
+
+    def arithReg(f3: Int, f7: Int): { val inst: BigInt; val rs1: BigInt; val rs2: BigInt; val rd: BigInt } = {
+      val _rs1 = next(5)
+      val _rs2 = next(5)
+      val _rd = next(5)
+      val opcode = BigInt("0110011", 2)
+      val _inst = concat((7, BigInt(f7)), (5, _rs2), (5, _rs1), (3, BigInt(f3)), (5, _rd), (7, opcode))
+
+      new {
+        val inst = _inst
+        val rs1 = _rs1
+        val rs2 = _rs2
+        val rd = _rd
+      }
     }
   }
 }

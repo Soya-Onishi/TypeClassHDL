@@ -47,12 +47,12 @@ object BackendIRGen {
       BackendContext(label, tpBound)
     }
 
-    val interfaceContainers = summary.modules.flatMap(_.bodies).flatMap(_.interfaces)
+    // val interfaceContainers = summary.modules.flatMap(_.bodies).flatMap(_.interfaces)
     val stageContainers = summary.modules.flatMap(_.bodies).flatMap(_.stages)
     val procContainers = summary.modules.flatMap(_.bodies).flatMap(_.procs)
 
     val unConstructedLabels = summary.labels.filterNot {
-      case label: MethodLabel if isInterface(label.symbol) => interfaceContainers.exists(_.label == label)
+      case label: MethodLabel if isInterface(label.symbol) => true
       case label: MethodLabel => summary.methods.exists(_.label == label)
       case label: StageLabel => stageContainers.exists(_.label == label)
       case label: ProcLabel => procContainers.exists(_.label == label)
@@ -902,7 +902,7 @@ object BackendIRGen {
 
     val (cases, labelss) = matchExpr.cases.map(buildCase).unzip
 
-    val backendMatch = backend.Match(term, cases, retTpe)
+    val backendMatch = backend.Match(term, cases, retTpe, matchExpr.position)
 
     BuildResult(exprStmts :+ matchedTerm, Some(backendMatch), labelss.flatten.toSet ++ labels)
   }

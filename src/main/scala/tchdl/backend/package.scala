@@ -9,8 +9,8 @@ import firrtl.ir
 import tchdl.ast.Position
 
 package object backend {
-  case class BuiltModule(tpe: BackendType, impl: Vector[ImplementClassContainer]) {
-    override def hashCode(): Int = tpe.hashCode + impl.hashCode
+  case class BuiltModule(tpe: BackendType, impl: Vector[ImplementClassContainer], noNeedElaborate: Boolean) {
+    override def hashCode(): Int = tpe.hashCode + impl.hashCode + noNeedElaborate.hashCode()
   }
 
   trait ToFirrtlString {

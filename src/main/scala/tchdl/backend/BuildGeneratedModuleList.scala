@@ -33,17 +33,41 @@ object BuildGeneratedModuleList {
 
     val topModuleTree = global.command.topModule.get
 
-    val list = for {
+    val elaboratedModuleList = for {
       pkg <- getPackage
       typeTree <- buildTypeTree(topModuleTree, pkg)
       refTpe = typeTree.tpe.asRefType
       _ <- verifyType(refTpe)
       topModuleTpe = toBackendType(refTpe, Map.empty, Map.empty)
-      moduleList <- constructModule(topModuleTpe, Vector.empty, Vector.empty)
-    } yield moduleList
+      elaboratedModuleList <- constructModule(topModuleTpe, Vector.empty, Vector.empty)
+    } yield elaboratedModuleList ++ getIndirectFromTopModule(refTpe, topModuleTpe)
 
-    list.left.foreach(global.repo.error.append)
-    list.getOrElse(Vector.empty)
+    elaboratedModuleList.left.foreach(global.repo.error.append)
+    elaboratedModuleList.getOrElse(Vector.empty)
+  }
+
+  def findImplementClasses(module: BackendType)(implicit global: GlobalData): Vector[ImplementClassContainer] = {
+    def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
+      val hpResults = hpBounds.map(bound => HPBound.verifyMeetBound(bound, Vector.empty))
+      val tpResults = tpBounds.map(bound => TPBound.verifyMeetBound(bound, Vector.empty, Vector.empty, Position.empty))
+      (hpResults ++ tpResults).combine(errs => Error.MultipleErrors(errs: _*))
+    }
+
+    val refTpe = toRefType(module)
+    module.symbol.asModuleSymbol.impls.filter {
+      impl =>
+        val (initHPTable, initTPTable) = Type.RefType.buildTable(impl)
+        val result = for {
+          hpTable <- Type.RefType.assignHPTable(initHPTable, Vector(refTpe), Vector(impl.targetType), impl.position)
+          tpTable <- Type.RefType.assignTPTable(initTPTable, Vector(refTpe), Vector(impl.targetType), impl.position)
+          swappedHPBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
+          swappedTPBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
+          simplifiedHPBound = HPBound.simplify(swappedHPBound)
+          _ <- verifyEachBounds(simplifiedHPBound, swappedTPBound)
+        } yield ()
+
+        result.isRight
+    }
   }
 
   def constructModule(module: BackendType, parentModules: Vector[BackendType], builtModules: Vector[BuiltModule])(implicit global: GlobalData): Either[Error, Vector[BuiltModule]] = {
@@ -60,30 +84,6 @@ object BuildGeneratedModuleList {
         val route = buildRoute(parentModules)
 
         Left(Error.CyclicModuleInstantiation(module, route, Position.empty))
-      }
-    }
-
-    def verifyEachBounds(hpBounds: Vector[HPBound], tpBounds: Vector[TPBound]): Either[Error, Unit] = {
-      val hpResults = hpBounds.map(bound => HPBound.verifyMeetBound(bound, Vector.empty))
-      val tpResults = tpBounds.map(bound => TPBound.verifyMeetBound(bound, Vector.empty, Vector.empty, Position.empty))
-      (hpResults ++ tpResults).combine(errs => Error.MultipleErrors(errs: _*))
-    }
-
-    def findImplementClasses: Vector[ImplementClassContainer] = {
-      val refTpe = toRefType(module)
-      module.symbol.asModuleSymbol.impls.filter {
-        impl =>
-          val (initHPTable, initTPTable) = Type.RefType.buildTable(impl)
-          val result = for {
-            hpTable <- Type.RefType.assignHPTable(initHPTable, Vector(refTpe), Vector(impl.targetType), impl.position)
-            tpTable <- Type.RefType.assignTPTable(initTPTable, Vector(refTpe), Vector(impl.targetType), impl.position)
-            swappedHPBound = HPBound.swapBounds(impl.symbol.hpBound, hpTable)
-            swappedTPBound = TPBound.swapBounds(impl.symbol.tpBound, hpTable, tpTable)
-            simplifiedHPBound = HPBound.simplify(swappedHPBound)
-            _ <- verifyEachBounds(simplifiedHPBound, swappedTPBound)
-          } yield ()
-
-          result.isRight
       }
     }
 
@@ -112,7 +112,7 @@ object BuildGeneratedModuleList {
     verifyCyclic match {
       case Left(err) => Left(err)
       case Right(_) =>
-        val thisModuleImpls = findImplementClasses
+        val thisModuleImpls = findImplementClasses(module)
         val (errs, builtModuless) = thisModuleImpls.map(buildChildren(_, module)).partitionMap(identity)
 
         if(errs.nonEmpty) Left(Error.MultipleErrors(errs: _*))
@@ -123,9 +123,21 @@ object BuildGeneratedModuleList {
               acc ++ assigns
           }
 
-          val thisModule = BuiltModule(module, thisModuleImpls)
+          val thisModule = BuiltModule(module, thisModuleImpls, noNeedElaborate = false)
           Right(thisModule +: appendedModules)
         }
     }
+  }
+
+  def getIndirectFromTopModule(tpe: Type.RefType, tpeBack: BackendType)(implicit global: GlobalData): Vector[BuiltModule] = {
+    val topHPs = (tpe.origin.hps zip tpeBack.hargs).toMap
+    val topTPs = (tpe.origin.tps zip tpeBack.targs).toMap
+
+    tpe.declares
+      .toMap.values
+      .map(_.tpe.asRefType)
+      .map(tpe => toBackendType(tpe, topHPs, topTPs))
+      .map(tpe => BuiltModule(tpe, findImplementClasses(tpe), noNeedElaborate = true))
+      .toVector
   }
 }

@@ -312,7 +312,11 @@ object FirrtlCodeGen {
       case deref: lir.Deref => elaborateDeref(deref)
       case read: lir.MemRead => elaborateMemRead(read)
       case write: lir.MemWrite => elaborateMemWrite(write)
-      case _: lir.Stop => Vector(fir.Stop(fir.NoInfo, 1, clockRef, fir.UIntLiteral(1)))
+      case lir.Stop(msg) =>
+        Vector(
+          fir.Print(fir.NoInfo, fir.StringLit(msg), Seq.empty, clockRef, fir.UIntLiteral(1)),
+          fir.Stop(fir.NoInfo, 1, clockRef, fir.UIntLiteral(1))
+        )
     }
 
   def elaborateMemRead(memRead: lir.MemRead)(implicit global: GlobalData, pointer: Vector[PointerConnection], modulePath: Vector[String]): Vector[fir.Statement] = {
