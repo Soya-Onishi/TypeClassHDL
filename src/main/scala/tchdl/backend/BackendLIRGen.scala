@@ -235,7 +235,7 @@ object BackendLIRGen {
       functionTable
     )
 
-    modules.map(buildModule(_, context))
+    modules.filter(_.isNeedElaborate).map(buildModule(_, context))
   }
 
   def buildModule(module: ModuleContainer, ctx: FirrtlContext)(implicit global: GlobalData): lir.Module = {
@@ -838,7 +838,8 @@ object BackendLIRGen {
     }
 
     val method = call.label.accessor match {
-      case Some(tpe) => ctx.methods(tpe).find(_.label == call.label).get
+      case Some(tpe) =>
+        ctx.methods(tpe).find(_.label == call.label).get
       case None => ctx.functions.find(_.label == call.label).get
     }
 
@@ -1110,15 +1111,15 @@ object BackendLIRGen {
 
           val member = lir.Extract(source, memberTpe +: history, memberTpe)
           val data = lir.Extract(source, Vector(dataTpe, memberTpe) ++ history, dataTpe)
-          val dataRef = lir.SubField(wireRef, NameTemplate.enumData, dataTpe)
           val memberRef = lir.SubField(wireRef, NameTemplate.enumFlag, memberTpe)
-          val (dataNode, dataNodeRef) = makeNode(data)(localStack)
+          val dataRef = lir.SubField(wireRef, NameTemplate.enumData, dataTpe)
           val (memberNode, memberNodeRef) = makeNode(member)(localStack)
+          val (dataNode, dataNodeRef) = makeNode(data)(localStack)
           val assignData = lir.Assign(dataRef, dataNodeRef)
           val assignMember = lir.Assign(memberRef, memberNodeRef)
 
-          val stmts = Vector(wire, dataNode, memberNode, assignData, assignMember)
-          val addedHistory = Vector(memberTpe, dataTpe) ++ history
+          val stmts = Vector(wire, memberNode, dataNode, assignMember, assignData)
+          val addedHistory = Vector(dataTpe, memberTpe) ++ history
 
           (stmts, enumName, addedHistory)
         case _ =>

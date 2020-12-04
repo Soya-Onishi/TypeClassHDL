@@ -9,14 +9,10 @@ trait BackendContainer {
 
 case class ModuleContainer(
   tpe: BackendType,
-  bodies: Vector[ModuleContainerBody]
+  bodies: Vector[ModuleContainerBody],
+  isNeedElaborate: Boolean
 ) extends BackendContainer {
   lazy val toFirrtlString = tpe.toFirrtlString
-}
-
-object ModuleContainer {
-  def empty(tpe: BackendType): ModuleContainer =
-    ModuleContainer(tpe, Vector.empty)
 }
 
 case class ModuleContainerBody(

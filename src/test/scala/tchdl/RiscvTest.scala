@@ -431,7 +431,7 @@ class RiscvTest extends TchdlFunSuite {
       }
     }
 
-    runSim(circuit) { tester =>
+    runSim(circuit, createFile = true) { tester =>
       for (_ <- 0 until 100) {
         val inst = auipcInst()
         val pc = next(32)

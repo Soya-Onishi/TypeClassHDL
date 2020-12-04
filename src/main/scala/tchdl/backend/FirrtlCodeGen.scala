@@ -311,7 +311,12 @@ object FirrtlCodeGen {
           elaborateExpr(dst),
           elaborateExpr(src)
         ))
-      case lir.Invalid(ref) => Vector(fir.IsInvalid(fir.NoInfo, elaborateExpr(ref)))
+      case lir.Invalid(ref) =>
+        val r = elaborateExpr(ref)
+        val width = calculateWidth(r.tpe)
+
+        if(width == 0) Vector.empty
+        else Vector(fir.IsInvalid(fir.NoInfo, r))
       case lir.When(cond, conseq, alt) =>
         Vector(fir.Conditionally(
           fir.NoInfo,
@@ -426,13 +431,16 @@ object FirrtlCodeGen {
       fir.UIntLiteral(value, width)
     case commence: lir.Commence => elaborateCommence(commence)
     case lir.Ops(op, args, consts, tpe) => fir.DoPrim(op, args.map(elaborateExpr), consts, toFirrtlType(tpe))
-    case lir.Concat(subjects, _) =>
-      val refs = subjects.map(elaborateExpr)
+    case lir.Concat(subjects, tpe) =>
+      val refs = subjects.map(elaborateExpr).filter(e => calculateWidth(e.tpe) != 0)
       val cats = refs.tail.foldLeft(refs.head) {
         case (prefix, next) => fir.DoPrim(firrtl.PrimOps.Cat, Seq(next, prefix), Seq.empty, fir.UnknownType)
       }
 
-      cats
+      cats match {
+        case doPrim: fir.DoPrim => doPrim.copy(tpe = toFirrtlType(tpe))
+        case expr => expr
+      }
     case lir.Extract(target, history, tpe) =>
       def getWidth(tpe: BackendType): BigInt =
         toFirrtlType(tpe)

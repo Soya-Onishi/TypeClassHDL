@@ -589,10 +589,10 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
       .stmts.collect{ case fir.DefNode(_, _, p: fir.DoPrim) => p }
       .filter(_.op == firrtl.PrimOps.Bits)
 
-    assert(bits(0).consts == Seq(BigInt(9), BigInt(0)))
-    assert(bits(1).consts == Seq(BigInt(10), BigInt(10)))
-    assert(bits(2).consts == Seq(BigInt(20), BigInt(11)))
-    assert(bits(3).consts == Seq(BigInt(21), BigInt(21)))
+    assert(bits(0).consts == Seq(BigInt(0), BigInt(0)))
+    assert(bits(1).consts == Seq(BigInt(10), BigInt(1)))
+    assert(bits(2).consts == Seq(BigInt(11), BigInt(11)))
+    assert(bits(3).consts == Seq(BigInt(21), BigInt(12)))
     val ref = bits(0).args
     assert(bits(1).args == ref)
     assert(bits(2).args == ref)

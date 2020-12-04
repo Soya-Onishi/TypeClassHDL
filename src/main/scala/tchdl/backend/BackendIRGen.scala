@@ -47,12 +47,12 @@ object BackendIRGen {
       BackendContext(label, tpBound)
     }
 
-    // val interfaceContainers = summary.modules.flatMap(_.bodies).flatMap(_.interfaces)
+    val interfaceContainers = summary.modules.flatMap(_.bodies).flatMap(_.interfaces)
     val stageContainers = summary.modules.flatMap(_.bodies).flatMap(_.stages)
     val procContainers = summary.modules.flatMap(_.bodies).flatMap(_.procs)
 
     val unConstructedLabels = summary.labels.filterNot {
-      case label: MethodLabel if isInterface(label.symbol) => true
+      case label: MethodLabel if isInterface(label.symbol) => interfaceContainers.exists(_.label == label)
       case label: MethodLabel => summary.methods.exists(_.label == label)
       case label: StageLabel => stageContainers.exists(_.label == label)
       case label: ProcLabel => procContainers.exists(_.label == label)
@@ -152,14 +152,17 @@ object BackendIRGen {
       val containerHPs = hpTable.map { case (hp, elem) => NameTemplate.concat(hp.path.rootPath.last, hp.path.innerPath.mkString(NameTemplate.concatCh)) -> elem }
       val moduleBody = ModuleContainerBody.empty(containerHPs)
       val implTree = findImplClassTree(impl.symbol.asImplementSymbol, global).getOrElse(throw new ImplementationErrorException("impl tree should be found"))
+      val components =
+        if(!builtModule.noNeedElaborate) implTree.components
+        else implTree.components.collect{ case m: frontend.MethodDef if isInterface(m.symbol.asMethodSymbol) => m }
 
-      val pairs = implTree.components.collect {
+      val pairs = components.collect {
         case method: frontend.MethodDef if isInterface(method.symbol.asMethodSymbol) =>
           val label = MethodLabel(method.symbol.asMethodSymbol, Some(builtModule.tpe), None, hpTable, tpTable)
           val context = BackendContext(label, tpBound)
           val (container, labels) = buildMethod(method, label)(context, global)
 
-          (container, labels)
+          (container, if(builtModule.noNeedElaborate) Set.empty[BackendLabel] else labels)
         case stage: frontend.StageDef =>
           val label = StageLabel(stage.symbol.asStageSymbol, Some(builtModule.tpe), hpTable, tpTable)
           val context = BackendContext(label, tpBound)
@@ -215,7 +218,7 @@ object BackendIRGen {
       (body, moduleMethods, labelSet)
     }.unzip3
 
-    val container = ModuleContainer(builtModule.tpe, moduleBodies)
+    val container = ModuleContainer(builtModule.tpe, moduleBodies, !builtModule.noNeedElaborate)
     (container, methodContainerss.flatten, labelss.flatten.toSet)
   }
 

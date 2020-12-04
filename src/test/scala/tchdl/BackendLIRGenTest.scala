@@ -1028,9 +1028,9 @@ class BackendLIRGenTest extends TchdlFunSuite {
     val second = extracts.tail.head
 
     assert(first.history.length == 1)
-    assert(first.history.head.flag.hasFlag(BackendTypeFlag.EnumData))
+    assert(first.history.head.flag.hasFlag(BackendTypeFlag.EnumFlag))
     assert(second.history.length == 2)
-    assert(second.history.head.flag.hasFlag(BackendTypeFlag.EnumFlag))
+    assert(second.history.head.flag.hasFlag(BackendTypeFlag.EnumData))
   }
 
   test("use an output and an input port works correctly") {

@@ -86,7 +86,7 @@ package object backend {
       val flagOf = if(flag.hasFlag(BackendTypeFlag.EnumFlag)) "Flag of " else ""
 
       args match {
-        case Vector() => head
+        case Vector() => s"$pointer$dataOf$flagOf$head"
         case args => s"$pointer$dataOf$flagOf$head[${args.mkString(",")}]"
       }
     }
