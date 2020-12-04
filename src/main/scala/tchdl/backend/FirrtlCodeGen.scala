@@ -250,10 +250,28 @@ object FirrtlCodeGen {
     (viaWire, Vector(defaultEn, invalidData), cond)
   }
 
+  def calculateWidth(tpe: fir.Type): BigInt = {
+    tpe match {
+      case fir.UIntType(fir.IntWidth(width)) => width
+      case fir.BundleType(fields) => fields.map(_.tpe).map(calculateWidth).foldLeft(BigInt(0))(_ + _)
+      case fir.VectorType(tpe, size) => calculateWidth(tpe) * size
+    }
+  }
+
   def elaborateStmt(stmt: lir.Stmt)(implicit global: GlobalData, pointer: Vector[PointerConnection], modulePath: Vector[String]): Vector[fir.Statement] =
     stmt match {
-      case lir.Wire(name, tpe) => Vector(fir.DefWire(fir.NoInfo, name, toFirrtlType(tpe)))
-      case lir.Node(name, expr, tpe) => Vector(fir.DefNode(fir.NoInfo, name, elaborateExpr(expr)))
+      case lir.Wire(name, tpe) =>
+        val wireTpe = toFirrtlType(tpe)
+        val width = calculateWidth(wireTpe)
+
+        if(width == 0) Vector.empty
+        else Vector(fir.DefWire(fir.NoInfo, name, wireTpe))
+      case lir.Node(name, expr, tpe) =>
+        val src = elaborateExpr(expr)
+        val width = calculateWidth(src.tpe)
+
+        if(width == 0) Vector.empty
+        else Vector(fir.DefNode(fir.NoInfo, name, src))
       case lir.Reg(name, default, tpe) =>
         Vector(fir.DefRegister(
           fir.NoInfo,
@@ -272,11 +290,12 @@ object FirrtlCodeGen {
         val reg = fir.DefRegister(fir.NoInfo, name, idTpe, clockRef, resetRef, init)
         Vector(reg)
       case lir.Assign(dst, src) =>
-        Vector(fir.Connect(
-          fir.NoInfo,
-          elaborateExpr(dst),
-          elaborateExpr(src)
-        ))
+        val srcTpe = toFirrtlType(src.tpe)
+        val width = calculateWidth(srcTpe)
+        val connect = fir.Connect(fir.NoInfo, elaborateExpr(dst), elaborateExpr(src))
+
+        if(width == 0) Vector.empty
+        else Vector(connect)
       case lir.PriorityAssign(_, via, src) =>
         val viaRef = fir.Reference(via, fir.UnknownType)
         val subEn = fir.SubField(viaRef, "_enable", fir.UnknownType)

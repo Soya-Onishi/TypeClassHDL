@@ -1108,7 +1108,6 @@ object BackendLIRGen {
           val memberTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumFlag)
           val dataTpe = tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData)
 
-
           val member = lir.Extract(source, memberTpe +: history, memberTpe)
           val data = lir.Extract(source, Vector(dataTpe, memberTpe) ++ history, dataTpe)
           val dataRef = lir.SubField(wireRef, NameTemplate.enumData, dataTpe)
