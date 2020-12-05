@@ -578,7 +578,7 @@ object FirrtlCodeGen {
       }
 
       val connection =
-        if (from == to) Vector.empty
+        if (from == to && from.nonEmpty) Vector.empty
         else Vector(DataRoute(from, Connection.ToParent, pointer.id, tpe))
 
       if (from == to) connection

@@ -1,0 +1,20 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  input def execute(a: Bit[8], b: Bit[8]) -> &Option[Bit[8]] {
+    commence conv # calc(a, b)
+  }
+
+  proc conv @ Option[Bit[8]]:::None -> &Option[Bit[8]] {
+    origin block calc(a: Bit[8], b: Bit[8]) {
+      relay ret(a + b)
+    }
+
+    final block ret(ans: Bit[8]) {
+      return Option[Bit[8]]:::Some(ans)
+    }
+  }
+}

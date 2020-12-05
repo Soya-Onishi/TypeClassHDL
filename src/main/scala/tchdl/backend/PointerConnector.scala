@@ -1,12 +1,13 @@
 package tchdl.backend
 
+import tchdl.util._
 import tchdl.backend.ast.{BackendLIR => lir}
 import tchdl.util.TchdlException.ImplementationErrorException
 
 import scala.annotation.tailrec
 
 object PointerConnector {
-  def exec(topTpe: BackendType, moduleList: Vector[lir.Module]): Vector[PointerConnection] = {
+  def exec(topTpe: BackendType, moduleList: Vector[lir.Module])(implicit global: GlobalData): Vector[PointerConnection] = {
     val top = moduleList.find(_.tpe == topTpe).get
 
     val (pointers, _) = searchSources(top, moduleList, Vector.empty, 0)
@@ -85,7 +86,7 @@ object PointerConnector {
     (resultPointers, nextID)
   }
 
-  private def searchDestinations(pointers: Vector[PointerConnection], topModule: lir.Module, moduleList: Vector[lir.Module]): Vector[PointerConnection] = {
+  private def searchDestinations(pointers: Vector[PointerConnection], topModule: lir.Module, moduleList: Vector[lir.Module])(implicit global: GlobalData): Vector[PointerConnection] = {
     def searchFirstProcRef(path: HWHierarchyPath): Vector[lir.Reference] = {
       val module = searchModule(path.modulePath, topModule, moduleList)
       val HierarchyComponent.Proc(procName, blockName) = path.component
@@ -167,7 +168,7 @@ object PointerConnector {
   // module: current module
   //
   // return: deref pointer's path
-  private def searchConnection(path: HWHierarchyPath, topModule: lir.Module, moduleList: Vector[lir.Module], history: Vector[HWHierarchyPath]): Vector[HWHierarchyPath] = {
+  private def searchConnection(path: HWHierarchyPath, topModule: lir.Module, moduleList: Vector[lir.Module], history: Vector[HWHierarchyPath])(implicit global: GlobalData): Vector[HWHierarchyPath] = {
     // In order to use these variable in inner method, defining here
     val module = searchModule(path.modulePath, topModule, moduleList)
     val componentRef = path.component.asInstanceOf[HierarchyComponent.Ref].ref
@@ -284,13 +285,13 @@ object PointerConnector {
       // TODO:
       //   In order to prevent raising exception, prohibit using pointers at top module's
       lazy val thisModuleRef = lir.Reference(modulePath.last, searchModule(modulePath, topModule, moduleList).tpe)
-      val (nextModulePath, nextReference) = (portOpt, subOpt) match {
-        case (Some(_), _) => (modulePath.init, addHead(nextRef, thisModuleRef))
-        case (_, Some(next)) => (modulePath :+ next.name, truncateHead(nextRef))
-        case (_, _) => (modulePath, nextRef)
+      def nextReference(modulePath: Vector[String], ref: lir.Ref): HWHierarchyPath = HWHierarchyPath(modulePath, HierarchyComponent.Ref(ref))
+      (portOpt, subOpt) match {
+        case (Some(_), _) if modulePath.isEmpty => HWHierarchyPath(modulePath, HierarchyComponent.TopRet(nextRef))
+        case (Some(_), _) => nextReference(modulePath.init, addHead(nextRef, thisModuleRef))
+        case (_, Some(next)) => nextReference(modulePath :+ next.name, truncateHead(nextRef))
+        case (_, _) => nextReference(modulePath, nextRef)
       }
-
-      HWHierarchyPath(nextModulePath, HierarchyComponent.Ref(nextReference))
     }
 
     def searchNext(stmt: lir.Stmt): Vector[HWHierarchyPath] = stmt match {
@@ -351,12 +352,47 @@ object PointerConnector {
       paths ++ whens.flatMap(w => searchDeref(w.conseq)) ++ whens.flatMap(w => searchDeref(w.alt))
     }
 
+    /*
+    // top module's output ports with pointer type are needed
+    // to be end point of pointer connection
+    def searchEndPoints: Vector[HWHierarchyPath] = {
+      def generateRefs(baseName: (String, BackendType), fieldPath: Vector[(String, BackendType)], tpe: BackendType): Vector[lir.Ref] = {
+        if(tpe.flag.hasFlag(BackendTypeFlag.Pointer)) {
+          val ref = fieldPath.foldLeft[lir.Ref](lir.Reference(baseName._1, baseName._2)){
+            case (acc, field) => lir.SubField(acc, field._1, field._2)
+          }
+
+          Vector(ref)
+        } else {
+          // TODO: This does not work for vector pointer case.
+          //       To work correctly, add Vector case pattern before Symbol.isPrimitive case.
+          //       And also, this method need to be reworked for Vector pattern.
+          tpe.symbol match {
+            case sym if Symbol.isPrimitive(sym) => Vector.empty
+            case sym => tpe.fields.flatMap{ case (name, tpe) => generateRefs(baseName, fieldPath :+ (name, tpe), tpe) }.toVector
+          }
+        }
+      }
+
+      val outputs = module.ports.filter(_.dir == lir.Dir.Output)
+      val outputRefs = outputs.flatMap{ output =>
+        val baseName = (output.name, output.tpe)
+        generateRefs(baseName, Vector.empty, output.tpe)
+      }
+
+      outputRefs.map(ref => HWHierarchyPath(path.modulePath, HierarchyComponent.TopRet(ref)))
+    }
+    */
+
     val stmts = module.components ++ module.inits ++ module.procedures
-    val nextRefs = stmts.flatMap(searchNext).filterNot(path => history.contains(path))
     val derefs = searchDeref(stmts)
+    val (topRets, nextRefs) = stmts
+      .flatMap(searchNext)
+      .filterNot(path => history.contains(path))
+      .partition(_.component.isInstanceOf[HierarchyComponent.TopRet])
 
     val dsts = nextRefs.flatMap(path => searchConnection(path, topModule, moduleList, path +: history))
-    derefs ++ dsts
+    derefs ++ topRets ++ dsts
   }
 }
 
@@ -366,6 +402,7 @@ object HierarchyComponent {
   case class Proc(name: String, origin: String) extends HierarchyComponent
   case class Ref(ref: lir.Ref) extends HierarchyComponent
   case class Deref(ref: lir.Reference) extends HierarchyComponent
+  case class TopRet(ref: lir.Ref) extends HierarchyComponent
 }
 
 case class HWHierarchyPath(modulePath: Vector[String], component: HierarchyComponent) {

@@ -618,4 +618,9 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(wires.head.name == "in")
     assert(wires.head.tpe == fir.UIntType(fir.IntWidth(4)))
   }
+
+  test("use pointer type at return type of top module's interface") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "returnPointerTopModule.tchdl")
+    println(circuit.serialize)
+  }
 }

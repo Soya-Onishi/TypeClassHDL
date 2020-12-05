@@ -420,6 +420,9 @@ object Symbol {
     override val accessibility: Accessibility = Accessibility.Public
   }
 
+  def isPrimitive(symbol: Symbol)(implicit global: GlobalData): Boolean =
+    global.builtin.types.toMap.values.toSeq.contains(symbol)
+
   def bit(implicit global: GlobalData): Symbol.ClassTypeSymbol =
     global.builtin.types.lookup("Bit")
 
