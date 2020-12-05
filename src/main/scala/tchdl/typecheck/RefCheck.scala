@@ -58,6 +58,7 @@ object RefCheck {
       elems.foreach {
         case v: ValDef => verifyValDef(v)(blkCtx, global)
         case e: Expression => verifyExpr(e)(blkCtx, global)
+        case a: Assign => verifyAssignLoc(a.left)
       }
     }
   }
