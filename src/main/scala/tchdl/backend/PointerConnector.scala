@@ -141,11 +141,12 @@ object PointerConnector {
         val dsts = hierarchyPaths.flatMap(path => searchConnection(
           path,
           topModule,
-          moduleList
+          moduleList,
+          Vector(path)
         ))
 
-      pointer.copy(dest = dsts)
-    }
+        pointer.copy(dest = dsts)
+      }
   }
 
   private def searchModule(modulePath: Vector[String], top: lir.Module, moduleList: Vector[lir.Module]): lir.Module = {
@@ -166,7 +167,7 @@ object PointerConnector {
   // module: current module
   //
   // return: deref pointer's path
-  private def searchConnection(path: HWHierarchyPath, topModule: lir.Module, moduleList: Vector[lir.Module]): Vector[HWHierarchyPath] = {
+  private def searchConnection(path: HWHierarchyPath, topModule: lir.Module, moduleList: Vector[lir.Module], history: Vector[HWHierarchyPath]): Vector[HWHierarchyPath] = {
     // In order to use these variable in inner method, defining here
     val module = searchModule(path.modulePath, topModule, moduleList)
     val componentRef = path.component.asInstanceOf[HierarchyComponent.Ref].ref
@@ -351,10 +352,10 @@ object PointerConnector {
     }
 
     val stmts = module.components ++ module.inits ++ module.procedures
-    val nextRefs = stmts.flatMap(searchNext)
+    val nextRefs = stmts.flatMap(searchNext).filterNot(path => history.contains(path))
     val derefs = searchDeref(stmts)
 
-    val dsts = nextRefs.flatMap(path => searchConnection(path, topModule, moduleList))
+    val dsts = nextRefs.flatMap(path => searchConnection(path, topModule, moduleList, path +: history))
     derefs ++ dsts
   }
 }
