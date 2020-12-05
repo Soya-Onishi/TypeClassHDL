@@ -119,7 +119,7 @@ class ASTGenerator {
     def enumFieldDef(ctx: TP.Enum_field_defContext): EnumMemberDef = {
       val fieldName = ctx.TYPE_ID.getText
       val fields = ctx.`type`.asScala.map(typeTree).toVector
-      val intOpt = Option(ctx.INT).map(_.getText).map(BigInt.apply)
+      val intOpt = Option(ctx.INT).map(INTtoValue).map(BigInt.apply)
       val bitOpt = Option(ctx.BIT)
         .map(_.getText)
         .map(_.substring(2))
@@ -369,7 +369,7 @@ class ASTGenerator {
   def hpExpr(ctx: TP.Hp_exprContext)(implicit file: Filename): HPExpr = ctx match {
     case ctx: TP.AddSubHPExprContext => hpBinOp(ctx.hp_expr(0), ctx.hp_expr(1), ctx.op.getText)
     case ctx: TP.StrLitHPExprContext => StringLiteral(ctx.STRING.getText.tail.init, Position(ctx))
-    case ctx: TP.IntLitHPExprContext => IntLiteral(ctx.INT.getText.toInt, Position(ctx))
+    case ctx: TP.IntLitHPExprContext => IntLiteral(INTtoValue(ctx.INT), Position(ctx))
     case ctx: TP.HPExprIDContext => Ident(ctx.getText, Position(ctx))
   }
 
@@ -795,10 +795,7 @@ class ASTGenerator {
       val raw = ctx.BIT.getText.substring(2).filter(_ != '_')
       BitLiteral(BigInt(raw, 2), raw.length, Position(ctx))
     case ctx: TP.IntLitContext =>
-      ctx.INT.getText.toIntOption match {
-        case Some(value) => IntLiteral(value, Position(ctx))
-        case None => ???
-      }
+      IntLiteral(INTtoValue(ctx.INT), Position(ctx))
     case ctx: TP.TrueLitContext => BoolLiteral(value = true, Position(ctx))
     case ctx: TP.FalseLitContext => BoolLiteral(value = false, Position(ctx))
     case ctx: TP.UnitLitContext => UnitLiteral(Position(ctx))
@@ -812,5 +809,12 @@ class ASTGenerator {
     case ctx: TP.Stage_defContext  => stageDef(ctx)
     case ctx: TP.Always_defContext => alwaysDef(ctx)
     case ctx: TP.Proc_defContext => procDef(ctx)
+  }
+
+  def INTtoValue(token: TerminalNode): Int = {
+    token.getText.splitAt(2) match {
+      case ("0x", remain) => BigInt(remain, 16).toInt
+      case (_, _) => BigInt(token.getText).toInt
+    }
   }
 }
