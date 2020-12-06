@@ -1368,4 +1368,19 @@ class RiscvTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("build core") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(
+      Vector("riscv"), "Top",
+      "Top.tchdl", "Core.tchdl", "MemoryControlUnit.tchdl",
+      "RegisterFile.tchdl", "ForwardingUnit.tchdl", "Decoder.tchdl",
+      "ALU.tchdl", "BarrelShifter.tchdl", "Comparator.tchdl", "Types.tchdl"
+    )
+
+    runSim(circuit) { tester =>
+
+    }
+  }
 }

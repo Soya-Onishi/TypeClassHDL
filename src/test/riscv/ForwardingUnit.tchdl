@@ -49,15 +49,23 @@ impl ForwardingUnit {
     }
   }
 
-  input def isLoadHazard(rs1: Bit[5], rs2: Bit[5]) -> Bool {
+  input def isLoadHazardRs1(addr: Bit[5]) -> Bool {
+    this.verifyLoadHazard(addr)
+  }
+
+  input def isLoadHazardRs2(addr: Bit[5]) -> Bool {
+    this.verifyLoadHazard(addr)
+  }
+
+  def verifyLoadHazard(addr: Bit[5]) -> Bool {
     val execHazard = match this.execRd {
       case Option[Bit[5]]:::None     => false
-      case Option[Bit[5]]:::Some(rd) => this.isExeLoad & (rd == rs1 | rd == rs2)
+      case Option[Bit[5]]:::Some(rd) => this.isExeLoad & rd == addr
     }
 
     val memHazard = match this.memRd {
       case Option[Bit[5]]:::None     => false
-      case Option[Bit[5]]:::Some(rd) => this.isMemLoad & !this.isLoadDone & (rd == rs1 | rd == rs2)
+      case Option[Bit[5]]:::Some(rd) => this.isMemLoad & !this.isLoadDone & rd == addr
     }
 
     execHazard | memHazard

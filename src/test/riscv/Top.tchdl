@@ -1,0 +1,14 @@
+package riscv
+
+module Top
+impl Top {
+  mod mcu: MemoryControlUnit = MemoryControlUnit {}
+  mod core: Core = Core {
+    sibling:
+      mcu: this.mcu
+  }
+
+  input def launch(pc: Bit[32]) -> Unit {
+    this.core.launch(pc)
+  }
+}
