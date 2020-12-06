@@ -34,27 +34,12 @@ impl From[Bit[7]] for Opcode {
 }
 
 enum Operation {
-  Arith(  ALUOps, Bit[32], Bit[32], Bit[5])           = 0
-  Shift(ShiftOps, Bit[32], Bit[ 5], Bit[5])           = 1
-    Cmp(Compare, Bit[5])                              = 2
-    Jmp(Jump, Bit[32], Bit[32])                       = 3
-   Load(DataType, Bit[32], Bit[32], Bit[5])           = 4
-  Store(DataType, Bit[32], Bit[32], Bit[32])          = 5
-}
-
-impl Operation {
-  def rdAddr() -> Option[Bit[5]] {
-    match this {
-      case Operation:::Arith(_, _, _, rd)               => Option[Bit[5]]:::Some(rd)
-      case Operation:::Shift(_, _, _, rd)               => Option[Bit[5]]:::Some(rd)
-      case   Operation:::Cmp(_, rd)                     => Option[Bit[5]]:::Some(rd)
-      case   Operation:::Jmp(   Jump:::Branch(_), _, _) => Option[Bit[5]]:::None
-      case   Operation:::Jmp(  Jump:::Direct(rd), _, _) => Option[Bit[5]]:::Some(rd)
-      case   Operation:::Jmp(Jump:::Indirect(rd), _, _) => Option[Bit[5]]:::Some(rd)
-      case  Operation:::Load(_, _, _, rd)               => Option[Bit[5]]:::Some(rd)
-      case Operation:::Store(_, _, _, _)              => Option[Bit[5]]:::None
-    }
-  }
+  Arith(  ALUOps, Bit[32], Bit[32])           = 0
+  Shift(ShiftOps, Bit[32], Bit[ 5])           = 1
+    Cmp(Compare)                              = 2
+    Jmp(Jump, Bit[32], Bit[32])               = 3
+   Load(DataType, Bit[32], Bit[32])           = 4
+  Store(DataType, Bit[32], Bit[32], Bit[32])  = 5
 }
 
 enum ALUOps {
@@ -72,9 +57,9 @@ enum ShiftOps {
 }
 
 enum Jump {
-  Branch(Compare)  = 0
-  Direct(Bit[5])   = 1
-  Indirect(Bit[5]) = 2
+  Branch(Compare) = 0
+  Direct          = 1
+  Indirect        = 2
 }
 
 enum Compare {

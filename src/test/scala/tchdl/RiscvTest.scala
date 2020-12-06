@@ -361,9 +361,29 @@ class RiscvTest extends TchdlFunSuite {
     }
   }
 
+  def decoderTemplate(inst: BigInt, pc: BigInt, tester: TreadleTester, rnd: Random): (BigInt, BigInt) = {
+    def next(width: Int): BigInt = BigInt(width, rnd)
+
+    val regs = BigInt(0) +: Seq.fill(31)(next(32))
+
+    tester.poke("decode__active", 1)
+    tester.poke("decode_inst", inst)
+    tester.poke("decode_pc", pc)
+
+    val rs1Addr = tester.peek("regFile_rs1_addr").toInt
+    val rs2Addr = tester.peek("regFile_rs2_addr").toInt
+    val rs1Data = regs(rs1Addr)
+    val rs2Data = regs(rs2Addr)
+    tester.poke("regFile_rs1__ret", rs1Data)
+    tester.poke("regFile_rs2__ret", rs2Data)
+    tester.poke("fu_rs1__ret", rs1Data)
+    tester.poke("fu_rs2__ret", rs2Data)
+
+    (rs1Data, rs2Data)
+  }
+
   test("Decoder for lui instruction unit test") {
     val rnd = new Random(0)
-
     def next(width: Int): BigInt = BigInt(width, rnd)
 
     val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
@@ -383,29 +403,28 @@ class RiscvTest extends TchdlFunSuite {
 
     runSim(circuit, enableVcd = true) { tester =>
       for (_ <- 0 to 100) {
-
-        val pc = next(32)
         val inst = luiInst()
-
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
+        val pc = next(32)
+        decoderTemplate(inst.inst, pc, tester, rnd)
 
         tester.step(1)
 
-        val bits = tester.peek("decode__ret__data")
-        val Seq(aluOps, imm, zero, rd) = truncate(bits, 5, 32, 32, 3)
-        val expectBits = concat((5, inst.rd), (32, BigInt(0)), (32, inst.imm), (3, BigInt(0)))
-        tester.expect("decode__ret__member", 0)
+        val bits = tester.peek("decode__ret_ops__data")
+        val Seq(aluOps, imm, zero) = truncate(bits, 32, 32, 3)
+        val expectBits = concat((32, BigInt(0)), (32, inst.imm), (3, BigInt(0)))
+        tester.expect("decode__ret_ops__member", 0)
         val message =
           s"""
              |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
              |[ops] expect: 0, actual: $aluOps
              |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
              |[zer] expect: 0, actual: $zero
-             |[ rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expectBits, message)
+        tester.expect("decode__ret_ops__data", expectBits, message)
+        tester.expect("decode__ret_rs1__member", 0)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -436,34 +455,33 @@ class RiscvTest extends TchdlFunSuite {
         val inst = auipcInst()
         val pc = next(32)
 
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
+        decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 0)
+        tester.expect("decode__ret_ops__member", 0)
 
-        val bits = tester.peek("decode__ret__data")
-        val Seq(aluOps, pcValue, imm, rd) = truncate(bits, 5, 32, 32, 3)
-        val expectBits = concat((5, inst.rd), (32, inst.imm), (32, pc), (3, BigInt(0)))
+        val bits = tester.peek("decode__ret_ops__data")
+        val Seq(aluOps, pcValue, imm) = truncate(bits, 32, 32, 3)
+        val expectBits = concat((32, inst.imm), (32, pc), (3, BigInt(0)))
         val message =
           s"""
              |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
              |[ops] expect: 0, actual: $aluOps
              |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
              |[ pc] expect: ${pc.toString(16)}, actual: ${pcValue.toString(16)}
-             |[ rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expectBits, message)
+        tester.expect("decode__ret_ops__data", expectBits, message)
+        tester.expect("decode__ret_rs1__member", 0)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
 
   test("Decoder unit test for JAL") {
     val rnd = new Random(0)
-
     def next(width: Int): BigInt = BigInt(width, rnd)
-
     val circuit = untilThisPhase(Vector("riscv"), "Decoder", "Decoder.tchdl", "ForwardingUnit.tchdl", "RegisterFile.tchdl", "Types.tchdl")
 
     def jalInst(): {val inst: BigInt; val imm: BigInt; val rd: BigInt} = {
@@ -487,25 +505,25 @@ class RiscvTest extends TchdlFunSuite {
         val inst = jalInst()
         val pc = next(32)
 
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
+        decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 3)
-        val bits = tester.peek("decode__ret__data")
-        val Seq(jmpMember, jmpBits, pcValue, imm) = truncate(bits, 32, 32, 3 + 32 + 32, 2)
-        val Seq(rd) = truncate(jmpBits, 5)
-        val expectBits = concat((32, inst.imm), (32, pc), (62, BigInt(0)), (5, inst.rd), (2, BigInt(1)))
+        tester.expect("decode__ret_ops__member", 3)
+        val bits = tester.peek("decode__ret_ops__data")
+        val Seq(jmpMember, _, pcValue, imm) = truncate(bits, 32, 32, 3 + 32 + 32, 2)
+        val expectBits = concat((32, inst.imm), (32, pc), (67, BigInt(0)), (2, BigInt(1)))
         val message =
           s"""
              |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
              |[mem] expect: 1, actual: $jmpMember
              |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
              |[ pc] expect: ${pc.toString(16)}, actual: ${pcValue.toString(16)}
-             |[ rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expectBits, message)
+        tester.expect("decode__ret_ops__data", expectBits, message)
+        tester.expect("decode__ret_rs1__member", 0)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -539,30 +557,25 @@ class RiscvTest extends TchdlFunSuite {
         val inst = jalrInst()
         val pc = next(32)
 
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("fu_rs1__ret", regs(tester.peek("fu_rs1_addr").toInt))
+        val (rs1Data, _) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 3)
-        val bits = tester.peek("decode__ret__data")
-        val Seq(jmpMember, jmpBits, rs1, imm) = truncate(bits, 32, 32, 3 + 32 + 32, 2)
-        val Seq(rd) = truncate(jmpBits, 5)
-        val expectBits = concat((32, inst.imm), (32, rs1Data), (62, BigInt(0)), (5, inst.rd), (2, BigInt(2)))
+        val bits = tester.peek("decode__ret_ops__data")
+        val Seq(jmpMember, _, rs1, imm) = truncate(bits, 32, 32, 67, 2)
+        val expectBits = concat((32, inst.imm), (32, rs1Data), (67, BigInt(0)), (2, BigInt(2)))
         val message =
           s"""
              |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
              |[mem] expect: 2, actual: $jmpMember
              |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
              |[rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
-             |[ rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expectBits, message)
+        tester.expect("decode__ret_ops__member", 3)
+        tester.expect("decode__ret_ops__data", expectBits, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -605,23 +618,10 @@ class RiscvTest extends TchdlFunSuite {
         val inst = branchInst(f3)
         val pc = next(32)
 
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, rs2Data) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 3)
-        val bits = tester.peek("decode__ret__data")
+        val bits = tester.peek("decode__ret_ops__data")
         val Seq(jmpMember, jmpData, pcValue, imm) = truncate(bits, 32, 32, 32 + 32 + 3, 2)
         val Seq(cmpMember, rs1Value, rs2Value) = truncate(jmpData, 32, 32, 3)
         val expectCmp = concat((32, rs2Data), (32, rs1Data), (3, op))
@@ -635,7 +635,13 @@ class RiscvTest extends TchdlFunSuite {
              |[    pc] expect: ${pc.toString(16)}, actual: ${pcValue.toString(16)}
              |[   imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
              |""".stripMargin
-        tester.expect("decode__ret__data", expectBits, message)
+        tester.expect("decode__ret_ops__member", 3)
+        tester.expect("decode__ret_ops__data", expectBits, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 1)
+        tester.expect("decode__ret_rd__member", 0)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rs2__data", inst.rs2)
       }
     }
   }
@@ -673,34 +679,25 @@ class RiscvTest extends TchdlFunSuite {
       } {
         val inst = load(f3)
         val pc = next(32)
-
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, _) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 4)
-        val bits = tester.peek("decode__ret__data")
-        val Seq(dataType, rs1, imm, rd) = truncate(bits, 5, 32, 32, 3)
-        val expectBits = concat((5, inst.rd), (32, inst.imm), (32, rs1Data), (3, BigInt(op)))
+        val bits = tester.peek("decode__ret_ops__data")
+        val Seq(dataType, rs1, imm) = truncate(bits, 32, 32, 3)
+        val expectBits = concat((32, inst.imm), (32, rs1Data), (3, BigInt(op)))
         val message =
           s"""
              |[data] expect $op, actual $dataType
              |[ rs1] expect ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
              |[ imm] expect ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
-             |[  rd] expect ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expectBits, message)
+        tester.expect("decode__ret_ops__member", 4)
+        tester.expect("decode__ret_ops__data", expectBits, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -740,23 +737,10 @@ class RiscvTest extends TchdlFunSuite {
         val inst = store(f3)
         val pc = next(32)
 
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, rs2Data) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 5)
-        val bits = tester.peek("decode__ret__data")
+        val bits = tester.peek("decode__ret_ops__data")
         val Seq(dataType, rs1, imm, rs2) = truncate(bits, 32, 32, 32, 3)
         val expectedBits = concat((32, rs2Data), (32, inst.imm), (32, rs1Data), (3, dataType))
         val message =
@@ -766,7 +750,13 @@ class RiscvTest extends TchdlFunSuite {
              |[ imm] expect ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
              |[  rd] expect ${rs2Data.toString(16)}, actual: ${rs2.toString(16)}
              |""".stripMargin
-        tester.expect("decode__ret__data", expectedBits, message)
+        tester.expect("decode__ret_ops__member", 5)
+        tester.expect("decode__ret_ops__data", expectedBits, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 1)
+        tester.expect("decode__ret_rd__member", 0)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rs2__data", inst.rs2)
       }
     }
   }
@@ -805,33 +795,25 @@ class RiscvTest extends TchdlFunSuite {
         val inst = arithImm(f3)
         val pc = next(32)
 
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, _) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 0)
-        val bits = tester.peek("decode__ret__data")
-        val expect = concat((5, inst.rd), (32, inst.imm), (32, rs1Data), (3, BigInt(op)))
-        val Seq(aluOps, rs1, imm, rd) = truncate(bits, 5, 32, 32, 3)
+        val bits = tester.peek("decode__ret_ops__data")
+        val expect = concat((32, inst.imm), (32, rs1Data), (3, BigInt(op)))
+        val Seq(aluOps, rs1, imm) = truncate(bits, 32, 32, 3)
         val message =
           s"""
              |[ops] expect: $op, actual: $aluOps
              |[rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
              |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
-             |[ rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expect, message)
+        tester.expect("decode__ret_ops__member", 0)
+        tester.expect("decode__ret_ops__data", expect, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -869,34 +851,25 @@ class RiscvTest extends TchdlFunSuite {
       } {
         val inst = arithImm(f3)
         val pc = next(32)
-
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, _) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 2)
-        val bits = tester.peek("decode__ret__data")
-        val expect = concat((5, inst.rd), (32, inst.imm), (32, rs1Data), (3, BigInt(op)))
-        val Seq(cmpOps, rs1, imm, rd) = truncate(bits, 5, 32, 32, 3)
+        val bits = tester.peek("decode__ret_ops__data")
+        val expect = concat((32, inst.imm), (32, rs1Data), (3, BigInt(op)))
+        val Seq(cmpOps, rs1, imm) = truncate(bits, 32, 32, 3)
         val message =
           s"""
              |[ops] expect: $op, actual: $cmpOps
              |[rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
              |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
-             |[ rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expect, message)
+        tester.expect("decode__ret_ops__member", 2)
+        tester.expect("decode__ret_ops__data", expect, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -942,34 +915,25 @@ class RiscvTest extends TchdlFunSuite {
       } {
         val inst = shiftImm(op)
         val pc = next(32)
-
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, _) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 1)
-        val bits = tester.peek("decode__ret__data")
-        val expect = concat((5, inst.rd), (5, inst.shamt), (32, rs1Data), (2, BigInt(op)))
-        val Seq(cmpOps, rs1, shamt, rd) = truncate(bits, 5, 5, 32, 2)
+        val bits = tester.peek("decode__ret_ops__data")
+        val expect = concat((5, inst.shamt), (32, rs1Data), (2, BigInt(op)))
+        val Seq(cmpOps, rs1, shamt) = truncate(bits, 5, 32, 2)
         val message =
           s"""
              |[  ops] expect: $op, actual: $cmpOps
              |[  rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
              |[shamt] expect: ${inst.shamt}, actual: $shamt
-             |[   rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expect, message)
+        tester.expect("decode__ret_ops__member", 1)
+        tester.expect("decode__ret_ops__data", expect, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 0)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -1004,34 +968,26 @@ class RiscvTest extends TchdlFunSuite {
       } {
         val inst = arithReg(f3, f7.toInt)
         val pc = next(32)
-
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, rs2Data) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 0)
-        val bits = tester.peek("decode__ret__data")
-        val expect = concat((5, inst.rd), (32, rs2Data), (32, rs1Data), (3, BigInt(op)))
-        val Seq(aluOps, rs1, rs2, rd) = truncate(bits, 5, 32, 32, 3)
+        val bits = tester.peek("decode__ret_ops__data")
+        val expect = concat((32, rs2Data), (32, rs1Data), (3, BigInt(op)))
+        val Seq(aluOps, rs1, rs2) = truncate(bits, 32, 32, 3)
         val message =
           s"""
              |[  ops] expect: $op, actual: $aluOps
              |[  rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
              |[  rs2] expect: ${rs2Data.toString(16)}, actual: ${rs2.toString(16)}
-             |[   rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expect, message)
+        tester.expect("decode__ret_ops__member", 0)
+        tester.expect("decode__ret_ops__data", expect, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 1)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rs2__data", inst.rs2)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -1066,35 +1022,27 @@ class RiscvTest extends TchdlFunSuite {
       } {
         val inst = arithReg(f3, f7.toInt)
         val pc = next(32)
-
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, rs2Data) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 1)
-        val bits = tester.peek("decode__ret__data")
-        val expect = concat((5, inst.rd), (5, rs2Data), (32, rs1Data), (2, BigInt(op)))
+        val bits = tester.peek("decode__ret_ops__data")
+        val expect = concat((5, rs2Data), (32, rs1Data), (2, BigInt(op)))
         val shamtValue = rs2Data & 0x1F
-        val Seq(aluOps, rs1, shamt, rd) = truncate(bits, 5, 5, 32, 2)
+        val Seq(aluOps, rs1, shamt) = truncate(bits, 5, 32, 2)
         val message =
           s"""
              |[  ops] expect: $op, actual: $aluOps
              |[  rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
              |[  rs2] expect: $shamtValue, actual: $shamt
-             |[   rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expect, message)
+        tester.expect("decode__ret_ops__member", 1)
+        tester.expect("decode__ret_ops__data", expect, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 1)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rs2__data", inst.rs2)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }
@@ -1129,34 +1077,26 @@ class RiscvTest extends TchdlFunSuite {
       } {
         val inst = arithReg(f3, f7.toInt)
         val pc = next(32)
-
-        tester.poke("decode__active", 1)
-        tester.poke("decode_inst", inst.inst)
-        tester.poke("decode_pc", pc)
-
-        val rs1Addr = tester.peek("regFile_rs1_addr").toInt
-        val rs2Addr = tester.peek("regFile_rs2_addr").toInt
-        val rs1Data = regs(rs1Addr)
-        val rs2Data = regs(rs2Addr)
-        tester.poke("regFile_rs1__ret", rs1Data)
-        tester.poke("regFile_rs2__ret", rs2Data)
-        tester.poke("fu_rs1__ret", rs1Data)
-        tester.poke("fu_rs2__ret", rs2Data)
-
+        val (rs1Data, rs2Data) = decoderTemplate(inst.inst, pc, tester, rnd)
         tester.step(1)
 
-        tester.expect("decode__ret__member", 2)
-        val bits = tester.peek("decode__ret__data")
-        val expect = concat((5, inst.rd), (32, rs2Data), (32, rs1Data), (3, BigInt(op)))
-        val Seq(cmpOps, rs2, rs1, rd) = truncate(bits, 5, 32, 32, 3)
+        val bits = tester.peek("decode__ret_ops__data")
+        val expect = concat((32, rs2Data), (32, rs1Data), (3, BigInt(op)))
+        val Seq(cmpOps, rs2, rs1) = truncate(bits, 32, 32, 3)
         val message =
           s"""
              |[  ops] expect: $op, actual: $cmpOps
              |[  rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
              |[  rs2] expect: ${rs2Data.toString(16)}, actual: ${rs2.toString(16)}
-             |[   rd] expect: ${inst.rd}, actual: $rd
              |""".stripMargin
-        tester.expect("decode__ret__data", expect, message)
+        tester.expect("decode__ret_ops__member", 2)
+        tester.expect("decode__ret_ops__data", expect, message)
+        tester.expect("decode__ret_rs1__member", 1)
+        tester.expect("decode__ret_rs2__member", 1)
+        tester.expect("decode__ret_rd__member", 1)
+        tester.expect("decode__ret_rs1__data", inst.rs1)
+        tester.expect("decode__ret_rs2__data", inst.rs2)
+        tester.expect("decode__ret_rd__data", inst.rd)
       }
     }
   }

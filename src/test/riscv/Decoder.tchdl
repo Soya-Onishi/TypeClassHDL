@@ -1,6 +1,14 @@
 package riscv
 
 import std::traits:::From
+import std::types:::Option
+
+struct Instruction {
+  ops: Operation,
+  rs1: Option[Bit[5]],
+  rs2: Option[Bit[5]],
+   rd: Option[Bit[5]]
+}
 
 module Decoder {
   sibling:
@@ -9,7 +17,7 @@ module Decoder {
 }
 
 impl Decoder {
-  input def decode(inst: Bit[32], pc: Bit[32]) -> Operation {
+  input def decode(inst: Bit[32], pc: Bit[32]) -> Instruction {
     val opcode = Opcode:::from(inst.truncate[6, 0]())
     val funct3 = inst.truncate[14, 12]()
     val funct7 = inst.truncate[31, 25]()
@@ -17,8 +25,36 @@ impl Decoder {
     val rs2Addr = inst.truncate[24, 20]()
     val rdAddr = inst.truncate[11, 7]()
     val imm = this.getImm(opcode, funct3, funct7, inst)
+    val ops = this.getOperation(opcode, funct3, funct7, rs1Addr, rs2Addr, pc, imm)
 
-    this.getOperation(opcode, funct3, funct7, rs1Addr, rs2Addr, rdAddr, pc, imm)
+    val rs1 = match opcode {
+      case Opcode:::LUI    => Option[Bit[5]]:::None
+      case Opcode:::AUIPC  => Option[Bit[5]]:::None
+      case Opcode:::JAL    => Option[Bit[5]]:::None
+      case Opcode:::SYSTEM => Option[Bit[5]]:::None
+      case _               => Option[Bit[5]]:::Some(rs1Addr)
+    }
+
+    val rs2 = match opcode {
+      case Opcode:::BRANCH => Option[Bit[5]]:::Some(rs2Addr)
+      case Opcode:::STORE  => Option[Bit[5]]:::Some(rs2Addr)
+      case Opcode:::REG    => Option[Bit[5]]:::Some(rs2Addr)
+      case _               => Option[Bit[5]]:::None
+    }
+
+    val rd = match opcode {
+      case Opcode:::BRANCH => Option[Bit[5]]:::None
+      case Opcode:::STORE  => Option[Bit[5]]:::None
+      case Opcode:::SYSTEM => Option[Bit[5]]:::None
+      case _               => Option[Bit[5]]:::Some(rdAddr)
+    }
+
+    Instruction {
+      ops: ops,
+      rs1: rs1,
+      rs2: rs2,
+       rd:  rd
+    }
   }
 
   internal def getImm(opcode: Opcode, f3: Bit[3], f7: Bit[7], inst: Bit[32]) -> Bit[32] {
@@ -60,15 +96,15 @@ impl Decoder {
     Bit[32]:::signExt[21](inst.bit[31]().concat[8](inst.truncate[19, 12]()).concat[1](inst.bit[20]()).concat[10](inst.truncate[30, 21]()).concat[1](0b0))
   }
 
-  internal def getOperation(opcode: Opcode, f3: Bit[3], f7: Bit[7], rs1Addr: Bit[5], rs2Addr: Bit[5], rd: Bit[5], pc: Bit[32], imm: Bit[32]) -> Operation {
+  internal def getOperation(opcode: Opcode, f3: Bit[3], f7: Bit[7], rs1Addr: Bit[5], rs2Addr: Bit[5], pc: Bit[32], imm: Bit[32]) -> Operation {
     val rs1 = this.fu.rs1(rs1Addr, this.regFile.rs1(rs1Addr))
     val rs2 = this.fu.rs2(rs2Addr, this.regFile.rs2(rs2Addr))
 
     match opcode {
-      case Opcode:::LUI => Operation:::Arith(ALUOps:::Add, imm, Bit[32]:::from(0), rd)
-      case Opcode:::AUIPC => Operation:::Arith(ALUOps:::Add, pc, imm, rd)
-      case Opcode:::JAL => Operation:::Jmp(Jump:::Direct(rd), pc, imm)
-      case Opcode:::JALR => Operation:::Jmp(Jump:::Indirect(rd), rs1, imm)
+      case Opcode:::LUI => Operation:::Arith(ALUOps:::Add, imm, Bit[32]:::from(0))
+      case Opcode:::AUIPC => Operation:::Arith(ALUOps:::Add, pc, imm)
+      case Opcode:::JAL => Operation:::Jmp(Jump:::Direct, pc, imm)
+      case Opcode:::JALR => Operation:::Jmp(Jump:::Indirect, rs1, imm)
       case Opcode:::LOAD =>
         val data = match f3 {
           case 0b000 => DataType:::Byte
@@ -78,7 +114,7 @@ impl Decoder {
           case 0b101 => DataType:::UHalf
         }
 
-        Operation:::Load(data, rs1, imm, rd)
+        Operation:::Load(data, rs1, imm)
       case Opcode:::STORE =>
         val data = match f3 {
           case 0b000 => DataType:::Byte
@@ -101,32 +137,32 @@ impl Decoder {
       case Opcode:::IMM =>
         val shamt = imm.truncate[4, 0]()
         match f3 {
-          case 0b000 => Operation:::Arith(ALUOps:::Add, rs1, imm, rd)
-          case 0b001 => Operation:::Shift(ShiftOps:::Sll, rs1, shamt, rd)
-          case 0b010 => Operation:::Cmp(Compare:::Lt(rs1, imm), rd)
-          case 0b011 => Operation:::Cmp(Compare:::Ltu(rs1, imm), rd)
-          case 0b100 => Operation:::Arith(ALUOps:::Xor, rs1, imm, rd)
-          case 0b110 => Operation:::Arith(ALUOps:::Or, rs1, imm, rd)
-          case 0b111 => Operation:::Arith(ALUOps:::And, rs1, imm, rd)
+          case 0b000 => Operation:::Arith(ALUOps:::Add, rs1, imm)
+          case 0b001 => Operation:::Shift(ShiftOps:::Sll, rs1, shamt)
+          case 0b010 => Operation:::Cmp(Compare:::Lt(rs1, imm))
+          case 0b011 => Operation:::Cmp(Compare:::Ltu(rs1, imm))
+          case 0b100 => Operation:::Arith(ALUOps:::Xor, rs1, imm)
+          case 0b110 => Operation:::Arith(ALUOps:::Or, rs1, imm)
+          case 0b111 => Operation:::Arith(ALUOps:::And, rs1, imm)
           case 0b101 =>
-            if(f7 == 0b000_0000) Operation:::Shift(ShiftOps:::Srl, rs1, shamt, rd)
-            else                 Operation:::Shift(ShiftOps:::Sra, rs1, shamt, rd)
+            if(f7 == 0b000_0000) Operation:::Shift(ShiftOps:::Srl, rs1, shamt)
+            else                 Operation:::Shift(ShiftOps:::Sra, rs1, shamt)
         }
       case Opcode:::REG =>
         val shamt = rs2.truncate[4, 0]()
         match f3 {
         case 0b000 =>
-          if(f7 == 0b000_0000) Operation:::Arith(ALUOps:::Add, rs1, rs2, rd)
-          else                 Operation:::Arith(ALUOps:::Sub, rs1, rs2, rd)
-        case 0b001 => Operation:::Shift(ShiftOps:::Sll, rs1, shamt, rd)
-        case 0b010 => Operation:::Cmp( Compare:::Lt(rs1, rs2), rd)
-        case 0b011 => Operation:::Cmp(Compare:::Ltu(rs1, rs2), rd)
-        case 0b100 => Operation:::Arith(ALUOps:::Xor, rs1, rs2, rd)
-        case 0b110 => Operation:::Arith( ALUOps:::Or, rs1, rs2, rd)
-        case 0b111 => Operation:::Arith(ALUOps:::And, rs1, rs2, rd)
+          if(f7 == 0b000_0000) Operation:::Arith(ALUOps:::Add, rs1, rs2)
+          else                 Operation:::Arith(ALUOps:::Sub, rs1, rs2)
+        case 0b001 => Operation:::Shift(ShiftOps:::Sll, rs1, shamt)
+        case 0b010 => Operation:::Cmp( Compare:::Lt(rs1, rs2))
+        case 0b011 => Operation:::Cmp(Compare:::Ltu(rs1, rs2))
+        case 0b100 => Operation:::Arith(ALUOps:::Xor, rs1, rs2)
+        case 0b110 => Operation:::Arith( ALUOps:::Or, rs1, rs2)
+        case 0b111 => Operation:::Arith(ALUOps:::And, rs1, rs2)
         case 0b101 =>
-          if(f7 == 0b000_0000) Operation:::Shift(ShiftOps:::Srl, rs1, shamt, rd)
-          else                 Operation:::Shift(ShiftOps:::Sra, rs1, shamt, rd)
+          if(f7 == 0b000_0000) Operation:::Shift(ShiftOps:::Srl, rs1, shamt)
+          else                 Operation:::Shift(ShiftOps:::Sra, rs1, shamt)
       }
     }
   }
