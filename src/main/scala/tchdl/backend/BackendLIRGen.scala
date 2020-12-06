@@ -1631,11 +1631,21 @@ object BackendLIRGen {
 
   def runCommence(commence: backend.Commence)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     val stmts = activateProcBlock(commence.procLabel, commence.blkLabel, commence.args, fromInner = false)
+
+    // Because there is no type field in ProcLabel, using &Bool as a alternative
+    val pointer = BackendType.boolTpe.copy(flag = BackendTypeFlag.Pointer)
+
+    val idRef = lir.Reference(commence.blkLabel.idName, pointer)
+    val (stepIDNode, stepIDRef) = makeNode(lir.ProcStepID(commence.procLabel.toString, commence.blkLabel.symbol.name, pointer))
+    val via = stack.next("_GEN").name
+    val id = lir.PriorityAssign(idRef, via, stepIDRef)
+    val idStmts = Vector(stepIDNode, id)
+
     val com = lir.Commence(commence.procLabel.symbol.path, commence.blkLabel.symbol.name, commence.tpe)
     val (commenceNode, commenceRef) = makeNode(com)
     val inst = DataInstance(commence.tpe, commenceRef)
 
-    RunResult(stmts :+ commenceNode, inst)
+    RunResult((stmts ++ idStmts) :+ commenceNode, inst)
   }
 
   def runRelayBlock(relay: backend.RelayBlock)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
@@ -1679,7 +1689,6 @@ object BackendLIRGen {
     }
 
     val procContainer = ctx.procs(stack.lookupThis.get.tpe).find(_.label == procLabel).get
-
     val activeRef = lir.Reference(blkLabel.activeName, BackendType.boolTpe)
     val (litNode, litRef) = makeNode(lir.Literal(1, BackendType.boolTpe))
     val activate = assignStmtGen(activeRef, litRef)

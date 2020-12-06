@@ -53,6 +53,7 @@ object BackendLIR {
   case class Commence(path: NameSpace, origin: String, tpe: BackendType) extends Expr
   case class Ops(op: PrimOp, args: Vector[Ref], consts: Vector[BigInt], tpe: BackendType) extends Expr
   case class MemPortID(name: String, port: Int, tpe: BackendType) extends Expr
+  case class ProcStepID(proc: String, step: String, tpe: BackendType) extends Expr
 
   // Below two IRs are for Enum
   case class Concat(subjects: Vector[Ref], tpe: BackendType) extends Expr

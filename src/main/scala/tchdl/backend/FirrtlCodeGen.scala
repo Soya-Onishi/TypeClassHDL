@@ -486,9 +486,16 @@ object FirrtlCodeGen {
       val width = toFirrtlType(tpe).asInstanceOf[fir.UIntType].width
       pointers.filter(_.source.modulePath == modulePath)
         .collect{ case PointerConnection(id, source, _, _) => id -> source }
-        .collect{ case (id, HWHierarchyPath(path, HierarchyComponent.Memory(name, port))) => (id, path, name, port) }
-        .collect{ case (id, path, name, port) if path == modulePath => (id, name, port) }
+        .collect{ case (id, HWHierarchyPath(_, HierarchyComponent.Memory(name, port))) => (id, name, port) }
         .collect{ case (id, name, port) if name == memName && port == portNumber => id }
+        .map(id => fir.UIntLiteral(id, width))
+        .head
+    case lir.ProcStepID(procName, stepName, tpe) =>
+      val width = toFirrtlType(tpe).asInstanceOf[fir.UIntType].width
+      pointers.filter(_.source.modulePath == modulePath)
+        .collect{ case PointerConnection(id, source, _, _) => id -> source }
+        .collect{ case (id, HWHierarchyPath(_, HierarchyComponent.Proc(proc, step))) => (id, proc, step) }
+        .collect{ case (id, proc, step) if proc == procName && step == stepName => id }
         .map(id => fir.UIntLiteral(id, width))
         .head
     case lir.Ops(op, args, consts, tpe) => fir.DoPrim(op, args.map(elaborateExpr), consts, toFirrtlType(tpe))
