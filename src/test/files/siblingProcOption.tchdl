@@ -1,0 +1,78 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  output out: Option[Bit[32]] = Option[Bit[32]]:::None
+
+  mod sub0: Sub0 = Sub0 {}
+  mod sub1: Sub1 = Sub1 {
+    sibling:
+      sub0: this.sub0
+  }
+
+  always pass {
+    this.out = this.sub1.out
+  }
+
+  input def launch(a: Bit[32], b: Bit[32], c: Bit[32], d: Bit[32]) -> Bool {
+    this.sub1.launch(a, b, c, d)
+  }
+}
+
+module Sub0
+impl Sub0 {
+  internal busy: Bool = false
+
+  sibling def execute(a: Bit[32], b: Bit[32], c: Bit[32], d: Bit[32]) -> Option[&Option[Bit[32]]] {
+    if(this.busy) { Option[&Option[Bit[32]]]:::None }
+    else {
+      val pointer = commence conv # execute(a, b, c, d)
+      Option[&Option[Bit[32]]]:::Some(pointer)
+    }
+  }
+
+  proc conv @ Option[Bit[32]]:::None -> &Option[Bit[32]] {
+    origin block execute(a: Bit[32], b: Bit[32], c: Bit[32], d: Bit[32]) {
+      this.busy = true
+      relay next(a + b, c + d)
+    }
+
+    block next(x: Bit[32], y: Bit[32]) {
+      this.busy = true
+      relay ret(x + y)
+    }
+
+    final block ret(m: Bit[32]) {
+      this.busy = true
+      return Option[Bit[32]]:::Some(m)
+    }
+  }
+}
+
+module Sub1 {
+  sibling:
+    sub0: Sub0
+}
+impl Sub1 {
+  output out: Option[Bit[32]] = Option[Bit[32]]:::None
+
+  input def launch(a: Bit[32], b: Bit[32], c: Bit[32], d: Bit[32]) -> Bool {
+    match this.sub0.execute(a, b, c, d) {
+      case Option[&Option[Bit[32]]]:::None => false
+      case Option[&Option[Bit[32]]]:::Some(ans) =>
+        generate receiver(ans)
+        true
+    }
+  }
+
+  stage receiver(ans: &Option[Bit[32]]) {
+    this.out = *ans
+    match *ans {
+      case Option[Bit[32]]:::Some(_) => finish
+      case _ =>
+    }
+  }
+}
+

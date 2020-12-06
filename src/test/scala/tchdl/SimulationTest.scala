@@ -769,4 +769,29 @@ class SimulationTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("use sibling proc") {
+    val rnd = new Random(0)
+    val circuit = untilThisPhase(Vector("test"), "Top", "siblingProcOption.tchdl")
+    def next(width: Int): BigInt = BigInt(width, rnd)
+
+    runSim(circuit) { tester =>
+      for(_ <- 0 until 100) {
+        val Seq(a, b, c, d) = Seq.fill(4)(next(32))
+        tester.poke("launch__active", 1)
+        tester.poke("launch_a", a)
+        tester.poke("launch_b", b)
+        tester.poke("launch_c", c)
+        tester.poke("launch_d", d)
+
+        while(tester.peek("launch__ret") == 0) { tester.step(1); println("waiting for accept...") }
+        tester.step(1)
+        tester.poke("launch__active", 0)
+        while(tester.peek("out__member") == 0) { tester.step(1); println("waiting for result...") }
+
+        val expect = (a + b + c + d) & ((BigInt(1) << 32) - 1)
+        tester.expect("out__data", expect)
+      }
+    }
+  }
 }

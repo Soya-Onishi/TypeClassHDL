@@ -1064,7 +1064,7 @@ object BackendLIRGen {
         case _ => tpe
       }
 
-      def extractPrimitive(tpe: BackendType): (Vector[lir.Node], Name, Vector[BackendType]) = {
+      def extractMono(tpe: BackendType): (Vector[lir.Node], Name, Vector[BackendType]) = {
         val name = localStack.next("_EXTRACT")
         val addedHistory = tpe +: history
         val expr = lir.Extract(source, addedHistory, tpe)
@@ -1076,12 +1076,13 @@ object BackendLIRGen {
       val tpe = convertHWType(srcTpe)
 
       tpe.symbol match {
-        case sym if sym == Symbol.int => extractPrimitive(BackendType.intTpe)
-        case sym if sym == Symbol.bool => extractPrimitive(BackendType.boolTpe)
-        case sym if sym == Symbol.unit => extractPrimitive(BackendType.unitTpe)
+        case _ if tpe.flag.hasFlag(BackendTypeFlag.Pointer) => extractMono(tpe)
+        case sym if sym == Symbol.int => extractMono(BackendType.intTpe)
+        case sym if sym == Symbol.bool => extractMono(BackendType.boolTpe)
+        case sym if sym == Symbol.unit => extractMono(BackendType.unitTpe)
         case sym if sym == Symbol.bit =>
           val HPElem.Num(width) = tpe.hargs(0)
-          extractPrimitive(BackendType.bitTpe(width))
+          extractMono(BackendType.bitTpe(width))
         case sym if sym == Symbol.vec =>
           val vecName = localStack.next("_EXTRACT")
           val wire = lir.Wire(vecName.name, tpe)
