@@ -203,6 +203,58 @@ object FirrtlCodeGen {
     val readers = (0 until mem.readPorts).map(id => "r" + id)
     val writers = (0 until mem.writePorts).map(id => "w" + id)
 
+    val readPortInvalids = readers.flatMap { reader =>
+      val memRef = fir.Reference(mem.name, fir.UnknownType)
+      val ref = fir.SubField(memRef, reader, fir.UnknownType)
+      val addr = fir.SubField(ref, "addr", fir.UnknownType)
+      val en = fir.SubField(ref, "en", fir.UIntType(fir.IntWidth(1)))
+      val clk = fir.SubField(ref, "clk", fir.ClockType)
+      val clkConnect = fir.Connect(fir.NoInfo, clk, clockRef)
+
+      Vector(fir.IsInvalid(fir.NoInfo, addr), fir.Connect(fir.NoInfo, en, fir.UIntLiteral(0)), clkConnect)
+    }
+
+    val writePortInvalids = writers.flatMap{ writer =>
+      def maskHierarchy(tpe: BackendType): fir.Type = {
+        if(tpe.fields.isEmpty) fir.UIntType(fir.IntWidth(1))
+        else {
+          val fields = tpe.fields.map { case (name, t) => fir.Field(name, fir.Default, maskHierarchy(t)) }.toSeq
+          fir.BundleType(fields)
+        }
+      }
+
+      def maskAllOne(tpe: fir.Type, ref: fir.Expression): Vector[fir.Connect] = {
+        tpe match {
+          case fir.BundleType(fields) =>
+            fields.flatMap{ field => maskAllOne(field.tpe, fir.SubField(ref, field.name, field.tpe)) }.toVector
+          case fir.UIntType(_) =>
+            Vector(fir.Connect(fir.NoInfo, ref, fir.UIntLiteral(1)))
+        }
+      }
+
+      val memRef = fir.Reference(mem.name, fir.UnknownType)
+      val ref = fir.SubField(memRef, writer, fir.UnknownType)
+      val addr = fir.SubField(ref, "addr", fir.UnknownType)
+      val data = fir.SubField(ref, "data", fir.UnknownType)
+      val en = fir.SubField(ref, "en", fir.UIntType(fir.IntWidth(1)))
+      val clk = fir.SubField(ref, "clk", fir.ClockType)
+      val maskType = maskHierarchy(mem.dataTpe)
+      val maskDefaultName = s"${mem.name}_${writer}_mask"
+      val maskDefaultRef = fir.Reference(maskDefaultName, maskType)
+      val maskDefaultConnects = maskAllOne(maskType, maskDefaultRef)
+      val mask = fir.SubField(ref, "mask", maskType)
+
+      val otherStmts = Vector(
+        fir.IsInvalid(fir.NoInfo, addr),
+        fir.IsInvalid(fir.NoInfo, data),
+        fir.Connect(fir.NoInfo, en, fir.UIntLiteral(0)),
+        fir.Connect(fir.NoInfo, clk, clockRef),
+        fir.Connect(fir.NoInfo, mask, maskDefaultRef)
+      )
+
+      fir.DefWire(fir.NoInfo, maskDefaultName, maskType) +: (maskDefaultConnects ++ otherStmts)
+    }
+
     val delayStmts =
       if (mem.readLatency == 0) createDelayWire
       else createDelayReg
@@ -222,7 +274,7 @@ object FirrtlCodeGen {
       fir.ReadUnderWrite.Undefined
     )
 
-    (memory, delayStmts ++ readDataConnections)
+    (memory, readPortInvalids.toVector ++ writePortInvalids.toVector ++ delayStmts ++ readDataConnections)
   }
 
   def elaboratePriorityAssignToDst(assign: lir.PriorityAssign)(implicit global: GlobalData, pointer: Vector[PointerConnection], modulePath: Vector[String]): (fir.DefWire, Vector[fir.Statement], fir.Conditionally) = {
@@ -370,7 +422,7 @@ object FirrtlCodeGen {
     val portPath = fir.SubField(memRef, "w" + memWrite.port, fir.UnknownType)
     val addrPath = fir.SubField(portPath, "addr", fir.UnknownType)
     val dataPath = fir.SubField(portPath, "data", fir.UnknownType)
-    val enablePath = fir.SubField(portPath, "enable", fir.UnknownType)
+    val enablePath = fir.SubField(portPath, "en", fir.UnknownType)
 
     val assignAddr = fir.Connect(fir.NoInfo, addrPath, elaborateExpr(memWrite.addr))
     val assignEnable = fir.Connect(fir.NoInfo, enablePath, fir.UIntLiteral(1))
@@ -430,6 +482,15 @@ object FirrtlCodeGen {
 
       fir.UIntLiteral(value, width)
     case commence: lir.Commence => elaborateCommence(commence)
+    case lir.MemPortID(memName, portNumber, tpe) =>
+      val width = toFirrtlType(tpe).asInstanceOf[fir.UIntType].width
+      pointers.filter(_.source.modulePath == modulePath)
+        .collect{ case PointerConnection(id, source, _, _) => id -> source }
+        .collect{ case (id, HWHierarchyPath(path, HierarchyComponent.Memory(name, port))) => (id, path, name, port) }
+        .collect{ case (id, path, name, port) if path == modulePath => (id, name, port) }
+        .collect{ case (id, name, port) if name == memName && port == portNumber => id }
+        .map(id => fir.UIntLiteral(id, width))
+        .head
     case lir.Ops(op, args, consts, tpe) => fir.DoPrim(op, args.map(elaborateExpr), consts, toFirrtlType(tpe))
     case lir.Concat(subjects, tpe) =>
       val refs = subjects.map(elaborateExpr).filter(e => calculateWidth(e.tpe) != 0)
@@ -564,7 +625,7 @@ object FirrtlCodeGen {
       }
     }
 
-    def uptoParent(from: Vector[String], to: Vector[String], tpe: BackendType): Vector[DataRoute] = {
+    def uptoParent(from: Vector[String], to: Vector[String], toOuter: Boolean, tpe: BackendType): Vector[DataRoute] = {
       def loop(from: Vector[String], to: Vector[String], child: String): Vector[DataRoute] = {
         val connection = DataRoute(from, Connection.FromChild(child), pointer.id, tpe)
         val another =
@@ -578,25 +639,28 @@ object FirrtlCodeGen {
       }
 
       val connection =
-        if (from == to && from.nonEmpty) Vector.empty
+        if (from == to && !toOuter) Vector.empty
         else Vector(DataRoute(from, Connection.ToParent, pointer.id, tpe))
 
       if (from == to) connection
       else connection ++ loop(from.init, to, from.last)
     }
 
-    def createRoute(source: HWHierarchyPath, dest: HWHierarchyPath, tpe: BackendType): Vector[DataRoute] =
+    def createRoute(source: HWHierarchyPath, dest: HWHierarchyPath, tpe: BackendType): Vector[DataRoute] = {
+      val toOuterTopModule = dest.component.isInstanceOf[HierarchyComponent.TopRet]
+
       sameUntil(source.modulePath, dest.modulePath) match {
         case -1 =>
-          uptoParent(source.modulePath, Vector.empty, tpe) ++ intoChild(Vector.empty, dest.modulePath, tpe)
+          uptoParent(source.modulePath, Vector.empty, toOuterTopModule, tpe) ++ intoChild(Vector.empty, dest.modulePath, tpe)
         case idx if source.modulePath.length == idx + 1 =>
           intoChild(source.modulePath, dest.modulePath, tpe)
         case idx if dest.modulePath.length == idx + 1 =>
-          uptoParent(source.modulePath, dest.modulePath, tpe)
+          uptoParent(source.modulePath, dest.modulePath, toOuterTopModule, tpe)
         case idx =>
           val turnPoint = source.modulePath.take(idx + 1)
-          uptoParent(source.modulePath, turnPoint, tpe) ++ intoChild(turnPoint, dest.modulePath, tpe)
+          uptoParent(source.modulePath, turnPoint, toOuterTopModule, tpe) ++ intoChild(turnPoint, dest.modulePath, tpe)
       }
+    }
 
     val sourceRoute = DataRoute(pointer.source.modulePath, Connection.FromHere, pointer.id, pointer.tpe)
     val routes = pointer.dest

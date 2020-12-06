@@ -475,8 +475,12 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("use memory reading and writing") {
     val (circuit, global) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
+
+    println(circuit.serialize)
+
     val top = circuit.modules.head.asInstanceOf[fir.Module]
     val stmts = top.body.asInstanceOf[fir.Block].stmts
+    val wires = stmts.collect{ case w: fir.DefWire => w }.filter(_.name.contains("__pointer_"))
     val reading = stmts.collectFirst { case w @ fir.Conditionally(_, fir.Reference(name, _), _, _) if name.matches("reading__active") => w }.get
     val read = stmts.collectFirst { case w @ fir.Conditionally(_, fir.Reference(name, _), _, _) if name.matches("read__active") => w }.get
     val mems = stmts.collect { case m: fir.DefMemory => m }
@@ -516,6 +520,14 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val port = fir.SubField(memRef, "r1", fir.UnknownType)
     val data = fir.SubField(port, "data", fir.UnknownType)
     assert(dataRefs(1) == data)
+
+    val outputPorts = top.ports.filter(_.direction == fir.Output).filter(_.name.contains("_pointer_"))
+    assert(outputPorts.isEmpty)
+
+    assert(wires.length == 2)
+    val member = fir.Field("_member", fir.Default, fir.UIntType(fir.IntWidth(1)))
+    val pointerData = fir.Field("_data", fir.Default, fir.UIntType(fir.IntWidth(32)))
+    assert(wires.forall(_.tpe == fir.BundleType(Seq(member, pointerData))))
   }
 
   test("using multi cycle read latency memory") {
@@ -621,6 +633,16 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
   test("use pointer type at return type of top module's interface") {
     val (circuit, global) = untilThisPhase(Vector("test"), "Top", "returnPointerTopModule.tchdl")
-    println(circuit.serialize)
+    val top = circuit.modules.head.asInstanceOf[fir.Module]
+    val pointer = top.ports.filter(_.name.contains("pointer"))
+    val stmts = top.body.asInstanceOf[fir.Block].stmts
+    val assigns = stmts.collect{ case c: fir.Connect => c }
+    val assign = assigns.collectFirst{ case c @ fir.Connect(_, fir.Reference("_pointer_0", _), _) => c }
+
+    assert(pointer.length == 1)
+    assert(pointer.head.name == "_pointer_0")
+    assert(assign.isDefined)
+    assert(assign.get.expr.isInstanceOf[fir.Reference])
+    assert(assign.get.expr.asInstanceOf[fir.Reference].name == "__pointer_0")
   }
 }

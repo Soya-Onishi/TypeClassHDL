@@ -60,14 +60,15 @@ object PointerConnector {
     var idMax = id
     val procPointers = procs.map{ proc =>
       val hierarchy = HWHierarchyPath(modulePath, HierarchyComponent.Proc(proc.path.name.get, proc.origin))
-      val tpe = BackendType(BackendTypeFlag.NoFlag, proc.tpe.symbol, proc.tpe.hargs, proc.tpe.targs)
+      val tpe = proc.tpe.copy(flag = BackendTypeFlag.NoFlag)
       val pointer = PointerConnection(idMax, hierarchy, Vector.empty, tpe)
       idMax += 1
       pointer
     }
     val memPointers = mems.map{ memRead =>
       val hierarchy = HWHierarchyPath(modulePath, HierarchyComponent.Memory(memRead.name, memRead.port))
-      val pointer = PointerConnection(idMax, hierarchy, Vector.empty, memRead.tpe)
+      val tpe = memRead.tpe.copy(flag = BackendTypeFlag.NoFlag)
+      val pointer = PointerConnection(idMax, hierarchy, Vector.empty, tpe)
       idMax += 1
       pointer
     }
@@ -122,9 +123,8 @@ object PointerConnector {
           val whens = stmts.collect{ case when: lir.When => when }
           val whenStmts = whens.flatMap(w => w.conseq ++ w.alt)
           val memRefs = stmts.collect{ case node: lir.Node => node }
-            .collect{ case lir.Node(name, r: lir.Reference, _) => (name, r) }
-            .filter{ case (_, r) => r.name == NameTemplate.memPointer(memName, port) }
-            .map{ case (_, r) => r }
+            .collect{ case node @ lir.Node(name, mem: lir.MemPortID, _) if mem.name == memName && mem.port == port => node }
+            .map{ node => lir.Reference(node.name, node.tpe) }
 
           memRefs ++ loop(whenStmts)
         }

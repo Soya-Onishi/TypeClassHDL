@@ -989,8 +989,8 @@ object BackendLIRGen {
 
     val readTpe = read.tpe.copy(flag = read.tpe.flag | BackendTypeFlag.Pointer)
     val readStmt = lir.MemRead(memName, read.port, addrRef, readTpe)
-    val readDataRef = lir.Reference(NameTemplate.memPointer(memName, read.port), readTpe)
-    val pointerNode = lir.Node(stack.next("_GEN").name, readDataRef, readTpe)
+    val readDataID = lir.MemPortID(memName, read.port, readTpe)
+    val pointerNode = lir.Node(stack.next("_GEN").name, readDataID, readTpe)
     val nodeRef = lir.Reference(pointerNode.name, pointerNode.tpe)
 
     val instance = DataInstance(readTpe, nodeRef)
@@ -1463,7 +1463,8 @@ object BackendLIRGen {
       val primitives = Seq(Symbol.int, Symbol.bool, Symbol.unit, Symbol.bit)
 
       tpe.symbol match {
-        case sym if primitives.contains(sym) => Vector(refer)
+        case _ if tpe.flag.hasFlag(BackendTypeFlag.Pointer) => Vector(refer)
+        case sym if Symbol.isPrimitive(sym) => Vector(refer)
         case sym if sym == Symbol.vec =>
           val HPElem.Num(length) = tpe.hargs.head
           val elemTpe = tpe.targs.head
