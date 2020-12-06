@@ -670,4 +670,8 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     assert(outputPointers.length == 1)
   }
+
+  test("use pointer in option field and return it from sibling interface") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "siblingAndProcAndOption.tchdl")
+  }
 }

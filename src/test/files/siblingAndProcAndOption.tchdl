@@ -1,0 +1,49 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  mod sub0: Sub0 = Sub0 {}
+  mod sub1: Sub1 = Sub1 {
+    sibling:
+      sub0: this.sub0
+  }
+}
+
+module Sub0
+impl Sub0 {
+  sibling def execute(a: Bit[4], b: Bit[4]) -> Option[&Option[Bit[4]]] {
+    val pointer = commence conv # execute(a, b)
+    Option[&Option[Bit[4]]]:::Some(pointer)
+  }
+
+  proc conv @ Option[Bit[4]]:::None -> &Option[Bit[4]] {
+    origin block execute(a: Bit[4], b: Bit[4]) {
+      relay ret(a + b)
+    }
+
+    final block ret(x: Bit[4]) {
+      return Option[Bit[4]]:::Some(x)
+    }
+  }
+}
+
+module Sub1 {
+  sibling:
+    sub0: Sub0
+}
+impl Sub1 {
+  input def launch() -> Unit {
+    val ret = match this.sub0.execute(0b0011, 0b1100) {
+      case Option[&Option[Bit[4]]]:::None => 0b0000
+      case Option[&Option[Bit[4]]]:::Some(p) => match *p {
+        case Option[Bit[4]]:::Some(res) => res
+        case Option[Bit[4]]:::None => 0b0000
+      }
+    }
+
+    ()
+  }
+}
+

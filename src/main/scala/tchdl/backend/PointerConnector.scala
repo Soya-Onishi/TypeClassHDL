@@ -173,25 +173,37 @@ object PointerConnector {
     val module = searchModule(path.modulePath, topModule, moduleList)
     val componentRef = path.component.asInstanceOf[HierarchyComponent.Ref].ref
 
+    def countDepth(refer: lir.Ref): Int = refer match {
+      case _: lir.Reference => 0
+      case lir.SubField(prefix, _, _) => countDepth(prefix) + 1
+      case lir.SubIndex(prefix, _, _) => countDepth(prefix) + 1
+      case lir.SubAccess(prefix, _, _) => countDepth(prefix) + 1
+    }
+
+
     def searchPointerRef(refer: lir.Ref, origin: lir.Ref, modulePath: Vector[String]): Option[lir.Ref] = (refer, origin) match {
       case (refer: lir.Reference, origin: lir.Reference) =>
         if(refer.name != origin.name) None
         else Some(refer)
       case (refer: lir.Reference, origin: lir.SubField) =>
-        searchPointerRef(refer, origin.prefix, modulePath).map {
-          prefix => lir.SubField(prefix, origin.name, origin.tpe)
+        searchPointerRef(refer, origin.prefix, modulePath).map { prefix =>
+          lir.SubField(prefix, origin.name, origin.tpe)
         }
       case (refer: lir.Reference, origin: lir.SubIndex) =>
-        searchPointerRef(refer, origin.vec, modulePath).map {
-          prefix => lir.SubIndex(prefix, origin.idx, origin.tpe)
+        searchPointerRef(refer, origin.vec, modulePath).map { prefix =>
+          lir.SubIndex(prefix, origin.idx, origin.tpe)
         }
       case (refer: lir.Reference, origin: lir.SubAccess) =>
-        searchPointerRef(refer, origin.vec, modulePath).map {
-          prefix => lir.SubAccess(prefix, origin.idx, origin.tpe)
+        searchPointerRef(refer, origin.vec, modulePath).map { prefix =>
+          lir.SubAccess(prefix, origin.idx, origin.tpe)
         }
+      case (refer: lir.SubField, origin: lir.SubField) if countDepth(refer) == countDepth(origin) =>
+        if(refer != origin) None
+        else Some(origin)
       case (refer: lir.SubField, origin: lir.SubField) =>
-        if(refer.name != origin.name) None
-        else searchPointerRef(refer.prefix, origin.prefix, modulePath)
+        searchPointerRef(refer, origin.prefix, modulePath).map { prefix =>
+          lir.SubField(prefix, origin.name, origin.tpe)
+        }
       case (_: lir.SubField, _) =>
         // other cases like
         //
@@ -345,6 +357,15 @@ object PointerConnector {
                 pointer,
                 path.modulePath
               )}
+          case lir.Extract(ref, _, _) =>
+            searchPointerRef(ref, componentRef, path.modulePath).map {
+              pointer => nextReference(
+                lir.Reference(t.name, t.tpe),
+                ref,
+                pointer,
+                path.modulePath
+              )
+            }.toVector
           case _ => Vector.empty
         }
       case _ => Vector.empty
