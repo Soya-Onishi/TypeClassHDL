@@ -335,6 +335,16 @@ object PointerConnector {
                 path.modulePath
               )}
               .toVector
+          case cat: lir.Concat =>
+            cat.subjects
+              .map(ref => ref -> searchPointerRef(ref, componentRef, path.modulePath))
+              .collect{ case (ref, Some(pointer)) => ref -> pointer }
+              .map { case (ref, pointer) => nextReference(
+                lir.Reference(t.name, t.tpe),
+                ref,
+                pointer,
+                path.modulePath
+              )}
           case _ => Vector.empty
         }
       case _ => Vector.empty
@@ -351,38 +361,6 @@ object PointerConnector {
 
       paths ++ whens.flatMap(w => searchDeref(w.conseq)) ++ whens.flatMap(w => searchDeref(w.alt))
     }
-
-    /*
-    // top module's output ports with pointer type are needed
-    // to be end point of pointer connection
-    def searchEndPoints: Vector[HWHierarchyPath] = {
-      def generateRefs(baseName: (String, BackendType), fieldPath: Vector[(String, BackendType)], tpe: BackendType): Vector[lir.Ref] = {
-        if(tpe.flag.hasFlag(BackendTypeFlag.Pointer)) {
-          val ref = fieldPath.foldLeft[lir.Ref](lir.Reference(baseName._1, baseName._2)){
-            case (acc, field) => lir.SubField(acc, field._1, field._2)
-          }
-
-          Vector(ref)
-        } else {
-          // TODO: This does not work for vector pointer case.
-          //       To work correctly, add Vector case pattern before Symbol.isPrimitive case.
-          //       And also, this method need to be reworked for Vector pattern.
-          tpe.symbol match {
-            case sym if Symbol.isPrimitive(sym) => Vector.empty
-            case sym => tpe.fields.flatMap{ case (name, tpe) => generateRefs(baseName, fieldPath :+ (name, tpe), tpe) }.toVector
-          }
-        }
-      }
-
-      val outputs = module.ports.filter(_.dir == lir.Dir.Output)
-      val outputRefs = outputs.flatMap{ output =>
-        val baseName = (output.name, output.tpe)
-        generateRefs(baseName, Vector.empty, output.tpe)
-      }
-
-      outputRefs.map(ref => HWHierarchyPath(path.modulePath, HierarchyComponent.TopRet(ref)))
-    }
-    */
 
     val stmts = module.components ++ module.inits ++ module.procedures
     val derefs = searchDeref(stmts)

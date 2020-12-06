@@ -1,0 +1,14 @@
+package test
+
+import std::types:::Option
+
+module Top
+impl Top {
+  mod memory: Memory[256, 8, 1, 1, 1, 1, Bit[8]] = Memory[256, 8, 1, 1, 1, 1, Bit[8]]{}
+
+  input def execute(addr: Bit[8], flag: Bool) -> Option[&Option[Bit[8]]] {
+    if(flag) Option[&Option[Bit[8]]]:::Some(this.memory.read[0](addr))
+    else Option[&Option[Bit[8]]]:::None
+
+  }
+}

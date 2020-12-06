@@ -645,4 +645,29 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     assert(assign.get.expr.isInstanceOf[fir.Reference])
     assert(assign.get.expr.asInstanceOf[fir.Reference].name == "__pointer_0")
   }
+
+  test("use memory in input interface and return pointer") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "useMemoryInput.tchdl")
+    val top = circuit.modules.head.asInstanceOf[fir.Module]
+    val outputPointers = top.ports.filter(_.name.contains("_pointer_"))
+    val connects = top.body.asInstanceOf[fir.Block].stmts.collect{ case c: fir.Connect => c }
+    val pointerConnect = connects.collectFirst{ case c @ fir.Connect(_, fir.Reference("_pointer_0", _), _) => c }
+
+    val optionBit8 = fir.BundleType(Seq(
+      fir.Field(NameTemplate.enumFlag, fir.Default, fir.UIntType(fir.IntWidth(1))),
+      fir.Field(NameTemplate.enumData, fir.Default, fir.UIntType(fir.IntWidth(8)))
+    ))
+
+    assert(outputPointers.length == 1)
+    assert(pointerConnect.isDefined)
+    assert(pointerConnect.get.expr == fir.Reference("__pointer_0", optionBit8))
+  }
+
+  test("use memory in input interface and return pointer with option") {
+    val (circuit, global) = untilThisPhase(Vector("test"), "Top", "useMemoryInputOpt.tchdl")
+    val top = circuit.modules.head.asInstanceOf[fir.Module]
+    val outputPointers = top.ports.filter(_.name.contains("_pointer_"))
+
+    assert(outputPointers.length == 1)
+  }
 }
