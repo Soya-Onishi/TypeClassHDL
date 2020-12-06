@@ -1,0 +1,91 @@
+package riscv
+
+import std::traits:::From
+import std::types:::Option
+
+module MemoryControlUnit
+impl MemoryControlUnit {
+  mod memory: Memory[0x2000, 32, 1, 1, 1, 1, Bit[8]] = Memory[0x2000, 32, 1, 1, 1, 1, Bit[8]] {}
+
+  internal memBusy: Bool = false
+  internal loadInstRunning: Bool = false
+  internal loadDataRunning: Bool = false
+
+  input sibling def loadInst(addr: Bit[32]) -> Option[&Option[Bit[32]]] {
+    this.loadInstRunning = true
+
+    if(this.memBusy) Option[&Option[Bit[32]]]:::None
+    else {
+      val pointer = commence load # forInst(addr, Bit[32]:::from(0), 0b00)
+      Option[&Option[Bit[32]]]:::Some(pointer)
+    }
+  }
+
+  input sibling def loadData(addr: Bit[32]) -> Option[&Option[Bit[32]]] {
+    this.loadDataRunning = true
+
+    if(this.memBusy | this.loadInstRunning) Option[&Option[Bit[32]]]:::None
+    else {
+      val pointer = commence load # forData(addr, Bit[32]:::from(0), 0b00)
+      Option[&Option[Bit[32]]]:::Some(pointer)
+    }
+  }
+
+  input sibling def storeData(addr: Bit[32], data: Bit[32], mask: Bit[4]) -> Bool {
+    val busy = this.memBusy | this.loadInstRunning | this.loadDataRunning
+
+    if(!busy) {
+      generate store() # execute(addr, data, mask, 0b00)
+    }
+
+    !busy
+  }
+
+  proc load @ Option[Bit[32]]:::None -> &Option[Bit[32]] {
+    origin block forInst(addr: Bit[32], data: Bit[32], counter: Bit[2]) {
+      this.memBusy = true
+      relay postProcess(addr, data, this.memory.read[0](addr), counter)
+    }
+
+    origin block forData(addr: Bit[32], data: Bit[32], counter: Bit[2]) {
+      this.memBusy = true
+      relay postProcess(addr, data, this.memory.read[0](addr), counter)
+    }
+
+    final block postProcess(addr: Bit[32], data: Bit[32], loadData: &Option[Bit[8]], counter: Bit[2]) {
+      this.memBusy = true
+
+      match *loadData {
+        case Option[Bit[8]]:::None => relay postProcess(addr, data, loadData, counter)
+        case Option[Bit[8]]:::Some(loadedData) =>
+          val nextData = loadedData.concat[24](data.truncate[31, 8]())
+
+          if(counter == 0b11) return Option[Bit[32]]:::Some(nextData)
+          else relay forData(addr + 0b01, nextData, counter + 0b01)
+      }
+    }
+  }
+
+  stage store() {
+    this.memBusy = true
+
+    state execute(addr: Bit[32], data: Bit[32], mask: Bit[4], counter: Bit[2]) {
+      val storedData = data.truncate[7, 0]()
+
+      if(mask.bit[0]() == 0b1) {
+        this.memory.write[0](addr, storedData)
+      }
+
+      goto postProcess(addr, data, mask, counter)
+    }
+
+    state postProcess(addr: Bit[32], data: Bit[32], mask: Bit[4], counter: Bit[2]) {
+      val nextAddr = addr + Bit[32]:::from(1)
+      val nextData = Bit[8]:::from(0).concat[24](data.truncate[31, 8]())
+      val nextMask = 0b0.concat[3](mask.truncate[3, 1]())
+
+      if(counter == 0b11) finish
+      else goto execute(nextAddr, nextData, nextMask, counter + 0b01)
+    }
+  }
+}

@@ -1355,4 +1355,77 @@ class RiscvTest extends TchdlFunSuite {
       }
     }
   }
+
+  test("MemoryControlUnit unit test") {
+    val rnd = new Random(0)
+    def next(width: Int): BigInt = BigInt(width, rnd)
+    val circuit = untilThisPhase(Vector("riscv"), "MemoryControlUnit", "MemoryControlUnit.tchdl")
+    var idleCount = 0
+
+    runSim(circuit, enableVcd = true, createFile = true) { tester =>
+      def idle(): Unit = {
+        idleCount += 1
+        if(idleCount >= 25) {
+          tester.fail(1)
+          fail()
+        }
+      }
+
+      tester.poke("loadInst__active", 0)
+      tester.poke("loadData__active", 0)
+      tester.poke("storeData__active", 0)
+
+      for(idx <- 0 until 256) {
+        tester.poke("storeData__active", 1)
+        tester.poke("storeData_addr", idx * 4)
+        tester.poke("storeData_data", idx)
+        tester.poke("storeData_mask", 0xF)
+        while(tester.peek("storeData__ret") == 0) { tester.step(1) }
+        tester.step(1)
+        tester.poke("storeData__active", 0)
+      }
+
+      for(idx <- 0 until 256) {
+        tester.poke("loadData__active", 1)
+        tester.poke("loadData_addr", idx * 4)
+        while(tester.peek("loadData__ret__member") == 0) { tester.step(1); idle() }
+        idleCount = 0
+        tester.step(1)
+        tester.poke("loadData__active", 0)
+        while(tester.peek("_pointer_1__member") == 0) { tester.step(1); idle() }
+        idleCount = 0
+        tester.expect("_pointer_1__data", idx)
+        tester.step(1)
+      }
+
+      tester.poke("loadInst__active", 0)
+      tester.poke("loadData__active", 0)
+      tester.poke("storeData__active", 0)
+      tester.step(10)
+
+      val memBusy = tester.peek("memBusy") == 1
+      val loadInstRunning = tester.peek("loadInstRunning") == 1
+      val loadDataRunning = tester.peek("loadDataRunning") == 1
+
+      while(memBusy | loadInstRunning | loadDataRunning) { tester.step(1); idle() }
+      idleCount = 0
+
+      tester.poke("loadInst__active", 1)
+      tester.poke("loadInst_addr", 0)
+      tester.poke("loadData__active", 1)
+      tester.poke("loadData_addr", 0)
+
+      tester.expect("loadInst__ret__member", 1)
+      tester.expect("loadData__ret__member", 0)
+      tester.step(1)
+
+      tester.poke("loadInst__active", 0)
+      tester.poke("loadData__active", 0)
+      while(tester.peek("_pointer_0__member") == 0) {
+        tester.poke("loadData__active", 1)
+        tester.expect("loadData__ret__member", 0)
+        tester.step(1)
+      }
+    }
+  }
 }

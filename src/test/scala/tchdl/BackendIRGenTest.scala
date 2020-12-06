@@ -250,7 +250,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val expr = modules.head.bodies.head.interfaces.head.ret
     assert(expr.isInstanceOf[Match])
 
-    val Match(matched, cases, _) = expr
+    val Match(matched, cases, _, _) = expr
 
     assert(matched.isInstanceOf[Term.Temp])
     assert(cases.length == 2)
@@ -278,7 +278,7 @@ class BackendIRGenTest extends TchdlFunSuite {
     val expr = body.interfaces.head.ret
     assert(expr.isInstanceOf[Match])
 
-    val Match(matched, cases, _) = expr
+    val Match(matched, cases, _, _) = expr
 
     assert(matched.isInstanceOf[Term.Temp])
     assert(cases.length == 3)
