@@ -251,6 +251,7 @@ package object backend {
       ): BigInt = {
         def loop(tpe: ir.Type): BigInt = tpe match {
           case ir.BundleType(fields) => fields.map(_.tpe).map(loop).sum
+          case ir.VectorType(tpe, size) => loop(tpe) * size
           case ir.UIntType(ir.IntWidth(width)) => width
         }
 

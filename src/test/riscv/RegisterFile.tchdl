@@ -2,6 +2,7 @@ package riscv
 
 module RegisterFile
 impl RegisterFile {
+  output gp: Bit[32] = this.regs.idx[3]()
   reg regs: Vector[32, Bit[32]]
 
   sibling def rs1(addr: Bit[5]) -> Bit[32] {

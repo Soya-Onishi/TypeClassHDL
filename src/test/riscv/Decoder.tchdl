@@ -4,10 +4,11 @@ import std::traits:::From
 import std::types:::Option
 
 struct Instruction {
-  ops: Operation,
-  rs1: Option[Bit[5]],
-  rs2: Option[Bit[5]],
-   rd: Option[Bit[5]]
+         ops: Operation,
+         rs1: Option[Bit[5]],
+         rs2: Option[Bit[5]],
+          rd: Option[Bit[5]],
+  terminator: Bool
 }
 
 module Decoder {
@@ -49,11 +50,17 @@ impl Decoder {
       case _               => Option[Bit[5]]:::Some(rdAddr)
     }
 
+    val terminator = match opcode {
+      case Opcode:::SYSTEM => true
+      case _               => false
+    }
+
     Instruction {
-      ops: ops,
-      rs1: rs1,
-      rs2: rs2,
-       rd:  rd
+             ops: ops,
+             rs1: rs1,
+             rs2: rs2,
+              rd:  rd,
+      terminator: terminator
     }
   }
 
@@ -104,7 +111,7 @@ impl Decoder {
       case Opcode:::LUI => Operation:::Arith(ALUOps:::Add, imm, Bit[32]:::from(0))
       case Opcode:::AUIPC => Operation:::Arith(ALUOps:::Add, pc, imm)
       case Opcode:::JAL => Operation:::Jmp(Jump:::Direct, pc, imm)
-      case Opcode:::JALR => Operation:::Jmp(Jump:::Indirect, rs1, imm)
+      case Opcode:::JALR => Operation:::Jmp(Jump:::Indirect(pc), rs1, imm)
       case Opcode:::LOAD =>
         val data = match f3 {
           case 0b000 => DataType:::Byte
@@ -164,6 +171,7 @@ impl Decoder {
           if(f7 == 0b000_0000) Operation:::Shift(ShiftOps:::Srl, rs1, shamt)
           else                 Operation:::Shift(ShiftOps:::Sra, rs1, shamt)
       }
+      case Opcode:::SYSTEM => Operation:::Arith(ALUOps:::Add, Bit[32]:::from(0), Bit[32]:::from(0))
     }
   }
 }

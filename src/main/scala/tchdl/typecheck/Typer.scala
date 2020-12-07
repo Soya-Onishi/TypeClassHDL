@@ -1024,6 +1024,13 @@ object Typer {
       case symbol => Left(Error.RequireSymbol[Symbol.ModuleSymbol](symbol, position))
     }
 
+    def typeCheck(ltype: Type, rtype: Type): Either[Error, Unit] = {
+      (ltype, rtype) match {
+        case (l: Type.RefType, r: Type.RefType) if l != r => Left(Error.TypeMismatch(l, r, assign.position))
+        case _ => Right(())
+      }
+    }
+
     val typedLoc = for {
       pair <- verifyTreeForm
       (prefixTree, name) = pair
@@ -1036,6 +1043,7 @@ object Typer {
       .setID(loc.id)
 
     typedLoc.left.foreach(global.repo.error.append)
+    typedLoc.foreach(loc => typeCheck(loc.tpe, typedRhs.tpe).left.foreach(global.repo.error.append))
     Assign(typedLoc.getOrElse(loc), typedRhs, assign.position).setID(assign.id)
   }
 
@@ -1605,7 +1613,6 @@ object Typer {
     }
 
     val typedArgs = relay.params.map(typedExpr)
-
     val result = ctx.owner match {
       case s: Symbol.StageSymbol     => typedStageRelay(typedArgs)
       case _: Symbol.StateSymbol     => typedStageRelay(typedArgs)

@@ -325,7 +325,7 @@ package object builtin {
   }
 
   def vecAppend(accessor: Instance, elem: Instance)(implicit stack: StackFrame, global: GlobalData): RunResult = {
-    val name = stack.next("_GEN")
+    val name = stack.next(NameTemplate.temp)
     val DataInstance(tpe, accessorRef) = accessor
     val DataInstance(_, elemRef) = elem
 
@@ -333,11 +333,14 @@ package object builtin {
     val retTpe = BackendType(BackendTypeFlag.NoFlag, tpe.symbol, Vector(HPElem.Num(accessorLength + 1)), tpe.targs)
     val wire = lir.Wire(name.name, retTpe)
     val wireRef = lir.Reference(wire.name, retTpe)
-    val init = lir.PartialAssign(wireRef, accessorRef)
+    val init =
+      if(accessorLength == 0) None
+      else Some(lir.PartialAssign(wireRef, accessorRef))
+
     val last = lir.Assign(lir.SubIndex(wireRef, accessorLength, elem.tpe), elemRef)
 
     val instance = DataInstance(retTpe, wireRef)
-    val stmts = Vector(wire, init, last)
+    val stmts = Vector(Some(wire), init, Some(last)).flatten
     RunResult(stmts, instance)
   }
 

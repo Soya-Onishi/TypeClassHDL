@@ -135,11 +135,11 @@ object FirrtlCodeGen {
         .map(idx => fir.DefWire(
           fir.NoInfo,
           NameTemplate.memEnDelay(mem.name, idx),
-          fir.UIntType(fir.IntWidth(1))
+          fir.VectorType(fir.UIntType(fir.IntWidth(1)), 1)
         ))
       val inits = wires.map(wire => fir.Connect(
         fir.NoInfo,
-        fir.Reference(wire.name, fir.UnknownType),
+        fir.SubIndex(fir.Reference(wire.name, fir.UnknownType), 0, fir.UnknownType),
         fir.UIntLiteral(0)
       ))
 
@@ -187,15 +187,40 @@ object FirrtlCodeGen {
     }
 
     def createReadDataConnections(port: Int): Vector[fir.Statement] = {
+      def concatAllData(ref: fir.Expression, dataTpe: fir.Type): fir.Expression = dataTpe match {
+        case _: fir.UIntType => ref
+        case fir.BundleType(fields) =>
+          fields.map(field => fir.SubField(ref, field.name, field.tpe)).reduceLeft[fir.Expression]{
+            case (lsb, msb) =>
+              val right = concatAllData(fir.SubField(ref, msb.name, msb.tpe), msb.tpe)
+              val fir.UIntType(fir.IntWidth(leftWidth)) = lsb.tpe
+              val fir.UIntType(fir.IntWidth(rightWidth)) = right.tpe
+              val concatTpe = fir.UIntType(fir.IntWidth(leftWidth + rightWidth))
+
+              fir.DoPrim(firrtl.PrimOps.Cat, Seq(right, lsb), Seq.empty, concatTpe)
+          }
+        case fir.VectorType(tpe, size) =>
+          (0 until size).map{idx => fir.SubIndex(ref, idx, tpe) }.reduceLeft[fir.Expression] {
+            case (lsb, msb) =>
+              val right = concatAllData(msb, msb.tpe)
+              val fir.UIntType(fir.IntWidth(accWidth)) = lsb.tpe
+              val fir.UIntType(fir.IntWidth(rightWidth)) = right.tpe
+              val concatTpe = fir.UIntType(fir.IntWidth(accWidth + rightWidth))
+
+              fir.DoPrim(firrtl.PrimOps.Cat, Seq(right, lsb), Seq.empty, concatTpe)
+          }
+      }
+
       val member = fir.SubField(getPointerWire(port), NameTemplate.enumFlag, fir.UnknownType)
       val data = fir.SubField(getPointerWire(port), NameTemplate.enumData, fir.UnknownType)
       val delayRef = fir.Reference(NameTemplate.memEnDelay(mem.name, port), fir.UnknownType)
       val memRef = fir.Reference(mem.name, fir.UnknownType)
       val portRef = fir.SubField(memRef, s"r$port", fir.UnknownType)
-      val memDataRef = fir.SubField(portRef, "data", fir.UnknownType)
+      val memDataRef = fir.SubField(portRef, "data", toFirrtlType(mem.dataTpe))
       val referIndex = if (mem.readLatency == 0) 0 else mem.readLatency - 1
       val connectMember = fir.Connect(fir.NoInfo, member, fir.SubIndex(delayRef, referIndex, fir.UnknownType))
-      val connectData = fir.Connect(fir.NoInfo, data, memDataRef)
+      val concatData = concatAllData(memDataRef, memDataRef.tpe)
+      val connectData = fir.Connect(fir.NoInfo, data, concatData)
 
       Vector(connectMember, connectData)
     }
@@ -219,7 +244,8 @@ object FirrtlCodeGen {
         if(tpe.fields.isEmpty) fir.UIntType(fir.IntWidth(1))
         else {
           val fields = tpe.fields.map { case (name, t) => fir.Field(name, fir.Default, maskHierarchy(t)) }.toSeq
-          fir.BundleType(fields)
+          val sortedFields = fields.sortWith{ case (l, r) => l.name < r.name }
+          fir.BundleType(sortedFields)
         }
       }
 

@@ -123,7 +123,7 @@ object PointerConnector {
           val whens = stmts.collect{ case when: lir.When => when }
           val whenStmts = whens.flatMap(w => w.conseq ++ w.alt)
           val memRefs = stmts.collect{ case node: lir.Node => node }
-            .collect{ case node @ lir.Node(name, mem: lir.MemPortID, _) if mem.name == memName && mem.port == port => node }
+            .collect{ case node @ lir.Node(_, mem: lir.MemPortID, _) if mem.name == memName && mem.port == port => node }
             .map{ node => lir.Reference(node.name, node.tpe) }
 
           memRefs ++ loop(whenStmts)

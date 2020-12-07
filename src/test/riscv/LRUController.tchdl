@@ -1,0 +1,16 @@
+package riscv
+
+import std::types:::Option
+
+module LRUController
+impl LRUController {
+  mod buffer: Memory[1024, 10, 1, 1, 1, 1, Bit[1]] = Memory[1024, 10, 1, 1, 1, 1, Bit[1]]{}
+
+  input def getOldWay(addr: Bit[32]) -> &Option[Bit[1]] {
+    this.buffer.read[0](addr.truncate[11, 2]())
+  }
+
+  input def setNextWay(addr: Bit[32], way: Bit[1]) -> Unit {
+    this.buffer.write[0](addr.truncate[11, 2](), !way)
+  }
+}

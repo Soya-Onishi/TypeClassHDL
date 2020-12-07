@@ -5,15 +5,15 @@ import tchdl.parser._
 import tchdl.typecheck._
 import tchdl.backend._
 import tchdl.util._
-
 import firrtl.{ir => fir}
 import firrtl.stage.FirrtlCircuitAnnotation
 import firrtl.transforms.NoDCEAnnotation
+import firrtl.annotations.{CircuitName, ComponentName, LoadMemoryAnnotation, MemoryLoadFileType, ModuleName, Annotation}
 import treadle.TreadleTester
 
 import java.util.Random
-import java.nio.file.Paths
-import org.scalatest.tags.Slow
+import java.nio.file.{Files, Paths, Path}
+import scala.collection.JavaConverters._
 
 class RiscvTest extends TchdlFunSuite {
   def truncate(v: BigInt, widths: Int*): Seq[BigInt] = {
@@ -102,7 +102,7 @@ class RiscvTest extends TchdlFunSuite {
     circuit
   }
 
-  private def runSim(circuit: fir.Circuit, enableVcd: Boolean = false, createFile: Boolean = false)(f: TreadleTester => Unit): Unit = {
+  private def runSim(circuit: fir.Circuit, enableVcd: Boolean = false, createFile: Boolean = false, additionalAnnons: Seq[Annotation] = Seq.empty)(f: TreadleTester => Unit): Unit = {
     if (createFile) {
       val filename = s"${circuit.main}.fir"
       val path = Paths.get(s"./$filename")
@@ -114,8 +114,9 @@ class RiscvTest extends TchdlFunSuite {
       treadle.ClockInfoAnnotation(Seq(clockInfo)),
       treadle.ResetNameAnnotation("RST"),
       FirrtlCircuitAnnotation(circuit),
-      NoDCEAnnotation
-    )
+      // NoDCEAnnotation
+    ) ++ additionalAnnons
+
     val passedAnnons =
       if (enableVcd) annons :+ treadle.WriteVcdAnnotation
       else annons
@@ -1374,13 +1375,64 @@ class RiscvTest extends TchdlFunSuite {
     def next(width: Int): BigInt = BigInt(width, rnd)
     val circuit = untilThisPhase(
       Vector("riscv"), "Top",
-      "Top.tchdl", "Core.tchdl", "MemoryControlUnit.tchdl",
-      "RegisterFile.tchdl", "ForwardingUnit.tchdl", "Decoder.tchdl",
-      "ALU.tchdl", "BarrelShifter.tchdl", "Comparator.tchdl", "Types.tchdl"
+      "Top.tchdl",
+      "Core.tchdl",
+      "MemoryControlUnit.tchdl",
+      "RegisterFile.tchdl",
+      "ForwardingUnit.tchdl",
+      "Decoder.tchdl",
+      "ALU.tchdl",
+      "BarrelShifter.tchdl",
+      "Comparator.tchdl",
+      "CacheController.tchdl",
+      "Cache.tchdl",
+      "LRUController.tchdl",
+      "Types.tchdl"
     )
 
-    runSim(circuit) { tester =>
+    def doTest(files: Seq[Path]): Unit = {
+      val file = files.head
+      var testFail = false
 
+      val annons = Seq(
+        LoadMemoryAnnotation(ComponentName("memory", ModuleName("MemoryControlUnit_0", CircuitName("Top_0"))), file.toString, MemoryLoadFileType.Hex)
+      )
+
+      runSim(circuit, enableVcd = true, createFile = true,additionalAnnons = annons) { tester =>
+        print(s"$file: ")
+        var fail = false
+
+        tester.step(10)
+        tester.poke("launch__active", 1)
+        tester.poke("launch_pc", 0)
+        tester.step(1)
+        tester.poke("launch__active", 0)
+
+        try {
+          while(tester.peek("reachTerminate__member") == 0) { tester.step(1) }
+        } catch {
+          case _: treadle.executable.StopException => tester.fail(1); fail = true
+        }
+
+        if(fail) println("err")
+        else {
+          val gp = tester.peek("reachTerminate__data")
+          println(gp)
+          fail = gp != 1
+        }
+
+        testFail = fail
+      }
+
+      if(testFail | files.tail.isEmpty) ()
+      else doTest(files.tail)
     }
+
+    doTest(Files.list(Paths.get("./hexs")).iterator().asScala.toSeq)
+  }
+
+  test("compile Cache") {
+    val circuit = untilThisPhase(Vector("riscv"), "Cache", "Cache.tchdl")
+    runSim(circuit, createFile = true) { tester => }
   }
 }

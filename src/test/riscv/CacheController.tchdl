@@ -1,0 +1,221 @@
+package riscv
+
+import std::types:::Option
+import std::traits:::From
+
+struct HitResult {
+  data: Bit[32],
+  way: Bit[1]
+}
+
+module CacheController {
+  sibling:
+    mcu: MemoryControlUnit
+}
+
+impl CacheController {
+  internal cacheBusy: Bool = false
+  internal allocatedData: Option[Bit[32]] = Option[Bit[32]]:::None
+
+  mod lru: LRUController = LRUController {}
+  mod cache: Cache = Cache {}
+
+  input def loadData(addr: Bit[32], isInst: Bool) -> Option[&Option[Bit[32]]] {
+    if(this.cacheBusy) Option[&Option[Bit[32]]]:::None
+    else {
+      val cachePointer = this.cache.load(addr)
+      val wayPointer = this.lru.getOldWay(addr)
+      val pointer = commence loading # fetch(addr, cachePointer, wayPointer, isInst)
+      Option[&Option[Bit[32]]]:::Some(pointer)
+    }
+  }
+
+  input def storeData(addr: Bit[32], data: Bit[32], mask: Bit[4]) -> Bool {
+    if(this.cacheBusy) false
+    else {
+      val cachePointer = this.cache.load(addr)
+      val wayPointer = this.lru.getOldWay(addr)
+      generate storing(addr, data, mask, cachePointer, wayPointer)
+      true
+    }
+  }
+
+  proc loading @ Option[Bit[32]]:::None -> &Option[Bit[32]] {
+    origin final block fetch(addr: Bit[32], loadBlks: &Option[Vector[2, CacheBlock]], oldWay: &Option[Bit[1]], isInst: Bool) {
+      this.cacheBusy = true
+      val blks = (*loadBlks).get()
+      match this.isHit(blks, addr) {
+        case Option[HitResult]:::Some(hitResult) =>
+          this.lru.setNextWay(addr, hitResult.way)
+          val retData = this.formatLoadData(hitResult.data, addr.truncate[1, 0]())
+          return Option[Bit[32]]:::Some(retData)
+        case Option[HitResult]:::None =>
+          val which = (*oldWay).get()
+          val needWb = if(which == 0b0) { blks.idx[0]().info.isDirty } else { blks.idx[1]().info.isDirty }
+
+          if(needWb) generate writeBack(addr, which, Option[Bit[32]]:::None, 0b1111, isInst) # fetch(0b00)
+          else generate allocation(addr, which, Option[Bit[32]]:::None, 0b1111, isInst) # fetch(0b00)
+
+          this.lru.setNextWay(addr, which)
+          relay waitAllocation()
+      }
+    }
+
+    final block waitAllocation() {
+      this.cacheBusy = true
+
+      match this.allocatedData {
+        case Option[Bit[32]]:::None => relay waitAllocation()
+        case Option[Bit[32]]:::Some(data) => return Option[Bit[32]]:::Some(data)
+      }
+    }
+  }
+
+  stage storing(addr: Bit[32], data: Bit[32], mask: Bit[4], loadBlks: &Option[Vector[2, CacheBlock]], oldWay: &Option[Bit[1]]) {
+    this.cacheBusy = true
+
+    val blks = (*loadBlks).get()
+    match this.isHit(blks, addr) {
+      case Option[HitResult]:::Some(hitResult) =>
+        val storedData = this.formatStoreData(addr.truncate[1, 0](), data, hitResult.data, mask)
+        this.lru.setNextWay(addr, hitResult.way)
+        this.cache.store(addr, storedData, hitResult.way, false)
+        finish
+      case Option[HitResult]:::None =>
+        val which = (*oldWay).get()
+        val needWb = match which {
+          case 0b0 => blks.idx[0]().info.isDirty
+          case 0b1 => blks.idx[1]().info.isDirty
+        }
+
+        this.lru.setNextWay(addr, which)
+        if(needWb) relay writeBack(addr, which, Option[Bit[32]]:::Some(data), mask, false) # fetch(0b00)
+        else relay allocation(addr, which, Option[Bit[32]]:::Some(data), mask, false) # fetch(0b00)
+    }
+
+    finish
+  }
+
+  stage writeBack(addr: Bit[32], which: Bit[1], storedData: Option[Bit[32]], mask: Bit[4], isInst: Bool) {
+    this.cacheBusy = true
+
+    state fetch(count: Bit[2]) {
+      val fetchAddr = addr.truncate[31, 4]().concat[2](count).concat[2](Bit[2]:::from(0))
+      goto wb(this.cache.load(fetchAddr), count)
+    }
+
+    state wb(wbPointer: &Option[Vector[2, CacheBlock]], count: Bit[2]) {
+      val fetchAddr = addr.truncate[31, 4]().concat[2](count).concat[2](Bit[2]:::from(0))
+      val blks = (*wbPointer).get()
+      val wbData = if(which == 0b0) { blks.idx[0]().data } else { blks.idx[1]().data }
+      if(this.mcu.storeData(addr, wbData, 0b1111)) {
+        if(count == 0b11) relay allocation(addr, which, storedData, mask, isInst) # fetch(0b00)
+        else goto fetch(count + Bit[2]:::from(1))
+      } else {
+        goto retry(wbData, count)
+      }
+    }
+
+    state retry(data: Bit[32], count: Bit[2]) {
+      val fetchAddr = addr.truncate[31, 4]().concat[2](count).concat[2](Bit[2]:::from(0))
+      if(this.mcu.storeData(addr, data, 0b1111)) {
+        if(count == 0b11) relay allocation(addr, which, storedData, mask, isInst) # fetch(0b00)
+        else goto fetch(count + Bit[2]:::from(1))
+      }
+    }
+  }
+
+  stage allocation(addr: Bit[32], which: Bit[1], storedData: Option[Bit[32]], mask: Bit[4], isInst: Bool) {
+    this.cacheBusy = true
+
+    state fetch(count: Bit[2]) {
+      val fetchAddr = addr.truncate[31, 4]().concat[2](count).concat[2](0b00)
+      val fetchData = if(isInst) { this.mcu.loadInst(fetchAddr) } else { this.mcu.loadData(fetchAddr) }
+      match fetchData {
+        case Option[&Option[Bit[32]]]:::Some(pointer) => goto alloc(pointer, count)
+        case Option[&Option[Bit[32]]]:::None          =>
+      }
+    }
+
+    state alloc(fetchData: &Option[Bit[32]], count: Bit[2]) {
+      val fetchAddr = addr.truncate[31, 4]().concat[2](count).concat[2](0b00)
+      match *fetchData {
+        case Option[Bit[32]]:::None =>
+        case Option[Bit[32]]:::Some(data) =>
+          val sameIdx = addr.truncate[3, 2]() == count
+          val allocData = match storedData {
+            case Option[Bit[32]]:::None => data
+            case Option[Bit[32]]:::Some(alt) =>
+              if(sameIdx) { this.formatStoreData(addr.truncate[1, 0](), alt, data, mask) }
+              else { data }
+          }
+
+          val loadData = this.formatLoadData(data, addr.truncate[1, 0]())
+          if(sameIdx) { this.allocatedData = Option[Bit[32]]:::Some(loadData) }
+
+          this.cache.store(fetchAddr, allocData, which, true)
+          if(count == 0b11) finish
+          else goto fetch(count + Bit[2]:::from(1))
+      }
+    }
+  }
+
+  internal def isHit(blks: Vector[2, CacheBlock], addr: Bit[32]) -> Option[HitResult] {
+    val hit0 = this.isHitInternal(blks.idx[0](), addr)
+    val hit1 = this.isHitInternal(blks.idx[1](), addr)
+
+    if(!hit0 & !hit1) Option[HitResult]:::None
+    else {
+      val way = if(hit0) 0b0 else 0b1
+      val data = if(hit0) blks.idx[0]().data else blks.idx[1]().data
+
+      Option[HitResult]:::Some(HitResult{
+        data: data,
+        way:  way
+      })
+    }
+  }
+
+  def isHitInternal(blk: CacheBlock, addr: Bit[32]) -> Bool {
+     (addr.truncate[31, 12]() == blk.info.tag) & blk.info.isValid
+  }
+
+  internal def formatLoadData(data: Bit[32], offset: Bit[2]) -> Bit[32] {
+    match offset {
+      case 0b00 => data
+      case 0b01 => Bit[ 8]:::from(0).concat[24](data.truncate[31,  8]())
+      case 0b10 => Bit[16]:::from(0).concat[16](data.truncate[31, 16]())
+      case 0b11 => Bit[24]:::from(0).concat[ 8](data.truncate[31, 24]())
+    }
+  }
+
+  internal def formatStoreData(offset: Bit[2], storeData: Bit[32], fetchData: Bit[32], mask: Bit[4]) -> Bit[32] {
+    val alignedData = match offset {
+      case 0b00 => storeData
+      case 0b01 => storeData.truncate[23, 0]().concat[ 8](Bit[ 8]:::from(0))
+      case 0b10 => storeData.truncate[15, 0]().concat[16](Bit[16]:::from(0))
+      case 0b11 => storeData.truncate[ 7, 0]().concat[24](Bit[24]:::from(0))
+    }
+    val alignedMask = match offset {
+      case 0b00 => mask
+      case 0b01 => mask.truncate[2, 0]().concat[1](0b0)
+      case 0b10 => mask.truncate[1, 0]().concat[2](0b00)
+      case 0b11 => mask.bit[0]().concat[3](0b000)
+    }
+
+    val d0 =
+      if(alignedMask.bit[0]() == 0b1) alignedData.truncate[7, 0]()
+      else                            fetchData.truncate[7, 0]()
+    val d1 =
+      if(alignedMask.bit[1]() == 0b1) alignedData.truncate[15, 8]()
+      else                            fetchData.truncate[15, 8]()
+    val d2 =
+      if(alignedMask.bit[2]() == 0b1) alignedData.truncate[23, 16]()
+      else                            fetchData.truncate[23, 16]()
+    val d3 =
+      if(alignedMask.bit[3]() == 0b1) alignedData.truncate[31, 24]()
+      else                            fetchData.truncate[31, 24]()
+
+    d3.concat[8](d2).concat[8](d1).concat[8](d0)
+  }
+}

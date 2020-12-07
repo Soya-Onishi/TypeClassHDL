@@ -461,7 +461,6 @@ object BackendIRGen {
         val name = ident.symbol.name
         val args = argSummary.terms.map(_.tpe.symbol).map(SigArg.Sym.apply)
         val signature = FunctionSignature(pkg, name, None, args: _*)
-        val isBuiltIn = builtinFunctions.contains(signature)
         val (call, label) = getBuiltIn(ident.symbol.asMethodSymbol, None, None, argSummary.terms, hargs, retTpe) match {
           case Some(builtin) => (builtin, None)
           case None =>
@@ -497,7 +496,6 @@ object BackendIRGen {
         val name = referredMethodSymbol.name
         val args = argSummary.terms.map(_.tpe.symbol).map(SigArg.Sym.apply)
         val signature = FunctionSignature(pkg, name, Some(prefixTpe.origin), args: _*)
-        val isBuiltIn = builtinFunctions.contains(signature)
 
         val (call, label) = getBuiltIn(referredMethodSymbol, None, Some(prefixBackendTpe), argSummary.terms, hargs, retTpe) match {
           case Some(builtIn) => (builtIn, None)
@@ -536,7 +534,6 @@ object BackendIRGen {
         val name = referredMethodSymbol.name
         val args = argSummary.terms.map(_.tpe.symbol).map(SigArg.Sym.apply)
         val signature = FunctionSignature(pkg, name, Some(accessor.tpe.symbol), args: _*)
-        lazy val builtInFunction = builtinFunctions.find(_ == signature)
         lazy val isMemRead = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "read"
         lazy val isMemWrite = prefix.tpe.asRefType.origin == Symbol.mem && methodName == "write"
 
@@ -1178,58 +1175,6 @@ object BackendIRGen {
 
         samePkg && sameName && sameAccessor && sameArgLength && sameArg
     }
-  }
-
-  def builtinFunctions(implicit global: GlobalData): Vector[FunctionSignature] = {
-    val types = Vector("std", "types")
-    val traits = Vector("std", "traits")
-    val functions = Vector("std", "functions")
-
-    val bit = Symbol.bit
-    val int = Symbol.int
-    val bool = Symbol.bool
-    val vec = Symbol.vec
-    val mem = Symbol.mem
-
-    def makeFunctions(name: String, tpes: Symbol.TypeSymbol*): Vector[FunctionSignature] =
-      tpes.map(symbol => FunctionSignature(functions, name, None, SigArg.Sym(symbol), SigArg.Sym(symbol))).toVector
-
-    val adds = makeFunctions("add", int, bit)
-    val subs = makeFunctions("sub", int, bit)
-    val muls = makeFunctions("mul", int, bit)
-    val divs = makeFunctions("div", int, bit)
-    val eqns = makeFunctions("equal", int, bit, bool)
-    val neqs = makeFunctions("notEqual", int, bit, bool)
-    val ges = makeFunctions("greaterEqual", int, bit)
-    val gts = makeFunctions("greaterThan", int, bit)
-    val les = makeFunctions("lessEqual", int, bit)
-    val lts = makeFunctions("lessThan", int, bit)
-    val negs = makeFunctions("neg", int, bit)
-    val nots = makeFunctions("not", int, bit, bool)
-    val truncate = FunctionSignature(types, "truncate", Some(bit))
-    val bitMethod = FunctionSignature(types, "bit", Some(bit))
-    val concat = FunctionSignature(types, "concat", Some(bit), SigArg.Sym(bit))
-    val idx = FunctionSignature(types, "idx", Some(vec))
-    val idxDyn = FunctionSignature(types, "idxDyn", Some(vec), SigArg.Sym(bit))
-    val updated = FunctionSignature(types, "updated", Some(vec), SigArg.Any)
-    val updatedDyn = FunctionSignature(types, "updatedDyn", Some(vec), SigArg.Sym(bit), SigArg.Any)
-    val read = FunctionSignature(types, "read", Some(mem), SigArg.Sym(bit))
-    val write = FunctionSignature(types, "write", Some(mem), SigArg.Sym(bit), SigArg.Any)
-    val bitFroms = Vector(bit, int, bool).map(symbol => FunctionSignature(traits, "from", Some(bit), SigArg.Sym(symbol)))
-
-    val builtIns0 = Vector(
-      adds, subs, muls, divs,
-      eqns, neqs, ges, gts, les, lts,
-      negs, nots, bitFroms
-    ).flatten
-
-    val builtIns1 = Vector(
-      truncate, bitMethod, concat,
-      idx, idxDyn, updated, updatedDyn,
-      read, write,
-    )
-
-    builtIns0 ++ builtIns1
   }
 }
 

@@ -1,7 +1,11 @@
 package riscv
 
+import std::types:::Option
+
 module Top
 impl Top {
+  output reachTerminate: Option[Bit[32]]
+
   mod mcu: MemoryControlUnit = MemoryControlUnit {}
   mod core: Core = Core {
     sibling:
@@ -10,5 +14,9 @@ impl Top {
 
   input def launch(pc: Bit[32]) -> Unit {
     this.core.launch(pc)
+  }
+
+  always passTerminate {
+    this.reachTerminate = this.core.reachTerminate
   }
 }

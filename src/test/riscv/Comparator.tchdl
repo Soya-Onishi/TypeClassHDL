@@ -9,7 +9,7 @@ impl Comparator {
       case Compare:::Eq(x, y)  => Bit[32]:::from(x == y)
       case Compare:::Ne(x, y)  => Bit[32]:::from(x != y)
       case Compare:::Lt(x, y)  => this.signedLT(x, y)
-      case Compare:::Ge(x, y)  => this.signedLT(y, x)
+      case Compare:::Ge(x, y)  => this.signedLT(x, y) ^ Bit[32]:::from(1)
       case Compare:::Ltu(x, y) => Bit[32]:::from(x  < y)
       case Compare:::Geu(x, y) => Bit[32]:::from(x >= y)
     }

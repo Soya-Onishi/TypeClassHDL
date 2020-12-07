@@ -91,7 +91,7 @@ proc_def
     ;
 
 proc_block
-    : (ORIGIN | FINAL)? BLOCK EXPR_ID NL* '(' NL* param_defs? NL* ')' NL* block
+    : (ORIGIN | FINAL)* BLOCK EXPR_ID NL* '(' NL* param_defs? NL* ')' NL* block
     ;
 
 signature_def

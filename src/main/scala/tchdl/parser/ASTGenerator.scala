@@ -243,8 +243,8 @@ class ASTGenerator {
 
   def procDef(ctx: TP.Proc_defContext)(implicit file: Filename): ProcDef = {
     def procBlock(ctx: TP.Proc_blockContext): ProcBlock = {
-      val origin = Option(ctx.ORIGIN).map(_.getText).map(Modifier.apply).getOrElse(Modifier.NoModifier)
-      val fin = Option(ctx.FINAL).map(_.getText).map(Modifier.apply).getOrElse(Modifier.NoModifier)
+      val origin = ctx.ORIGIN.asScala.map(_.getText).map(Modifier.apply).headOption.getOrElse(Modifier.NoModifier)
+      val fin = ctx.FINAL.asScala.map(_.getText).map(Modifier.apply).headOption.getOrElse(Modifier.NoModifier)
       val modifier = origin | fin
 
       val name = ctx.EXPR_ID().getText

@@ -578,8 +578,8 @@ object Type {
         else Left(Error.SymbolNotFound(name, position))
       }
 
-      def lookupFromImpl(clazz: Symbol.ClassTypeSymbol): LookupResult[Symbol.TermSymbol] = {
-        val result = clazz.impls.foldLeft[Either[Error, Symbol.TermSymbol]](Left(Error.DummyError)) {
+      def lookupFromImpl(clazz: Symbol.ClassTypeSymbol, defaultErr: Error): LookupResult[Symbol.TermSymbol] = {
+        val result = clazz.impls.foldLeft[Either[Error, Symbol.TermSymbol]](Left(defaultErr)) {
           case (right @ Right(_), _) => right
           case (Left(_), impl) =>
             val implSymbol = impl.symbol.asImplementSymbol
@@ -609,7 +609,7 @@ object Type {
       this.origin match {
         case clazz: Symbol.ClassTypeSymbol if castedAs.isEmpty => lookupToClass match {
           case success @ LookupResult.LookupSuccess(_) => success
-          case LookupResult.LookupFailure(_) => lookupFromImpl(clazz)
+          case LookupResult.LookupFailure(err) => lookupFromImpl(clazz, err)
         }
         case symbol => LookupResult.LookupFailure(Error.RequireSymbol[Symbol.ClassTypeSymbol](symbol, position))
       }

@@ -990,7 +990,7 @@ object BackendLIRGen {
     val readTpe = read.tpe.copy(flag = read.tpe.flag | BackendTypeFlag.Pointer)
     val readStmt = lir.MemRead(memName, read.port, addrRef, readTpe)
     val readDataID = lir.MemPortID(memName, read.port, readTpe)
-    val pointerNode = lir.Node(stack.next("_GEN").name, readDataID, readTpe)
+    val pointerNode = lir.Node(stack.next(NameTemplate.temp).name, readDataID, readTpe)
     val nodeRef = lir.Reference(pointerNode.name, pointerNode.tpe)
 
     val instance = DataInstance(readTpe, nodeRef)
@@ -1057,7 +1057,7 @@ object BackendLIRGen {
   }
 
   def runMatch(matchExpr: backend.Match)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
-    def extractFieldData(source: lir.SubField, srcTpe: BackendType, history: Vector[BackendType], localStack: StackFrame): (Vector[lir.Stmt], Name, Vector[BackendType]) = {
+    def extractFieldData(baseRef: lir.SubField, source: lir.Ref, srcTpe: BackendType, history: Vector[BackendType], localStack: StackFrame): (Vector[lir.Stmt], Name, Vector[BackendType]) = {
       def convertHWType(tpe: BackendType): BackendType = tpe.symbol match {
         case sym if sym == Symbol.int => BackendType.intTpe
         case sym if sym == Symbol.unit => BackendType.unitTpe
@@ -1067,7 +1067,7 @@ object BackendLIRGen {
       def extractMono(tpe: BackendType): (Vector[lir.Node], Name, Vector[BackendType]) = {
         val name = localStack.next("_EXTRACT")
         val addedHistory = tpe +: history
-        val expr = lir.Extract(source, addedHistory, tpe)
+        val expr = lir.Extract(baseRef, addedHistory, tpe)
         val node = lir.Node(name.name, expr, tpe)
 
         (Vector(node), name, addedHistory)
@@ -1090,9 +1090,10 @@ object BackendLIRGen {
           val HPElem.Num(length) = tpe.hargs(0)
           val elemTpe = tpe.targs(0)
 
-          val (stmts, addedHistory) = (0 to length).foldLeft(Vector.empty[lir.Stmt], history){
+          val (stmts, addedHistory) = (0 until length).foldLeft(Vector.empty[lir.Stmt], history){
             case ((stmts, history), idx) =>
-              val (leafStmts, name, addedHistory) = extractFieldData(source, elemTpe, history, localStack)
+              val subFieldRef = lir.SubIndex(source, idx, elemTpe)
+              val (leafStmts, name, addedHistory) = extractFieldData(baseRef, subFieldRef, elemTpe, history, localStack)
               val assign = lir.Assign(
                 lir.SubIndex(wireRef, idx, elemTpe),
                 lir.Reference(name.name, elemTpe)
@@ -1131,7 +1132,7 @@ object BackendLIRGen {
           val (stmts, nextIdx) = fields.foldLeft((Vector.empty[lir.Stmt], history)) {
             case ((stmts, history), (name, fieldTpe)) =>
               val subField = lir.SubField(source, name, fieldTpe)
-              val (leafStmts, extractName, addedHistory) = extractFieldData(subField, fieldTpe, history, localStack)
+              val (leafStmts, extractName, addedHistory) = extractFieldData(baseRef, subField, fieldTpe, history, localStack)
               val dstField = lir.SubField(lir.Reference(bundleName.name, tpe), name, fieldTpe)
               val extractField = lir.Reference(extractName.name, fieldTpe)
               val assign = lir.Assign(dstField, extractField)
@@ -1201,7 +1202,7 @@ object BackendLIRGen {
           val refBuilder = Vector.newBuilder[lir.Reference]
           patterns.map(_.tpe).scanLeft(Vector.empty[BackendType]) {
             case (history, tpe) =>
-              val (stmts, name, addedHistory) = extractFieldData(dataRef, tpe, history, caseStack)
+              val (stmts, name, addedHistory) = extractFieldData(dataRef, dataRef, tpe, history, caseStack)
               stmtBuilder ++= stmts
               refBuilder += lir.Reference(name.name, tpe)
 
@@ -1276,7 +1277,7 @@ object BackendLIRGen {
     val (patternStmtss, conds) = cases.map(runCase(instance.asInstanceOf[DataInstance], _, retRefOpt)).unzip
 
     val patternStmts = patternStmtss.flatten
-    val errorMsg = s"Pattern matching is failed at [${matchExpr.pos}]"
+    val errorMsg = s"Pattern matching is failed at [${matchExpr.pos}]\n"
     val caseConds = conds.foldRight[lir.Stmt](lir.Stop(errorMsg)) {
       case (cond, elsePart) =>  cond.copy(alt = Vector(elsePart))
     }
@@ -1461,15 +1462,13 @@ object BackendLIRGen {
 
   def runConstructEnum(enum: backend.ConstructEnum)(implicit stack: StackFrame, ctx: FirrtlContext, global: GlobalData): RunResult = {
     def makeLeafs(tpe: BackendType, refer: lir.Ref): Vector[lir.Ref] = {
-      val primitives = Seq(Symbol.int, Symbol.bool, Symbol.unit, Symbol.bit)
-
       tpe.symbol match {
         case _ if tpe.flag.hasFlag(BackendTypeFlag.Pointer) => Vector(refer)
-        case sym if Symbol.isPrimitive(sym) => Vector(refer)
         case sym if sym == Symbol.vec =>
           val HPElem.Num(length) = tpe.hargs.head
           val elemTpe = tpe.targs.head
-          (0 to length).flatMap(idx => makeLeafs(elemTpe, lir.SubIndex(refer, idx, elemTpe))).toVector
+          (0 until length).flatMap(idx => makeLeafs(elemTpe, lir.SubIndex(refer, idx, elemTpe))).toVector
+        case sym if Symbol.isPrimitive(sym) => Vector(refer)
         case sym if sym.isEnumSymbol =>
           val dataRef = lir.SubField(refer, NameTemplate.enumData, tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumData))
           val memberRef = lir.SubField(refer, NameTemplate.enumFlag, tpe.copy(flag = tpe.flag | BackendTypeFlag.EnumFlag))

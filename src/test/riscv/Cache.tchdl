@@ -1,0 +1,68 @@
+package riscv
+
+import std::types:::Option
+
+struct CacheBlock {
+  data: Bit[32],
+  info: CacheInfo
+}
+
+struct CacheInfo {
+  tag: Bit[20],
+  isDirty: Bool,
+  isValid: Bool
+}
+
+module Cache
+impl Cache {
+  mod data0: Memory[1024, 10, 1, 1, 0, 1, Bit[32]]   = Memory[1024, 10, 1, 1, 0, 1, Bit[32]]{}
+  mod data1: Memory[1024, 10, 1, 1, 0, 1, Bit[32]]   = Memory[1024, 10, 1, 1, 0, 1, Bit[32]]{}
+  mod info0: Memory[ 256,  8, 1, 1, 0, 1, CacheInfo] = Memory[ 256,  8, 1, 1, 0, 1, CacheInfo]{}
+  mod info1: Memory[ 256,  8, 1, 1, 0, 1, CacheInfo] = Memory[ 256,  8, 1, 1, 0, 1, CacheInfo]{}
+
+  input def load(addr: Bit[32]) -> &Option[Vector[2, CacheBlock]] {
+    commence loading # fetch(addr)
+  }
+
+  proc loading @ Option[Vector[2, CacheBlock]]:::None -> &Option[Vector[2, CacheBlock]] {
+    origin final block fetch(addr: Bit[32]) {
+      val dataAddr = addr.truncate[11, 2]()
+      val infoAddr = addr.truncate[11, 4]()
+      val data0 = (*this.data0.read[0](dataAddr)).get()
+      val data1 = (*this.data1.read[0](dataAddr)).get()
+      val info0 = (*this.info0.read[0](infoAddr)).get()
+      val info1 = (*this.info1.read[0](infoAddr)).get()
+
+      val blk0 = CacheBlock {
+        data: data0,
+        info: info0
+      }
+      val blk1 = CacheBlock {
+        data: data1,
+        info: info1
+      }
+
+      val retVec = Vector[0, CacheBlock]:::empty().append(blk0).append(blk1)
+      return Option[Vector[2, CacheBlock]]:::Some(retVec)
+    }
+  }
+
+  input def store(addr: Bit[32], data: Bit[32], which: Bit[1], alloc: Bool) -> Unit {
+    val dataAddr = addr.truncate[11, 2]()
+    val infoAddr = addr.truncate[11, 4]()
+    val infoData = CacheInfo {
+      tag: addr.truncate[31, 12](),
+      isDirty: !alloc,
+      isValid: true
+    }
+
+    match which {
+      case 0b0 =>
+        this.data0.write[0](dataAddr, data)
+        this.info0.write[0](infoAddr, infoData)
+      case 0b1 =>
+        this.data1.write[0](dataAddr, data)
+        this.info1.write[0](infoAddr, infoData)
+    }
+  }
+}

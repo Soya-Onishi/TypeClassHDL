@@ -1,0 +1,233 @@
+package riscv
+
+import std::traits:::From
+import std::types:::Option
+
+module Core {
+ sibling:
+   mcu: MemoryControlUnit
+}
+
+impl Core {
+  output reachTerminate: Option[Bit[32]] = Option[Bit[32]]:::None
+
+  internal branchPC: Option[Bit[32]] = Option[Bit[32]]:::None
+  internal stallFetch: Bool = false
+  internal stallDecode: Bool = false
+  internal stallExec: Bool = false
+  internal terminateFetch: Bool = false
+
+  mod fu: ForwardingUnit = ForwardingUnit {}
+  mod regFile: RegisterFile = RegisterFile {}
+  mod decoder: Decoder = Decoder {
+    sibling:
+      regFile: this.regFile,
+      fu: this.fu
+  }
+  mod alu: ALU = ALU {}
+  mod icache: CacheController = CacheController {
+    sibling:
+      mcu: this.mcu
+  }
+  mod dcache: CacheController = CacheController {
+    sibling:
+      mcu: this.mcu
+  }
+
+  input def launch(initPC: Bit[32]) -> Unit {
+    generate fetch() # require(initPC)
+  }
+
+  stage fetch() {
+    state require(pc: Bit[32]) {
+      if(this.terminateFetch) finish
+      else {
+        match this.branchPC {
+          case Option[Bit[32]]:::Some(newPC) => goto require(newPC)
+          case Option[Bit[32]]:::None =>
+            match this.icache.loadData(pc, true) {
+              case Option[&Option[Bit[32]]]:::None =>
+              case Option[&Option[Bit[32]]]:::Some(pointer) => goto fetching(pointer, pc)
+            }
+        }
+      }
+    }
+
+    state fetching(pointer: &Option[Bit[32]], pc: Bit[32]) {
+      if(this.terminateFetch) finish
+      else {
+        match this.branchPC {
+          case Option[Bit[32]]:::Some(newPC) => goto require(newPC)
+          case Option[Bit[32]]:::None => match *pointer {
+            case Option[Bit[32]]:::None =>
+            case Option[Bit[32]]:::Some(inst) =>
+              val nextPC = pc + Bit[32]:::from(4)
+
+              if(this.stallFetch) { goto stalling(inst, pc, nextPC) }
+              else {
+                generate idecode(inst, pc) # execute()
+                goto require(nextPC)
+              }
+            }
+        }
+      }
+    }
+
+    state stalling(inst: Bit[32], pc: Bit[32], nextPC: Bit[32]) {
+      if(this.terminateFetch) finish
+      else {
+        match this.branchPC {
+          case Option[Bit[32]]:::Some(branch) => goto require(branch)
+          case Option[Bit[32]]:::None =>
+            if(!this.stallFetch) {
+              generate idecode(inst, pc) # execute()
+              goto require(nextPC)
+            }
+        }
+      }
+    }
+  }
+
+  stage idecode(inst: Bit[32], pc: Bit[32]) {
+    state execute() {
+      val decoded = this.decoder.decode(inst, pc)
+      val rs1Hazard = match decoded.rs1 {
+        case Option[Bit[5]]:::Some(rs1) => this.fu.isLoadHazardRs1(rs1)
+        case Option[Bit[5]]:::None      => false
+      }
+      val rs2Hazard = match decoded.rs2 {
+        case Option[Bit[5]]:::Some(rs2) => this.fu.isLoadHazardRs2(rs2)
+        case Option[Bit[5]]:::None      => false
+      }
+      val loadHazard = rs1Hazard | rs2Hazard
+      this.terminateFetch = decoded.terminator
+
+      match this.branchPC {
+        case Option[Bit[32]]:::Some(_) => finish
+        case Option[Bit[32]]:::None =>
+          if(loadHazard | this.stallDecode) {
+            this.stallFetch = true
+          } else {
+            relay execute(decoded.ops, decoded.rd, decoded.terminator) # arith()
+          }
+      }
+    }
+  }
+
+  stage execute(ops: Operation, rd: Option[Bit[5]], terminate: Bool) {
+    state arith() {
+      val result = this.alu.execute(ops)
+
+      val requireStall = match ops {
+        case Operation:::Jmp(jmp, base, imm) =>
+          if(result.bit[0]() == 0b1) {
+            this.branchPC = Option[Bit[32]]:::Some(base + imm)
+          }
+
+          val storedAddr = match jmp {
+            case Jump:::Branch(_)    => Bit[32]:::from(0)
+            case Jump:::Direct       => base + Bit[32]:::from(4)
+            case Jump:::Indirect(pc) => pc + Bit[32]:::from(4)
+          }
+
+          if(this.stallExec) { goto stall(result) }
+          else { relay memory(storedAddr, rd, terminate) # pass() }
+
+          false
+        case Operation:::Store(tpe, _, _, data) =>
+          val mask = match tpe {
+            case DataType:::Byte => 0b0001
+            case DataType:::Half => 0b0011
+            case DataType:::Word => 0b1111
+          }
+
+          val ack = this.dcache.storeData(result, data, mask)
+          if(ack) {
+            if(this.stallExec) {
+              goto stall(result)
+            } else {
+              relay memory(result, rd, terminate) # pass()
+            }
+          }
+
+          !ack
+        case Operation:::Load(tpe, _, _) =>
+          this.fu.isExeLoad = true
+
+          match this.dcache.loadData(result, false) {
+            case Option[&Option[Bit[32]]]:::None => true
+            case Option[&Option[Bit[32]]]:::Some(data) =>
+              relay memory(result, rd, terminate) # loading(tpe, data)
+              false
+          }
+        case _ =>
+          if(!this.stallExec) {
+            relay memory(result, rd, terminate) # pass()
+          }
+
+          false
+      }
+
+      this.fu.execRd = rd
+      this.fu.execData = Option[Bit[32]]:::Some(result)
+
+      if(this.stallExec | requireStall) {
+        this.stallDecode = true
+      }
+    }
+
+    state stall(result: Bit[32]) {
+      this.fu.execRd = rd
+      this.fu.execData = Option[Bit[32]]:::Some(result)
+
+      if(this.stallExec) { this.stallDecode = true }
+      else { relay memory(result, rd, terminate) # pass() }
+    }
+  }
+
+  stage memory(wbData: Bit[32], rd: Option[Bit[5]], terminate: Bool) {
+    state loading(tpe: DataType, data: &Option[Bit[32]]) {
+      this.fu.isMemLoad = true
+      this.fu.memRd     = rd
+
+      match *data {
+        case Option[Bit[32]]:::None => this.stallExec = true
+        case Option[Bit[32]]:::Some(loadedData) =>
+          val wbData = match tpe {
+            case DataType:::Byte  => Bit[32]:::signExt[ 8](loadedData.truncate[ 7, 0]())
+            case DataType:::Half  => Bit[32]:::signExt[16](loadedData.truncate[15, 0]())
+            case DataType:::Word  => loadedData
+            case DataType:::UByte => Bit[32]:::from(loadedData.truncate[ 7, 0]())
+            case DataType:::UHalf => Bit[32]:::from(loadedData.truncate[15, 0]())
+          }
+
+          this.fu.isLoadDone = true
+          this.fu.memData = Option[Bit[32]]:::Some(wbData)
+          relay wb(wbData, rd, terminate)
+      }
+    }
+
+    state pass() {
+      this.fu.memRd   = rd
+      this.fu.memData = Option[Bit[32]]:::Some(wbData)
+      relay wb(wbData, rd, terminate)
+    }
+  }
+
+  stage wb(data: Bit[32], rd: Option[Bit[5]], terminate: Bool) {
+    match rd {
+      case Option[Bit[5]]:::None =>
+      case Option[Bit[5]]:::Some(addr) =>
+        this.regFile.write(addr, data)
+        this.fu.wbRd   = Option[Bit[5]]:::Some(addr)
+        this.fu.wbData = Option[Bit[32]]:::Some(data)
+    }
+
+    val terminateValue =
+      if(terminate) Option[Bit[32]]:::Some(this.regFile.gp)
+      else          Option[Bit[32]]:::None
+    this.reachTerminate = terminateValue
+
+    finish
+  }
+}

@@ -57,9 +57,9 @@ enum ShiftOps {
 }
 
 enum Jump {
-  Branch(Compare) = 0
-  Direct          = 1
-  Indirect        = 2
+  Branch(Compare)   = 0
+  Direct            = 1
+  Indirect(Bit[32]) = 2
 }
 
 enum Compare {
