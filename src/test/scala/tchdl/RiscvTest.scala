@@ -7,12 +7,12 @@ import tchdl.backend._
 import tchdl.util._
 import firrtl.{ir => fir}
 import firrtl.stage.FirrtlCircuitAnnotation
-import firrtl.transforms.NoDCEAnnotation
-import firrtl.annotations.{CircuitName, ComponentName, LoadMemoryAnnotation, MemoryLoadFileType, ModuleName, Annotation}
+import firrtl.transforms.{NoDCEAnnotation, SimplifyMems}
+import firrtl.annotations.{Annotation, CircuitName, ComponentName, LoadMemoryAnnotation, MemoryLoadFileType, ModuleName}
 import treadle.TreadleTester
 
 import java.util.Random
-import java.nio.file.{Files, Paths, Path}
+import java.nio.file.{Files, Path, Paths}
 import scala.collection.JavaConverters._
 
 class RiscvTest extends TchdlFunSuite {
@@ -1429,6 +1429,7 @@ class RiscvTest extends TchdlFunSuite {
     }
 
     doTest(Files.list(Paths.get("./hexs")).iterator().asScala.toSeq)
+    // doTest(Seq(Paths.get("./hexs/rv32ui-p-simple.hex")))
   }
 
   test("compile Cache") {

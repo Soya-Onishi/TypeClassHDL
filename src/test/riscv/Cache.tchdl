@@ -15,31 +15,31 @@ struct CacheInfo {
 
 module Cache
 impl Cache {
-  mod data0: Memory[1024, 10, 1, 1, 0, 1, Bit[32]]   = Memory[1024, 10, 1, 1, 0, 1, Bit[32]]{}
-  mod data1: Memory[1024, 10, 1, 1, 0, 1, Bit[32]]   = Memory[1024, 10, 1, 1, 0, 1, Bit[32]]{}
-  mod info0: Memory[ 256,  8, 1, 1, 0, 1, CacheInfo] = Memory[ 256,  8, 1, 1, 0, 1, CacheInfo]{}
-  mod info1: Memory[ 256,  8, 1, 1, 0, 1, CacheInfo] = Memory[ 256,  8, 1, 1, 0, 1, CacheInfo]{}
+  mod data0: Memory[1024, 10, 1, 1, 1, 1, Bit[32]]   = Memory[1024, 10, 1, 1, 1, 1, Bit[32]]{}
+  mod data1: Memory[1024, 10, 1, 1, 1, 1, Bit[32]]   = Memory[1024, 10, 1, 1, 1, 1, Bit[32]]{}
+  mod info0: Memory[ 256,  8, 1, 1, 1, 1, CacheInfo] = Memory[ 256,  8, 1, 1, 1, 1, CacheInfo]{}
+  mod info1: Memory[ 256,  8, 1, 1, 1, 1, CacheInfo] = Memory[ 256,  8, 1, 1, 1, 1, CacheInfo]{}
 
   input def load(addr: Bit[32]) -> &Option[Vector[2, CacheBlock]] {
-    commence loading # fetch(addr)
+    val dataAddr = addr.truncate[11, 2]()
+    val infoAddr = addr.truncate[11, 4]()
+    val data0 = this.data0.read[0](dataAddr)
+    val data1 = this.data1.read[0](dataAddr)
+    val info0 = this.info0.read[0](infoAddr)
+    val info1 = this.info1.read[0](infoAddr)
+
+    commence loading # fetch(data0, data1, info0, info1)
   }
 
   proc loading @ Option[Vector[2, CacheBlock]]:::None -> &Option[Vector[2, CacheBlock]] {
-    origin final block fetch(addr: Bit[32]) {
-      val dataAddr = addr.truncate[11, 2]()
-      val infoAddr = addr.truncate[11, 4]()
-      val data0 = (*this.data0.read[0](dataAddr)).get()
-      val data1 = (*this.data1.read[0](dataAddr)).get()
-      val info0 = (*this.info0.read[0](infoAddr)).get()
-      val info1 = (*this.info1.read[0](infoAddr)).get()
-
+    origin final block fetch(data0: &Option[Bit[32]], data1: &Option[Bit[32]], info0: &Option[CacheInfo], info1: &Option[CacheInfo]) {
       val blk0 = CacheBlock {
-        data: data0,
-        info: info0
+        data: (*data0).get(),
+        info: (*info0).get()
       }
       val blk1 = CacheBlock {
-        data: data1,
-        info: info1
+        data: (*data1).get(),
+        info: (*info1).get()
       }
 
       val retVec = Vector[0, CacheBlock]:::empty().append(blk0).append(blk1)
