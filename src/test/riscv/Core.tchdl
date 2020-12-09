@@ -40,7 +40,7 @@ impl Core {
 
   stage fetch() {
     state require(pc: Bit[32]) {
-      if(this.terminateFetch) finish
+      if(this.terminateFetch) { finish }
       else {
         match this.branchPC {
           case Option[Bit[32]]:::Some(newPC) => goto require(newPC)
@@ -54,10 +54,13 @@ impl Core {
     }
 
     state fetching(pointer: &Option[Bit[32]], pc: Bit[32]) {
-      if(this.terminateFetch) finish
+      if(this.terminateFetch) { finish }
       else {
         match this.branchPC {
-          case Option[Bit[32]]:::Some(newPC) => goto require(newPC)
+          case Option[Bit[32]]:::Some(newPC) => match this.icache.loadData(newPC, true) {
+            case Option[&Option[Bit[32]]]:::None => goto require(newPC)
+            case Option[&Option[Bit[32]]]:::Some(pointer) => goto fetching(pointer, newPC)
+          }
           case Option[Bit[32]]:::None => match *pointer {
             case Option[Bit[32]]:::None =>
             case Option[Bit[32]]:::Some(inst) =>
@@ -66,7 +69,10 @@ impl Core {
               if(this.stallFetch) { goto stalling(inst, pc, nextPC) }
               else {
                 generate idecode(inst, pc) # execute()
-                goto require(nextPC)
+                match this.icache.loadData(nextPC, true) {
+                  case Option[&Option[Bit[32]]]:::None => goto require(nextPC)
+                  case Option[&Option[Bit[32]]]:::Some(pointer) => goto fetching(pointer, nextPC)
+                }
               }
             }
         }
@@ -74,14 +80,20 @@ impl Core {
     }
 
     state stalling(inst: Bit[32], pc: Bit[32], nextPC: Bit[32]) {
-      if(this.terminateFetch) finish
+      if(this.terminateFetch) { finish }
       else {
         match this.branchPC {
-          case Option[Bit[32]]:::Some(branch) => goto require(branch)
+          case Option[Bit[32]]:::Some(nextPC) => match this.icache.loadData(nextPC, true) {
+            case Option[&Option[Bit[32]]]:::None => goto require(nextPC)
+            case Option[&Option[Bit[32]]]:::Some(pointer) => goto fetching(pointer, nextPC)
+          }
           case Option[Bit[32]]:::None =>
             if(!this.stallFetch) {
               generate idecode(inst, pc) # execute()
-              goto require(nextPC)
+              match this.icache.loadData(nextPC, true) {
+                case Option[&Option[Bit[32]]]:::None => goto require(nextPC)
+                case Option[&Option[Bit[32]]]:::Some(pointer) => goto fetching(pointer, nextPC)
+              }
             }
         }
       }
