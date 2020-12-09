@@ -42,7 +42,6 @@ impl CacheController {
 
   proc loading @ Option[Bit[32]]:::None -> &Option[Bit[32]] {
     origin final block fetch(addr: Bit[32], loadBlks: &Option[Vector[2, CacheBlock]], oldWay: &Option[Bit[1]], isInst: Bool) {
-      this.cacheBusy = true
       val blks = (*loadBlks).get()
       match this.isHit(blks, addr) {
         case Option[HitResult]:::Some(hitResult) =>
@@ -50,6 +49,7 @@ impl CacheController {
           val retData = this.formatLoadData(hitResult.data, addr.truncate[1, 0]())
           return Option[Bit[32]]:::Some(retData)
         case Option[HitResult]:::None =>
+          this.cacheBusy = true
           val which = (*oldWay).get()
           val needWb = if(which == 0b0) { blks.idx[0]().info.isDirty } else { blks.idx[1]().info.isDirty }
 
@@ -72,8 +72,6 @@ impl CacheController {
   }
 
   stage storing(addr: Bit[32], data: Bit[32], mask: Bit[4], loadBlks: &Option[Vector[2, CacheBlock]], oldWay: &Option[Bit[1]]) {
-    this.cacheBusy = true
-
     val blks = (*loadBlks).get()
     match this.isHit(blks, addr) {
       case Option[HitResult]:::Some(hitResult) =>
@@ -82,6 +80,7 @@ impl CacheController {
         this.cache.store(addr, storedData, hitResult.way, false)
         finish
       case Option[HitResult]:::None =>
+        this.cacheBusy = true
         val which = (*oldWay).get()
         val needWb = match which {
           case 0b0 => blks.idx[0]().info.isDirty
