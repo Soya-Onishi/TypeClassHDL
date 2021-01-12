@@ -28,7 +28,7 @@ object CommandLineParser {
     OParser.sequence(
       programName("Spiral Compiler"),
       head("Spiral Compiler", "0.0.1"),
-      opt[String]("<file>...")
+      arg[String]("<file>...")
         .unbounded()
         .action((x, c) => c.copy(filenames = c.filenames :+ x)),
       opt[String]("package")
