@@ -1,12 +1,12 @@
 package tchdl
 
+import firrtl.stage.FirrtlStage
 import tchdl.util._
 import tchdl.parser._
-import tchdl.ast.TypeTree
+import tchdl.ast.{CompilationUnit, TypeTree}
 import tchdl.antlr._
 import tchdl.typecheck._
 import tchdl.backend._
-
 import org.antlr.v4.runtime.{Parser => _, _}
 
 import scala.collection.JavaConverters._
@@ -92,14 +92,104 @@ object Main extends App {
       System.exit(1)
     }
 
+  def frontend(phases: Seq[(Seq[CompilationUnit], GlobalData) => Seq[CompilationUnit]]): Either[Seq[Error], (Seq[CompilationUnit], GlobalData)] = {
+    val cus = filenames.map(Parser.parse)
+    val global = GlobalData(config)
 
-  val command = parseCommand(args.toVector)
-  val stdlibFiles = Vector("types.tchdl", "functions.tchdl", "traits.tchdl", "interfaces.tchdl").map(name => Paths.get(command.stdlibDir, name).toString)
-  val filenames = command.filenames ++ stdlibFiles
+    def runPhases(
+      phases: Seq[(Seq[CompilationUnit], GlobalData) => Seq[CompilationUnit]],
+      cus: Seq[CompilationUnit],
+      global: GlobalData
+    ): Either[Seq[Error], (Seq[CompilationUnit], GlobalData)] = {
+      phases.headOption match {
+        case None => Right((cus, global))
+        case Some(phase) =>
+          val nextCUs = phase(cus, global)
+          val nextGlobal = global.assignCompilationUnits(nextCUs)
+
+          if(global.repo.error.counts == 0) runPhases(phases.tail, nextCUs, nextGlobal)
+          else                              Left(global.repo.error.elems)
+      }
+    }
+
+    runPhases(phases, cus, global)
+  }
+
+  def backend[T](phase: GlobalData => T)(global: GlobalData): Either[Seq[Error], T] = {
+    val result = phase(global)
+
+    if(global.repo.error.counts == 0) Right(result)
+    else Left(global.repo.error.elems)
+  }
+
+  val config = CommandLineParser.parse(args).getOrElse(sys.exit(1))
+  val stdlibPath = sys.env.getOrElse("SPIRAL_STDLIB_PATH", {
+    Console.err.println("Need to set environment variable: SPIRAL_STD_LIB_PATH")
+    sys.exit(1)
+  })
+  val stdlibDir = Paths.get(stdlibPath).toFile
+  if(!stdlibDir.isDirectory) {
+    Console.err.println(s"SPIRAL_STDLIB_PATH's path is not directory. $stdlibDir")
+    sys.exit(1)
+  }
+  if(!stdlibDir.exists()) {
+    Console.err.println(s"SPIRAL_STDLIB_PATH's path does not exist. $stdlibDir")
+    sys.exit(1)
+  }
+
+  val stdlibFiles = Seq(
+    "types.tchdl",
+    "functions.tchdl",
+    "traits.tchdl",
+    "interfaces.tchdl"
+  ).map(name => Paths.get(stdlibPath, name).toString)
+
+  val filenames = config.filenames ++ stdlibFiles
 
   val compilationUnits = filenames.map(Parser.parse)
-  val global = GlobalData(command)
+  val global = GlobalData(config)
 
+  val frontendResult = frontend(Seq(
+    (cus, global) => cus.map(Namer.exec(_)(global)),
+    (cus, global) => cus.map(NamerPost.exec(_)(global)),
+    (cus, global) => cus.map(BuildImplContainer.exec(_)(global)),
+    (cus, global) => { VerifyImplConflict.verifyImplConflict()(global); cus },
+    (cus, global) => cus.map(TopDefTyper.exec(_)(global)),
+    (cus, global) => cus.map(ImplMethodSigTyper.exec(_)(global)),
+    (cus, global) => cus.map(Typer.exec(_)(global)),
+    (cus, global) => cus.map(RefCheck.exec(_)(global)),
+  ))
+
+  val result = frontendResult match {
+    case Left(errors) => Left(errors)
+    case Right((_, global)) =>
+      for {
+        modules <- backend(global => BuildGeneratedModuleList.exec(global))(global)
+        container <- backend(global => BackendIRGen.exec(modules)(global))(global)
+        (moduleContainers, methodContainers) = container
+        lirModules = BackendLIRGen.exec(moduleContainers, methodContainers)(global)
+        lirTopTpe = moduleContainers.head.tpe
+        connections = PointerConnector.exec(lirTopTpe, lirModules)(global)
+        topModule = lirModules.find(_.tpe == lirTopTpe).get
+        firCircuit = FirrtlCodeGen.exec(topModule, lirModules, connections)(global)
+      } yield firCircuit
+  }
+
+  result match {
+    case Left(errors) => Console.err.println(errors.mkString("\n\n"))
+    case Right(circuit) =>
+      val annon = firrtl.stage.FirrtlCircuitAnnotation(circuit)
+      val options = Array("-X", "verilog", "--no-dce")
+      val annons = (new FirrtlStage).execute(options, Seq(annon))
+
+      val outputName = config.output.toString
+      val outputDir = config.outputDir.toAbsolutePath.toString
+      val outputPath = Paths.get(outputDir, outputName)
+
+      Files.writeString(outputPath, "")
+  }
+
+  /*
   compilationUnits.foreach(Namer.exec(_)(global))
   showError(global)
 
@@ -123,7 +213,9 @@ object Main extends App {
 
   trees1.foreach(RefCheck.exec(_)(global))
   showError(global)
+  */
 
+  /*
   val newGlobal = global.assignCompilationUnits(trees1)
   val modules = BuildGeneratedModuleList.exec(newGlobal)
   showError(global)
@@ -137,4 +229,5 @@ object Main extends App {
 
   val output = command.output.getOrElse("out.fir")
   // Files.writeString(Paths.get(output), circuit.serialize)
+ */
 }
