@@ -14,7 +14,7 @@ object BuildImplContainer {
     def symbol: Symbol
   }
 
-  def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
     val packageSymbol = cu.pkgName.foldLeft[Symbol.PackageSymbol](global.rootPackage) {
       case (pkg, name) =>
         val Right(child) = pkg.lookup[Symbol.PackageSymbol](name).toEither
@@ -24,6 +24,7 @@ object BuildImplContainer {
     val ctx = packageSymbol.lookupCtx(cu.filename).get
 
     cu.topDefs.foreach(buildContainer(_)(ctx, global))
+    cu
   }
 
   def buildBounds(bound: BoundTree)(implicit ctx: Context.NodeContext, global: GlobalData): Either[Error, Bound] = {

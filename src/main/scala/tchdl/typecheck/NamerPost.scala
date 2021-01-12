@@ -5,9 +5,11 @@ import tchdl.util._
 import tchdl.util.TchdlException.ImplementationErrorException
 
 object NamerPost {
-  def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
     verifyImport(cu)
     importPreludes(cu)
+
+    cu
   }
 
   private def getContext(cu: CompilationUnit)(implicit global: GlobalData): Context.RootContext =

@@ -4,7 +4,7 @@ import tchdl.ast._
 import tchdl.util._
 
 object Namer {
-  def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
     val packageSymbol = cu.pkgName.foldLeft[Symbol.PackageSymbol](global.rootPackage) {
       case (parent, name) => parent.lookup[Symbol.PackageSymbol](name) match {
         case LookupResult.LookupSuccess(pkg) => pkg
@@ -16,8 +16,10 @@ object Namer {
     }
 
     val root = Context.root(cu.pkgName)
-    cu.topDefs.map(topLevelNamed(_)(root, global))
+    val defs = cu.topDefs.map(topLevelNamed(_)(root, global))
     packageSymbol.appendCtx(cu.filename, root)
+
+    cu
   }
 
   def namedAlways(always: AlwaysDef)(implicit ctx: Context.NodeContext, global: GlobalData): AlwaysDef = {

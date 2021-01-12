@@ -6,6 +6,8 @@ import tchdl.backend._
 
 import scala.collection.mutable
 
+import java.nio.file.Path
+
 abstract class GlobalData {
   val repo: Reporter = new Reporter
   val rootPackage: Symbol.RootPackageSymbol = new Symbol.RootPackageSymbol
@@ -55,9 +57,9 @@ abstract class GlobalData {
     }
 
   val command: Command
-  def compilationUnits: Vector[CompilationUnit] = throw new ImplementationErrorException("Compilation Units not assigned yet")
+  def compilationUnits: Seq[CompilationUnit] = throw new ImplementationErrorException("Compilation Units not assigned yet")
 
-  def assignCompilationUnits(cus: Vector[CompilationUnit]): GlobalData = {
+  def assignCompilationUnits(cus: Seq[CompilationUnit]): GlobalData = {
     val _repo = repo
     val _rootPackage = rootPackage
     val _cache = cache
@@ -84,7 +86,7 @@ object GlobalData {
     }
 
   def apply(pkgName: Vector[String], module: TypeTree): GlobalData = {
-    val com = Command(Vector.empty, pkgName, Some(module), "", None)
+    val com = Command(Vector.empty, pkgName, Some(module), "", None, None)
 
     new GlobalData {
       override val command = com
@@ -242,9 +244,10 @@ case class Command(
   topModulePkg: Vector[String],
   topModule: Option[TypeTree],
   stdlibDir: String,
-  output: Option[String]
+  output: Option[String],
+  outputDir: Option[Path],
 )
 
 object Command {
-  def empty: Command = Command(Vector.empty, Vector.empty, Option.empty, "", None)
+  def empty: Command = Command(Vector.empty, Vector.empty, Option.empty, "", None, None)
 }

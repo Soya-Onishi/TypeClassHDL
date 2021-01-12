@@ -7,7 +7,7 @@ import tchdl.util._
 import scala.annotation.tailrec
 
 object ImplMethodSigTyper {
-  def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
     val ctx = getContext(cu.pkgName, cu.filename)
 
     cu.topDefs.collect {
@@ -15,6 +15,8 @@ object ImplMethodSigTyper {
       case impl: ImplementInterface => verifyImplInterface(impl)(ctx, global)
       case method: MethodDef => verifyMethodDef(method)(ctx, global)
     }
+
+    cu
   }
 
   def verifyImplClass(impl: ImplementClass)(implicit ctx: Context.RootContext, global: GlobalData): Unit = {

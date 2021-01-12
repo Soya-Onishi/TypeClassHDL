@@ -5,10 +5,11 @@ import tchdl.util._
 import tchdl.util.TchdlException.ImplementationErrorException
 
 object RefCheck {
-  def exec(cu: CompilationUnit)(implicit global: GlobalData): Unit = {
+  def exec(cu: CompilationUnit)(implicit global: GlobalData): CompilationUnit = {
     val ctx = getContext(cu.pkgName, cu.filename)
 
     cu.topDefs.foreach(verify(_)(ctx, global))
+    cu
   }
 
   def verify(defTree: Definition)(implicit ctx: Context.RootContext, global: GlobalData): Unit =
