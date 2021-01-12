@@ -218,13 +218,17 @@ object FirrtlCodeGen {
       val candidates = pointers.filter(_.source.modulePath == modulePath)
       val pointer = candidates.find(_.source.component == HierarchyComponent.Memory(mem.name, port)).get
       val name = NameTemplate.pointerWire(pointer.id)
+      val tpe = fir.BundleType(Seq(
+        fir.Field(NameTemplate.enumFlag, fir.Default, fir.UIntType(fir.IntWidth(1))),
+        fir.Field(NameTemplate.enumData, fir.Default, toFirrtlType(mem.dataTpe))
+      ))
 
-      fir.Reference(name, fir.UnknownType)
+      fir.Reference(name, tpe)
     }
 
     def createReadDataConnections(port: Int): Vector[fir.Statement] = {
-      val member = fir.SubField(getPointerWire(port), NameTemplate.enumFlag, fir.UnknownType)
-      val data = fir.SubField(getPointerWire(port), NameTemplate.enumData, fir.UnknownType)
+      val member = fir.SubField(getPointerWire(port), NameTemplate.enumFlag, fir.UIntType(fir.IntWidth(1)))
+      val data = fir.SubField(getPointerWire(port), NameTemplate.enumData, toFirrtlType(mem.dataTpe))
       val delayRef = fir.Reference(NameTemplate.memEnDelay(mem.name, port), fir.UnknownType)
       val memRef = fir.Reference(mem.name, fir.UnknownType)
       val portRef = fir.SubField(memRef, s"r$port", fir.UnknownType)
@@ -587,10 +591,11 @@ object FirrtlCodeGen {
     }
 
     val candidates = pointers.filter(_.dest.exists(isNeeded))
-    val muxResult = candidates.tail.foldLeft[fir.Expression](fir.Reference(NameTemplate.pointerWire(candidates.head.id), fir.UnknownType)) {
+    val head = fir.Reference(NameTemplate.pointerWire(candidates.head.id), toFirrtlType(candidates.head.tpe))
+    val muxResult = candidates.tail.foldLeft[fir.Expression](head) {
       case (alt, c) =>
         val pointerRef = elaborateExpr(deref.ref)
-        val dataRef = fir.Reference(NameTemplate.pointerWire(c.id), fir.UnknownType)
+        val dataRef = fir.Reference(NameTemplate.pointerWire(c.id), toFirrtlType(c.tpe))
         val idLit = fir.UIntLiteral(c.id, fir.IntWidth(atLeastLength(candidates.length).toInt))
         val eq = fir.DoPrim(firrtl.PrimOps.Eq, Seq(pointerRef, idLit), Seq.empty, fir.UnknownType)
 
@@ -736,23 +741,23 @@ object FirrtlCodeGen {
   }
 
   def generateRoute(routes: Vector[DataRoute])(implicit global: GlobalData, pointers: Vector[PointerConnection]): (Vector[fir.Port], Vector[fir.Statement]) = {
-    def refChildPort(id: Int, sub: String): fir.SubField =
+    def refChildPort(id: Int, sub: String, tpe: BackendType): fir.SubField =
       fir.SubField(
         fir.Reference(sub, fir.UnknownType),
         NameTemplate.pointerPort(id),
-        fir.UnknownType
+        toFirrtlType(tpe)
       )
 
-    def refWire(id: Int): fir.Reference =
+    def refWire(id: Int, tpe: BackendType): fir.Reference =
       fir.Reference(
         NameTemplate.pointerWire(id),
-        fir.UnknownType
+        toFirrtlType(tpe)
       )
 
-    def refPort(id: Int): fir.Reference =
+    def refPort(id: Int, tpe: BackendType): fir.Reference =
       fir.Reference(
         NameTemplate.pointerPort(id),
-        fir.UnknownType
+        toFirrtlType(tpe)
       )
 
     val wires = routes
@@ -771,18 +776,18 @@ object FirrtlCodeGen {
       .map { route =>
         route.connects match {
           case Connection.FromChild(sub) =>
-            val from = refChildPort(route.id, sub)
-            val to = refWire(route.id)
+            val from = refChildPort(route.id, sub, route.tpe)
+            val to = refWire(route.id, route.tpe)
 
             (Option.empty[fir.Port], fir.Connect(fir.NoInfo, to, from))
           case Connection.ToChild(sub) =>
-            val from = refWire(route.id)
-            val to = refChildPort(route.id, sub)
+            val from = refWire(route.id, route.tpe)
+            val to = refChildPort(route.id, sub, route.tpe)
 
             (Option.empty[fir.Port], fir.Connect(fir.NoInfo, to, from))
           case Connection.ToParent =>
-            val from = refWire(route.id)
-            val to = refPort(route.id)
+            val from = refWire(route.id, route.tpe)
+            val to = refPort(route.id, route.tpe)
             val port = fir.Port(
               fir.NoInfo,
               NameTemplate.pointerPort(route.id),
@@ -792,8 +797,8 @@ object FirrtlCodeGen {
 
             (Some(port), fir.Connect(fir.NoInfo, to, from))
           case Connection.FromParent =>
-            val from = refPort(route.id)
-            val to = refWire(route.id)
+            val from = refPort(route.id, route.tpe)
+            val to = refWire(route.id, route.tpe)
             val port = fir.Port(
               fir.NoInfo,
               NameTemplate.pointerPort(route.id),

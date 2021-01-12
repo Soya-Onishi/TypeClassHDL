@@ -214,20 +214,20 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val bit4 = fir.UIntType(fir.IntWidth(4))
     assert(topPointerWire.tpe == bit4)
     val topConnects = topStmts.collect { case c: fir.Connect => c }
-    val passToPointer = topConnects.find(_.loc == fir.Reference("__pointer_0", fir.UnknownType)).get
-    val passFromPointer = topConnects.find(_.expr == fir.Reference("__pointer_0", fir.UnknownType)).get
+    val passToPointer = topConnects.find(_.loc == fir.Reference("__pointer_0", bit4)).get
+    val passFromPointer = topConnects.find(_.expr == fir.Reference("__pointer_0", bit4)).get
 
     // In Sub0
     def subXRef(n: Int) = fir.Reference(s"sub$n", fir.UnknownType)
 
-    assert(passToPointer.expr == fir.SubField(subXRef(1), "_pointer_0", fir.UnknownType))
-    assert(passFromPointer.loc == fir.SubField(subXRef(0), "_pointer_0", fir.UnknownType))
+    assert(passToPointer.expr == fir.SubField(subXRef(1), "_pointer_0", bit4))
+    assert(passFromPointer.loc == fir.SubField(subXRef(0), "_pointer_0", bit4))
 
     val sub0Stmts = sub0.body.asInstanceOf[fir.Block].stmts
     val function = sub0Stmts.collectFirst { case c: fir.Conditionally => c }.get
     val functionStmts = function.conseq.asInstanceOf[fir.Block].stmts
     val fnodes = functionStmts.collect { case n: fir.DefNode => n }
-    val fnode = fnodes.find(_.value == fir.Reference("__pointer_0", fir.UnknownType)).get
+    val fnode = fnodes.find(_.value == fir.Reference("__pointer_0", bit4)).get
     val fconnects = functionStmts.collect { case c: fir.Connect => c }
     val fconnect = fconnects.find(c => c.loc.isInstanceOf[fir.Reference] && c.loc.asInstanceOf[fir.Reference].name.matches("function__ret")).get
     assert(fconnect.expr == fir.Reference(fnode.name, bit4))
@@ -259,8 +259,8 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val toSubSub = subConnects.collectFirst { case c @ fir.Connect(_, _, fir.Reference("__pointer_0", _, _, _)) => c }.get
 
     val subsub = fir.Reference("subsub", fir.UnknownType)
-    assert(fromParent.loc == fir.Reference("__pointer_0", fir.UnknownType))
-    assert(toSubSub.loc == fir.SubField(subsub, "_pointer_0", fir.UnknownType))
+    assert(fromParent.loc == fir.Reference("__pointer_0", fir.UIntType(fir.IntWidth(4))))
+    assert(toSubSub.loc == fir.SubField(subsub, "_pointer_0", fir.UIntType(fir.IntWidth(4))))
   }
 
   test("deref from same proc to multiple module") {
@@ -280,9 +280,10 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
 
     def subxRef(n: Int) = fir.Reference(s"sub$n", fir.UnknownType)
 
-    assert(toWire.expr == fir.SubField(subxRef(0), "_pointer_0", fir.UnknownType))
-    assert(fromWires(0).loc == fir.SubField(subxRef(1), "_pointer_0", fir.UnknownType))
-    assert(fromWires(1).loc == fir.SubField(subxRef(2), "_pointer_0", fir.UnknownType))
+    val bit4 = fir.UIntType(fir.IntWidth(4))
+    assert(toWire.expr == fir.SubField(subxRef(0), "_pointer_0", bit4))
+    assert(fromWires(0).loc == fir.SubField(subxRef(1), "_pointer_0", bit4))
+    assert(fromWires(1).loc == fir.SubField(subxRef(2), "_pointer_0", bit4))
   }
 
   test("elaborate stage") {
@@ -476,8 +477,6 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
   test("use memory reading and writing") {
     val (circuit, global) = untilThisPhase(Vector("test"), "Top", "useMemory.tchdl")
 
-    println(circuit.serialize)
-
     val top = circuit.modules.head.asInstanceOf[fir.Module]
     val stmts = top.body.asInstanceOf[fir.Block].stmts
     val wires = stmts.collect{ case w: fir.DefWire => w }.filter(_.name.contains("__pointer_"))
@@ -518,7 +517,7 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val dataRefs = topConnects.collect { case fir.Connect(_, fir.SubField(sub: fir.Reference, "_data", _, _), src) => src }
     val memRef = fir.Reference("_mem", fir.UnknownType)
     val port = fir.SubField(memRef, "r1", fir.UnknownType)
-    val data = fir.SubField(port, "data", fir.UnknownType)
+    val data = fir.SubField(port, "data", fir.UIntType(fir.IntWidth(32)))
     assert(dataRefs(1) == data)
 
     val outputPorts = top.ports.filter(_.direction == fir.Output).filter(_.name.contains("_pointer_"))
@@ -539,6 +538,8 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val cycleReg = regs.head
     assert(cycleReg.tpe == fir.VectorType(fir.UIntType(fir.IntWidth(1)), 2))
 
+    info(circuit.serialize)
+
     val reg0Ref = fir.SubIndex(fir.Reference("memory_0_cycle", fir.UnknownType), 0, fir.UnknownType)
     val reg1Ref = fir.SubIndex(fir.Reference("memory_0_cycle", fir.UnknownType), 1, fir.UnknownType)
 
@@ -546,15 +547,19 @@ class FirrtlCodeGenTest extends TchdlFunSuite {
     val connectReg1 = stmts.collectFirst { case fir.Connect(_, ref, src) if ref == reg1Ref => src }.get
     val connectPointer = stmts.collectFirst { case fir.Connect(_, ref, src) if src == reg1Ref => ref }.get
 
+    val pointerTpe = fir.BundleType(Seq(
+      fir.Field(NameTemplate.enumFlag, fir.Default, fir.UIntType(fir.IntWidth(1))),
+      fir.Field(NameTemplate.enumData, fir.Default, fir.UIntType(fir.IntWidth(32)))
+    ))
     assert(connectReg0 == fir.UIntLiteral(0, fir.IntWidth(1)))
     assert(connectReg1 == reg0Ref)
-    assert(connectPointer == fir.SubField(fir.Reference("__pointer_0", fir.UnknownType), "_member", fir.UnknownType))
+    assert(connectPointer == fir.SubField(fir.Reference("__pointer_0", pointerTpe), "_member", fir.UIntType(fir.IntWidth(1))))
 
     val read = stmts.collectFirst { case w: fir.Conditionally => w }.get
     assert(read.pred.asInstanceOf[fir.Reference].name.matches("read__active"))
     val readStmts = read.conseq.asInstanceOf[fir.Block].stmts
     val readNodes = readStmts.collect { case node: fir.DefNode => node }
-    assert(readNodes.exists(_.value == fir.Reference("__pointer_0", fir.UnknownType)))
+    assert(readNodes.exists(_.value == fir.Reference("__pointer_0", pointerTpe)))
   }
 
   test("run ALU ports") {

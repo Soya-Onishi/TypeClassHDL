@@ -14,7 +14,9 @@ import treadle.TreadleTester
 import java.util.Random
 import java.nio.file.{Files, Path, Paths}
 import scala.collection.JavaConverters._
+import org.scalatest.tags.Slow
 
+@Slow
 class RiscvTest extends TchdlFunSuite {
   def truncate(v: BigInt, widths: Int*): Seq[BigInt] = {
     val builder = Seq.newBuilder[BigInt]
@@ -114,7 +116,6 @@ class RiscvTest extends TchdlFunSuite {
       treadle.ClockInfoAnnotation(Seq(clockInfo)),
       treadle.ResetNameAnnotation("RST"),
       FirrtlCircuitAnnotation(circuit),
-      // NoDCEAnnotation
     ) ++ additionalAnnons
 
     val passedAnnons =
@@ -216,7 +217,7 @@ class RiscvTest extends TchdlFunSuite {
       tester.peek(nme(NameTemplate.ret))
     }
 
-    def hazard(name: String): String = NameTemplate.concat("isLoadHazard", name)
+    def hazard(name: String, port: Int): String = NameTemplate.concat(s"isLoadHazardRs$port", name)
 
     def forward(stage: String, isSome: Boolean, rd: BigInt, data: BigInt, tester: TreadleTester): Unit = {
       val prefix = s"__$stage"
@@ -275,7 +276,8 @@ class RiscvTest extends TchdlFunSuite {
       tester.poke("__isLoadDone_active", 0)
       tester.poke(NameTemplate.concat("rs1", NameTemplate.active), 0)
       tester.poke(NameTemplate.concat("rs2", NameTemplate.active), 0)
-      tester.poke(hazard(NameTemplate.active), 0)
+      tester.poke(hazard(NameTemplate.active, 1), 0)
+      tester.poke(hazard(NameTemplate.active, 2), 0)
 
       for (_ <- 0 to 100000) {
         val execForward = rnd.nextBoolean()
@@ -309,13 +311,17 @@ class RiscvTest extends TchdlFunSuite {
         tester.poke("__isExeLoad_bits", if (execLoad) 1 else 0)
         tester.poke("__isMemLoad_bits", if (memLoad) 1 else 0)
         tester.poke("__isLoadDone_bits", if (loadDone) 1 else 0)
-        tester.poke("isLoadHazard__active", 1)
-        tester.poke("isLoadHazard_rs1", rs1Addr)
-        tester.poke("isLoadHazard_rs2", rs2Addr)
+        tester.poke("isLoadHazardRs1__active", 1)
+        tester.poke("isLoadHazardRs2__active", 1)
+        tester.poke("isLoadHazardRs1_addr", rs1Addr)
+        tester.poke("isLoadHazardRs2_addr", rs2Addr)
 
-        val exeHazard = infos(0)._1 && (infos(0)._2 == rs1Addr || infos(0)._2 == rs2Addr) && execLoad
-        val memHazard = infos(1)._1 && (infos(1)._2 == rs1Addr || infos(1)._2 == rs2Addr) && memLoad && !loadDone
-        tester.expect("isLoadHazard__ret", if (exeHazard | memHazard) 1 else 0)
+        val exeHazardRs1 = infos(0)._1 && (infos(0)._2 == rs1Addr) && execLoad
+        val memHazardRs1 = infos(1)._1 && (infos(1)._2 == rs1Addr) && memLoad && !loadDone
+        val exeHazardRs2 = infos(0)._1 && (infos(0)._2 == rs2Addr) && execLoad
+        val memHazardRs2 = infos(1)._1 && (infos(1)._2 == rs2Addr) && memLoad && !loadDone
+        tester.expect("isLoadHazardRs1__ret", if (exeHazardRs1 | memHazardRs1) 1 else 0)
+        tester.expect("isLoadHazardRs2__ret", if (exeHazardRs2 | memHazardRs2) 1 else 0)
 
         tester.step(1)
       }
@@ -553,7 +559,7 @@ class RiscvTest extends TchdlFunSuite {
       }
     }
 
-    runSim(circuit) { tester =>
+    runSim(circuit, enableVcd = true, additionalAnnons = Seq(NoDCEAnnotation)) { tester =>
       for (_ <- 0 until 100) {
         val inst = jalrInst()
         val pc = next(32)
@@ -563,13 +569,14 @@ class RiscvTest extends TchdlFunSuite {
 
         val bits = tester.peek("decode__ret_ops__data")
         val Seq(jmpMember, _, rs1, imm) = truncate(bits, 32, 32, 67, 2)
-        val expectBits = concat((32, inst.imm), (32, rs1Data), (67, BigInt(0)), (2, BigInt(2)))
+        val expectBits = concat((32, inst.imm), (32, rs1Data), (35, BigInt(0)), (32, pc), (2, BigInt(2)))
         val message =
           s"""
              |[all] expect: ${expectBits.toString(16)}, actual ${bits.toString(16)}
              |[mem] expect: 2, actual: $jmpMember
              |[imm] expect: ${inst.imm.toString(16)}, actual: ${imm.toString(16)}
              |[rs1] expect: ${rs1Data.toString(16)}, actual: ${rs1.toString(16)}
+             |[ pc] expect: ${pc.toString(16)}, actual:
              |""".stripMargin
         tester.expect("decode__ret_ops__member", 3)
         tester.expect("decode__ret_ops__data", expectBits, message)
@@ -1303,7 +1310,7 @@ class RiscvTest extends TchdlFunSuite {
     val circuit = untilThisPhase(Vector("riscv"), "MemoryControlUnit", "MemoryControlUnit.tchdl")
     var idleCount = 0
 
-    runSim(circuit, enableVcd = true, createFile = true) { tester =>
+    runSim(circuit, enableVcd = true, createFile = true, additionalAnnons = Seq(NoDCEAnnotation)) { tester =>
       def idle(): Unit = {
         idleCount += 1
         if(idleCount >= 25) {

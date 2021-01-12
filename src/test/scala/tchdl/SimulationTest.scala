@@ -14,7 +14,6 @@ import treadle.TreadleTester
 import java.util.Random
 import org.scalatest.tags.Slow
 
-@Slow
 class SimulationTest extends TchdlFunSuite {
   def parse(filename: String): CompilationUnit =
     parseFile(_.compilation_unit)((gen, tree) => gen(tree, filename))(filename).asInstanceOf[CompilationUnit]
@@ -330,8 +329,6 @@ class SimulationTest extends TchdlFunSuite {
     val procSecond = (n: String) => s"convolution_second_$n"
     val rand = new Random(0)
     def next: Int = rand.nextInt(8)
-
-    info(circuit.serialize)
 
     runSim(circuit) { tester =>
       for {
