@@ -8,7 +8,7 @@ import tchdl.typecheck.Typer
 object BuildGeneratedModuleList {
   def exec(implicit global: GlobalData): Vector[BuiltModule] = {
     def getPackage: Either[Error, Symbol.PackageSymbol] =
-      global.rootPackage.search(global.command.topModulePkg)
+      global.rootPackage.search(global.config.topModulePkg)
 
     def buildTypeTree(moduleTree: TypeTree, pkg: Symbol.PackageSymbol): Either[Error, TypeTree] = {
       val rootCtx = pkg.context.values.head
@@ -31,7 +31,7 @@ object BuildGeneratedModuleList {
         .combine(errs => Error.MultipleErrors(errs: _*))
     }
 
-    val topModuleTree = global.command.topModule.get
+    val topModuleTree = global.config.topModule.get
 
     val elaboratedModuleList = for {
       pkg <- getPackage

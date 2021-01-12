@@ -5,8 +5,7 @@ import tchdl.util.TchdlException._
 import tchdl.backend._
 
 import scala.collection.mutable
-
-import java.nio.file.Path
+import java.nio.file.{Path, Paths}
 
 abstract class GlobalData {
   val repo: Reporter = new Reporter
@@ -56,7 +55,7 @@ abstract class GlobalData {
         ret
     }
 
-  val command: Command
+  val config: CLConfig
   def compilationUnits: Seq[CompilationUnit] = throw new ImplementationErrorException("Compilation Units not assigned yet")
 
   def assignCompilationUnits(cus: Seq[CompilationUnit]): GlobalData = {
@@ -65,7 +64,7 @@ abstract class GlobalData {
     val _cache = cache
     val _builtin = builtin
     val _buffer = buffer
-    val _command = command
+    val _command = config
 
     new GlobalData {
       override val repo = _repo
@@ -73,30 +72,47 @@ abstract class GlobalData {
       override val cache = _cache
       override val builtin = _builtin
       override val buffer = _buffer
-      override val command = _command
+      override val config = _command
       override val compilationUnits = cus
     }
   }
 }
 
 object GlobalData {
-  def apply(com: Command) =
-    new GlobalData {
-      override val command = com
-    }
+  def apply(conf: CLConfig): GlobalData =
+    new GlobalData { override val config = conf }
 
   def apply(pkgName: Vector[String], module: TypeTree): GlobalData = {
-    val com = Command(Vector.empty, pkgName, Some(module), "", None, None)
+    val conf = CLConfig(
+      Vector.empty,
+      pkgName,
+      Some(module),
+      Paths.get("out.v"),
+      Paths.get("."),
+      frontendOnly = false,
+      outputFir = false,
+    )
 
     new GlobalData {
-      override val command = com
+      override val config = conf
     }
   }
 
-  def apply() =
+  def apply(): GlobalData = {
+    val conf = CLConfig(
+      Vector.empty,
+      Vector.empty,
+      Option.empty,
+      Paths.get("out.v"),
+      Paths.get("."),
+      frontendOnly = false,
+      outputFir = false,
+    )
+
     new GlobalData {
-      override val command = Command.empty
+      override val config = conf
     }
+  }
 }
 
 trait BuiltInSymbols[T <: Symbol] {
