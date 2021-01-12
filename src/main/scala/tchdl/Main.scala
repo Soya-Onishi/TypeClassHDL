@@ -146,9 +146,13 @@ object Main extends App {
 
   val filenames = config.filenames ++ stdlibFiles
 
-  val compilationUnits = filenames.map(Parser.parse)
   val global = GlobalData(config)
+  val compilationUnits = filenames.map{ name =>
+    println(s"parsing $name...")
+    Parser.parse(name)
+  }
 
+  println("compilation running...")
   val frontendResult = frontend(Seq(
     (cus, global) => cus.map(Namer.exec(_)(global)),
     (cus, global) => cus.map(NamerPost.exec(_)(global)),
@@ -159,6 +163,8 @@ object Main extends App {
     (cus, global) => cus.map(Typer.exec(_)(global)),
     (cus, global) => cus.map(RefCheck.exec(_)(global)),
   ))
+
+  println("generating output products...")
 
   val result = frontendResult match {
     case Left(errors) => Left(errors)
@@ -178,15 +184,18 @@ object Main extends App {
   result match {
     case Left(errors) => Console.err.println(errors.mkString("\n\n"))
     case Right(circuit) =>
-      val annon = firrtl.stage.FirrtlCircuitAnnotation(circuit)
-      val options = Array("-X", "verilog", "--no-dce")
-      val annons = (new FirrtlStage).execute(options, Seq(annon))
-
       val outputName = config.output.toString
       val outputDir = config.outputDir.toAbsolutePath.toString
       val outputPath = Paths.get(outputDir, outputName)
 
-      Files.writeString(outputPath, "")
+      println("run firrtl...")
+
+      val annons = Seq(
+        firrtl.stage.FirrtlCircuitAnnotation(circuit),
+        firrtl.stage.OutputFileAnnotation(outputPath.toString)
+      )
+      val options = Array("-X", "verilog", "--no-dce")
+      (new FirrtlStage).execute(options, annons)
   }
 
   /*
