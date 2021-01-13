@@ -1684,6 +1684,8 @@ case class Point(line: Int, column: Int) extends Ordered[Point] {
     else if (this.line == that.line && this.column < that.column) -1
     else 1
   }
+
+  override def toString: String = s"$line:$column"
 }
 
 object Point {
@@ -1691,7 +1693,9 @@ object Point {
 }
 
 
-case class Position(filename: String, start: Point, end: Point)
+case class Position(filename: String, start: Point, end: Point) {
+  override def toString(): String = s"[$filename; $start]"
+}
 object Position {
   def apply(ctx: org.antlr.v4.runtime.ParserRuleContext)(implicit file: Filename): Position = {
     val startLine = ctx.getStart.getLine

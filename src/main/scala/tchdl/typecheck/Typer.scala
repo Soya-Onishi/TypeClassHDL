@@ -665,7 +665,7 @@ object Typer {
         val actual = enum.patterns.length
 
         if(expect == actual) Right(())
-        else Left(Error.PatternLengthMismatch(expect, actual, pos))
+        else Left(Error.PatternLengthMismatch(symbol, expect, actual, pos))
       }
 
       def typedPatterns(fieldTpes: Vector[Type.RefType]): Either[Error, Vector[MatchPattern]] = {
@@ -1492,7 +1492,7 @@ object Typer {
       val states = tpe.declares.toMap.values.collect { case state: Symbol.StateSymbol => state }.toVector
 
       if (states.isEmpty) Right(Option.empty)
-      else Left(Error.RequireStateSpecify(states, pos))
+      else Left(Error.RequireStateSpecify(stage.stage, pos))
     }
 
     def withStatePattern(stage: StageResult, state: String, args: Vector[Expression], info: StateInfo): Either[Error, Option[StateInfo]] = {

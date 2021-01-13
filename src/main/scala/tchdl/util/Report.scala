@@ -19,45 +19,116 @@ sealed trait Report {
   }
 
 }
-sealed trait Error extends Report
+sealed trait Error extends Report {
+
+}
 sealed trait Warning extends Report
 sealed trait Info extends Report
 
 object Error {
-  case class TypeMismatch(expect: Type, actual: Type, pos: Position) extends Error
-  case class SymbolNotFound(name: String, pos: Position) extends Error
-  case class SelfTypeNotFound(pos: Position) extends Error
+  case class TypeMismatch(expect: Type, actual: Type, pos: Position) extends Error {
+    override def toString: String = s"$pos type mismatch. expected: $expect, but actual: $actual"
+  }
+  case class SymbolNotFound(name: String, pos: Position) extends Error {
+    override def toString: String = s"$pos symbol $name is not found."
+  }
+  case class SelfTypeNotFound(pos: Position) extends Error {
+    override def toString: String = s"$pos there is no `this` instance."
+  }
 
-  case class ParameterLengthMismatch(expect: Int, actual: Int, pos: Position) extends Error
-  case class TypeParameterLengthMismatch(expect: Int, actual: Int, pos: Position) extends Error
-  case class HardParameterLengthMismatch(expect: Int, actual: Int, pos: Position) extends Error
-  case class PatternLengthMismatch(expect: Int, actual: Int, pos: Position) extends Error
+  //
+  // related to parameter
+  //
+  case class ParameterLengthMismatch(expect: Int, actual: Int, pos: Position) extends Error {
+    override def toString: String = s"$pos parameter length mismatch. expected: $expect, but actual: $actual"
+  }
+  case class TypeParameterLengthMismatch(expect: Int, actual: Int, pos: Position) extends Error {
+    override def toString: String = s"$pos type parameter length mismatch. expected: $expect, but actual: $actual"
+  }
+  case class HardParameterLengthMismatch(expect: Int, actual: Int, pos: Position) extends Error {
+    override def toString: String = s"$pos hardware parameter length mismatch. expected: $expect, but actual: $actual"
+  }
+  case class PatternLengthMismatch(variant: Symbol.EnumMemberSymbol, expect: Int, actual: Int, pos: Position) extends Error {
+    override def toString: String = s"$pos $variant expects $expect parameters, but passed $actual parameters"
+  }
 
-  case class ReferMethodAsNormal(symbol: Symbol.MethodSymbol, pos: Position) extends Error
-  case class ReferMethodAsStatic(symbol: Symbol.MethodSymbol, pos: Position) extends Error
-  case class RequireTypeTree(pos: Position) extends Error
-  case class RequireSpecificType(actual: Type.RefType, requires: Seq[Type.RefType], pos: Position) extends Error
-  case class RequireModuleType(actual: Type.RefType, pos: Position) extends Error
-  case class RequirePointerOrHWType(actual: Type.RefType, pos: Position) extends Error
-  case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol, pos: Position) extends Error
-  case class RequireFlag(require: Modifier, actual: Symbol, pos: Position) extends Error
-  case class RequireStateSpecify(candidates: Vector[Symbol.StateSymbol], pos: Position)extends Error
-  case class RequirePointerTypeAsProcRet(tpe: Type.RefType, pos: Position) extends Error
-  case class RequirePointerType(actual: Type.RefType, pos: Position) extends Error
-  case class RequireHWAsPointer(tpe: Type.RefType, pos: Position) extends Error
+  //
+  // related requirements
+  //
+  case class ReferMethodAsNormal(symbol: Symbol.MethodSymbol, pos: Position) extends Error {
+    override def toString: String = s"$pos $symbol is static method, but called it as like instance method."
+  }
+  case class ReferMethodAsStatic(symbol: Symbol.MethodSymbol, pos: Position) extends Error {
+    override def toString: String = s"$pos $symbol is instance method, but called it as like static method."
+  }
+  case class RequireTypeTree(pos: Position) extends Error {
+    override def toString: String = s"$pos require type statement"
+  }
+  case class RequireSpecificType(actual: Type.RefType, requires: Seq[Type.RefType], pos: Position) extends Error {
+    override def toString: String = s"$pos require [${requires.mkString(" or ")}], but actual $actual"
+  }
+  case class RequireModuleType(actual: Type.RefType, pos: Position) extends Error {
+    override def toString: String = s"$pos require module type, but actual not module type $actual"
+  }
+  case class RequirePointerOrHWType(actual: Type.RefType, pos: Position) extends Error {
+    override def toString: String = s"$pos require hardware or pointer type, but actual neither. actual: $actual"
 
-  case class HPConstraintSetMultitime(target: HPExpr, pos: Position) extends Error
-  case class NotMeetBound(tpe: Type, constraints: Vector[Type], pos: Position) extends Error
-  case class NotMeetHPBound(require: HPBound, caller: Option[HPBound], pos: Position) extends Error
-  case class LiteralOnTarget(lit: Literal, pos: Position) extends Error
-  case class HPBoundNotEqualExpr(expect: HPExpr, actual: HPExpr, pos: Position) extends Error
-  case class HPBoundNotDeriveEqualConst(expr: HPExpr, pos: Position) extends Error
-  case class HPBoundEqualConstNotMatch(expect: Int, actual: Int, pos: Position) extends Error
-  case class HPBoundOutOfRange(expr: HPExpr, expect: (IInt, IInt), actual: (IInt, IInt), pos: Position) extends Error
-  case class HPBoundRangeCross(max: IInt, min: IInt, pos: Position) extends Error
-  case class HPBoundConstraintMismatch(expect: HPConstraint, actual: HPConstraint, pos: Position) extends Error
-  case class NotEnoughHPBound(require: HPBound, pos: Position) extends Error
-  case class ExcessiveHPBound(remains: Vector[HPBound], pos: Position) extends Error
+  }
+  case class RequireSymbol[Require <: Symbol : TypeTag](actual: Symbol, pos: Position) extends Error {
+    override def toString: String = {
+      // TODO: get required symbol user-friendly name
+      s"$pos required different symbol, but actual $actual"
+    }
+  }
+  case class RequireStateSpecify(stage: Symbol.StageSymbol, pos: Position)extends Error {
+    override def toString: String = s"$pos $stage require initial state."
+  }
+  case class RequirePointerTypeAsProcRet(tpe: Type.RefType, pos: Position) extends Error {
+    override def toString: String = s"$pos procedure require pointer type as return type, but actual $tpe."
+  }
+  case class RequirePointerType(actual: Type.RefType, pos: Position) extends Error {
+    override def toString: String = s"$pos tried to dereference for not pointer type, but actual $actual."
+  }
+  case class RequireHWAsPointer(tpe: Type.RefType, pos: Position) extends Error {
+    override def toString: String = s"$pos require hardware type for pointer, but $tpe is not hardware type."
+  }
+
+  //
+  // relate to bounds
+  //
+  case class HPConstraintSetMultitime(target: HPExpr, pos: Position) extends Error {
+    override def toString: String = s"$pos bound for $target is already exist."
+  }
+  case class NotMeetBound(tpe: Type, constraints: Vector[Type], pos: Position) extends Error {
+    override def toString: String = s"$pos $tpe does not meet bound [${constraints.mkString(", ")}."
+  }
+  case class LiteralOnTarget(lit: Literal, pos: Position) extends Error {
+    override def toString: String = s"$pos literal at bound target is not allowed."
+  }
+  case class HPBoundNotEqualExpr(expect: HPExpr, actual: HPExpr, pos: Position) extends Error {
+    override def toString: String = s"$pos expected $actual, but actual $actual"
+  }
+  case class HPBoundNotDeriveEqualConst(expr: HPExpr, pos: Position) extends Error {
+    override def toString: String = s"$pos $expr does not derive into constance value."
+  }
+  case class HPBoundEqualConstNotMatch(expect: Int, actual: Int, pos: Position) extends Error {
+    override def toString: String = s"$pos hardware parameter bounds require $expect, but actual $actual."
+  }
+  case class HPBoundOutOfRange(expr: HPExpr, expect: (IInt, IInt), actual: (IInt, IInt), pos: Position) extends Error {
+    override def toString: String = s"$pos $expr is out of bounds. expect: [max: ${expect._1}, min: ${expect._2}], actual: [max: ${actual._1}, min: ${actual._2}]"
+  }
+  case class HPBoundRangeCross(max: IInt, min: IInt, pos: Position) extends Error {
+    override def toString: String = s"$pos range of max($max) is less than min($min)."
+  }
+  case class HPBoundConstraintMismatch(expect: HPConstraint, actual: HPConstraint, pos: Position) extends Error {
+    override def toString: String = s"$pos hardware parameter constraints mismatch $expect, but actual $actual."
+  }
+  case class NotEnoughHPBound(require: HPBound, pos: Position) extends Error {
+    override def toString: String = s"$pos not enough hardware parameter bounds. requirements: $require"
+  }
+  case class ExcessiveHPBound(remains: Vector[HPBound], pos: Position) extends Error {
+    override def toString: String = s"$pos excessive hardware parameter bounds. excessive bounds are ${remains.mkString("and")}"
+  }
 
   case class NotMeetPartialTPBound(target: Type.RefType, require: Type.RefType, pos: Position) extends Error
   case class NotEnoughTPBound(remains: TPBound, pos: Position) extends Error
@@ -129,5 +200,3 @@ object Error {
   case class MultipleErrors(errs: Error*) extends Error
   case object DummyError extends Error
 }
-
-
