@@ -116,14 +116,14 @@ class BackendIRGenTest extends TchdlFunSuite {
     val bit = global.builtin.types.lookup("Bit")
     val bit4 = BackendType(BackendTypeFlag.NoFlag, bit, Vector(HPElem.Num(4)), Vector.empty)
 
-    assert(function.code(0) == Temp(3, This(topTpe)))
-    assert(function.code(1) == Temp(4, ReferField(Term.Temp(3, topTpe), FieldLabel(subFieldSymbol, Some(topTpe), ListMap.empty, ListMap.empty), subTpe)))
+    assert(function.code(0) == Temp(2, This(topTpe)))
+    assert(function.code(1) == Temp(3, ReferField(Term.Temp(2, topTpe), FieldLabel(subFieldSymbol, Some(topTpe), ListMap.empty, ListMap.empty), subTpe)))
     val Temp(_, Ident(Term.Variable(functionA, _), _)) = function.code(2)
     val Temp(_, Ident(Term.Variable(functionB, _), _)) = function.code(3)
     assert(functionA.matches("function_a"))
     assert(functionB.matches("function_b"))
 
-    assert(function.ret == CallInterface(add.label, Term.Temp(4, subTpe), Vector(Term.Temp(1, bit4), Term.Temp(2, bit4)), bit4))
+    assert(function.ret == CallInterface(add.label, Term.Temp(3, subTpe), Vector(Term.Temp(0, bit4), Term.Temp(1, bit4)), bit4))
   }
 
   test("build ALU circuit description should generate code correctly") {
@@ -158,8 +158,8 @@ class BackendIRGenTest extends TchdlFunSuite {
     assert(inputFunc.code.length == 2)
     assert(inputFunc.ret == CallInterface(
       internalFunc.label,
-      Term.Temp(2, topTpe),
-      Vector(Term.Temp(1, bit8)),
+      Term.Temp(1, topTpe),
+      Vector(Term.Temp(0, bit8)),
       bit8
     ))
   }
