@@ -7,7 +7,7 @@ import scala.collection.mutable
 import scala.collection.immutable.ListMap
 
 abstract class BackendContext {
-  val temp: TempCounter = new TempCounter
+  val temp: TempIDCounter = new TempIDCounter
   private val scope: mutable.Map[Symbol.TermSymbol, String] = mutable.Map.empty
   val parent: Option[BackendContext]
 
@@ -51,13 +51,12 @@ object BackendContext {
   }
 }
 
-class TempNamer {
+class TempIDCounter {
   private var _id: Int = 0
 
-  def get(): String = {
+  def get(): Int = {
     val id = _id
     _id = _id + 1
-
-    s"TEMP_$id"
+    id
   }
 }

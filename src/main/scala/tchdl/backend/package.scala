@@ -544,15 +544,4 @@ package object backend {
       case (_, None) => throw new ImplementationErrorException("this table should be all assigned")
     }
   }
-
-  class TempCounter {
-    var count = 0
-
-    def get(): Int = {
-      val next = count + 1
-      count = next
-
-      next
-    }
-  }
 }

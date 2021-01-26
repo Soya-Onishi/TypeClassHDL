@@ -3,7 +3,7 @@ package tchdl.backend
 import tchdl.util.{GlobalData, Symbol, ToOption, Type}
 import tchdl.backend.ast.{BackendLIR => lir}
 import firrtl.PrimOps
-import tchdl.backend.BackendLIRGen.StackFrame
+import tchdl.backend.StackFrame
 
 package object builtin {
   def intAdd(left: Instance, right: Instance, stack: StackFrame): RunResult = {
