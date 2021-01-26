@@ -55,7 +55,7 @@ impl Adder {
 これをコンパイルするには以下をシェルで実行します．
 
 ```
-spiral --pkg adder --top Adder --output Adder.v Adder.spl
+spiral --package adder --top Adder --out Adder.v Adder.spl
 ```
 
 実行後，Verilog HDLファイルである`Adder.v`が生成されます．
