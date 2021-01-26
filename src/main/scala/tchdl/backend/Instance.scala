@@ -103,38 +103,3 @@ case class StringInstance(value: String)(implicit global: GlobalData) extends Da
   val tpe = toBackendType(Type.stringTpe, Map.empty, Map.empty)
   def refer = throw new ImplementationErrorException("refer string instance")
 }
-
-// case class BitInstance(tpe: BackendType, refer: ir.Expression) extends DataInstance
-
-/*
-case class IntInstance(refer: ir.Expression)(implicit global: GlobalData) extends DataInstance {
-  val field = Map.empty
-  val tpe = toBackendType(Type.intTpe, Map.empty, Map.empty)
-}
-object IntInstance {
-  def apply(value: Int)(implicit global: GlobalData): IntInstance = {
-    IntInstance(ir.UIntLiteral(value, ir.IntWidth(32)))
-  }
-}
-*/
-
-/*
-case class BoolInstance()(implicit global: GlobalData) extends DataInstance {
-  val field = Map.empty
-  val tpe = toBackendType(Type.boolTpe, Map.empty, Map.empty)
-}
-
-object BoolInstance {
-  def apply(value: Boolean): BoolInstance = {
-    val num = if (value) 1 else 0
-    val refer = ir.UIntLiteral(num, ir.IntWidth(1))
-
-  }
-}
-
-case class UnitInstance()(implicit global: GlobalData) extends DataInstance {
-  val field = Map.empty
-  val tpe = toBackendType(Type.unitTpe, Map.empty, Map.empty)
-  val refer = ir.UIntLiteral(0, ir.IntWidth(0))
-}
-*/

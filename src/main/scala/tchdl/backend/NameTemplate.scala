@@ -1,7 +1,5 @@
 package tchdl.backend
 
-import tchdl.util._
-
 object NameTemplate {
   def temp: String                 = "_GEN"
   def enumFlag: String             = "_member"
